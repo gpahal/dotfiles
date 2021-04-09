@@ -1,0 +1,18 @@
+add_newline = true
+
+[username]
+show_always = false
+
+[character]
+success_symbol = "[➜](bold green)"
+error_symbol = "[➜](bold red)"
+
+[cmd_duration]
+min_time = 10_000
+
+[memory_usage]
+show_percentage = true
+show_swap = true
+threshold = 80
+style = "bold dimmed white"
+disabled = false

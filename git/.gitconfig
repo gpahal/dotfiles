@@ -1,0 +1,23 @@
+[user]
+name = Garvit Pahal
+email = g10pahal@gmail.com
+
+[init]
+defaultBranch = main
+
+[alias]
+s = status
+co = checkout
+cob = checkout
+del = checkout -D
+br = branch --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(contents:subject) %(color:green)(%(committerdate:relative)) [%(authorname)]' --sort=-committerdate
+aa = add -A .
+cm = commit -m
+cp = cherry-pick
+amend = commit --amend -m
+unstage = reset HEAD
+undo = reset --soft --keep HEAD^
+reseth = reset --hard
+lg = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30
+ll = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30 --numstat
+standup = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s\" --since='`date -v-1d \"+%Y-%m-%d 00:00:00\"`' --until='`date \"+%Y-%m-%d 00:00:00\"`' --all --author=\"`git config --get user.name`\" --abbrev-commit -30

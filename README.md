@@ -61,6 +61,18 @@ cp vim/.vimrc ~/.vimrc
 - [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
 - [broot](https://github.com/Canop/broot): a new way to navigate directory trees
 
-### Manjaro linux specific
+## Configuation
+
+## Appearance
+
+- [Arc theme](https://github.com/horst3180/Arc-theme)
+- [nerd-fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
+- One dark theme
+  - [JetBrains](https://plugins.jetbrains.com/plugin/11938-one-dark-theme)
+  - [VS Code](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme)
+  - [Gnome terminal](https://github.com/denysdovhan/one-gnome-terminal)
+- [Wallpaper - A Journey](https://www.deviantart.com/asthi21/art/A-Journey-873092128)
+
+## Manjaro
 
 - [yay](https://github.com/Jguer/yay)

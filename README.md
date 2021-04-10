@@ -63,7 +63,7 @@ cp vim/.vimrc ~/.vimrc
 
 ## Configuation
 
-## Appearance
+### Appearance
 
 - [Arc theme](https://github.com/horst3180/Arc-theme)
 - [nerd-fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
@@ -73,6 +73,12 @@ cp vim/.vimrc ~/.vimrc
   - [Gnome terminal](https://github.com/denysdovhan/one-gnome-terminal)
 - [Wallpaper - A Journey](https://www.deviantart.com/asthi21/art/A-Journey-873092128)
 
-## Manjaro
+### Manjaro
 
 - [yay](https://github.com/Jguer/yay)
+
+## Notes
+
+### Manjaro
+
+- By default thje display has night light mode set to very warm colors

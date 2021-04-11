@@ -86,3 +86,6 @@ cp vim/.vimrc ~/.vimrc
 - [Improve font rendering](https://wiki.manjaro.org/index.php/Improve_Font_Rendering)
 - Fix dns name servers for better browsing -
   [Cloudflare DNS](https://developers.cloudflare.com/1.1.1.1/setting-up-1.1.1.1/linux)
+- Setting up the system first time
+  - https://itsfoss.com/things-to-do-after-installing-manjaro/
+  - https://averagelinuxuser.com/10-things-to-do-after-installing-manjaro/

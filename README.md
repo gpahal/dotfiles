@@ -84,3 +84,5 @@ cp vim/.vimrc ~/.vimrc
 
 - By default the display has night light mode set to very warm colors
 - [Improve font rendering](https://wiki.manjaro.org/index.php/Improve_Font_Rendering)
+- Fix dns name servers for better browsing -
+  [Cloudflare DNS](https://developers.cloudflare.com/1.1.1.1/setting-up-1.1.1.1/linux)

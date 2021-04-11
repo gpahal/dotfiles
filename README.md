@@ -66,7 +66,8 @@ cp vim/.vimrc ~/.vimrc
 ### Appearance
 
 - [Arc theme](https://github.com/horst3180/Arc-theme)
-- [nerd-fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
+- Dsiplay fonts - [Noto Fonts](https://www.google.com/get/noto/)
+- Monospace fonts - [nerd-fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
 - One dark theme
   - [JetBrains](https://plugins.jetbrains.com/plugin/11938-one-dark-theme)
   - [VS Code](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme)
@@ -81,4 +82,5 @@ cp vim/.vimrc ~/.vimrc
 
 ### Manjaro
 
-- By default thje display has night light mode set to very warm colors
+- By default the display has night light mode set to very warm colors
+- [Improve font rendering](https://wiki.manjaro.org/index.php/Improve_Font_Rendering)

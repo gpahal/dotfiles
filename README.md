@@ -55,9 +55,11 @@ cp vim/.vimrc ~/.vimrc
 
 ## Useful applications
 
+- [tmux](https://github.com/tmux/tmux): a terminal multiplexer
 - [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex
   pattern
 - [fd](https://github.com/sharkdp/fd): a simple, fast and user-friendly alternative to 'find'
+- [fasd](https://github.com/clvv/fasd): a command-line productivity booster
 - [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
 - [broot](https://github.com/Canop/broot): a new way to navigate directory trees
 

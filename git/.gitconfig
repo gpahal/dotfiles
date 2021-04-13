@@ -8,7 +8,8 @@ defaultBranch = main
 [alias]
 s = status
 co = checkout
-cob = checkout
+cob = !git checkout $(git branch | fzf --reverse)
+cobr = !git checkout $(git branch --remote | fzf --reverse)
 del = checkout -D
 br = branch --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(contents:subject) %(color:green)(%(committerdate:relative)) [%(authorname)]' --sort=-committerdate
 aa = add -A .

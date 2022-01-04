@@ -1,7 +1,6 @@
 export ZSH_PLUGIN_DIR="$ZSH_DIR/plugins"
 
-if [[ `uname` == "Darwin" ]]
-then
+if isdarwin; then
   export ZSH_GLOBAL_PLUGIN_DIR="/opt/homebrew/share"
 else
   export ZSH_GLOBAL_PLUGIN_DIR="/usr/share/zsh/plugins"

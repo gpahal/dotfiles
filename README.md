@@ -34,11 +34,21 @@ chsh -s $(which zsh)
 
 ```sh
 mkdir -p ~/.config
-cp zsh/starship/starship.toml ~/.config/starship.toml
+cp zsh/config/* ~/.config/
+```
 
+- Copy zsh files
+
+```sh
 mkdir -p ~/.zsh
 cp -r zsh/*.zsh ~/.zsh/
-cp zsh/.zshrc ~/.zshrc
+```
+
+- Add this line at the top of `~/.zshrc`
+
+```sh
+# Load main.zsh
+source $HOME/.zsh/main.zsh
 ```
 
 ### vim

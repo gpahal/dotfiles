@@ -1,3 +1,6 @@
+alias zshrc="$EDITOR $HOME/.zshrc"
+alias src="source $HOME/.zshrc"
+
 alias ls="ls --color=auto"
 alias ll="ls -alF"
 alias la="ls -A"
@@ -13,7 +16,7 @@ alias .....="cd ../../../.."
 alias bounce-swap="sudo swapoff -a && sleep 10 && sudo swapon -a"
 alias quit="exit"
 
-if [[ `uname` == "Darwin" ]]; then
+if isdarwin; then
     alias update="brew update"
     alias upgrade="brew update && brew upgrade"
     alias cleanup="brew cleanup"

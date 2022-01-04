@@ -1,12 +1,28 @@
+export ZSH_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-${(%):-%x}}" )" &> /dev/null && pwd )
+
 srcif() {
     [ -f "$1" ] && source "$1"
 }
 
-export ZSH_DIR="$HOME/.zsh"
-
 srczshif() {
     [ -f "$ZSH_DIR/$1" ] && source "$ZSH_DIR/$1"
 }
+
+isdarwin() {
+    [[ `uname` == "Darwin" ]]
+}
+
+islinux() {
+    [[ `uname` == "Linux" ]]
+}
+
+if isdarwin; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
+USE_POWERLINE="true"
+
+eval "$(starship init zsh)"
 
 srczshif basic_settings.zsh
 srczshif functions.zsh
@@ -19,5 +35,3 @@ srczshif title.zsh
 srczshif hooks.zsh
 srczshif reminders.zsh
 srczshif plugins.zsh
-
-srczshif private.zsh

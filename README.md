@@ -67,9 +67,8 @@ cp vim/.vimrc ~/.vimrc
 
 ### Appearance
 
-- [Arc theme](https://github.com/horst3180/Arc-theme)
-- Dsiplay fonts - [Noto Fonts](https://www.google.com/get/noto/)
-- Monospace fonts - [nerd-fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
+- Display fonts - [Noto Fonts](https://www.google.com/get/noto/)
+- Monospace fonts - [Nerd Fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
 - One dark theme
   - [JetBrains](https://plugins.jetbrains.com/plugin/11938-one-dark-theme)
   - [VS Code](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme)
@@ -78,6 +77,7 @@ cp vim/.vimrc ~/.vimrc
 
 ### Manjaro
 
+- [Arc theme](https://github.com/horst3180/Arc-theme)
 - [yay](https://github.com/Jguer/yay)
 
 ## Notes

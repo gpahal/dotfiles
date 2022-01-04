@@ -1,5 +1,11 @@
 export ZSH_PLUGIN_DIR="$ZSH_DIR/plugins"
-export ZSH_GLOBAL_PLUGIN_DIR="/usr/share/zsh/plugins"
+
+if [[ `uname` == "Darwin" ]]
+then
+  export ZSH_GLOBAL_PLUGIN_DIR="/opt/homebrew/share"
+else
+  export ZSH_GLOBAL_PLUGIN_DIR="/usr/share/zsh/plugins"
+fi
 
 _try_install_plugin() {
   if [ -f "$ZSH_PLUGIN_DIR/$1/$1.zsh" ]

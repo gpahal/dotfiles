@@ -8,12 +8,12 @@ srczshif() {
     [ -f "$ZSH_DIR/$1" ] && source "$ZSH_DIR/$1"
 }
 
-srczshif basic-settings.zsh
+srczshif basic_settings.zsh
 srczshif functions.zsh
 srczshif aliases.zsh
 srczshif options.zsh
 srczshif history.zsh
-srczshif key-bindings.zsh
+srczshif key_bindings.zsh
 srczshif completions.zsh
 srczshif title.zsh
 srczshif hooks.zsh

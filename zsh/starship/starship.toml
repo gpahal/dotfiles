@@ -11,8 +11,6 @@ error_symbol = "[➜](bold red)"
 min_time = 10_000
 
 [memory_usage]
-show_percentage = true
-show_swap = true
 threshold = 80
 style = "bold dimmed white"
 disabled = false

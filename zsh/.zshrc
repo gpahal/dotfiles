@@ -1,6 +1,10 @@
 # Use powerline
 USE_POWERLINE="true"
 
+if [[ `uname` == "Darwin" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
 eval "$(starship init zsh)"
 
 # Load main.zsh

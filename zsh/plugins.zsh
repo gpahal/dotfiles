@@ -44,4 +44,11 @@ elif [ -f "/usr/share/fzf/key-bindings.zsh" ]
 then
     source "/usr/share/fzf/key-bindings.zsh"
     srcif "/usr/share/fzf/completion.zsh"
+elif [ -f "/opt/homebrew/opt/fzf/shell/key-bindings.zsh" ]
+then
+    if [[ ! "$PATH" == */opt/homebrew/opt/fzf/bin* ]]; then
+        export PATH="${PATH:+${PATH}:}/opt/homebrew/opt/fzf/bin"
+    fi
+    source "/opt/homebrew/opt/fzf/shell/key-bindings.zsh"
+    srcif "/opt/homebrew/opt/fzf/shell/completion.zsh"
 fi

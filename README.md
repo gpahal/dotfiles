@@ -34,7 +34,7 @@ chsh -s $(which zsh)
 
 ```sh
 mkdir -p ~/.config
-cp zsh/config/* ~/.config/
+cp -r zsh/config/* ~/.config/
 ```
 
 - Copy zsh files

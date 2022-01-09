@@ -19,11 +19,11 @@ function _history {
 
 # Timestamp format
 case ${HIST_STAMPS-} in
-  "mm/dd/yyyy") alias history='_history -f' ;;
-  "dd.mm.yyyy") alias history='_history -E' ;;
-  "yyyy-mm-dd") alias history='_history -i' ;;
-  "") alias history='_history' ;;
-  *) alias history="_history -t '$HIST_STAMPS'" ;;
+    "mm/dd/yyyy") alias history='_history -f' ;;
+    "dd.mm.yyyy") alias history='_history -E' ;;
+    "yyyy-mm-dd") alias history='_history -i' ;;
+    "") alias history='_history' ;;
+    *) alias history="_history -t '$HIST_STAMPS'" ;;
 esac
 
 ## History file configuration

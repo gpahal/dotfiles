@@ -1,23 +1,23 @@
 export ZSH_PLUGIN_DIR="$ZSH_DIR/plugins"
 
 if isdarwin; then
-  export ZSH_GLOBAL_PLUGIN_DIR="/opt/homebrew/share"
+    export ZSH_GLOBAL_PLUGIN_DIR="/opt/homebrew/share"
 else
-  export ZSH_GLOBAL_PLUGIN_DIR="/usr/share/zsh/plugins"
+    export ZSH_GLOBAL_PLUGIN_DIR="/usr/share/zsh/plugins"
 fi
 
 _try_install_plugin() {
-  if [ -f "$ZSH_PLUGIN_DIR/$1/$1.zsh" ]
-  then
-    source "$ZSH_PLUGIN_DIR/$1/$1.zsh"
-    return 0
-  elif [ -f "$ZSH_GLOBAL_PLUGIN_DIR/$1/$1.zsh" ]
-  then
-    source "$ZSH_GLOBAL_PLUGIN_DIR/$1/$1.zsh"
-    return 0
-  else
-    return 1
-  fi
+    if [ -f "$ZSH_PLUGIN_DIR/$1/$1.zsh" ]
+    then
+        source "$ZSH_PLUGIN_DIR/$1/$1.zsh"
+        return 0
+    elif [ -f "$ZSH_GLOBAL_PLUGIN_DIR/$1/$1.zsh" ]
+    then
+        source "$ZSH_GLOBAL_PLUGIN_DIR/$1/$1.zsh"
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Use syntax highlighting

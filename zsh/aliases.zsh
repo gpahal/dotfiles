@@ -1,10 +1,19 @@
 alias zshrc="$EDITOR $HOME/.zshrc"
 alias src="source $HOME/.zshrc"
 
-alias ls="ls --color=auto"
-alias ll="ls -alF"
-alias la="ls -A"
-alias l="ls -CF"
+if hash exa; then
+  alias ls="exa"
+  alias l="exa -F"
+  alias la="exa -aF"
+  alias ll="exa -lF"
+  alias lla="exa -alF"
+else
+  alias ls="ls --color=auto"
+  alias l="ls --color=auto -F"
+  alias la="ls --color=auto -AF"
+  alias ll="ls --color=auto -lF"
+  alias lla="ls --color=auto -AlF"
+fi
 
 alias /="cd /"
 alias ~="cd $HOME"

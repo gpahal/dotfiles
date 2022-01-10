@@ -2,17 +2,17 @@ alias zshrc="$EDITOR $HOME/.zshrc"
 alias src="source $HOME/.zshrc"
 
 if hash exa; then
-  alias ls="exa"
-  alias l="exa -F"
-  alias la="exa -aF"
-  alias ll="exa -lF"
-  alias lla="exa -alF"
+    alias ls="exa"
+    alias l="exa -F"
+    alias la="exa -aF"
+    alias ll="exa -lF"
+    alias lla="exa -alF"
 else
-  alias ls="ls --color=auto"
-  alias l="ls --color=auto -F"
-  alias la="ls --color=auto -AF"
-  alias ll="ls --color=auto -lF"
-  alias lla="ls --color=auto -AlF"
+    alias ls="ls --color=auto"
+    alias l="ls --color=auto -F"
+    alias la="ls --color=auto -AF"
+    alias ll="ls --color=auto -lF"
+    alias lla="ls --color=auto -AlF"
 fi
 
 alias /="cd /"
@@ -54,3 +54,14 @@ alias free="free -m"
 alias public-ip="curl -Ss icanhazip.com"
 alias public-ip4="curl -Ss4 icanhazip.com/v4"
 alias public-ip6="curl -Ss6 icanhazip.com/v6"
+
+if hash bat; then
+    alias cat="bat"
+    alias findp="find -exec bat {} +"
+    alias fdp="fd -X bat"
+    alias fzfp="fzf --preview 'bat --style=numbers --color=always --line-range :500 {}'"
+else
+    alias findp="find -exec cat {} +"
+    alias fdp="fd -X cat"
+    alias fzfp="fzf --preview 'cat {}'"
+fi

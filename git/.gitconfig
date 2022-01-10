@@ -5,6 +5,22 @@ email = g10pahal@gmail.com
 [init]
 defaultBranch = main
 
+[core]
+pager = delta
+
+[interactive]
+diffFilter = delta --color-only
+
+[delta]
+navigate = true
+line-numbers = true
+
+[merge]
+conflictstyle = diff3
+
+[diff]
+colorMoved = default
+
 [alias]
 s = status
 co = checkout

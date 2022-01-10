@@ -57,3 +57,7 @@ then
     source "/opt/homebrew/opt/fzf/shell/key-bindings.zsh"
     srcif "/opt/homebrew/opt/fzf/shell/completion.zsh"
 fi
+
+if hash fd; then
+    export FZF_DEFAULT_COMMAND="fd --type f --hidden --exclude .git"
+fi

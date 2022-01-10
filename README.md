@@ -71,7 +71,14 @@ cp vim/.vimrc ~/.vimrc
 - [fd](https://github.com/sharkdp/fd): a simple, fast and user-friendly alternative to 'find'
 - [fasd](https://github.com/clvv/fasd): a command-line productivity booster
 - [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
+- [bat-extras](https://github.com/eth-p/bat-extras): a collection of modern/faster/saner alternatives to common unix commands
+- [delta](https://github.com/dandavison/delta): a syntax-highlighting pager for git, diff, and grep output
 - [broot](https://github.com/Canop/broot): a new way to navigate directory trees
+- [dust](https://github.com/bootandy/dust): a more intuitive version of du in rust
+- [duf](https://github.com/muesli/duf): a disk usage/free utility - a better 'df' alternative
+- [procs](https://github.com/dalance/procs): a modern replacement for ps written in Rust
+- [httpie](https://github.com/httpie/httpie): a modern, user-friendly command-line HTTP client for the API era
+- [dog](https://github.com/ogham/dog): a command-line DNS client
 
 ## Configuation
 

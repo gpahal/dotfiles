@@ -12,7 +12,7 @@ A set of configuration files to setup my system. These should work on Linux and 
 - Copy config files:
 
 ```sh
-cp git/.gitconfig ~/.gitconfig
+cp git/gitconfig ~/.gitconfig
 ```
 
 ### zsh
@@ -57,7 +57,7 @@ source $HOME/.zsh/main.zsh
 - Copy config files:
 
 ```sh
-cp vim/.vimrc ~/.vimrc
+cp vim/vimrc ~/.vimrc
 ```
 
 - When a new file is opened for the first time after updating `~/.vimrc`,

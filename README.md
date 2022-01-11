@@ -65,6 +65,8 @@ cp vim/vimrc ~/.vimrc
 
 ## Useful applications
 
+### Command line
+
 - [tmux](https://github.com/tmux/tmux): a terminal multiplexer
 - [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex
   pattern
@@ -80,9 +82,15 @@ cp vim/vimrc ~/.vimrc
 - [httpie](https://github.com/httpie/httpie): a modern, user-friendly command-line HTTP client for the API era
 - [dog](https://github.com/ogham/dog): a command-line DNS client
 
-## Configuation
+### Graphical
 
-### Appearance
+- [mpv](https://mpv.io/): a free, open source, and cross-platform media player
+
+### MacOS specific
+
+- [Alfred](https://www.alfredapp.com/): an app that boosts your efficiency with hotkeys, keywords, text expansion and more
+
+## Configuation
 
 - Display fonts - [Noto Fonts](https://www.google.com/get/noto/)
 - Monospace fonts - [Nerd Fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
@@ -92,7 +100,7 @@ cp vim/vimrc ~/.vimrc
   - [Gnome terminal](https://github.com/denysdovhan/one-gnome-terminal)
 - [Wallpaper - A Journey](https://www.deviantart.com/asthi21/art/A-Journey-873092128)
 
-### Manjaro
+### Manjaro specific
 
 - [Arc theme](https://github.com/horst3180/Arc-theme)
 - [yay](https://github.com/Jguer/yay)

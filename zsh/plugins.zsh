@@ -60,6 +60,6 @@ then
     srcif "/opt/homebrew/opt/fzf/shell/completion.zsh"
 fi
 
-if hash fd; then
+if command -v fd 2>&1 >/dev/null; then
     export FZF_DEFAULT_COMMAND="fd --type f --hidden --exclude .git"
 fi

@@ -1,7 +1,7 @@
 alias zshrc="$EDITOR $HOME/.zshrc"
 alias src="source $HOME/.zshrc"
 
-if hash eza; then
+if command -v eza 2>&1 >/dev/null; then
     alias ls="eza"
     alias l="eza -F"
     alias la="eza -aF"
@@ -32,15 +32,15 @@ upgrade() {
         yay -Syu
     fi
 
-    if hash npm; then
+    if command -v npm 2>&1 >/dev/null; then
         npm update -g
     fi
 
-    if hash pipx; then
+    if command -v pipx 2>&1 >/dev/null; then
         pipx upgrade-all
     fi
     
-    if hash rustup; then
+    if command -v rustup 2>&1 >/dev/null; then
         rustup update
     fi
 }
@@ -75,7 +75,7 @@ alias public-ip="curl -Ss icanhazip.com"
 alias public-ip4="curl -Ss4 icanhazip.com/v4"
 alias public-ip6="curl -Ss6 icanhazip.com/v6"
 
-if hash bat; then
+if command -v bat 2>&1 >/dev/null; then
     alias cat="bat"
     alias findp="find -exec bat {} +"
     alias fdp="fd -X bat"

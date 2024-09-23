@@ -24,14 +24,15 @@ USE_POWERLINE="true"
 
 eval "$(starship init zsh)"
 
-srczshif basic_settings.zsh
+srczshif basic-settings.zsh
 srczshif functions.zsh
 srczshif aliases.zsh
 srczshif options.zsh
 srczshif history.zsh
-srczshif key_bindings.zsh
+srczshif key-bindings.zsh
 srczshif completions.zsh
 srczshif title.zsh
 srczshif hooks.zsh
 srczshif reminders.zsh
 srczshif plugins.zsh
+srczshif command-not-found.zsh

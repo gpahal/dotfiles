@@ -1,0 +1,9 @@
+{
+    "window.commandCenter": 1,
+    "workbench.colorTheme": "Visual Studio Dark",
+    "workbench.preferredLightColorTheme": "Visual Studio Light",
+    "workbench.preferredDarkColorTheme": "Visual Studio Dark",
+    "window.autoDetectColorScheme": true,
+    "editor.fontFamily": "'Monaspace Neon', Menlo, Monaco, 'Courier New', monospace",
+    "workbench.iconTheme": "vscode-icons"
+}

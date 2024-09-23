@@ -41,6 +41,8 @@ then
     bindkey '^[[B' history-substring-search-down
 fi
 
+source <(fzf --zsh)
+
 if [ -f "$ZSH_PLUGIN_DIR/fzf/key-bindings.zsh" ]
 then
     source "$ZSH_PLUGIN_DIR/fzf/key-bindings.zsh"

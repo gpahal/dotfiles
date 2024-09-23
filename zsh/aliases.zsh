@@ -1,12 +1,12 @@
 alias zshrc="$EDITOR $HOME/.zshrc"
 alias src="source $HOME/.zshrc"
 
-if hash exa; then
-    alias ls="exa"
-    alias l="exa -F"
-    alias la="exa -aF"
-    alias ll="exa -lF"
-    alias lla="exa -alF"
+if hash eza; then
+    alias ls="eza"
+    alias l="eza -F"
+    alias la="eza -aF"
+    alias ll="eza -lF"
+    alias lla="eza -alF"
 else
     alias ls="ls --color=auto"
     alias l="ls --color=auto -F"

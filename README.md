@@ -1,36 +1,96 @@
 # dotfiles
 
-A set of configuration files to setup my system. These should work on Linux and MacOS.
+A set of configuration files to setup my MacOS system. These should work on Linu MacOS.
 
 ![zsh prompt](./resources/prompt.png)
 
-## Installation
+## Table of contents
 
-### git
+- [Homebrew](#homebrew)
+- [Fonts](#fonts)
+- [git](#git)
+- [vim](#vim)
+- [zsh](#zsh)
+- [Cursor](#cursor)
+- [Miscellaneous tasks](#miscellaneous-tasks)
+
+## Homebrew
+
+```sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+## Fonts
+
+- [Monaspace](https://monaspace.githubnext.com/)
+
+```sh
+brew install font-monaspace
+```
+
+## git
 
 - Install [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) (might be pre-installed)
-- Copy config files:
+- Copy config files
 
 ```sh
 cp git/gitconfig ~/.gitconfig
 ```
 
-### zsh
+## vim
 
-- Install the following:
+- Install [vim](https://www.vim.org/) (might be pre-installed)
+- Copy config files
+
+```sh
+cp vim/vimrc ~/.vimrc
+```
+
+- When a new file is opened for the first time after updating `~/.vimrc`,
+  [vim-plug](https://github.com/junegunn/vim-plug) is installed for managing vim plugins.
+
+## Essentials
+
+- [Arc Browser](https://arc.net/)
+- [iTerm2](https://iterm2.com/)
+- [Notion Calendar](https://www.notion.so/product/calendar)
+- [Raycast](https://www.raycast.com/)
+- [Logi Options+](https://www.logitech.com/en-in/software/logi-options-plus.html)
+- [command-not-found](https://github.com/Homebrew/homebrew-command-not-found)
+- [fzf](https://github.com/junegunn/fzf)
+- [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex
+  pattern
+- [fd](https://github.com/sharkdp/fd): a simple, fast and user-friendly alternative to 'find'
+- [delta](https://github.com/dandavison/delta): a syntax-highlighting pager for git, diff, and grep output
+- [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
+- [bat-extras](https://github.com/eth-p/bat-extras): a collection of modern/faster/saner alternatives to common unix commands
+- [broot](https://github.com/Canop/broot): a new way to navigate directory trees
+- [dust](https://github.com/bootandy/dust): a more intuitive version of du in rust
+- [duf](https://github.com/muesli/duf): a disk usage/free utility - a better 'df' alternative
+- [procs](https://github.com/dalance/procs): a modern replacement for ps written in Rust
+- [httpie](https://github.com/httpie/httpie): a modern, user-friendly command-line HTTP client for the API era
+- [dog](https://github.com/ogham/dog): a command-line DNS client
+
+## zsh
+
+- Install the following
   - [zsh](https://github.com/robbyrussell/oh-my-zsh/wiki/Installing-ZSH)
-  - [nerd-fonts](https://www.nerdfonts.com/)
   - [starship](https://starship.rs/)
   - [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting/blob/master/INSTALL.md#oh-my-zsh)
   - [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions/blob/master/INSTALL.md#oh-my-zsh)
-  - [fzf](https://github.com/junegunn/fzf)
-- Set zsh as your login shell:
+  - [Raycast Light Theme](https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/master/schemes/Raycast_Light.itermcolors)
+  - [Raycast Dark Theme](https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/master/schemes/Raycast_Dark.itermcolors)
+
+- Change font in profile to Monaspace
+- Change light theme to Raycast Light
+- Change dark theme to Raycast Dark
+- Set zsh as your login shell
 
 ```sh
 chsh -s $(which zsh)
 ```
 
-- Copy config files:
+- Copy config files
 
 ```sh
 mkdir -p ~/.config
@@ -47,72 +107,46 @@ cp -r zsh/*.zsh ~/.zsh/
 - Add this line at the top of `~/.zshrc`
 
 ```sh
-# Load main.zsh
 source $HOME/.zsh/main.zsh
 ```
 
-### vim
-
-- Install [vim](https://www.vim.org/) (might be pre-installed)
-- Copy config files:
+- Source zshrc
 
 ```sh
-cp vim/vimrc ~/.vimrc
+source ~/.zshrc
 ```
 
-- When a new file is opened for the first time after updating `~/.vimrc`,
-  [vim-plug](https://github.com/junegunn/vim-plug) is installed for managing vim plugins.
+## Cursor
 
-## Useful applications
+- Install [Cursor](https://cursor.sh/)
+- Install extensions
 
-### Command line
+```sh
+bash cursor/install-extensions.sh
+```
 
-- [tmux](https://github.com/tmux/tmux): a terminal multiplexer
-- [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex
-  pattern
-- [fd](https://github.com/sharkdp/fd): a simple, fast and user-friendly alternative to 'find'
-- [fasd](https://github.com/clvv/fasd): a command-line productivity booster
-- [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
-- [bat-extras](https://github.com/eth-p/bat-extras): a collection of modern/faster/saner alternatives to common unix commands
-- [delta](https://github.com/dandavison/delta): a syntax-highlighting pager for git, diff, and grep output
-- [broot](https://github.com/Canop/broot): a new way to navigate directory trees
-- [dust](https://github.com/bootandy/dust): a more intuitive version of du in rust
-- [duf](https://github.com/muesli/duf): a disk usage/free utility - a better 'df' alternative
-- [procs](https://github.com/dalance/procs): a modern replacement for ps written in Rust
-- [httpie](https://github.com/httpie/httpie): a modern, user-friendly command-line HTTP client for the API era
-- [dog](https://github.com/ogham/dog): a command-line DNS client
+- Copy config files
 
-### Graphical
+```sh
+cp cursor/settings.json ~/Library/Application\ Support/Cursor/settings.json
+```
 
-- [mpv](https://mpv.io/): a free, open source, and cross-platform media player
+### Maintenance
 
-### MacOS specific
+- Update `cursor/install-extensions.sh`
 
-- [Alfred](https://www.alfredapp.com/): an app that boosts your efficiency with hotkeys, keywords, text expansion and more
+```sh
+cursor --list-extensions | xargs -L 1 echo cursor --install-extension > cursor/install-extensions.sh
+```
 
-## Configuation
+- Update `cursor/settings.json`
 
-- Display fonts - [Noto Fonts](https://www.google.com/get/noto/)
-- Monospace fonts - [Nerd Fonts](https://www.nerdfonts.com/) - FiraMono Nerd Font
-- One dark theme
-  - [JetBrains](https://plugins.jetbrains.com/plugin/11938-one-dark-theme)
-  - [VS Code](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme)
-  - [Gnome terminal](https://github.com/denysdovhan/one-gnome-terminal)
-- [Wallpaper - A Journey](https://www.deviantart.com/asthi21/art/A-Journey-873092128)
+```sh
+cp ~/Library/Application\ Support/Cursor/User/settings.json cursor/settings.json
+```
 
-### Manjaro specific
+## Miscellaneous tasks
 
-- [Arc theme](https://github.com/horst3180/Arc-theme)
-- [yay](https://github.com/Jguer/yay)
-
-## Notes
-
-### Manjaro
-
-- By default the display has night light mode set to very warm colors
-- [Improve font rendering](https://wiki.manjaro.org/index.php/Improve_Font_Rendering)
-- Fix dns name servers for better browsing -
-  [Cloudflare DNS](https://developers.cloudflare.com/1.1.1.1/setting-up-1.1.1.1/linux)
-- Setting up the system first time
-  - https://itsfoss.com/things-to-do-after-installing-manjaro/
-  - https://averagelinuxuser.com/10-things-to-do-after-installing-manjaro/
+- Set Arc as the default browser
+- Set Notion Calendar as the default calendar. Turn on notifications
+- Bind Raycast to `Cmd+Space` instead of Spotlight

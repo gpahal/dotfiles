@@ -25,13 +25,33 @@ alias .....="cd ../../../.."
 alias bounce-swap="sudo swapoff -a && sleep 10 && sudo swapon -a"
 alias quit="exit"
 
+upgrade() {
+    if isdarwin; then
+        brew update && brew upgrade
+    else
+        yay -Syu
+    fi
+
+    if hash npm; then
+        npm update -g
+    fi
+
+    if hash pipx; then
+        pipx upgrade-all
+    fi
+    
+    if hash rustup; then
+        rustup update
+    fi
+}
+
 if isdarwin; then
+    alias install="brew install"
+    alias uninstall="brew uninstall"
     alias update="brew update"
-    alias upgrade="brew update && brew upgrade"
     alias cleanup="brew cleanup"
     alias update-osx="sudo softwareupdate -ia"
 else
-    alias upgrade="yay -Syu"
     alias install="yay -S"
     alias uninstall="yay -Rs"
     alias outdated="pacman -Qtd"

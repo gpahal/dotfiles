@@ -6,7 +6,7 @@ export EDITOR="vim"
 export VISUAL="vim"
 
 # Update $PATH
-export PATH="$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 
 # Manually set your language environment
 export LANG="en_US.UTF-8"

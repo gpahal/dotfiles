@@ -53,9 +53,12 @@ cp vim/vimrc ~/.vimrc
 
 - [Arc Browser](https://arc.net/)
 - [iTerm2](https://iterm2.com/)
+- [AppCleaner](https://freemacsoft.net/appcleaner/)
 - [Notion Calendar](https://www.notion.so/product/calendar)
 - [Raycast](https://www.raycast.com/)
 - [Logi Options+](https://www.logitech.com/en-in/software/logi-options-plus.html)
+- [Rectangle](https://rectangleapp.com/)
+- [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12)
 - [command-not-found](https://github.com/Homebrew/homebrew-command-not-found)
 - [fzf](https://github.com/junegunn/fzf)
 - [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex

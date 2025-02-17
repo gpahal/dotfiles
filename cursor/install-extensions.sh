@@ -1,5 +1,6 @@
 cursor --install-extension astro-build.astro-vscode
 cursor --install-extension bradlc.vscode-tailwindcss
+cursor --install-extension charliermarsh.ruff
 cursor --install-extension davidanson.vscode-markdownlint
 cursor --install-extension dbaeumer.vscode-eslint
 cursor --install-extension eamodio.gitlens

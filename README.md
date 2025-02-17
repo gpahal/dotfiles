@@ -51,7 +51,7 @@ cp vim/vimrc ~/.vimrc
 
 ## Essentials
 
-- [Arc Browser](https://arc.net/)
+- [Google Chrome](https://www.google.com/intl/en_in/chrome/)
 - [iTerm2](https://iterm2.com/)
 - [AppCleaner](https://freemacsoft.net/appcleaner/)
 - [Notion Calendar](https://www.notion.so/product/calendar)
@@ -81,12 +81,10 @@ cp vim/vimrc ~/.vimrc
   - [starship](https://starship.rs/)
   - [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting/blob/master/INSTALL.md#oh-my-zsh)
   - [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions/blob/master/INSTALL.md#oh-my-zsh)
-  - [Raycast Light Theme](https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/master/schemes/Raycast_Light.itermcolors)
-  - [Raycast Dark Theme](https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/master/schemes/Raycast_Dark.itermcolors)
 
 - Change font in profile to Monaspace
-- Change light theme to Raycast Light
-- Change dark theme to Raycast Dark
+- Change light theme to `iterm2/light.itermcolors`
+- Change dark theme to `iterm2/dark.itermcolors`
 - Set zsh as your login shell
 
 ```sh
@@ -150,6 +148,6 @@ cp ~/Library/Application\ Support/Cursor/User/settings.json cursor/settings.json
 
 ## Miscellaneous tasks
 
-- Set Arc as the default browser
+- Set Google Chrome as the default browser
 - Set Notion Calendar as the default calendar. Turn on notifications
 - Bind Raycast to `Cmd+Space` instead of Spotlight

@@ -23,6 +23,9 @@ FORMULAE=(
     zsh
     starship
 
+    # Terminal multiplexer
+    tmux
+
     # Search and navigation
     fzf
     ripgrep

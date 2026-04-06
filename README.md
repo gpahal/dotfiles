@@ -68,6 +68,9 @@ The setup script automatically:
 
 ### CLI tools (installed via brew)
 
+**Terminal multiplexer:**
+- [tmux](https://github.com/tmux/tmux) — terminal multiplexer
+
 **Search and navigation:**
 - [fzf](https://github.com/junegunn/fzf) — fuzzy finder
 - [ripgrep](https://github.com/BurntSushi/ripgrep) — fast regex search

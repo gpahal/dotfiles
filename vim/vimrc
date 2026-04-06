@@ -5,42 +5,145 @@ if empty(glob('~/.vim/autoload/plug.vim'))
 endif
 
 call plug#begin('~/.vim/plugged')
+" Sensible defaults
 Plug 'tpope/vim-sensible'
-Plug 'scrooloose/nerdtree', { 'on':  'NERDTreeToggle' }
-Plug 'Xuyuanp/nerdtree-git-plugin', { 'on':  'NERDTreeToggle' }
-Plug 'junegunn/fzf', { 'dir': '~/.fzf', 'do': './install --all' }
+
+" File navigation
+Plug 'scrooloose/nerdtree', { 'on': 'NERDTreeToggle' }
+Plug 'Xuyuanp/nerdtree-git-plugin', { 'on': 'NERDTreeToggle' }
+
+" Fuzzy finder (use brew-installed fzf)
+set rtp+=/opt/homebrew/opt/fzf
 Plug 'junegunn/fzf.vim'
+
+" Git
 Plug 'airblade/vim-gitgutter'
+Plug 'tpope/vim-fugitive'
+
+" Editing essentials
+Plug 'tpope/vim-commentary'
+Plug 'tpope/vim-surround'
+Plug 'tpope/vim-repeat'
+Plug 'jiangmiao/auto-pairs'
+Plug 'andymass/vim-matchup'
+
+" Status line
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
+
+" Language support
+Plug 'sheerun/vim-polyglot'
 Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
 Plug 'rust-lang/rust.vim'
+
+" Editorconfig
+Plug 'editorconfig/editorconfig-vim'
 call plug#end()
 
-" nerdtree plugin
-map <C-o> :NERDTreeToggle<CR>
+" ── Leader key ──
+let mapleader = " "
 
-" fzf plugin
-map <C-f> :FZF<CR>
+" ── General ──
+set encoding=utf-8
+set hidden
+set updatetime=250
+set timeoutlen=500
+set mouse=a
+set clipboard=unnamed
 
-" airline plugin
-let g:airline_theme='papercolor'
+" ── UI ──
+set number
+set relativenumber
+set signcolumn=yes
+set scrolloff=8
+set sidescrolloff=8
+set colorcolumn=120
+set termguicolors
+set showcmd
+set cursorline
+set showmatch
+set laststatus=2
+set wildmenu
+set wildmode=longest:full,full
 
-" indentation settings
+" ── Search ──
+set hlsearch
+set ignorecase
+set smartcase
+
+" ── Indentation ──
 set expandtab
 set shiftwidth=4
 set tabstop=4
 set softtabstop=4
+set smartindent
+set autoindent
+filetype plugin indent on
 
-" ui settings
-set showcmd
-set cursorline
+" ── Performance ──
+set lazyredraw
+set ttyfast
 
-" search settings
-set hlsearch
+" ── File handling ──
+set noswapfile
+set nobackup
+set undofile
+set undodir=~/.vim/undodir
 
-" sound settings
+" ── Splits ──
+set splitbelow
+set splitright
+
+" ── Sound ──
 set noerrorbells visualbell t_vb=
 if has('autocmd')
   autocmd GUIEnter * set visualbell t_vb=
 endif
+
+" ── Plugin config ──
+let g:airline_theme='papercolor'
+
+" ── Key mappings ──
+
+" Quick save and quit
+nnoremap <leader>w :w<CR>
+nnoremap <leader>q :q<CR>
+
+" Clear search highlighting
+nnoremap <leader>h :nohlsearch<CR>
+
+" Window navigation
+nnoremap <C-h> <C-w>h
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+nnoremap <C-l> <C-w>l
+
+" Move lines in visual mode
+vnoremap J :m '>+1<CR>gv=gv
+vnoremap K :m '<-2<CR>gv=gv
+
+" Keep cursor centered when scrolling
+nnoremap <C-d> <C-d>zz
+nnoremap <C-u> <C-u>zz
+
+" Keep cursor centered when searching
+nnoremap n nzzzv
+nnoremap N Nzzzv
+
+" Don't lose selection when indenting
+vnoremap < <gv
+vnoremap > >gv
+
+" NERDTree
+map <C-o> :NERDTreeToggle<CR>
+
+" fzf
+nnoremap <leader>f :Files<CR>
+nnoremap <leader>g :Rg<CR>
+nnoremap <leader>b :Buffers<CR>
+nnoremap <C-f> :FZF<CR>
+
+" Fugitive
+nnoremap <leader>gs :Git<CR>
+nnoremap <leader>gd :Gdiff<CR>
+nnoremap <leader>gb :Git blame<CR>

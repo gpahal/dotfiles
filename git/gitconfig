@@ -11,30 +11,86 @@
 [interactive]
     diffFilter = delta --color-only
 
-[delta]
-    navigate = true
-    line-numbers = true
+[push]
+    autoSetupRemote = true
+    followTags = true
+
+[pull]
+    rebase = true
+
+[fetch]
+    prune = true
+    pruneTags = true
+    parallel = 0
+
+[rebase]
+    autoStash = true
+    autoSquash = true
+
+[rerere]
+    enabled = true
 
 [merge]
-    conflictstyle = diff3
+    conflictstyle = zdiff3
 
 [diff]
     colorMoved = default
+    algorithm = histogram
+
+[column]
+    ui = auto
+
+[branch]
+    sort = -committerdate
+
+[tag]
+    sort = -version:refname
+
+[help]
+    autocorrect = 15
+
+[delta]
+    navigate = true
+    line-numbers = true
+    syntax-theme = Dracula
+    file-style = bold yellow ul
+    file-decoration-style = none
+    hunk-header-decoration-style = cyan box ul
+    line-numbers-left-style = cyan
+    line-numbers-right-style = cyan
+    line-numbers-minus-style = 124
+    line-numbers-plus-style = 28
 
 [alias]
-    s = status
+    s = status -sb
+    d = diff
+    ds = diff --staged
     co = checkout
     cob = !git checkout $(git branch | fzf --reverse)
     cobr = !git checkout $(git branch --remote | fzf --reverse)
-    del = checkout -D
+    del = branch -D
     br = branch --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(contents:subject) %(color:green)(%(committerdate:relative)) [%(authorname)]' --sort=-committerdate
     aa = add -A .
     cm = commit -m
     cp = cherry-pick
     amend = commit --amend -m
+    oops = commit --amend --no-edit
     unstage = reset HEAD
-    undo = reset --soft --keep HEAD^
+    undo = reset --soft HEAD~1
     reseth = reset --hard
-    lg = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30
+    fixup = "!f() { git commit --fixup=${1:-HEAD}; }; f"
+    rib = "!f() { git rebase -i HEAD~${1:-5}; }; f"
+    last = log -1 --stat
+    lg = !git log --graph --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30
+    lga = !git log --graph --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit --all
     ll = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30 --numstat
     standup = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s\" --since='`date -v-1d \"+%Y-%m-%d 00:00:00\"`' --until='`date \"+%Y-%m-%d 00:00:00\"`' --all --author=\"`git config --get user.name`\" --abbrev-commit -30
+    find = "!f() { git log --pretty=format:'%C(magenta)%h%Creset %s %C(green)(%cr)' --all --grep=\"$1\"; }; f"
+    stats = shortlog -sn --all --no-merges
+    pushf = push --force-with-lease
+    cleanup = "!git branch --merged | grep -v '\\*\\|main\\|master\\|develop' | xargs -n 1 git branch -d"
+    wdiff = diff --word-diff
+    praise = blame -w
+    sp = stash pop
+    sl = stash list
+    ss = stash show -p

@@ -30,36 +30,19 @@ then
     ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
 fi
 
-# Use history substring search
-if _try_install_plugin zsh-history-substring-search
-then
-    zmodload zsh/terminfo
-
-    bindkey "$terminfo[kcuu1]" history-substring-search-up
-    bindkey "$terminfo[kcud1]" history-substring-search-down
-    bindkey '^[[A' history-substring-search-up
-    bindkey '^[[B' history-substring-search-down
-fi
-
+# fzf integration
 source <(fzf --zsh)
-
-if [ -f "$ZSH_PLUGIN_DIR/fzf/key-bindings.zsh" ]
-then
-    source "$ZSH_PLUGIN_DIR/fzf/key-bindings.zsh"
-    srcif "$ZSH_PLUGIN_DIR/fzf/completion.zsh"
-elif [ -f "/usr/share/fzf/key-bindings.zsh" ]
-then
-    source "/usr/share/fzf/key-bindings.zsh"
-    srcif "/usr/share/fzf/completion.zsh"
-elif [ -f "/opt/homebrew/opt/fzf/shell/key-bindings.zsh" ]
-then
-    if [[ ! "$PATH" == */opt/homebrew/opt/fzf/bin* ]]; then
-        export PATH="${PATH:+${PATH}:}/opt/homebrew/opt/fzf/bin"
-    fi
-    source "/opt/homebrew/opt/fzf/shell/key-bindings.zsh"
-    srcif "/opt/homebrew/opt/fzf/shell/completion.zsh"
-fi
 
 if command -v fd 2>&1 >/dev/null; then
     export FZF_DEFAULT_COMMAND="fd --type f --hidden --exclude .git"
+fi
+
+# zoxide (smarter cd)
+if command -v zoxide 2>&1 >/dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+
+# atuin (better shell history)
+if command -v atuin 2>&1 >/dev/null; then
+    eval "$(atuin init zsh)"
 fi

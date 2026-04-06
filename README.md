@@ -1,153 +1,162 @@
 # dotfiles
 
-A set of configuration files to setup my MacOS system. These should work on Linu MacOS.
+A set of configuration files to setup my macOS system.
 
 ![zsh prompt](./resources/prompt.png)
 
 ## Table of contents
 
-- [Homebrew](#homebrew)
-- [Fonts](#fonts)
-- [git](#git)
-- [vim](#vim)
-- [zsh](#zsh)
-- [Cursor](#cursor)
-- [Miscellaneous tasks](#miscellaneous-tasks)
+- [Quick setup](#quick-setup)
+- [What's included](#whats-included)
+- [Manual steps](#manual-steps)
+- [Maintenance](#maintenance)
 
-## Homebrew
+## Quick setup
 
 ```sh
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+bash setup.sh
 ```
 
-## Fonts
+The setup script automatically:
 
-- [Monaspace](https://monaspace.githubnext.com/)
+- Installs [Homebrew](https://brew.sh/) if missing
+- Installs all CLI tools and casks via brew
+- Copies config files (git, vim, zsh, starship, Ghostty)
+- Sets up `~/.zshrc`
+- Sets zsh as the login shell
+- Configures macOS defaults (Finder, Dock, keyboard, screenshots)
+- Reloads Ghostty config
+
+## What's included
+
+### Fonts
+
+- [Monaspace](https://monaspace.githubnext.com/) — installed via `brew install --cask font-monaspace`
+
+### git
+
+- Config with [delta](https://github.com/dandavison/delta) pager (Dracula theme), modern defaults (`zdiff3`, `histogram` diffs, `rerere`, auto-prune, rebase on pull), and useful aliases
+- Copied to `~/.gitconfig`
+
+### vim
+
+- Config with [vim-plug](https://github.com/junegunn/vim-plug) and plugins:
+  - [NERDTree](https://github.com/preservim/nerdtree), [fzf.vim](https://github.com/junegunn/fzf.vim), [vim-gitgutter](https://github.com/airblade/vim-gitgutter), [vim-fugitive](https://github.com/tpope/vim-fugitive)
+  - [vim-commentary](https://github.com/tpope/vim-commentary), [vim-surround](https://github.com/tpope/vim-surround), [vim-repeat](https://github.com/tpope/vim-repeat), [auto-pairs](https://github.com/jiangmiao/auto-pairs)
+  - [vim-polyglot](https://github.com/sheerun/vim-polyglot), [vim-go](https://github.com/fatih/vim-go), [rust.vim](https://github.com/rust-lang/rust.vim)
+  - [vim-airline](https://github.com/vim-airline/vim-airline), [editorconfig-vim](https://github.com/editorconfig/editorconfig-vim)
+- Settings: relative line numbers, persistent undo, smart case search, space leader key
+- Copied to `~/.vimrc`
+- On first open, vim-plug auto-installs plugins
+
+### zsh
+
+- Modular config: aliases, completions, history, key-bindings, plugins, and more
+- [starship](https://starship.rs/) prompt
+- Plugins: [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting), [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [fzf](https://github.com/junegunn/fzf), [zoxide](https://github.com/ajeetdsouza/zoxide), [atuin](https://github.com/atuinsh/atuin)
+- Copied to `~/.zsh/` and `~/.config/`
+
+### Ghostty
+
+- [Ghostty](https://ghostty.org/) terminal with GitHub Dark theme and Monaspace font
+- Native tab bar, split pane keybindings, shell integration, copy-on-select
+- Config copied to `~/.config/ghostty/config`
+
+### Zed
+
+- [Zed](https://zed.dev/) editor — installed via `brew install --cask zed`
+
+### CLI tools (installed via brew)
+
+**Search and navigation:**
+- [fzf](https://github.com/junegunn/fzf) — fuzzy finder
+- [ripgrep](https://github.com/BurntSushi/ripgrep) — fast regex search
+- [fd](https://github.com/sharkdp/fd) — simple, fast alternative to find
+- [broot](https://github.com/Canop/broot) — interactive directory navigator
+- [zoxide](https://github.com/ajeetdsouza/zoxide) — smarter cd that learns your habits
+
+**Git tools:**
+- [delta](https://github.com/dandavison/delta) — syntax-highlighting pager for git
+- [lazygit](https://github.com/jesseduffield/lazygit) — terminal UI for git
+- [difftastic](https://github.com/Wilfred/difftastic) — structural diff that understands syntax
+
+**File viewing:**
+- [bat](https://github.com/sharkdp/bat) — cat clone with wings
+- [bat-extras](https://github.com/eth-p/bat-extras) — bat-powered scripts
+- [glow](https://github.com/charmbracelet/glow) — render Markdown in the terminal
+
+**System monitoring:**
+- [htop](https://htop.dev/) — interactive process viewer
+- [bottom](https://github.com/ClementTsang/bottom) — system monitor TUI (`btm`)
+
+**Disk and process tools:**
+- [dust](https://github.com/bootandy/dust) — intuitive du alternative
+- [duf](https://github.com/muesli/duf) — better df alternative
+- [procs](https://github.com/dalance/procs) — modern ps replacement
+
+**Modern replacements:**
+- [eza](https://github.com/eza-community/eza) — modern ls replacement
+- [sd](https://github.com/chmln/sd) — simpler sed alternative
+- [doggo](https://github.com/mr-karan/doggo) — modern DNS client
+
+**Data processing:**
+- [jq](https://github.com/jqlang/jq) — JSON processor
+- [yq](https://github.com/mikefarah/yq) — YAML/TOML/XML processor
+
+**Networking:**
+- [httpie](https://github.com/httpie/httpie) — user-friendly HTTP client
+
+**Development utilities:**
+- [tokei](https://github.com/XAMPPRocky/tokei) — code statistics
+- [hyperfine](https://github.com/sharkdp/hyperfine) — CLI benchmarking
+- [watchexec](https://github.com/watchexec/watchexec) — execute commands on file changes
+- [grex](https://github.com/pemistahl/grex) — generate regexes from examples
+- [just](https://github.com/casey/just) — modern command runner (Makefile alternative)
+
+**Help and docs:**
+- [tlrc](https://github.com/tldr-pages/tlrc) — simplified man pages with examples (tldr client)
+
+**Shell:**
+- [atuin](https://github.com/atuinsh/atuin) — better shell history with fuzzy search
+- [mise](https://github.com/jdx/mise) — version manager for dev tools (replaces nvm, pyenv, etc.)
+
+### Apps (installed via brew cask)
+
+- [Raycast](https://www.raycast.com/) — launcher and productivity tool
+- [Rectangle](https://rectangleapp.com/) — window management
+- [AppCleaner](https://freemacsoft.net/appcleaner/) — thorough app uninstaller
+- [The Unarchiver](https://theunarchiver.com/) — open any archive format
+
+### macOS defaults
+
+The setup script configures:
+
+- **Finder:** show hidden files, file extensions, path bar, status bar; list view; search current folder
+- **Keyboard:** fast key repeat rate, disable press-and-hold for accent characters
+- **Dock:** auto-hide with no delay, no recent apps
+- **Screenshots:** save to `~/Screenshots` as PNG
+- **Misc:** disable smart quotes/dashes, plain text TextEdit, show all processes in Activity Monitor
+
+## Manual steps
+
+These are not automated by the setup script:
+
+- Install [Google Chrome](https://www.google.com/intl/en_in/chrome/) and set as default browser
+- Install [Logi Options+](https://www.logitech.com/en-in/software/logi-options-plus.html)
+- Install [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704)
+- Open [Raycast](https://www.raycast.com/), grant permissions, and [bind to `Cmd+Space` instead of Spotlight](https://manual.raycast.com/hotkey)
+- Open [Rectangle](https://rectangleapp.com/), grant accessibility permissions, and configure preferred shortcuts
+- Open [AppCleaner](https://freemacsoft.net/appcleaner/) and enable SmartDelete in preferences
+- Add Google account to Calendar and Contacts apps
+
+## Maintenance
+
+Update config files from the system back to this repo:
 
 ```sh
-brew install font-monaspace
+cp ~/.gitconfig git/gitconfig
+cp ~/.vimrc vim/vimrc
+cp ~/.zsh/*.zsh zsh/
+cp ~/.config/starship.toml zsh/config/starship.toml
+cp ~/.config/ghostty/config ghostty/config
 ```
-
-## git
-
-- Install [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) (might be pre-installed)
-- Copy config files
-
-```sh
-cp git/gitconfig ~/.gitconfig
-```
-
-## vim
-
-- Install [vim](https://www.vim.org/) (might be pre-installed)
-- Copy config files
-
-```sh
-cp vim/vimrc ~/.vimrc
-```
-
-- When a new file is opened for the first time after updating `~/.vimrc`,
-  [vim-plug](https://github.com/junegunn/vim-plug) is installed for managing vim plugins.
-
-## Essentials
-
-- [Google Chrome](https://www.google.com/intl/en_in/chrome/)
-- [iTerm2](https://iterm2.com/)
-- [AppCleaner](https://freemacsoft.net/appcleaner/)
-- [Notion Calendar](https://www.notion.so/product/calendar)
-- [Raycast](https://www.raycast.com/)
-- [Logi Options+](https://www.logitech.com/en-in/software/logi-options-plus.html)
-- [Rectangle](https://rectangleapp.com/)
-- [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12)
-- [command-not-found](https://github.com/Homebrew/homebrew-command-not-found)
-- [fzf](https://github.com/junegunn/fzf)
-- [ripgrep](https://github.com/BurntSushi/ripgrep): recursively searches directories for a regex
-  pattern
-- [fd](https://github.com/sharkdp/fd): a simple, fast and user-friendly alternative to 'find'
-- [delta](https://github.com/dandavison/delta): a syntax-highlighting pager for git, diff, and grep output
-- [bat](https://github.com/sharkdp/bat): cat(1) clone with wings
-- [bat-extras](https://github.com/eth-p/bat-extras): a collection of modern/faster/saner alternatives to common unix commands
-- [broot](https://github.com/Canop/broot): a new way to navigate directory trees
-- [dust](https://github.com/bootandy/dust): a more intuitive version of du in rust
-- [duf](https://github.com/muesli/duf): a disk usage/free utility - a better 'df' alternative
-- [procs](https://github.com/dalance/procs): a modern replacement for ps written in Rust
-- [httpie](https://github.com/httpie/httpie): a modern, user-friendly command-line HTTP client for the API era
-- [dog](https://github.com/ogham/dog): a command-line DNS client
-
-## zsh
-
-- Install the following
-  - [zsh](https://github.com/robbyrussell/oh-my-zsh/wiki/Installing-ZSH)
-  - [starship](https://starship.rs/)
-  - [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting/blob/master/INSTALL.md#oh-my-zsh)
-  - [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions/blob/master/INSTALL.md#oh-my-zsh)
-
-- Change font in profile to Monaspace
-- Change light theme to `iterm2/light.itermcolors`
-- Change dark theme to `iterm2/dark.itermcolors`
-- Set zsh as your login shell
-
-```sh
-chsh -s $(which zsh)
-```
-
-- Copy config files
-
-```sh
-mkdir -p ~/.config
-cp -r zsh/config/* ~/.config/
-```
-
-- Copy zsh files
-
-```sh
-mkdir -p ~/.zsh
-cp -r zsh/*.zsh ~/.zsh/
-```
-
-- Add this line at the top of `~/.zshrc`
-
-```sh
-source $HOME/.zsh/main.zsh
-```
-
-- Source zshrc
-
-```sh
-source ~/.zshrc
-```
-
-## Cursor
-
-- Install [Cursor](https://cursor.sh/)
-- Install extensions
-
-```sh
-bash cursor/install-extensions.sh
-```
-
-- Copy config files
-
-```sh
-cp cursor/settings.json ~/Library/Application\ Support/Cursor/settings.json
-```
-
-### Maintenance
-
-- Update `cursor/install-extensions.sh`
-
-```sh
-cursor --list-extensions | xargs -L 1 echo cursor --install-extension > cursor/install-extensions.sh
-```
-
-- Update `cursor/settings.json`
-
-```sh
-cp ~/Library/Application\ Support/Cursor/User/settings.json cursor/settings.json
-```
-
-## Miscellaneous tasks
-
-- Set Google Chrome as the default browser
-- Set Notion Calendar as the default calendar. Turn on notifications
-- Bind Raycast to `Cmd+Space` instead of Spotlight

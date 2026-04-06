@@ -20,8 +20,6 @@ if isdarwin; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-USE_POWERLINE="true"
-
 eval "$(starship init zsh)"
 
 srczshif basic-settings.zsh

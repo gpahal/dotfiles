@@ -151,7 +151,7 @@ These are not automated by the setup script:
 - Open [Rectangle](https://rectangleapp.com/), grant accessibility permissions, and configure preferred shortcuts
 - Open [AppCleaner](https://freemacsoft.net/appcleaner/) and enable SmartDelete in preferences
 - Add Google account to Calendar and Contacts apps
-- Install [Itsycal](https://www.mowglii.com/itsycal/) — menubar calendar
+- Install [Dato](https://apps.apple.com/ph/app/dato/id1470584107) — menubar calendar
 
 ## Maintenance
 

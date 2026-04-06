@@ -152,6 +152,7 @@ These are not automated by the setup script:
 - Open [AppCleaner](https://freemacsoft.net/appcleaner/) and enable SmartDelete in preferences
 - Add Google account to Calendar and Contacts apps
 - Install [Dato](https://apps.apple.com/ph/app/dato/id1470584107) — menubar calendar
+- Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) — macOS system utilities
 
 ## Maintenance
 

@@ -12,7 +12,7 @@ macos-titlebar-style = tabs
 cursor-style = block
 cursor-style-blink = false
 
-# ��── Mouse ───
+# ─── Mouse ───
 mouse-hide-while-typing = true
 copy-on-select = clipboard
 
@@ -34,8 +34,8 @@ keybind = super+w=close_surface
 # Navigate splits
 keybind = super+alt+left=goto_split:left
 keybind = super+alt+right=goto_split:right
-keybind = super+alt+up=goto_split:top
-keybind = super+alt+down=goto_split:bottom
+keybind = super+alt+up=goto_split:up
+keybind = super+alt+down=goto_split:down
 
 # Resize splits
 keybind = super+ctrl+left=resize_split:left,20

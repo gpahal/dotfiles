@@ -154,6 +154,20 @@ rm -rf "$HOME/.config/ghostty"
 mkdir -p "$HOME/.config/ghostty"
 cp "$DOTFILES_DIR/ghostty/config" "$HOME/.config/ghostty/config"
 
+# ─── Copy tmux config ───
+echo "Copying tmux config..."
+rm -rf "$HOME/.config/tmux"
+mkdir -p "$HOME/.config/tmux"
+cp "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
+
+# ─── Install tmux plugin manager (tpm) ───
+if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
+    echo "Installing tmux plugin manager (tpm)..."
+    git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"
+else
+    echo "tpm already installed."
+fi
+
 # ─── Set zsh as login shell ───
 CURRENT_SHELL="$(basename "$SHELL")"
 if [ "$CURRENT_SHELL" != "zsh" ]; then
@@ -208,9 +222,6 @@ if [[ "$(uname)" == "Darwin" ]]; then
 
     # Dock: minimize to application icon
     defaults write com.apple.dock minimize-to-application -bool true
-
-    # Dock: don't show recent apps
-    defaults write com.apple.dock show-recents -bool false
 
     # Screenshots: save to ~/Screenshots as PNG
     mkdir -p "$HOME/Screenshots"

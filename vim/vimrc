@@ -20,6 +20,9 @@ Plug 'junegunn/fzf.vim'
 Plug 'airblade/vim-gitgutter'
 Plug 'tpope/vim-fugitive'
 
+" Tmux integration (seamless Ctrl+hjkl navigation between vim and tmux)
+Plug 'christoomey/vim-tmux-navigator'
+
 " Editing essentials
 Plug 'tpope/vim-commentary'
 Plug 'tpope/vim-surround'
@@ -112,11 +115,7 @@ nnoremap <leader>q :q<CR>
 " Clear search highlighting
 nnoremap <leader>h :nohlsearch<CR>
 
-" Window navigation
-nnoremap <C-h> <C-w>h
-nnoremap <C-j> <C-w>j
-nnoremap <C-k> <C-w>k
-nnoremap <C-l> <C-w>l
+" Window navigation (handled by vim-tmux-navigator via Ctrl+hjkl)
 
 " Move lines in visual mode
 vnoremap J :m '>+1<CR>gv=gv

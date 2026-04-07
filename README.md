@@ -21,7 +21,7 @@ The setup script automatically:
 
 - Installs [Homebrew](https://brew.sh/) if missing
 - Installs all CLI tools and casks via brew
-- Copies config files (git, vim, zsh, starship, Ghostty)
+- Copies config files (git, vim, zsh, starship, tmux, Ghostty)
 - Sets up `~/.zshrc`
 - Sets zsh as the login shell
 - Configures macOS defaults (Finder, Dock, keyboard, screenshots)
@@ -42,6 +42,7 @@ The setup script automatically:
 
 - Config with [vim-plug](https://github.com/junegunn/vim-plug) and plugins:
   - [NERDTree](https://github.com/preservim/nerdtree), [fzf.vim](https://github.com/junegunn/fzf.vim), [vim-gitgutter](https://github.com/airblade/vim-gitgutter), [vim-fugitive](https://github.com/tpope/vim-fugitive)
+  - [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator) — seamless Ctrl+hjkl between vim and tmux
   - [vim-commentary](https://github.com/tpope/vim-commentary), [vim-surround](https://github.com/tpope/vim-surround), [vim-repeat](https://github.com/tpope/vim-repeat), [auto-pairs](https://github.com/jiangmiao/auto-pairs)
   - [vim-polyglot](https://github.com/sheerun/vim-polyglot), [vim-go](https://github.com/fatih/vim-go), [rust.vim](https://github.com/rust-lang/rust.vim)
   - [vim-airline](https://github.com/vim-airline/vim-airline), [editorconfig-vim](https://github.com/editorconfig/editorconfig-vim)
@@ -66,10 +67,17 @@ The setup script automatically:
 
 - [Zed](https://zed.dev/) editor — installed via `brew install --cask zed`
 
-### CLI tools (installed via brew)
+### tmux
 
-**Terminal multiplexer:**
-- [tmux](https://github.com/tmux/tmux) — terminal multiplexer
+- [tmux](https://github.com/tmux/tmux) — terminal multiplexer with mouse support, vi copy mode, and Ghostty integration
+- Prefix key: `Ctrl+a` (instead of default `Ctrl+b`)
+- Intuitive splits: `prefix+|` (vertical), `prefix+-` (horizontal), opens in current path
+- Vim-style pane navigation (`prefix+hjkl`) and resizing (`prefix+HJKL`)
+- [tpm](https://github.com/tmux-plugins/tpm) plugin manager with: [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator), [tmux-yank](https://github.com/tmux-plugins/tmux-yank), [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect), [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum)
+- Config copied to `~/.config/tmux/tmux.conf`
+- After first tmux launch, press `prefix+I` to install plugins
+
+### CLI tools (installed via brew)
 
 **Search and navigation:**
 - [fzf](https://github.com/junegunn/fzf) — fuzzy finder
@@ -136,7 +144,7 @@ The setup script configures:
 
 - **Finder:** show hidden files, file extensions, path bar, status bar; list view; search current folder
 - **Keyboard:** fast key repeat rate, disable press-and-hold for accent characters
-- **Dock:** auto-hide with no delay, no recent apps
+- **Dock:** auto-hide with no delay
 - **Screenshots:** save to `~/Screenshots` as PNG
 - **Misc:** disable smart quotes/dashes, plain text TextEdit, show all processes in Activity Monitor
 
@@ -164,4 +172,5 @@ cp ~/.vimrc vim/vimrc
 cp ~/.zsh/*.zsh zsh/
 cp ~/.config/starship.toml zsh/config/starship.toml
 cp ~/.config/ghostty/config ghostty/config
+cp ~/.config/tmux/tmux.conf tmux/tmux.conf
 ```

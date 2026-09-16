@@ -31,6 +31,40 @@ alias .....="cd ../../../.."
 alias quit="exit"
 alias lg="lazygit"
 
+# Update AI tools that the package manager upgrades miss
+upgrade-ai-tools() {
+    # Claude Code native install (~/.local/share/claude) updates itself
+    if command -v claude &>/dev/null && [[ "${$(command -v claude):A}" == "$HOME/.local/share/claude/"* ]]; then
+        claude update
+    fi
+
+    # CLIs installed with npm: `npm update -g` stays within the installed semver range,
+    # which for 0.x versions (Codex) never reaches a new minor release
+    if command -v npm &>/dev/null; then
+        local pkg
+        for pkg in @openai/codex @anthropic-ai/claude-code; do
+            if npm ls -g --depth=0 "$pkg" &>/dev/null; then
+                npm install -g "$pkg@latest"
+            fi
+        done
+    fi
+
+    # Desktop apps installed with brew auto-update themselves, so `brew upgrade` skips them
+    # unless asked with --greedy. Replacing a running app breaks it, so skip running apps.
+    if isdarwin; then
+        local cask app
+        for cask app in claude Claude chatgpt ChatGPT; do
+            brew list --cask "$cask" &>/dev/null || continue
+            [[ -n "$(brew outdated --cask --greedy --quiet "$cask" 2>/dev/null)" ]] || continue
+            if pgrep -x "$app" &>/dev/null; then
+                echo "$app is running; quit it and run upgrade again to update it."
+            else
+                brew upgrade --cask --greedy "$cask"
+            fi
+        done
+    fi
+}
+
 upgrade() {
     if isdarwin; then
         brew update && brew upgrade
@@ -45,10 +79,12 @@ upgrade() {
     if command -v pipx 2>&1 >/dev/null; then
         pipx upgrade-all
     fi
-    
+
     if command -v rustup 2>&1 >/dev/null; then
         rustup update
     fi
+
+    upgrade-ai-tools
 }
 
 if isdarwin; then

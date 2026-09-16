@@ -54,6 +54,20 @@ function _termsupport_preexec {
     title '$CMD' '%100>...>$LINE%<<'
 }
 
+# Inside tmux, TERM_PROGRAM is "tmux", which hides the real terminal from tools that detect
+# it (e.g. Claude Code and Codex desktop notifications). Export the outer terminal's values,
+# which tmux refreshes on every attach (see update-environment in tmux.conf).
+function _tmux_outer_terminal_preexec {
+    [[ -n "${TMUX:-}" ]] || return
+    local line
+    for line in "${(@f)$(tmux show-environment 2>/dev/null)}"; do
+        case "$line" in
+            TERM_PROGRAM=*|TERM_PROGRAM_VERSION=*) export "$line" ;;
+        esac
+    done
+}
+
 autoload -U add-zsh-hook
 add-zsh-hook precmd _termsupport_precmd
 add-zsh-hook preexec _termsupport_preexec
+add-zsh-hook preexec _tmux_outer_terminal_preexec

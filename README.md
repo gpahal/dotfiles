@@ -27,6 +27,12 @@ The setup script automatically:
 - Configures macOS defaults (Finder, Dock, keyboard, screenshots)
 - Reloads Ghostty config
 
+AI tools have their own script. See [AI_TOOLS_SETUP.md](./AI_TOOLS_SETUP.md):
+
+```sh
+bash ai_tools/setup.sh
+```
+
 ## What's included
 
 ### Fonts
@@ -61,7 +67,36 @@ The setup script automatically:
 
 - [Ghostty](https://ghostty.org/) terminal with GitHub Dark theme and Monaspace font
 - Native tab bar, split pane keybindings, shell integration, copy-on-select
+- Desktop notifications, plus a notification when a long command finishes while Ghostty is unfocused
 - Config copied to `~/.config/ghostty/config`
+
+#### Ghostty notifications
+
+Programs running in Ghostty (Claude Code, Codex CLI, long-running builds) can send macOS desktop notifications with the OSC 9 / OSC 777 escape sequences. The Ghostty config enables this, but macOS blocks it until you grant permission.
+
+1. **Allow notifications in macOS.** Send a test notification from Ghostty (works inside or outside tmux):
+
+   ```sh
+   scripts/test-notification.sh
+   ```
+
+   Click **Allow** when macOS asks. Then go to **System Settings → Notifications → Ghostty**, turn on **Allow notifications**, and set the alert style to **Persistent** so notifications stay on screen until you dismiss them.
+
+2. **Check Focus / Do Not Disturb.** An active Focus mode silences notifications. Add Ghostty under **System Settings → Focus → (mode) → Allowed Apps** if you still want these alerts.
+
+3. **Inside tmux**, escape sequences only reach Ghostty when passthrough is on. The tmux config in this repo already sets `set -g allow-passthrough on`, and `scripts/test-notification.sh` wraps the sequence for tmux automatically.
+
+The notification settings in `ghostty/config` (Ghostty 1.3.0+, which needs shell integration, already turned on in this config) are:
+
+```ini
+desktop-notifications = true
+# Notify when a command that ran longer than 10s finishes while Ghostty is unfocused
+notify-on-command-finish = unfocused
+notify-on-command-finish-action = bell,notify
+notify-on-command-finish-after = 10s
+# On bell: bounce the Dock icon, add 🔔 to the tab title, play the system sound
+bell-features = attention,title,system
+```
 
 ### Zed
 
@@ -70,6 +105,7 @@ The setup script automatically:
 ### tmux
 
 - [tmux](https://github.com/tmux/tmux) — terminal multiplexer with mouse support, vi copy mode, and Ghostty integration
+- Passes the outer terminal's `TERM_PROGRAM` into panes (refreshed on attach), so tools like Claude Code and Codex detect the real terminal for desktop notifications
 - Prefix key: `Ctrl+a` (instead of default `Ctrl+b`)
 - Intuitive splits: `prefix+|` (vertical), `prefix+-` (horizontal), opens in current path
 - Vim-style pane navigation (`prefix+hjkl`) and resizing (`prefix+HJKL`)
@@ -161,6 +197,8 @@ These are not automated by the setup script:
 - Add Google account to Calendar and Contacts apps
 - Install [Dato](https://apps.apple.com/ph/app/dato/id1470584107) — menubar calendar
 - Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) — macOS system utilities
+- Enable [Ghostty notifications](#ghostty-notifications)
+- Run `bash ai_tools/setup.sh`, then finish the notification, browser, and computer use steps for Claude Code and Codex in [AI_TOOLS_SETUP.md](./AI_TOOLS_SETUP.md)
 
 ## Maintenance
 

@@ -10,7 +10,7 @@ Reachable only when you type them (Claude Code: `disable-model-invocation: true`
 - **[to-spec](./to-spec/SKILL.md)**: Turn the current conversation into a spec, no interview, and save it at `.scratch/<feature-slug>/SPEC.md`.
 - **[architect](./architect/SKILL.md)**: Sketch types, signatures, and module boundaries before code: ground in the existing system, have parallel sub-agents draw at least two distinct candidates, synthesize one into `.scratch/<feature-slug>/DESIGN.md`, then implement against it and scrap it if it fights back.
 - **[to-tickets](./to-tickets/SKILL.md)**: Break a plan, spec, or conversation into tracer-bullet tickets, each declaring what blocks it, saved one per file under `.scratch/<feature-slug>/tickets/`.
-- **[implement](./implement/SKILL.md)**: Build the work described by a spec or its tickets, working the unblocked tickets first, driving `/tdd` at pre-agreed seams and closing out with code reviews before committing.
+- **[implement](./implement/SKILL.md)**: Build the work described by a spec or its tickets, working the unblocked tickets first, driving `/tdd` at pre-agreed seams and closing out with parallel code reviews sized to the work's complexity.
 
 ## Model-invoked
 

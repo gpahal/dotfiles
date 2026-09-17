@@ -27,7 +27,7 @@ Run typechecking regularly, single test files regularly, and the full test suite
 3. Run both reviews **in parallel**, each scoped to the base commit:
    - **Built-in review**, launched first so it runs in the background:
      - Claude Code: `/code-review <effort> <base>...HEAD`. It runs as a background sub-agent and its findings arrive when it finishes.
-     - Codex: `codex exec review -c model_reasoning_effort=<effort> -o <file> "Review the changes in git diff <base>...HEAD"` as a background shell command, reading `<file>` when it exits. Codex tops out at `xhigh`, so run `max` as `xhigh`.
+     - Codex: `codex exec review -c model_reasoning_effort=<effort> -o <file> "Review the changes in git diff <base>...HEAD"` as a background shell command, reading `<file>` when it exits.
    - **`/code-review-stds-and-spec`**, invoked **once**, yourself, in this context while the built-in review runs, with two arguments: the base commit as its fixed point, and the spec path (plus the ticket files you worked) as its spec source. That single invocation covers both axes: the skill spawns its own Standards and Spec sub-agents and returns both reports.
 
    Done when you hold all three reports: the built-in review's findings, and `/code-review-stds-and-spec`'s `## Standards` and `## Spec`. A tool with no built-in review runs `/code-review-stds-and-spec` alone.
@@ -35,7 +35,7 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 ### Review effort
 
-Size the review to the work. Read the change with `git diff --stat <base>...HEAD` alongside the spec and tickets, and take the highest row that matches:
+Size the review to the work. Read the change with `git diff --stat <base>...HEAD` alongside the spec and tickets, and take the highest row that matches. `xhigh` is the ceiling:
 
 | Effort   | The work                                                                   |
 | -------- | -------------------------------------------------------------------------- |
@@ -43,8 +43,7 @@ Size the review to the work. Read the change with `git diff --stat <base>...HEAD
 | `medium` | A few tickets, or a change contained in one module                         |
 | `high`   | Several tickets, a change across modules, or a shape set by `DESIGN.md`    |
 | `xhigh`  | A large change across many modules, or any change touching a risky surface |
-| `max`    | Several risky surfaces, or one threaded through a large change             |
 
 A **risky surface** is code where a bug is costly or silent: concurrency and shared state, auth and permissions, persistence and migrations, money, public APIs and wire formats.
 
-For `max` work, also tell the user they can run `/code-review ultra`, Claude Code's billed cloud review, which only they can launch.
+When the work touches several risky surfaces, or threads one through a large change, also tell the user they can run `/code-review ultra`, Claude Code's billed cloud review, which only they can launch.

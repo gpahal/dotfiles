@@ -7,13 +7,14 @@ set -euo pipefail
 # - Claude desktop app
 # - Codex CLI
 # - ChatGPT desktop app
+# - Skills in ai_tools/skills, for Claude Code and Codex
 #
 # Idempotent: safe to re-run. Apps whose config is edited (Claude, ChatGPT) must be quit
 # first; when run interactively the script offers to quit them, otherwise it skips them.
 #
 # Things macOS doesn't allow scripts to change (notification alert style, Accessibility and
 # Screen Recording permissions, installing browser extensions) are opened for you at the end.
-# See AI_TOOLS_SETUP.md for the full checklist.
+# See ai_tools/README.md for the full checklist.
 
 DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -214,6 +215,20 @@ configure_codex() {
     echo "  Set PR merge method to squash and turned on notifications and keep-awake in $CODEX_CONFIG"
 }
 
+# ─── Skills (Claude Code + Codex) ───
+
+install_skills() {
+    echo "Installing skills..."
+    if ! command -v npx &>/dev/null; then
+        echo "  npx not found; skipping. Install Node.js (e.g. with mise) and re-run."
+        return 0
+    fi
+    # The skills CLI (https://skills.sh) copies the skills into ~/.agents/skills (Codex) and
+    # symlinks them into ~/.claude/skills (Claude Code). Re-run after changing a skill.
+    npx -y skills@latest add "$DOTFILES_DIR/ai_tools/skills" \
+        --global --agent claude-code codex --skill '*' --yes
+}
+
 # ─── Things only you can do ───
 
 open_manual_steps() {
@@ -224,7 +239,7 @@ open_manual_steps() {
     echo "  2. Claude in Chrome extension: install it and sign in (for claude --chrome)."
     echo "  3. ChatGPT app: Plugins → Computer Use, and Settings → Computer Use → Chrome."
     echo "  4. Claude Code: /mcp → computer-use → Enable (per project), /chrome → Enabled by default."
-    echo "  See AI_TOOLS_SETUP.md for details."
+    echo "  See ai_tools/README.md for details."
 
     if ! confirm "Open the notification settings and the Chrome extension page now?"; then
         return 0
@@ -251,6 +266,7 @@ main() {
     configure_claude_code
     configure_claude_desktop
     configure_codex
+    install_skills
     open_manual_steps
     echo ""
     echo "=== AI tools setup complete! ==="

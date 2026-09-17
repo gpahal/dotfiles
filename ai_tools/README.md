@@ -1,11 +1,11 @@
-# AI tools setup
+# AI tools
 
-How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, and app settings.
+How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, app settings, and [skills](#skills).
 
 Scripts used here:
 
-- [`ai_tools/setup.sh`](./ai_tools/setup.sh) installs and configures the AI tools.
-- [`scripts/test-notification.sh`](./scripts/test-notification.sh) sends a test desktop notification through your terminal.
+- [`ai_tools/setup.sh`](./setup.sh) installs and configures the AI tools.
+- [`scripts/test-notification.sh`](../scripts/test-notification.sh) sends a test desktop notification through your terminal.
 
 ## Table of contents
 
@@ -22,6 +22,7 @@ Scripts used here:
   - [Browser](#browser)
   - [Computer use](#computer-use-1)
   - [Desktop app settings](#desktop-app-settings-1)
+- [Skills](#skills)
 
 ## Automated setup
 
@@ -37,6 +38,7 @@ It's safe to re-run. Before editing a file that already exists, it asks whether 
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides** in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, and sets **Archive inactive sessions** to 30 days.
 - **Codex:** sets the PR merge method to squash and turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake** in `~/.codex/config.toml`.
+- **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** for Ghostty, Claude, and ChatGPT one at a time, and opens the Claude in Chrome extension page if it isn't installed.
 
 The Claude and ChatGPT apps overwrite their settings files, so the script asks to quit them first. If they're still running (or the script isn't run from a terminal), it skips those settings and tells you to re-run.
@@ -58,10 +60,12 @@ The `upgrade` shell function (in `zsh/aliases.zsh`) updates the AI tools along w
 - **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. Plain `npm update -g` never moves Codex to a new 0.x minor version.
 - **Claude and ChatGPT desktop apps installed with brew:** `brew upgrade --cask --greedy`. They also update themselves. Apps that are running are skipped, with a message to quit them and re-run.
 
+`upgrade` doesn't touch the skills. They're installed from this repo, so to change them, update `ai_tools/skills` and re-run `bash ai_tools/setup.sh` (see [Skills](#skills)).
+
 ## Before you start
 
 - Every app that sends notifications needs macOS permission with a **Persistent** alert style, so notifications stay on screen until you dismiss them. Set this in **System Settings → Notifications → (app)**: turn on **Allow notifications** and set the alert style to **Persistent**. The apps are your terminal (**Ghostty**, and any other terminal you run the CLIs in), **Claude**, and **ChatGPT**, plus **Codex Computer Use** if it's listed.
-- Both CLIs send notifications through the terminal. For Ghostty, see [Ghostty notifications](./README.md#ghostty-notifications).
+- Both CLIs send notifications through the terminal. For Ghostty, see [Ghostty notifications](../README.md#ghostty-notifications).
 - Install [Google Chrome](https://www.google.com/chrome/) and sign in to the sites you want the agents to use.
 
 ## Claude Code
@@ -277,3 +281,22 @@ Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
   On GitHub, also enable **Allow squash merging** under **Repository settings → General → Pull Requests**.
 
 Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings)
+
+## Skills
+
+[`ai_tools/skills`](./skills/README.md) holds agent skills, copied and modified from [mattpocock/skills](https://github.com/mattpocock/skills) and [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack), grouped into `engineering` and `productivity`.
+
+**Install (script).** The script installs every skill globally with the [skills CLI](https://skills.sh). It needs `npx`, so install Node.js first (e.g. with mise); without it, the step is skipped.
+
+```sh
+npx skills@latest add ./ai_tools/skills --global --agent claude-code codex --skill '*' --yes
+```
+
+The CLI copies each skill into `~/.agents/skills`, which Codex reads, and symlinks it into `~/.claude/skills` for Claude Code. Type `/` in either tool to see them.
+
+Notes:
+
+- **Changes need a re-run.** The installed skills are copies, so after editing, adding, or removing skills in `ai_tools/skills`, re-run `bash ai_tools/setup.sh`.
+- **Removing a skill.** Deleting it from the repo doesn't uninstall it. Run `npx skills remove --global <name>`, or `npx skills list --global` to see what's installed.
+- **No per-repo setup.** Skills that produce documents (`research`, `to-spec`, `to-tickets`, `handoff`) write them under `.scratch/` at the root of the repo you're in, and `implement` and `code-review-stds-and-spec` read them from there. The layout is in the [skills README](./skills/README.md#scratch-files). Decide per repo whether to commit `.scratch/` or gitignore it.
+- **Updating from upstream.** The skills are modified copies, so don't overwrite them with a fresh clone. Diff the upstream skill against ours, port what's wanted, and re-run the script.

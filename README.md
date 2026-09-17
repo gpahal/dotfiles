@@ -27,7 +27,7 @@ The setup script automatically:
 - Configures macOS defaults (Finder, Dock, keyboard, screenshots)
 - Reloads Ghostty config
 
-AI tools have their own script. See [AI_TOOLS_SETUP.md](./AI_TOOLS_SETUP.md):
+AI tools have their own script. See [ai_tools/README.md](./ai_tools/README.md):
 
 ```sh
 bash ai_tools/setup.sh
@@ -198,7 +198,7 @@ These are not automated by the setup script:
 - Install [Dato](https://apps.apple.com/ph/app/dato/id1470584107) — menubar calendar
 - Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) — macOS system utilities
 - Enable [Ghostty notifications](#ghostty-notifications)
-- Run `bash ai_tools/setup.sh`, then finish the notification, browser, and computer use steps for Claude Code and Codex in [AI_TOOLS_SETUP.md](./AI_TOOLS_SETUP.md)
+- Run `bash ai_tools/setup.sh`, which also installs the skills in `ai_tools/skills`, then finish the notification, browser, and computer use steps for Claude Code and Codex in [ai_tools/README.md](./ai_tools/README.md)
 
 ## Maintenance
 

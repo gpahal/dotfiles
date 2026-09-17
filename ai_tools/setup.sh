@@ -22,6 +22,7 @@ CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 CODEX_CONFIG="$HOME/.codex/config.toml"
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
+NOTIFICATION_SETTINGS="$HOME/Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 
 # ─── Helpers ───
 
@@ -36,11 +37,15 @@ confirm() {
     [[ "$reply" == [yY] || "$reply" == [yY][eE][sS] ]]
 }
 
-# Before editing an existing file, ask whether to back it up to <file>.bak
+# Before editing an existing file, ask whether to back it up to <file>.bak, unless <file>.bak
+# already matches it
 maybe_backup() {
     local prompt="  Back up $1 to $1.bak?"
     [ -f "$1" ] || return 0
-    [ -f "$1.bak" ] && prompt="  Back up $1 to $1.bak (overwrites the existing $1.bak)?"
+    if [ -f "$1.bak" ]; then
+        cmp -s "$1" "$1.bak" && return 0
+        prompt="  Back up $1 to $1.bak (overwrites the existing $1.bak)?"
+    fi
     if confirm "$prompt"; then
         cp "$1" "$1.bak"
         echo "  Backed up $1 to $1.bak"
@@ -62,6 +67,11 @@ ensure_app_quit() {
     done
     echo "  $app did not quit; skipping."
     return 1
+}
+
+# Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there
+json_applied() {
+    [ -s "$1" ] && jq -e "($2) == ." "$1" &>/dev/null
 }
 
 # Merge a jq expression into a JSON file, creating the file if needed
@@ -157,10 +167,15 @@ configure_claude_code() {
     echo "Configuring Claude Code..."
     # /config → Push when actions required, Push when Claude decides
     # (mobile push notifications through the Claude app while Remote Control is active)
-    json_merge "$CLAUDE_CODE_SETTINGS" '
+    local settings='
         .inputNeededNotifEnabled = true
         | .agentPushNotifEnabled = true
     '
+    if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
+        echo "  Push when actions required and Push when Claude decides are already on"
+        return 0
+    fi
+    json_merge "$CLAUDE_CODE_SETTINGS" "$settings"
     echo "  Turned on Push when actions required and Push when Claude decides"
 }
 
@@ -168,50 +183,76 @@ configure_claude_code() {
 
 configure_claude_desktop() {
     echo "Configuring Claude desktop app..."
-    ensure_app_quit "Claude" || return 0
     # Settings → Claude Code:
     #   Draw attention on notifications → On
     #   Archive inactive sessions → 30 days
     #   Keep computer awake while Claude works → On
     #   Keep awake on battery power → On
-    json_merge "$CLAUDE_DESKTOP_CONFIG" '
+    local settings='
         .preferences.dockBounceEnabled = true
         | .preferences.ccAutoArchiveInactiveDays = 30
         | .preferences.ccKeepAwakeWhileWorking = true
         | .preferences.ccKeepAwakeOnBattery = true
     '
+    if json_applied "$CLAUDE_DESKTOP_CONFIG" "$settings"; then
+        echo "  Draw attention on notifications, keep awake while working (also on battery), and"
+        echo "  Archive inactive sessions after 30 days are already set"
+        return 0
+    fi
+    ensure_app_quit "Claude" || return 0
+    json_merge "$CLAUDE_DESKTOP_CONFIG" "$settings"
     echo "  Turned on Draw attention on notifications and keep awake while working (also on battery),"
     echo "  and set Archive inactive sessions to 30 days"
 }
 
 # ─── Codex (ChatGPT desktop app + Codex CLI) ───
 
-configure_codex() {
-    echo "Configuring Codex..."
-    # The ChatGPT app writes to config.toml too, so quit it before editing
-    ensure_app_quit "ChatGPT" || return 0
-    maybe_backup "$CODEX_CONFIG"
-    local snapshot
-    snapshot="$(mktemp)"
-    [ -f "$CODEX_CONFIG" ] && cp "$CODEX_CONFIG" "$snapshot"
+# Write a copy of the Codex config with the settings applied, and print its path
+codex_config_edited() {
+    local edited
+    edited="$(mktemp)"
+    [ -f "$CODEX_CONFIG" ] && cp "$CODEX_CONFIG" "$edited"
 
     # Desktop app: Settings → Git → Pull request merge method → Squash
-    toml_set "$CODEX_CONFIG" desktop git-pull-request-merge-method '"squash"'
+    toml_set "$edited" desktop git-pull-request-merge-method '"squash"'
     # Desktop app: Settings → Notifications
-    toml_set "$CODEX_CONFIG" desktop notifications-turn-mode '"unfocused"'
-    toml_set "$CODEX_CONFIG" desktop notifications-permissions-enabled 'true'
-    toml_set "$CODEX_CONFIG" desktop notifications-questions-enabled 'true'
+    toml_set "$edited" desktop notifications-turn-mode '"unfocused"'
+    toml_set "$edited" desktop notifications-permissions-enabled 'true'
+    toml_set "$edited" desktop notifications-questions-enabled 'true'
     # Desktop app: Settings → General → Prevent sleep while running
-    toml_set "$CODEX_CONFIG" desktop preventSleepWhileRunning 'true'
+    toml_set "$edited" desktop preventSleepWhileRunning 'true'
     # Desktop app: Settings → Connections → Keep this Mac awake (plugged in, remote access on)
-    toml_set "$CODEX_CONFIG" desktop keepRemoteControlAwakeWhilePluggedIn 'true'
+    toml_set "$edited" desktop keepRemoteControlAwakeWhilePluggedIn 'true'
 
-    # Fail loudly if the result isn't valid TOML
-    if ! yq -p toml -o json '.' "$CODEX_CONFIG" > /dev/null; then
-        echo "  $CODEX_CONFIG is not valid TOML after editing; restoring the original"
-        cp "$snapshot" "$CODEX_CONFIG"
+    # Fail loudly if the result isn't valid TOML, leaving the original untouched
+    if ! yq -p toml -o json '.' "$edited" > /dev/null; then
+        echo "  $CODEX_CONFIG would not be valid TOML after editing; leaving it unchanged" >&2
+        rm -f "$edited"
         return 1
     fi
+    echo "$edited"
+}
+
+configure_codex() {
+    echo "Configuring Codex..."
+    local edited
+    edited="$(codex_config_edited)" || return 1
+    # Compare parsed TOML, so formatting the app rewrote doesn't count as a change
+    if [ -f "$CODEX_CONFIG" ] &&
+        [ "$(yq -p toml -o json '.' "$CODEX_CONFIG" 2>/dev/null)" == "$(yq -p toml -o json '.' "$edited")" ]; then
+        rm -f "$edited"
+        echo "  PR merge method, notifications, and keep-awake are already set in $CODEX_CONFIG"
+        return 0
+    fi
+    rm -f "$edited"
+
+    # The ChatGPT app writes to config.toml too, so quit it before editing, then re-apply the
+    # settings to whatever it wrote on the way out
+    ensure_app_quit "ChatGPT" || return 0
+    edited="$(codex_config_edited)" || return 1
+    maybe_backup "$CODEX_CONFIG"
+    mkdir -p "$(dirname "$CODEX_CONFIG")"
+    mv "$edited" "$CODEX_CONFIG"
     echo "  Set PR merge method to squash and turned on notifications and keep-awake in $CODEX_CONFIG"
 }
 
@@ -231,33 +272,69 @@ install_skills() {
 
 # ─── Things only you can do ───
 
+# Succeeds when an app's notifications are allowed with the Persistent alert style. Fails when
+# they aren't, or when the settings can't be read: macOS only lets a terminal with Full Disk
+# Access read them. Flag bits as decoded by https://github.com/drewdiver/ncprefs.py:
+# 1<<25 Allow notifications, 1<<3 Temporary (banners), 1<<4 Persistent (alerts).
+notifications_persistent() {
+    local bundle_id="$1" count i flags
+    count="$(plutil -extract apps raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
+    for ((i = 0; i < count; i++)); do
+        [ "$(plutil -extract "apps.$i.bundle-id" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" == "$bundle_id" ] || continue
+        flags="$(plutil -extract "apps.$i.flags" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
+        return $(( (flags >> 25 & 1) && (flags >> 4 & 1) && !(flags >> 3 & 1) ? 0 : 1 ))
+    done
+    return 1
+}
+
 open_manual_steps() {
+    local bundle_id pending_notifications="" extension_installed=false open_extension=false targets=""
+    for bundle_id in com.mitchellh.ghostty com.anthropic.claudefordesktop com.openai.codex; do
+        notifications_persistent "$bundle_id" || pending_notifications+=" $bundle_id"
+    done
+    if compgen -G "$HOME/Library/Application Support/Google/Chrome/*/Extensions/$CLAUDE_CHROME_EXTENSION_ID" > /dev/null; then
+        extension_installed=true
+    elif [ -d "/Applications/Google Chrome.app" ]; then
+        open_extension=true
+    fi
+
     echo ""
     echo "Remaining manual steps (macOS doesn't let scripts change these):"
-    echo "  1. System Settings → Notifications → Ghostty (and any other terminal you use), Claude,"
-    echo "     ChatGPT: turn on Allow notifications and set the alert style to Persistent."
+    if [ -n "$pending_notifications" ]; then
+        echo "  1. System Settings → Notifications → Ghostty (and any other terminal you use), Claude,"
+        echo "     ChatGPT: turn on Allow notifications and set the alert style to Persistent."
+    else
+        echo "  1. System Settings → Notifications: Ghostty, Claude, and ChatGPT are already allowed and"
+        echo "     Persistent. Do the same for any other terminal you use."
+    fi
     echo "  2. Claude in Chrome extension: install it and sign in (for claude --chrome)."
     echo "  3. ChatGPT app: Plugins → Computer Use, and Settings → Computer Use → Chrome."
     echo "  4. Claude Code: /mcp → computer-use → Enable (per project), /chrome → Enabled by default."
     echo "  See ai_tools/README.md for details."
 
-    if ! confirm "Open the notification settings and the Chrome extension page now?"; then
+    if "$extension_installed"; then
+        echo "  Claude in Chrome extension already installed."
+    fi
+
+    # Only offer to open what still needs doing
+    [ -n "$pending_notifications" ] && targets="the notification settings"
+    "$open_extension" && targets="${targets:+$targets and }the Chrome extension page"
+    if [ -z "$targets" ] || ! confirm "Open $targets now?"; then
         return 0
     fi
 
-    local bundle_id
-    for bundle_id in com.mitchellh.ghostty com.anthropic.claudefordesktop com.openai.codex; do
+    for bundle_id in $pending_notifications; do
         open "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=$bundle_id"
         read -r -p "  Set $bundle_id to Allow notifications + Persistent, then press Enter..." _
     done
 
-    if compgen -G "$HOME/Library/Application Support/Google/Chrome/*/Extensions/$CLAUDE_CHROME_EXTENSION_ID" > /dev/null; then
-        echo "  Claude in Chrome extension already installed."
-    elif [ -d "/Applications/Google Chrome.app" ]; then
+    if "$open_extension"; then
         open -a "Google Chrome" "https://chromewebstore.google.com/detail/claude/$CLAUDE_CHROME_EXTENSION_ID"
     fi
 
-    echo "  Test a notification from your terminal with: $DOTFILES_DIR/scripts/test-notification.sh"
+    if [ -n "$pending_notifications" ]; then
+        echo "  Test a notification from your terminal with: $DOTFILES_DIR/scripts/test-notification.sh"
+    fi
 }
 
 main() {

@@ -32,14 +32,14 @@ Run the AI tools setup script after the main `setup.sh`:
 bash ai_tools/setup.sh
 ```
 
-It's safe to re-run. Before editing a file that already exists, it asks whether to back it up to `<file>.bak`. It does the following, and steps below marked **(script)** are done for you:
+It's safe to re-run. Settings that are already in place are left alone, with no questions. Before editing a file that already exists, it asks whether to back it up to `<file>.bak`, unless that backup already matches the file. It does the following, and steps below marked **(script)** are done for you:
 
 - Installs the Claude desktop app, the ChatGPT desktop app, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides** in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, and sets **Archive inactive sessions** to 30 days.
 - **Codex:** sets the PR merge method to squash and turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake** in `~/.codex/config.toml`.
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
-- Opens **System Settings → Notifications** for Ghostty, Claude, and ChatGPT one at a time, and opens the Claude in Chrome extension page if it isn't installed.
+- Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, and ChatGPT that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all three.
 
 The Claude and ChatGPT apps overwrite their settings files, so the script asks to quit them first. If they're still running (or the script isn't run from a terminal), it skips those settings and tells you to re-run.
 

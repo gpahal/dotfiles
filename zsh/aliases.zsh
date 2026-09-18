@@ -63,6 +63,22 @@ upgrade-ai-tools() {
             fi
         done
     fi
+
+    # Plugins are separate from the CLIs above. Claude Code has no update-all, so update
+    # each installed plugin in the scope it was installed in. Updates apply on next start.
+    if command -v claude &>/dev/null; then
+        claude plugin marketplace update
+        local id scope
+        claude plugin list --json | jq -r '.[] | "\(.id)\t\(.scope)"' | while IFS=$'\t' read -r id scope; do
+            claude plugin update "$id" --scope "$scope"
+        done
+    fi
+
+    # Codex's bundled marketplaces ship with the CLI and update with it. With no name,
+    # this refreshes any Git marketplace added on top of them.
+    if command -v codex &>/dev/null; then
+        codex plugin marketplace upgrade
+    fi
 }
 
 upgrade() {

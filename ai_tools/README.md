@@ -59,6 +59,8 @@ The `upgrade` shell function (in `zsh/aliases.zsh`) updates the AI tools along w
 - **Claude Code native install:** `claude update`.
 - **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. Plain `npm update -g` never moves Codex to a new 0.x minor version.
 - **Claude and ChatGPT desktop apps installed with brew:** `brew upgrade --cask --greedy`. They also update themselves. Apps that are running are skipped, with a message to quit them and re-run.
+- **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each plugin in `claude plugin list`, in the scope it was installed in. Claude Code has no update-all, and an updated plugin only takes effect the next time it starts.
+- **Codex plugins:** `codex plugin marketplace upgrade`. The bundled and runtime marketplaces (browser, computer use, documents, and so on) ship with the Codex CLI and update with it, so this only matters for a Git marketplace you add yourself.
 
 `upgrade` doesn't touch the skills. They're installed from this repo, so to change them, update `ai_tools/skills` and re-run `bash ai_tools/setup.sh` (see [Skills](#skills)).
 

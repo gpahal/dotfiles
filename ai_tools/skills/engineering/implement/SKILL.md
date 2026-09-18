@@ -35,14 +35,13 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 ### Review effort
 
-Size the review to the work. Read the change with `git diff --stat <base>...HEAD` alongside the spec and tickets, and take the highest row that matches. `xhigh` is the ceiling:
+Size the review to the work. Read the change with `git diff --stat <base>...HEAD` alongside the spec and tickets, and take the highest row that matches. `high` is the ceiling, so never pass `xhigh` or `max`:
 
 | Effort   | The work                                                                   |
 | -------- | -------------------------------------------------------------------------- |
-| `low`    | One ticket, a small change local to a few files                            |
-| `medium` | A few tickets, or a change contained in one module                         |
-| `high`   | Several tickets, a change across modules, or a shape set by `DESIGN.md`    |
-| `xhigh`  | A large change across many modules, or any change touching a risky surface |
+| `low`    | Up to a few tickets, or a change contained in one module                   |
+| `medium` | Several tickets, a change across modules, or a shape set by `DESIGN.md`    |
+| `high`   | A large change across many modules, or any change touching a risky surface |
 
 A **risky surface** is code where a bug is costly or silent: concurrency and shared state, auth and permissions, persistence and migrations, money, public APIs and wire formats.
 

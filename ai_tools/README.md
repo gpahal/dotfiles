@@ -36,8 +36,8 @@ It's safe to re-run. Settings that are already in place are left alone, with no 
 
 - Installs the Claude desktop app, the ChatGPT desktop app, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides** in `~/.claude/settings.json`.
-- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, and sets **Archive inactive sessions** to 30 days.
-- **Codex:** sets the PR merge method to squash and turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake** in `~/.codex/config.toml`.
+- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, sets **Archive inactive sessions** to 30 days, and turns off **Show in menu bar**.
+- **Codex:** sets the PR merge method to squash, turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake**, and turns off **Show in menu bar**, all in `~/.codex/config.toml`.
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, and ChatGPT that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all three.
 
@@ -177,14 +177,15 @@ Docs: [Computer use in the CLI](https://code.claude.com/docs/en/computer-use)
 
 ### Desktop app settings
 
-These are in the Claude desktop app (`/Applications/Claude.app`) under **Settings → Claude Code**. The script writes the settings marked **(script)** to `preferences` in `~/Library/Application Support/Claude/claude_desktop_config.json`:
+These are in the Claude desktop app (`/Applications/Claude.app`) under **Settings → Claude Code**, except **Show in menu bar**, which is under **Settings → General**. The script writes the settings marked **(script)** to `preferences` in `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
+- **Show in menu bar: Off (script).** With it on, Claude keeps a menu bar icon and goes on running in the background after you close the window. With it off there's no menu bar icon, and closing the window leaves nothing behind but the Dock icon until you quit with ⌘Q.
 - **Draw attention on notifications: On (script).** Bounces the Dock icon when Claude needs you and the app isn't focused. Also go to **System Settings → Notifications → Claude**, turn on **Allow notifications**, and set the alert style to **Persistent**.
 - **Archive inactive sessions: On, set Inactive for at least to 30 days (script).** Archives local sessions with no activity. Sessions that are running or have background work are never archived, and a worktree with uncommitted changes stays on disk.
 - **Keep computer awake while Claude works: On (script).** Stops the computer idle-sleeping while a Code session is running, so long tasks can finish. The display can still turn off, and closing the lid still sleeps the Mac.
 - **Keep awake on battery power: On (script).** Applies the same while running on battery.
 
-The keys are `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, and `ccKeepAwakeOnBattery`. The two keep-awake settings are on by default. The script sets them anyway so they stay on even if you turned them off.
+The keys are `menuBarEnabled`, `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, and `ccKeepAwakeOnBattery`. The two keep-awake settings are on by default, as is `menuBarEnabled`. The script sets them anyway so they stay the way you want them even if you changed them in the app.
 - **Pull request merge method: squash.** The app has no setting for this because it always squash-merges when auto-merge is on. On GitHub, enable **Allow squash merging** and **Allow auto-merge** under **Repository settings → General → Pull Requests**, or Claude can't merge the PR.
 
 Docs: [Desktop app](https://code.claude.com/docs/en/desktop)
@@ -262,13 +263,15 @@ Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
 
 ### Desktop app settings
 
+- **Show in menu bar: Off (script).** **Settings → General**. Described in the app as "Keep ChatGPT in the macOS menu bar when the main window is closed", so with it off there's no menu bar icon and nothing keeping the app up once you close the window. On by default.
 - **Prevent sleep while running: On (script).** **Settings → General**. Keeps the computer awake while Codex runs a task. The display can still turn off, and closing the lid still sleeps the Mac. Off by default.
 - **Keep this Mac awake: On (script).** **Settings → Connections**, for this Mac. Stops the Mac sleeping while it's plugged in and Codex Remote access is on, so your phone can reach it. Off by default.
 
-  Both are saved in `~/.codex/config.toml`:
+  All three are saved in `~/.codex/config.toml`:
 
   ```toml
   [desktop]
+  mac-menu-bar-enabled = false
   preventSleepWhileRunning = true
   keepRemoteControlAwakeWhilePluggedIn = true
   ```

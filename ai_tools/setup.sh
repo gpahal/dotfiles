@@ -188,21 +188,25 @@ configure_claude_desktop() {
     #   Archive inactive sessions → 30 days
     #   Keep computer awake while Claude works → On
     #   Keep awake on battery power → On
+    # Settings → General:
+    #   Show in menu bar → Off (no menu bar icon, and no running in the background once the
+    #   window is closed)
     local settings='
         .preferences.dockBounceEnabled = true
         | .preferences.ccAutoArchiveInactiveDays = 30
         | .preferences.ccKeepAwakeWhileWorking = true
         | .preferences.ccKeepAwakeOnBattery = true
+        | .preferences.menuBarEnabled = false
     '
     if json_applied "$CLAUDE_DESKTOP_CONFIG" "$settings"; then
-        echo "  Draw attention on notifications, keep awake while working (also on battery), and"
-        echo "  Archive inactive sessions after 30 days are already set"
+        echo "  Draw attention on notifications, keep awake while working (also on battery),"
+        echo "  Archive inactive sessions after 30 days, and no menu bar icon are already set"
         return 0
     fi
     ensure_app_quit "Claude" || return 0
     json_merge "$CLAUDE_DESKTOP_CONFIG" "$settings"
-    echo "  Turned on Draw attention on notifications and keep awake while working (also on battery),"
-    echo "  and set Archive inactive sessions to 30 days"
+    echo "  Turned off Show in menu bar, turned on Draw attention on notifications and keep awake"
+    echo "  while working (also on battery), and set Archive inactive sessions to 30 days"
 }
 
 # ─── Codex (ChatGPT desktop app + Codex CLI) ───
@@ -221,6 +225,9 @@ codex_config_edited() {
     toml_set "$edited" desktop notifications-questions-enabled 'true'
     # Desktop app: Settings → General → Prevent sleep while running
     toml_set "$edited" desktop preventSleepWhileRunning 'true'
+    # Desktop app: Settings → General → Show in menu bar (keeps ChatGPT in the menu bar, and
+    # running, after the main window is closed)
+    toml_set "$edited" desktop mac-menu-bar-enabled 'false'
     # Desktop app: Settings → Connections → Keep this Mac awake (plugged in, remote access on)
     toml_set "$edited" desktop keepRemoteControlAwakeWhilePluggedIn 'true'
 
@@ -241,7 +248,8 @@ configure_codex() {
     if [ -f "$CODEX_CONFIG" ] &&
         [ "$(yq -p toml -o json '.' "$CODEX_CONFIG" 2>/dev/null)" == "$(yq -p toml -o json '.' "$edited")" ]; then
         rm -f "$edited"
-        echo "  PR merge method, notifications, and keep-awake are already set in $CODEX_CONFIG"
+        echo "  PR merge method, notifications, keep-awake, and no menu bar icon are already set"
+        echo "  in $CODEX_CONFIG"
         return 0
     fi
     rm -f "$edited"
@@ -253,7 +261,8 @@ configure_codex() {
     maybe_backup "$CODEX_CONFIG"
     mkdir -p "$(dirname "$CODEX_CONFIG")"
     mv "$edited" "$CODEX_CONFIG"
-    echo "  Set PR merge method to squash and turned on notifications and keep-awake in $CODEX_CONFIG"
+    echo "  Set PR merge method to squash, turned on notifications and keep-awake, and turned off"
+    echo "  Show in menu bar in $CODEX_CONFIG"
 }
 
 # ─── Skills (Claude Code + Codex) ───

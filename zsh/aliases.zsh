@@ -88,6 +88,10 @@ upgrade() {
         yay -Syu
     fi
 
+    if command -v mise 2>&1 >/dev/null; then
+        mise upgrade
+    fi
+
     if command -v npm 2>&1 >/dev/null; then
         npm update -g
     fi

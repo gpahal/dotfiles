@@ -6,12 +6,13 @@ export EDITOR="vim"
 export VISUAL="vim"
 
 # Update $PATH
-export PATH="$HOME/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+# Include bin directories for `cargo install` and `go install`.
+export PATH="$HOME/.bin:$HOME/.local/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/go/bin:/usr/local/bin:$PATH"
 
 # Manually set your language environment
 export LANG="en_US.UTF-8"
 
-# Theming section  
+# Theming section
 autoload -U compinit colors zcalc
 compinit -d
 colors

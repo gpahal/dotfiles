@@ -46,3 +46,8 @@ fi
 if command -v atuin 2>&1 >/dev/null; then
     eval "$(atuin init zsh)"
 fi
+
+# mise (dev tool version manager: node, go, ...)
+if command -v mise 2>&1 >/dev/null; then
+    eval "$(mise activate zsh)"
+fi

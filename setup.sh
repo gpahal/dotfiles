@@ -115,6 +115,20 @@ for cask in "${CASKS[@]}"; do
     fi
 done
 
+# ─── Install language runtimes via mise ───
+echo "Installing language runtimes via mise..."
+mise use --global node@lts go@latest
+
+# ─── Install Rust via rustup ───
+# Rust is managed by rustup directly rather than mise, so projects' rust-toolchain.toml files are respected.
+if [ -x "$HOME/.cargo/bin/rustup" ] || command -v rustup &>/dev/null; then
+    echo "rustup already installed."
+else
+    echo "Installing rustup..."
+    # --no-modify-path: zsh/basic-settings.zsh already adds ~/.cargo/bin to PATH.
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+fi
+
 # ─── Copy git config ───
 echo "Copying git config..."
 cp "$DOTFILES_DIR/git/gitconfig" "$HOME/.gitconfig"

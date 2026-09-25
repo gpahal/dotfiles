@@ -21,6 +21,7 @@ The setup script automatically:
 
 - Installs [Homebrew](https://brew.sh/) if missing
 - Installs all CLI tools and casks via brew
+- Installs Node LTS and Go via mise, and Rust via rustup
 - Copies config files (git, vim, zsh, starship, tmux, Ghostty)
 - Sets up `~/.zshrc`
 - Sets zsh as the login shell
@@ -165,7 +166,7 @@ bell-features = attention,title,system
 
 **Shell:**
 - [atuin](https://github.com/atuinsh/atuin) — better shell history with fuzzy search
-- [mise](https://github.com/jdx/mise) — version manager for dev tools (replaces nvm, pyenv, etc.)
+- [mise](https://github.com/jdx/mise) — version manager for dev tools (replaces nvm, pyenv, etc.); installs Node LTS and Go globally
 
 ### Apps (installed via brew cask)
 

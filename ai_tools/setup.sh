@@ -7,6 +7,7 @@ set -euo pipefail
 # - Claude desktop app
 # - Codex CLI
 # - ChatGPT desktop app
+# - User-level instructions in ai_tools/user-instructions.md, for Claude Code and Codex
 # - Skills in ai_tools/skills, for Claude Code and Codex
 #
 # Idempotent: safe to re-run. Apps whose config is edited (Claude, ChatGPT) must be quit
@@ -265,6 +266,28 @@ configure_codex() {
     echo "  Show in menu bar in $CODEX_CONFIG"
 }
 
+# ─── User-level instructions (Claude Code + Codex) ───
+
+install_user_instructions() {
+    echo "Installing user-level instructions..."
+    local src="$DOTFILES_DIR/ai_tools/user-instructions.md" dest
+    for dest in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"; do
+        if cmp -s "$src" "$dest"; then
+            echo "  $dest is already up to date"
+            continue
+        fi
+        # The file may hold instructions added by hand, so only replace it when asked
+        if [ -s "$dest" ] && ! confirm "  $dest differs from ai_tools/user-instructions.md. Replace it?"; then
+            echo "  Left $dest unchanged. Merge ai_tools/user-instructions.md into it by hand."
+            continue
+        fi
+        maybe_backup "$dest"
+        mkdir -p "$(dirname "$dest")"
+        cp "$src" "$dest"
+        echo "  Copied ai_tools/user-instructions.md to $dest"
+    done
+}
+
 # ─── Skills (Claude Code + Codex) ───
 
 install_skills() {
@@ -352,6 +375,7 @@ main() {
     configure_claude_code
     configure_claude_desktop
     configure_codex
+    install_user_instructions
     install_skills
     open_manual_steps
     echo ""

@@ -1,6 +1,6 @@
 # AI tools
 
-How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, app settings, and [skills](#skills).
+How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, app settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
 
 Scripts used here:
 
@@ -22,6 +22,7 @@ Scripts used here:
   - [Browser](#browser)
   - [Computer use](#computer-use-1)
   - [Desktop app settings](#desktop-app-settings-1)
+- [User-level instructions](#user-level-instructions)
 - [Skills](#skills)
 
 ## Automated setup
@@ -38,6 +39,7 @@ It's safe to re-run. Settings that are already in place are left alone, with no 
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides** in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, sets **Archive inactive sessions** to 30 days, and turns off **Show in menu bar**.
 - **Codex:** sets the PR merge method to squash, turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake**, and turns off **Show in menu bar**, all in `~/.codex/config.toml`.
+- **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, and ChatGPT that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all three.
 
@@ -62,7 +64,7 @@ The `upgrade` shell function (in `zsh/aliases.zsh`) updates the AI tools along w
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each plugin in `claude plugin list`, in the scope it was installed in. Claude Code has no update-all, and an updated plugin only takes effect the next time it starts.
 - **Codex plugins:** `codex plugin marketplace upgrade`. The bundled and runtime marketplaces (browser, computer use, documents, and so on) ship with the Codex CLI and update with it, so this only matters for a Git marketplace you add yourself.
 
-`upgrade` doesn't touch the skills. They're installed from this repo, so to change them, update `ai_tools/skills` and re-run `bash ai_tools/setup.sh` (see [Skills](#skills)).
+`upgrade` doesn't touch the skills or the user-level instructions. They're installed from this repo, so to change them, update `ai_tools/skills` or `ai_tools/user-instructions.md` and re-run `bash ai_tools/setup.sh` (see [Skills](#skills)).
 
 ## Before you start
 
@@ -286,6 +288,14 @@ Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
   On GitHub, also enable **Allow squash merging** under **Repository settings → General → Pull Requests**.
 
 Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings)
+
+## User-level instructions
+
+[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, whatever the repo: finish tasks without check-ins, ask a specific question when stuck, and keep responses, comments, and docs concise.
+
+**Install (script).** The script copies it to `~/.claude/CLAUDE.md` (Claude Code) and `~/.codex/AGENTS.md` (Codex). If either file already exists with different content, it asks before replacing it, and without a terminal it leaves the file alone.
+
+To change them, edit the repo copy and re-run `bash ai_tools/setup.sh`. If you edit an installed file instead, the script asks to replace it on every run.
 
 ## Skills
 

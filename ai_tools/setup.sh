@@ -87,23 +87,30 @@ json_merge() {
 }
 
 # Set `key = value` inside `[table]` of a TOML file, keeping the other lines (comments,
-# ordering) untouched. `value` must already be a TOML literal, e.g. '"squash"' or 'true'.
+# ordering) untouched. An empty `table` means the top level, before the first table.
+# `value` must already be a TOML literal, e.g. '"squash"' or 'true'.
 toml_set() {
     local file="$1" table="$2" key="$3" value="$4" tmp
     mkdir -p "$(dirname "$file")"
     touch "$file"
     tmp="$(mktemp)"
-    awk -v table="[$table]" -v key="$key" -v value="$value" '
+    awk -v table="$table" -v key="$key" -v value="$value" '
         function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
         function is_header(s) { return s ~ /^[ \t]*\[/ }
         function flush_blanks() { for (; blanks > 0; blanks--) print "" }
+        BEGIN { header = "[" table "]"; in_table = seen_table = (table == "") }
         {
             line = $0
             if (is_header(line)) {
                 # Leaving the target table without finding the key: add it after its last entry
-                if (in_table && !done) { print key " = " value; done = 1 }
+                if (in_table && !done) {
+                    print key " = " value
+                    done = 1
+                    # Keep a blank line between new top-level keys and the first table
+                    if (table == "" && blanks == 0) blanks = 1
+                }
                 flush_blanks()
-                in_table = (trim(line) == table)
+                in_table = (table != "" && trim(line) == header)
                 if (in_table) seen_table = 1
                 print line
                 next
@@ -123,7 +130,7 @@ toml_set() {
         END {
             if (in_table && !done) { print key " = " value; done = 1 }
             flush_blanks()
-            if (!seen_table) { print ""; print table; print key " = " value }
+            if (!seen_table) { print ""; print header; print key " = " value }
         }
     ' "$file" > "$tmp"
     mv "$tmp" "$file"
@@ -167,17 +174,32 @@ install_apps() {
 configure_claude_code() {
     echo "Configuring Claude Code..."
     # /config → Push when actions required, Push when Claude decides
-    # (mobile push notifications through the Claude app while Remote Control is active)
+    #   (mobile push notifications through the Claude app while Remote Control is active)
+    # Start new sessions in auto mode. Only user or managed settings can make auto the default.
+    # Turn off auto memory.
+    # Send Anthropic less: no telemetry, error reports, session quality surveys (they can
+    #   attach the transcript), /feedback, or feedback drafts. Training on your chats is an
+    #   account setting (see open_manual_steps). Leave CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+    #   unset: it also turns off Remote Control, so mobile pushes stop.
     local settings='
         .inputNeededNotifEnabled = true
         | .agentPushNotifEnabled = true
+        | .permissions.defaultMode = "auto"
+        | .autoMemoryEnabled = false
+        | .feedbackDrafts = "off"
+        | .env.DO_NOT_TRACK = "1"
+        | .env.DISABLE_ERROR_REPORTING = "1"
+        | .env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY = "1"
+        | .env.DISABLE_FEEDBACK_COMMAND = "1"
     '
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
-        echo "  Push when actions required and Push when Claude decides are already on"
+        echo "  Push notifications, auto mode, no auto memory, and the data-sharing opt-outs are"
+        echo "  already set"
         return 0
     fi
     json_merge "$CLAUDE_CODE_SETTINGS" "$settings"
-    echo "  Turned on Push when actions required and Push when Claude decides"
+    echo "  Turned on push notifications and auto mode by default, turned off auto memory, and"
+    echo "  opted out of telemetry, error reports, surveys, and feedback"
 }
 
 # ─── Claude desktop app ───
@@ -192,22 +214,33 @@ configure_claude_desktop() {
     # Settings → General:
     #   Show in menu bar → Off (no menu bar icon, and no running in the background once the
     #   window is closed)
+    # Also: Option+Space opens quick entry; scheduled tasks on in Code and Cowork; Cowork uses
+    # browser tools in Chrome and web search, and keeps its files in ~/Documents/Claude.
+    local files_dir="$HOME/Documents/Claude"
     local settings='
         .preferences.dockBounceEnabled = true
         | .preferences.ccAutoArchiveInactiveDays = 30
         | .preferences.ccKeepAwakeWhileWorking = true
         | .preferences.ccKeepAwakeOnBattery = true
+        | .preferences.ccdScheduledTasksEnabled = true
         | .preferences.menuBarEnabled = false
+        | .preferences.quickEntryShortcut = {"accelerator": "Alt+Space"}
+        | .preferences.coworkBrowserToolsEnabled = true
+        | .preferences.coworkPreferredBrowser = "chrome"
+        | .preferences.coworkWebSearchEnabled = true
+        | .preferences.coworkScheduledTasksEnabled = true
+        | .coworkUserFilesPath = "'"$files_dir"'"
     '
     if json_applied "$CLAUDE_DESKTOP_CONFIG" "$settings"; then
-        echo "  Draw attention on notifications, keep awake while working (also on battery),"
-        echo "  Archive inactive sessions after 30 days, and no menu bar icon are already set"
+        echo "  Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are"
+        echo "  already set"
         return 0
     fi
     ensure_app_quit "Claude" || return 0
+    mkdir -p "$files_dir"
     json_merge "$CLAUDE_DESKTOP_CONFIG" "$settings"
-    echo "  Turned off Show in menu bar, turned on Draw attention on notifications and keep awake"
-    echo "  while working (also on battery), and set Archive inactive sessions to 30 days"
+    echo "  Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,"
+    echo "  and Cowork browser, web search, scheduled tasks, and files folder ($files_dir)"
 }
 
 # ─── Codex (ChatGPT desktop app + Codex CLI) ───
@@ -218,8 +251,25 @@ codex_config_edited() {
     edited="$(mktemp)"
     [ -f "$CODEX_CONFIG" ] && cp "$CODEX_CONFIG" "$edited"
 
+    # Short answers and reasoning summaries
+    toml_set "$edited" '' model_verbosity '"low"'
+    toml_set "$edited" '' model_reasoning_summary '"concise"'
+    # Edit and run commands in the workspace, with network access, and ask before anything
+    # else. The desktop app uses these only while its permission picker is on Custom
+    # (config.toml); its Ask for approval preset turns network access off.
+    toml_set "$edited" '' approval_policy '"on-request"'
+    toml_set "$edited" '' sandbox_mode '"workspace-write"'
+    toml_set "$edited" sandbox_workspace_write network_access 'true'
+    # Send OpenAI less: no usage metrics or product events (CLI and desktop app), and no
+    # /feedback log uploads. Training on your chats is an account setting (see
+    # open_manual_steps).
+    toml_set "$edited" analytics enabled 'false'
+    toml_set "$edited" feedback enabled 'false'
+
     # Desktop app: Settings → Git → Pull request merge method → Squash
     toml_set "$edited" desktop git-pull-request-merge-method '"squash"'
+    # Desktop app: don't refresh worktrees from their upstream branch
+    toml_set "$edited" desktop worktree-upstream-refresh-mode '"never"'
     # Desktop app: Settings → Notifications
     toml_set "$edited" desktop notifications-turn-mode '"unfocused"'
     toml_set "$edited" desktop notifications-permissions-enabled 'true'
@@ -231,6 +281,19 @@ codex_config_edited() {
     toml_set "$edited" desktop mac-menu-bar-enabled 'false'
     # Desktop app: Settings → Connections → Keep this Mac awake (plugged in, remote access on)
     toml_set "$edited" desktop keepRemoteControlAwakeWhilePluggedIn 'true'
+    # Desktop app: a message sent mid-turn steers the running turn instead of queueing, and
+    # threads show steps and commands
+    toml_set "$edited" desktop followUpQueueMode '"steer"'
+    toml_set "$edited" desktop conversationDetailMode '"STEPS_COMMANDS"'
+    # Desktop app: show context window usage and ambient suggestions
+    toml_set "$edited" desktop show-context-window-usage 'true'
+    toml_set "$edited" desktop ambient-suggestions-enabled 'true'
+    # Desktop app: open links and local URLs in your browser, not the built-in one
+    toml_set "$edited" desktop open-link-in-target-preference '"external-browser"'
+    toml_set "$edited" desktop open-local-url-in-target-preference '"external-browser"'
+    # Desktop app: offer every reasoning effort in the picker
+    toml_set "$edited" desktop enabled-reasoning-efforts \
+        '["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]'
 
     # Fail loudly if the result isn't valid TOML, leaving the original untouched
     if ! yq -p toml -o json '.' "$edited" > /dev/null; then
@@ -249,7 +312,7 @@ configure_codex() {
     if [ -f "$CODEX_CONFIG" ] &&
         [ "$(yq -p toml -o json '.' "$CODEX_CONFIG" 2>/dev/null)" == "$(yq -p toml -o json '.' "$edited")" ]; then
         rm -f "$edited"
-        echo "  PR merge method, notifications, keep-awake, and no menu bar icon are already set"
+        echo "  Output, sandbox, approval, data-sharing, and desktop app settings are already set"
         echo "  in $CODEX_CONFIG"
         return 0
     fi
@@ -262,8 +325,7 @@ configure_codex() {
     maybe_backup "$CODEX_CONFIG"
     mkdir -p "$(dirname "$CODEX_CONFIG")"
     mv "$edited" "$CODEX_CONFIG"
-    echo "  Set PR merge method to squash, turned on notifications and keep-awake, and turned off"
-    echo "  Show in menu bar in $CODEX_CONFIG"
+    echo "  Set output, sandbox, approval, data-sharing, and desktop app settings in $CODEX_CONFIG"
 }
 
 # ─── User-level instructions (Claude Code + Codex) ───
@@ -342,6 +404,9 @@ open_manual_steps() {
     echo "  2. Claude in Chrome extension: install it and sign in (for claude --chrome)."
     echo "  3. ChatGPT app: Plugins → Computer Use, and Settings → Computer Use → Chrome."
     echo "  4. Claude Code: /mcp → computer-use → Enable (per project), /chrome → Enabled by default."
+    echo "  5. Training opt-outs, which are account settings: turn off model improvement in"
+    echo "     claude.ai → Settings → Privacy, Improve the model for everyone in ChatGPT → Settings →"
+    echo "     Data controls, and Include environments in the Codex settings on chatgpt.com/codex."
     echo "  See ai_tools/README.md for details."
 
     if "$extension_installed"; then

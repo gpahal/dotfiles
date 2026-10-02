@@ -1,6 +1,6 @@
 # AI tools
 
-How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, app settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
+How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, permissions, app settings, [privacy](#privacy), [user-level instructions](#user-level-instructions), and [skills](#skills).
 
 Scripts used here:
 
@@ -16,12 +16,15 @@ Scripts used here:
   - [Notifications](#notifications)
   - [Browser (Claude in Chrome)](#browser-claude-in-chrome)
   - [Computer use](#computer-use)
+  - [Permissions and memory](#permissions-and-memory)
   - [Desktop app settings](#desktop-app-settings)
 - [Codex](#codex)
   - [Notifications](#notifications-1)
   - [Browser](#browser)
   - [Computer use](#computer-use-1)
+  - [Permissions and output](#permissions-and-output)
   - [Desktop app settings](#desktop-app-settings-1)
+- [Privacy](#privacy)
 - [User-level instructions](#user-level-instructions)
 - [Skills](#skills)
 
@@ -36,16 +39,16 @@ bash ai_tools/setup.sh
 It's safe to re-run. Settings that are already in place are left alone, with no questions. Before editing a file that already exists, it asks whether to back it up to `<file>.bak`, unless that backup already matches the file. It does the following, and steps below marked **(script)** are done for you:
 
 - Installs the Claude desktop app, the ChatGPT desktop app, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
-- **Claude Code:** turns on **Push when actions required** and **Push when Claude decides** in `~/.claude/settings.json`.
-- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, and **Keep awake on battery power**, sets **Archive inactive sessions** to 30 days, and turns off **Show in menu bar**.
-- **Codex:** sets the PR merge method to squash, turns on desktop app notifications, **Prevent sleep while running**, and **Keep this Mac awake**, and turns off **Show in menu bar**, all in `~/.codex/config.toml`.
+- **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
+- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks, files in `~/Documents/Claude`).
+- **Codex:** sets terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, and ChatGPT that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all three.
 
 The Claude and ChatGPT apps overwrite their settings files, so the script asks to quit them first. If they're still running (or the script isn't run from a terminal), it skips those settings and tells you to re-run.
 
-Scripts can't do the rest. macOS doesn't let them change notification alert styles or Accessibility/Screen Recording permissions, extensions have to be installed from the browser, and `/mcp` and `/chrome` are interactive. Follow the remaining steps below.
+Scripts can't do the rest. macOS doesn't let them change notification alert styles or Accessibility/Screen Recording permissions, extensions have to be installed from the browser, `/mcp` and `/chrome` are interactive, and the training opt-outs are account settings (see [Privacy](#privacy)). Follow the remaining steps below.
 
 Test notifications from your terminal (works inside tmux too):
 
@@ -177,9 +180,25 @@ The **Claude desktop app** has the same feature under **Settings → General →
 
 Docs: [Computer use in the CLI](https://code.claude.com/docs/en/computer-use)
 
+### Permissions and memory
+
+The script sets both in `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": { "defaultMode": "auto" },
+  "autoMemoryEnabled": false
+}
+```
+
+- **Auto mode by default (script).** New sessions start in auto mode, where a classifier approves safe actions and asks about risky ones. Only user or managed settings can make `auto` the default. Claude Code ignores it in a project's `.claude/settings.json` or `.claude/settings.local.json`. Use `--permission-mode` to pick another mode for one session, or `Shift+Tab` to cycle modes. The first time you enter auto mode, Claude Code shows a one-time notice.
+- **Auto memory off (script).** Claude Code stops saving its own notes about you and your projects between sessions. `CLAUDE.md` files still load.
+
+Docs: [Permission modes](https://code.claude.com/docs/en/permission-modes), [Settings](https://code.claude.com/docs/en/settings-reference)
+
 ### Desktop app settings
 
-These are in the Claude desktop app (`/Applications/Claude.app`) under **Settings → Claude Code**, except **Show in menu bar**, which is under **Settings → General**. The script writes the settings marked **(script)** to `preferences` in `~/Library/Application Support/Claude/claude_desktop_config.json`:
+These are in the Claude desktop app (`/Applications/Claude.app`), mostly under **Settings → Claude Code**. **Show in menu bar** is under **Settings → General**. The script writes the settings marked **(script)** to `~/Library/Application Support/Claude/claude_desktop_config.json`, all under `preferences` except `coworkUserFilesPath`:
 
 - **Show in menu bar: Off (script).** With it on, Claude keeps a menu bar icon and goes on running in the background after you close the window. With it off there's no menu bar icon, and closing the window leaves nothing behind but the Dock icon until you quit with ⌘Q.
 - **Draw attention on notifications: On (script).** Bounces the Dock icon when Claude needs you and the app isn't focused. Also go to **System Settings → Notifications → Claude**, turn on **Allow notifications**, and set the alert style to **Persistent**.
@@ -187,7 +206,11 @@ These are in the Claude desktop app (`/Applications/Claude.app`) under **Setting
 - **Keep computer awake while Claude works: On (script).** Stops the computer idle-sleeping while a Code session is running, so long tasks can finish. The display can still turn off, and closing the lid still sleeps the Mac.
 - **Keep awake on battery power: On (script).** Applies the same while running on battery.
 
-The keys are `menuBarEnabled`, `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, and `ccKeepAwakeOnBattery`. The two keep-awake settings are on by default, as is `menuBarEnabled`. The script sets them anyway so they stay the way you want them even if you changed them in the app.
+- **Quick entry: Option+Space (script).** Opens the quick entry window from anywhere.
+- **Scheduled tasks: On (script).** Turned on for both Code sessions and Cowork.
+- **Cowork (script).** Cowork uses browser tools in Chrome and web search, and saves files in `~/Documents/Claude`. The script creates the folder.
+
+The keys are `menuBarEnabled`, `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, `ccKeepAwakeOnBattery`, `ccdScheduledTasksEnabled`, `quickEntryShortcut`, `coworkBrowserToolsEnabled`, `coworkPreferredBrowser`, `coworkWebSearchEnabled`, `coworkScheduledTasksEnabled`, and the top-level `coworkUserFilesPath`. The two keep-awake settings are on by default, as is `menuBarEnabled`. The script sets them anyway so they stay the way you want them even if you changed them in the app.
 - **Pull request merge method: squash.** The app has no setting for this because it always squash-merges when auto-merge is on. On GitHub, enable **Allow squash merging** and **Allow auto-merge** under **Repository settings → General → Pull Requests**, or Claude can't merge the PR.
 
 Docs: [Desktop app](https://code.claude.com/docs/en/desktop)
@@ -263,6 +286,26 @@ Limits: it can't control terminal apps or the ChatGPT app itself, and it can't g
 
 Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
 
+### Permissions and output
+
+The script sets these top-level keys in `~/.codex/config.toml` **(script)**:
+
+```toml
+model_verbosity = "low"
+model_reasoning_summary = "concise"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+```
+
+- **Permissions.** Codex reads, edits, and runs commands in the workspace without asking, and those commands can reach the network. It asks before anything outside the workspace. `on-request` and `workspace-write` are the defaults for a trusted project, but setting them also covers projects you haven't trusted yet. Network access is off by default.
+- **Desktop app.** The app uses these keys only while its permission picker shows **Custom (config.toml)**, which it picks by default when `config.toml` sets `sandbox_mode`. Choosing **Ask for approval** in the picker ignores `config.toml` and turns network access off.
+- **Output.** `model_verbosity = "low"` keeps answers short and `model_reasoning_summary = "concise"` keeps the reasoning summaries short.
+
+Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+
 ### Desktop app settings
 
 - **Show in menu bar: Off (script).** **Settings → General**. Described in the app as "Keep ChatGPT in the macOS menu bar when the main window is closed", so with it off there's no menu bar icon and nothing keeping the app up once you close the window. On by default.
@@ -287,7 +330,68 @@ Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
 
   On GitHub, also enable **Allow squash merging** under **Repository settings → General → Pull Requests**.
 
+- **Other app preferences (script).** The script also sets these `[desktop]` keys:
+
+  ```toml
+  [desktop]
+  followUpQueueMode = "steer"                        # a message sent mid-turn steers it instead of queueing
+  conversationDetailMode = "STEPS_COMMANDS"          # threads show steps and commands
+  show-context-window-usage = true
+  ambient-suggestions-enabled = true
+  open-link-in-target-preference = "external-browser"       # links open in your browser,
+  open-local-url-in-target-preference = "external-browser"  # not the built-in one
+  worktree-upstream-refresh-mode = "never"
+  enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]
+  ```
+
+  `enabled-reasoning-efforts` lists the efforts the picker offers. Update it when the models change.
+
 Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings)
+
+## Privacy
+
+Neither tool has a config file setting that stops training on your chats. That is an account setting, so turn it off by hand:
+
+- **Claude:** turn off model improvement in claude.ai → **Settings → Privacy** ([claude.ai/settings/data-privacy-controls](https://claude.ai/settings/data-privacy-controls)). This covers Claude Code and the desktop app. With it off, Anthropic keeps chats for 30 days instead of 5 years. Chats flagged for safety review can still be used.
+- **ChatGPT and Codex:** ChatGPT → **Settings → Data controls → Improve the model for everyone → Off**. This covers Codex tasks in the CLI and the desktop app. Codex also has a separate **Include environments** setting in its data controls on chatgpt.com/codex. It decides whether context from your Codex environments can be used for training, and the ChatGPT toggle doesn't change it, so turn it off too.
+- **Don't rate replies.** For ChatGPT and Codex, a thumbs up or down or a feedback report sends the whole conversation to OpenAI even with training off. Treat Claude's thumbs the same way.
+
+The script turns off the telemetry each tool sends **(script)**. In `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "DO_NOT_TRACK": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1"
+  },
+  "feedbackDrafts": "off"
+}
+```
+
+- `DO_NOT_TRACK` turns off usage telemetry, the same as `DISABLE_TELEMETRY`. Remote Control and mobile pushes still work (Claude Code 2.1.283 or later).
+- `DISABLE_ERROR_REPORTING` stops error reports to Sentry.
+- `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY` stops the "How is Claude doing?" surveys, which can attach the session transcript.
+- `DISABLE_FEEDBACK_COMMAND` turns off `/feedback`, which uploads the transcript with a bug report. `feedbackDrafts` stops Claude drafting feedback for you.
+- The script leaves `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` unset. It also turns off auto-updates and Remote Control, and with that the mobile push notifications.
+
+The consumer Claude desktop app has no telemetry settings. The `disable*Telemetry` keys in Anthropic's docs only apply to enterprise deployments that use a third-party model provider.
+
+In `~/.codex/config.toml`:
+
+```toml
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+```
+
+- `[analytics] enabled = false` turns off usage metrics and product events in the Codex CLI and the ChatGPT desktop app. The app starts Codex with `--analytics-default-enabled`, but an explicit `false` in `config.toml` wins.
+- `[feedback] enabled = false` rejects `/feedback` log uploads. It doesn't hide the thumbs in the desktop app.
+
+Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Claude privacy settings](https://privacy.claude.com/en/articles/12109829-how-do-i-change-my-model-improvement-privacy-settings), [Codex advanced config](https://learn.chatgpt.com/docs/config-file/config-advanced), [ChatGPT data controls](https://help.openai.com/en/articles/7730893-data-controls-in-chatgpt)
 
 ## User-level instructions
 

@@ -420,21 +420,22 @@ PLIST
     fi
 
     # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 at
-    # high effort in auto mode, each in its own worktree; Add project starts in ~/Dev; threads
-    # continue after an app update; inactive threads settle after 5 days; old worktrees, browser
-    # artifacts, and logs are cleaned up; pull requests start with squash merge; commit and PR
-    # text follows custom instructions; Cursor, Grok, and OpenCode are off. The effort option is
-    # set in place so other model options, like the context window, and their order survive a
-    # re-run.
+    # high effort with the 1M context window, in auto mode, each in its own worktree; Add project
+    # starts in ~/Dev; threads continue after an app update; inactive threads settle after 5
+    # days; old worktrees, browser artifacts, and logs are cleaned up; pull requests start with
+    # squash merge; commit and PR text follows custom instructions; Cursor, Grok, and OpenCode
+    # are off. Model options are set in place, so any others and their order survive a re-run.
     local settings='
         .defaultModelSelection.instanceId = "claudeAgent"
         | .defaultModelSelection.model = "claude-opus-5-5"
-        | .defaultModelSelection.options |= (
-            (. // []) as $opts
-            | if any($opts[]; .id == "effort")
-              then $opts | map(if .id == "effort" then .value = "high" else . end)
-              else $opts + [{"id": "effort", "value": "high"}]
-              end
+        | .defaultModelSelection.options |= reduce (
+            {"id": "effort", "value": "high"},
+            {"id": "contextWindow", "value": "1m"}
+          ) as $opt (. // [];
+            if any(.[]; .id == $opt.id)
+            then map(if .id == $opt.id then .value = $opt.value else . end)
+            else . + [$opt]
+            end
           )
         | .defaultRuntimeMode = "auto"
         | .defaultThreadEnvMode = "worktree"

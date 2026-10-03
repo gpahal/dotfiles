@@ -47,7 +47,7 @@ It's safe to re-run. Settings that are already in place are left alone, with no 
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, sets the default model, effort, TUI, and worktree base, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks).
 - **Codex:** sets the default model at high effort, terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
-- **T3 Code:** sets the default model and effort, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, turns on the sidebar's Working section, starts pull requests with squash merge, sets custom instructions for commit and PR text, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
+- **T3 Code:** sets the default model, effort, and context window, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, turns on the sidebar's Working section, starts pull requests with squash merge, sets custom instructions for commit and PR text, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, ChatGPT, and T3 Code that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all four.
@@ -445,7 +445,10 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
   "defaultModelSelection": {
     "instanceId": "claudeAgent",
     "model": "claude-opus-5-5",
-    "options": [{ "id": "effort", "value": "high" }]
+    "options": [
+      { "id": "effort", "value": "high" },
+      { "id": "contextWindow", "value": "1m" }
+    ]
   },
   "defaultRuntimeMode": "auto",
   "defaultThreadEnvMode": "worktree",
@@ -473,7 +476,7 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
 }
 ```
 
-- **Default model: Claude Opus 5.5 at high effort, in auto mode.** New threads use Claude Code with `claude-opus-5-5` at high effort, in auto mode instead of the default full access. The script sets only the effort option and keeps any others, such as the context window. Update the model when a new one comes out.
+- **Default model: Claude Opus 5.5 at high effort with 1M context, in auto mode.** New threads use Claude Code with `claude-opus-5-5` at high effort and the 1M-token context window, in auto mode instead of the default full access. The script sets these two options and keeps any others. Update the model when a new one comes out.
 - **New thread mode: worktree.** Each new thread gets its own git worktree.
 - **Add project base directory: `~/Dev`.** The add-project picker starts there.
 - **Continue threads after restarts: On.** Threads that were running pick up again after T3 Code updates and restarts.

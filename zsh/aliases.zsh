@@ -51,12 +51,14 @@ upgrade-ai-tools() {
 
     # Desktop apps installed with brew auto-update themselves, so `brew upgrade` skips them
     # unless asked with --greedy. Replacing a running app breaks it, so skip running apps.
+    # pgrep takes a regex, so escape the parentheses in "T3 Code (Alpha)", and -a counts the
+    # app this shell runs in.
     if isdarwin; then
         local cask app
-        for cask app in claude Claude chatgpt ChatGPT; do
+        for cask app in claude Claude chatgpt ChatGPT t3-code "T3 Code (Alpha)"; do
             brew list --cask "$cask" &>/dev/null || continue
             [[ -n "$(brew outdated --cask --greedy --quiet "$cask" 2>/dev/null)" ]] || continue
-            if pgrep -x "$app" &>/dev/null; then
+            if pgrep -ax "${${app//\(/\\(}//\)/\\)}" &>/dev/null; then
                 echo "$app is running; quit it and run upgrade again to update it."
             else
                 brew upgrade --cask --greedy "$cask"

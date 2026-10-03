@@ -45,9 +45,9 @@ It's safe to re-run. Settings that are already in place are left alone, with no 
 
 - Installs the Claude desktop app, the ChatGPT desktop app, T3 Code, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, sets the default model, effort, TUI, and worktree base, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
-- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks, files in `~/Documents/Claude`).
+- **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks).
 - **Codex:** sets the default model at high effort, terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
-- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, turns on the sidebar's Working section, starts pull requests with squash merge, sets custom instructions for commit and PR text, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
+- **T3 Code:** sets the default model, effort, and context window, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, turns on the sidebar's Working section, starts pull requests with squash merge, sets custom instructions for commit and PR text, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, ChatGPT, and T3 Code that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all four.
@@ -227,7 +227,7 @@ The script also sets these in `~/.claude/settings.json` **(script)**:
 
 ### Desktop app settings
 
-These are in the Claude desktop app (`/Applications/Claude.app`), mostly under **Settings → Claude Code**. **Show in menu bar** is under **Settings → General**. The script writes the settings marked **(script)** to `~/Library/Application Support/Claude/claude_desktop_config.json`, all under `preferences` except `coworkUserFilesPath`:
+These are in the Claude desktop app (`/Applications/Claude.app`), mostly under **Settings → Claude Code**. **Show in menu bar** is under **Settings → General**. The script writes the settings marked **(script)** to `~/Library/Application Support/Claude/claude_desktop_config.json`, all under `preferences`:
 
 - **Show in menu bar: Off (script).** With it on, Claude keeps a menu bar icon and goes on running in the background after you close the window. With it off there's no menu bar icon, and closing the window leaves nothing behind but the Dock icon until you quit with ⌘Q.
 - **Draw attention on notifications: On (script).** Bounces the Dock icon when Claude needs you and the app isn't focused. Also go to **System Settings → Notifications → Claude**, turn on **Allow notifications**, and set the alert style to **Persistent**.
@@ -237,9 +237,9 @@ These are in the Claude desktop app (`/Applications/Claude.app`), mostly under *
 
 - **Quick entry: Option+Space (script).** Opens the quick entry window from anywhere.
 - **Scheduled tasks: On (script).** Turned on for both Code sessions and Cowork.
-- **Cowork (script).** Cowork uses browser tools in Chrome and web search, and saves files in `~/Documents/Claude`. The script creates the folder.
+- **Cowork (script).** Cowork uses browser tools in Chrome and web search. Its files stay in the default folder, `~/Claude`.
 
-The keys are `menuBarEnabled`, `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, `ccKeepAwakeOnBattery`, `ccdScheduledTasksEnabled`, `quickEntryShortcut`, `coworkBrowserToolsEnabled`, `coworkPreferredBrowser`, `coworkWebSearchEnabled`, `coworkScheduledTasksEnabled`, and the top-level `coworkUserFilesPath`. The two keep-awake settings are on by default, as is `menuBarEnabled`. The script sets them anyway so they stay the way you want them even if you changed them in the app.
+The keys are `menuBarEnabled`, `dockBounceEnabled`, `ccAutoArchiveInactiveDays`, `ccKeepAwakeWhileWorking`, `ccKeepAwakeOnBattery`, `ccdScheduledTasksEnabled`, `quickEntryShortcut`, `coworkBrowserToolsEnabled`, `coworkPreferredBrowser`, `coworkWebSearchEnabled`, and `coworkScheduledTasksEnabled`. The two keep-awake settings are on by default, as is `menuBarEnabled`. The script sets them anyway so they stay the way you want them even if you changed them in the app.
 - **Pull request merge method: squash.** The app has no setting for this because it always squash-merges when auto-merge is on. On GitHub, enable **Allow squash merging** and **Allow auto-merge** under **Repository settings → General → Pull Requests**, or Claude can't merge the PR.
 
 Docs: [Desktop app](https://code.claude.com/docs/en/desktop)
@@ -442,7 +442,14 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
 
 ```json
 {
-  "defaultModelSelection": { "instanceId": "claudeAgent", "model": "claude-opus-5-5" },
+  "defaultModelSelection": {
+    "instanceId": "claudeAgent",
+    "model": "claude-opus-5-5",
+    "options": [
+      { "id": "effort", "value": "high" },
+      { "id": "contextWindow", "value": "1m" }
+    ]
+  },
   "defaultRuntimeMode": "auto",
   "defaultThreadEnvMode": "worktree",
   "addProjectBaseDirectory": "~/Dev",
@@ -469,7 +476,7 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
 }
 ```
 
-- **Default model: Claude Opus 5.5 in auto mode.** New threads use Claude Code with `claude-opus-5-5`, in auto mode instead of the default full access. Update the model when a new one comes out.
+- **Default model: Claude Opus 5.5 at high effort with 1M context, in auto mode.** New threads use Claude Code with `claude-opus-5-5` at high effort and the 1M-token context window, in auto mode instead of the default full access. The script sets these two options and keeps any others. Update the model when a new one comes out.
 - **New thread mode: worktree.** Each new thread gets its own git worktree.
 - **Add project base directory: `~/Dev`.** The add-project picker starts there.
 - **Continue threads after restarts: On.** Threads that were running pick up again after T3 Code updates and restarts.

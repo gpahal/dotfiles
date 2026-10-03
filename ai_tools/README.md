@@ -46,7 +46,7 @@ It's safe to re-run. Settings that are already in place are left alone, with no 
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks, files in `~/Documents/Claude`).
 - **Codex:** sets terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
-- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent.
+- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, ChatGPT, and T3 Code that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all four.
@@ -365,6 +365,8 @@ brew install --cask t3-code   # installs "T3 Code (Alpha).app", auto-updates
 
 The `t3-code@nightly` cask installs nightly builds as a separate app, `T3 Code (Nightly).app`. The script and `upgrade` only handle `t3-code`.
 
+Use the desktop app on a Mac you work at. It runs its own T3 Code server while it's open, so it doesn't need the `t3` CLI. The CLI (`curl -fsSL https://t3.codes/install.sh | sh`, into `~/.local/bin`) runs the same server without the app. Use it on machines you don't sit at, such as a home server or a cloud VM: `t3 connect` links the machine to T3 Connect, and `t3 service install` starts the server at every login. A host you only reach from the desktop app needs neither, because adding it over SSH in **Settings → Connections** downloads the server to `~/.t3/runtime` there and runs it while the app is connected. Intel Macs have no `t3` binary, only the desktop app.
+
 T3 Code has a built-in browser that agents can drive (**Settings → Agent browser access**, on by default), so it needs no browser or computer use setup.
 
 ### Notifications
@@ -392,7 +394,8 @@ The T3 Code phone app controls the T3 Code on your Mac. From the phone you can s
 4. **Sign in on the phone.** Open the app, sign in with the same T3 Connect account, and choose your Mac's environment. It then shows your projects and threads.
 5. **Turn on phone notifications.** In the app, go to **Settings → Notifications**, turn on **Device Notifications**, and allow notifications when the phone asks (or later in the phone's own settings). You get a notification when an agent finishes, fails, needs approval, or asks a question. Tap it to open the thread. They stay quiet while the app is open on the phone.
 6. **Optional: lock screen progress.** In the same settings, turn on **Live Activity Updates** (iOS) or **Ongoing Agent Activity** (Android) to follow a running thread without opening the app. Finished results stay for 15 minutes.
-7. **Keep the Mac awake.** T3 Code has no keep-awake setting, and a sleeping Mac drops off the phone. Install [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704) (also in the [manual steps](../README.md#manual-steps)) and start a session that allows the display to sleep before you leave, or run `caffeinate -i` in a terminal. A closed MacBook lid still sleeps unless an external display and power are connected, or Amphetamine's closed-display mode is on.
+7. **Open T3 Code at login (script).** T3 Connect only runs while the app is open, and the app doesn't start on its own after a restart. The script adds **T3 Code (Alpha)** to **System Settings → General → Login Items**. The first run asks to let your terminal control System Events. If you decline, add the app there by hand. After a restart you still have to log in, which FileVault requires anyway.
+8. **Keep the Mac awake.** T3 Code has no keep-awake setting, and a sleeping Mac drops off the phone. Install [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704) (also in the [manual steps](../README.md#manual-steps)) and start a session that allows the display to sleep before you leave, or run `caffeinate -i` in a terminal. A closed MacBook lid still sleeps unless an external display and power are connected, or Amphetamine's closed-display mode is on.
 
 To check it works, send a message from the phone and wait for the notification when the turn ends.
 
@@ -401,7 +404,7 @@ Notes:
 - **Traffic goes through T3's relay.** If you'd rather keep it on your own network, use **Settings → Connections → Tailscale HTTPS** with the phone on the same tailnet, then scan the pairing QR code in the phone app under **Settings → Environments → Add environment**. That connection doesn't send push notifications.
 - **Revoking access.** Remove a device under **Settings → Connections → Authorized clients** on the Mac. To unlink the Mac from T3 Connect, open **T3 Connect** in your account menu and choose **Deregister**. Pairing links and codes work like passwords, so keep them out of screenshots.
 - **Force-stopping the Android app** in system settings stops notifications until you open it again.
-- The script can't do any of this, because each step signs in to T3 Connect or changes settings on T3's servers.
+- The script only does step 7. The others sign in to T3 Connect or change settings on T3's servers.
 
 Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md), [Mobile notifications](https://github.com/pingdotgg/t3code/blob/main/docs/user/mobile-notifications.md)
 

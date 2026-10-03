@@ -199,7 +199,7 @@ These are not automated by the setup script:
 - Install [Dato](https://apps.apple.com/ph/app/dato/id1470584107) — menubar calendar
 - Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) — macOS system utilities
 - Enable [Ghostty notifications](#ghostty-notifications)
-- Run `bash ai_tools/setup.sh` from Ghostty, which also installs T3 Code and the skills in `ai_tools/skills`, then finish the notification, browser, and computer use steps for Claude Code, Codex, and T3 Code in [ai_tools/README.md](./ai_tools/README.md)
+- Run `bash ai_tools/setup.sh` from Ghostty, which also installs T3 Code and the skills in `ai_tools/skills`, then finish the notification, browser, computer use, and mobile steps for Claude Code, Codex, and T3 Code in [ai_tools/README.md](./ai_tools/README.md)
 
 ## Maintenance
 

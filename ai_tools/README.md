@@ -17,6 +17,7 @@ Scripts used here:
   - [Browser (Claude in Chrome)](#browser-claude-in-chrome)
   - [Computer use](#computer-use)
   - [Permissions and memory](#permissions-and-memory)
+  - [Model and interface](#model-and-interface)
   - [Desktop app settings](#desktop-app-settings)
 - [Codex](#codex)
   - [Notifications](#notifications-1)
@@ -43,10 +44,10 @@ bash ai_tools/setup.sh
 It's safe to re-run. Settings that are already in place are left alone, with no questions. Before editing a file that already exists, it asks whether to back it up to `<file>.bak`, unless that backup already matches the file. It does the following, and steps below marked **(script)** are done for you:
 
 - Installs the Claude desktop app, the ChatGPT desktop app, T3 Code, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
-- **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
+- **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, sets the default model, effort, TUI, and worktree base, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks, files in `~/Documents/Claude`).
-- **Codex:** sets terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
-- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
+- **Codex:** sets the default model at high effort, terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
+- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, turns on the sidebar's Working section, starts pull requests with squash merge, sets custom instructions for commit and PR text, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent and adds T3 Code to Login Items so the phone app can reach the Mac after a restart.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
 - Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, ChatGPT, and T3 Code that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all four.
@@ -201,6 +202,29 @@ The script sets both in `~/.claude/settings.json`:
 
 Docs: [Permission modes](https://code.claude.com/docs/en/permission-modes), [Settings](https://code.claude.com/docs/en/settings-reference)
 
+### Model and interface
+
+The script also sets these in `~/.claude/settings.json` **(script)**:
+
+```json
+{
+  "model": "opus",
+  "modelSettings": {
+    "claude-opus-5-5": { "effortLevel": "high" },
+    "claude-sonnet-5.5": { "effortLevel": "high" }
+  },
+  "tui": "fullscreen",
+  "editorMode": "normal",
+  "switchModelsOnFlag": true,
+  "worktree": { "baseRef": "fresh" }
+}
+```
+
+- **Model: Opus.** Opus 5.5 and Sonnet 5.5 run at high effort. `/model` changes the model for one session. Add an entry to `modelSettings` when a new model comes out.
+- **Fullscreen TUI.** The prompt uses normal key bindings, not vim.
+- **Switch models on flag: On.** When safeguards flag a message, Claude Code switches to another model and keeps going. With it off, the session pauses.
+- **Worktree base: fresh** (the default). New worktrees (`--worktree`, subagent isolation) branch from `origin/<default-branch>`. `head` would branch from your local `HEAD` instead.
+
 ### Desktop app settings
 
 These are in the Claude desktop app (`/Applications/Claude.app`), mostly under **Settings → Claude Code**. **Show in menu bar** is under **Settings → General**. The script writes the settings marked **(script)** to `~/Library/Application Support/Claude/claude_desktop_config.json`, all under `preferences` except `coworkUserFilesPath`:
@@ -296,6 +320,9 @@ Docs: [Computer use](https://learn.chatgpt.com/docs/computer-use)
 The script sets these top-level keys in `~/.codex/config.toml` **(script)**:
 
 ```toml
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
+service_tier = "default"
 model_verbosity = "low"
 model_reasoning_summary = "concise"
 approval_policy = "on-request"
@@ -307,6 +334,7 @@ network_access = true
 
 - **Permissions.** Codex reads, edits, and runs commands in the workspace without asking, and those commands can reach the network. It asks before anything outside the workspace. `on-request` and `workspace-write` are the defaults for a trusted project, but setting them also covers projects you haven't trusted yet. Network access is off by default.
 - **Desktop app.** The app uses these keys only while its permission picker shows **Custom (config.toml)**, which it picks by default when `config.toml` sets `sandbox_mode`. Choosing **Ask for approval** in the picker ignores `config.toml` and turns network access off.
+- **Model.** New sessions use `gpt-6.1-sol` with high reasoning effort on the default service tier. Update the model when a new one comes out.
 - **Output.** `model_verbosity = "low"` keeps answers short and `model_reasoning_summary = "concise"` keeps the reasoning summaries short.
 
 Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference)
@@ -420,8 +448,13 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
   "addProjectBaseDirectory": "~/Dev",
   "continueThreadsAfterServerUpdate": true,
   "sidebarAutoSettleAfterDays": 5,
+  "pullRequestMergeMethod": "squash",
+  "sourceControlWritingStyle": {
+    "mode": "custom",
+    "customInstructions": "Keep titles concise. Use short bullet points in the description."
+  },
   "storageCleanup": {
-    "worktreeAfterDays": 10,
+    "worktreeAfterDays": 30,
     "worktreeOnMerge": true,
     "worktreeOnDelete": true,
     "worktreeUnchanged": true,
@@ -440,8 +473,10 @@ The script merges these into `~/.t3/userdata/settings.json` **(script)**, keepin
 - **New thread mode: worktree.** Each new thread gets its own git worktree.
 - **Add project base directory: `~/Dev`.** The add-project picker starts there.
 - **Continue threads after restarts: On.** Threads that were running pick up again after T3 Code updates and restarts.
-- **Auto-settle inactive threads: 5 days** (the default is 3).
-- **Settings → Storage.** Deletes a worktree once its thread has been inactive for 10 days, its PR has merged, its thread is deleted, or it has no commits beyond the default branch. Branches and thread history stay. Saved browser captures and rotated logs are deleted after 30 days.
+- **Auto-settle inactive threads: 5 days** (the default is 3). Settling a thread doesn't delete its worktree.
+- **Default merge method: Squash.** Pull requests start with squash merge. The default, **Last selected**, reuses the method last picked on this device and starts as a merge commit. On GitHub, also enable **Allow squash merging**.
+- **Source control writing style: Custom instructions.** Generated commit messages and PRs get concise titles and short bullet points.
+- **Settings → Storage.** Deletes a worktree once its thread has been inactive for 30 days, its PR has merged, its thread is deleted, or it has no commits beyond the default branch. Branches and thread history stay. Saved browser captures and rotated logs are deleted after 30 days.
 - **Providers.** Only Claude Code and Codex are on. Cursor, Grok, and OpenCode are off (also their defaults).
 
 And into `~/.t3/userdata/client-settings.json` **(script)**:
@@ -449,12 +484,12 @@ And into `~/.t3/userdata/client-settings.json` **(script)**:
 ```json
 {
   "followUpBehavior": "steer",
-  "diffFilesCollapsed": false
+  "sidebarWorkingShelfEnabled": true
 }
 ```
 
 - **Follow-up behavior: Steer.** A message sent mid-turn steers the running turn instead of waiting in a queue.
-- **Default diff file state: Expanded.** Files in a diff open expanded.
+- **Working section: On.** Threads that are working or monitoring fold into a **Working** section in the sidebar, and move back to the top when they need you.
 
 Other settings, keybindings (`~/.t3/userdata/keybindings.json`), and themes keep the app's defaults.
 

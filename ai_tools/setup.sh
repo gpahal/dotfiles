@@ -201,6 +201,9 @@ configure_claude_code() {
     #   (mobile push notifications through the Claude app while Remote Control is active)
     # Start new sessions in auto mode. Only user or managed settings can make auto the default.
     # Turn off auto memory.
+    # Default to Opus with high effort, the fullscreen TUI, and normal (non-vim) key bindings.
+    #   Switch models instead of pausing when safeguards flag a message. New worktrees branch
+    #   from origin/<default-branch>.
     # Send Anthropic less: no telemetry, error reports, session quality surveys (they can
     #   attach the transcript), /feedback, or feedback drafts. Training on your chats is an
     #   account setting (see open_manual_steps). Leave CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
@@ -210,6 +213,13 @@ configure_claude_code() {
         | .agentPushNotifEnabled = true
         | .permissions.defaultMode = "auto"
         | .autoMemoryEnabled = false
+        | .model = "opus"
+        | .modelSettings["claude-opus-5-5"].effortLevel = "high"
+        | .modelSettings["claude-sonnet-5.5"].effortLevel = "high"
+        | .tui = "fullscreen"
+        | .editorMode = "normal"
+        | .switchModelsOnFlag = true
+        | .worktree.baseRef = "fresh"
         | .feedbackDrafts = "off"
         | .env.DO_NOT_TRACK = "1"
         | .env.DISABLE_ERROR_REPORTING = "1"
@@ -217,13 +227,14 @@ configure_claude_code() {
         | .env.DISABLE_FEEDBACK_COMMAND = "1"
     '
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
-        echo "  Push notifications, auto mode, no auto memory, and the data-sharing opt-outs are"
-        echo "  already set"
+        echo "  Push notifications, auto mode, no auto memory, model, TUI, worktree, and data-sharing"
+        echo "  settings are already set"
         return 0
     fi
     json_merge "$CLAUDE_CODE_SETTINGS" "$settings"
-    echo "  Turned on push notifications and auto mode by default, turned off auto memory, and"
-    echo "  opted out of telemetry, error reports, surveys, and feedback"
+    echo "  Turned on push notifications and auto mode by default, turned off auto memory, set the"
+    echo "  model, TUI, and worktree settings, and opted out of telemetry, error reports, surveys,"
+    echo "  and feedback"
 }
 
 # ─── Claude desktop app ───
@@ -275,6 +286,10 @@ codex_config_edited() {
     edited="$(mktemp)"
     [ -f "$CODEX_CONFIG" ] && cp "$CODEX_CONFIG" "$edited"
 
+    # Default model, with high reasoning effort on the standard (not fast) service tier
+    toml_set "$edited" '' model '"gpt-6.1-sol"'
+    toml_set "$edited" '' model_reasoning_effort '"high"'
+    toml_set "$edited" '' service_tier '"default"'
     # Short answers and reasoning summaries
     toml_set "$edited" '' model_verbosity '"low"'
     toml_set "$edited" '' model_reasoning_summary '"concise"'
@@ -336,7 +351,7 @@ configure_codex() {
     if [ -f "$CODEX_CONFIG" ] &&
         [ "$(yq -p toml -o json '.' "$CODEX_CONFIG" 2>/dev/null)" == "$(yq -p toml -o json '.' "$edited")" ]; then
         rm -f "$edited"
-        echo "  Output, sandbox, approval, data-sharing, and desktop app settings are already set"
+        echo "  Model, output, sandbox, approval, data-sharing, and desktop app settings are already set"
         echo "  in $CODEX_CONFIG"
         return 0
     fi
@@ -349,7 +364,7 @@ configure_codex() {
     maybe_backup "$CODEX_CONFIG"
     mkdir -p "$(dirname "$CODEX_CONFIG")"
     mv "$edited" "$CODEX_CONFIG"
-    echo "  Set output, sandbox, approval, data-sharing, and desktop app settings in $CODEX_CONFIG"
+    echo "  Set model, output, sandbox, approval, data-sharing, and desktop app settings in $CODEX_CONFIG"
 }
 
 # ─── T3 Code desktop app ───
@@ -410,7 +425,8 @@ PLIST
     # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 in
     # auto mode, each in its own worktree; Add project starts in ~/Dev; threads continue after
     # an app update; inactive threads settle after 5 days; old worktrees, browser artifacts, and
-    # logs are cleaned up; Cursor, Grok, and OpenCode are off.
+    # logs are cleaned up; pull requests start with squash merge; commit and PR text follows
+    # custom instructions; Cursor, Grok, and OpenCode are off.
     local settings='
         .defaultModelSelection = {"instanceId": "claudeAgent", "model": "claude-opus-5-5"}
         | .defaultRuntimeMode = "auto"
@@ -418,33 +434,40 @@ PLIST
         | .addProjectBaseDirectory = "~/Dev"
         | .continueThreadsAfterServerUpdate = true
         | .sidebarAutoSettleAfterDays = 5
-        | .storageCleanup.worktreeAfterDays = 10
+        | .storageCleanup.worktreeAfterDays = 30
         | .storageCleanup.worktreeOnMerge = true
         | .storageCleanup.worktreeOnDelete = true
         | .storageCleanup.worktreeUnchanged = true
         | .storageCleanup.browserArtifactsAfterDays = 30
         | .storageCleanup.logsAfterDays = 30
+        | .pullRequestMergeMethod = "squash"
+        | .sourceControlWritingStyle = {
+            "mode": "custom",
+            "customInstructions": "Keep titles concise. Use short bullet points in the description."
+          }
         | .providers.cursor.enabled = false
         | .providers.grok.enabled = false
         | .providers.opencode.enabled = false
     '
     # Desktop settings: system notifications with sound and in-app notifications, a message
-    # sent mid-turn steers the running turn instead of queueing, and diffs open expanded
+    # sent mid-turn steers the running turn instead of queueing, and the sidebar's working shelf
     local client_settings='
         .notificationMode = "notifications-and-sound"
         | .inAppNotificationsEnabled = true
         | .followUpBehavior = "steer"
-        | .diffFilesCollapsed = false
+        | .sidebarWorkingShelfEnabled = true
     '
     if json_applied "$T3_CODE_SETTINGS" "$settings" &&
         json_applied "$T3_CODE_CLIENT_SETTINGS" "$client_settings"; then
-        echo "  Model, thread, cleanup, provider, and notification settings are already set"
+        echo "  Model, thread, cleanup, merge, writing style, provider, notification, and sidebar"
+        echo "  settings are already set"
         return 0
     fi
     ensure_app_quit "$T3_CODE_APP" || return 0
     json_merge "$T3_CODE_SETTINGS" "$settings"
     json_merge "$T3_CODE_CLIENT_SETTINGS" "$client_settings"
-    echo "  Set model, thread, cleanup, provider, and notification settings"
+    echo "  Set model, thread, cleanup, merge, writing style, provider, notification, and sidebar"
+    echo "  settings"
 }
 
 # ─── User-level instructions (Claude Code + Codex) ───

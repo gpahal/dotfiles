@@ -250,8 +250,7 @@ configure_claude_desktop() {
     #   Show in menu bar → Off (no menu bar icon, and no running in the background once the
     #   window is closed)
     # Also: Option+Space opens quick entry; scheduled tasks on in Code and Cowork; Cowork uses
-    # browser tools in Chrome and web search, and keeps its files in ~/Documents/Claude.
-    local files_dir="$HOME/Documents/Claude"
+    # browser tools in Chrome and web search.
     local settings='
         .preferences.dockBounceEnabled = true
         | .preferences.ccAutoArchiveInactiveDays = 30
@@ -264,7 +263,6 @@ configure_claude_desktop() {
         | .preferences.coworkPreferredBrowser = "chrome"
         | .preferences.coworkWebSearchEnabled = true
         | .preferences.coworkScheduledTasksEnabled = true
-        | .coworkUserFilesPath = "'"$files_dir"'"
     '
     if json_applied "$CLAUDE_DESKTOP_CONFIG" "$settings"; then
         echo "  Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are"
@@ -272,10 +270,9 @@ configure_claude_desktop() {
         return 0
     fi
     ensure_app_quit "Claude" || return 0
-    mkdir -p "$files_dir"
     json_merge "$CLAUDE_DESKTOP_CONFIG" "$settings"
     echo "  Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,"
-    echo "  and Cowork browser, web search, scheduled tasks, and files folder ($files_dir)"
+    echo "  and Cowork browser, web search, and scheduled tasks"
 }
 
 # ─── Codex (ChatGPT desktop app + Codex CLI) ───
@@ -422,13 +419,23 @@ PLIST
         echo "  Couldn't add $T3_CODE_APP to Login Items; add it in System Settings → General → Login Items."
     fi
 
-    # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 in
-    # auto mode, each in its own worktree; Add project starts in ~/Dev; threads continue after
-    # an app update; inactive threads settle after 5 days; old worktrees, browser artifacts, and
-    # logs are cleaned up; pull requests start with squash merge; commit and PR text follows
-    # custom instructions; Cursor, Grok, and OpenCode are off.
+    # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 at
+    # high effort in auto mode, each in its own worktree; Add project starts in ~/Dev; threads
+    # continue after an app update; inactive threads settle after 5 days; old worktrees, browser
+    # artifacts, and logs are cleaned up; pull requests start with squash merge; commit and PR
+    # text follows custom instructions; Cursor, Grok, and OpenCode are off. The effort option is
+    # set in place so other model options, like the context window, and their order survive a
+    # re-run.
     local settings='
-        .defaultModelSelection = {"instanceId": "claudeAgent", "model": "claude-opus-5-5"}
+        .defaultModelSelection.instanceId = "claudeAgent"
+        | .defaultModelSelection.model = "claude-opus-5-5"
+        | .defaultModelSelection.options |= (
+            (. // []) as $opts
+            | if any($opts[]; .id == "effort")
+              then $opts | map(if .id == "effort" then .value = "high" else . end)
+              else $opts + [{"id": "effort", "value": "high"}]
+              end
+          )
         | .defaultRuntimeMode = "auto"
         | .defaultThreadEnvMode = "worktree"
         | .addProjectBaseDirectory = "~/Dev"

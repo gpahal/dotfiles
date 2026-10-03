@@ -1,6 +1,6 @@
 # AGENTS.md
 
-macOS dotfiles. `setup.sh` installs tools and configs; `ai_tools/setup.sh` sets up Claude Code, Codex, and the skills in `ai_tools/skills`.
+macOS dotfiles. `setup.sh` installs tools and configs; `ai_tools/setup.sh` sets up Claude Code, Codex, T3 Code, and the skills in `ai_tools/skills`.
 
 - **Copied, not linked.** Setup copies configs into `$HOME` and skills into each agent's skills dir, so a repo edit takes effect only when its setup script re-runs. Run the scripts or touch `$HOME` only when asked: they change the real machine.
 - **Verify** shell edits with `bash -n` or `zsh -n`. There are no tests.

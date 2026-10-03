@@ -7,11 +7,12 @@ set -euo pipefail
 # - Claude desktop app
 # - Codex CLI
 # - ChatGPT desktop app
+# - T3 Code desktop app
 # - User-level instructions in ai_tools/user-instructions.md, for Claude Code and Codex
 # - Skills in ai_tools/skills, for Claude Code and Codex
 #
-# Idempotent: safe to re-run. Apps whose config is edited (Claude, ChatGPT) must be quit
-# first; when run interactively the script offers to quit them, otherwise it skips them.
+# Idempotent: safe to re-run. Apps whose config is edited (Claude, ChatGPT, T3 Code) must be
+# quit first; when run interactively the script offers to quit them, otherwise it skips them.
 #
 # Things macOS doesn't allow scripts to change (notification alert style, Accessibility and
 # Screen Recording permissions, installing browser extensions) are opened for you at the end.
@@ -22,6 +23,10 @@ DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 CODEX_CONFIG="$HOME/.codex/config.toml"
+T3_CODE_APP="T3 Code (Alpha)"
+T3_CODE_SETTINGS="$HOME/.t3/userdata/settings.json"
+T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
+T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 NOTIFICATION_SETTINGS="$HOME/Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 
@@ -53,10 +58,28 @@ maybe_backup() {
     fi
 }
 
+# Succeeds when this script runs inside an app, e.g. in its built-in terminal
+running_inside() {
+    local pid=$$ comm
+    while [ "${pid:-0}" -gt 1 ]; do
+        comm="$(ps -o comm= -p "$pid")" || return 1
+        [ "${comm##*/}" == "$1" ] && return 0
+        pid="$(ps -o ppid= -p "$pid" | tr -d ' ')" || return 1
+    done
+    return 1
+}
+
 # Quit a running app (after asking). Returns non-zero if it is still running.
 ensure_app_quit() {
     local app="$1"
-    pgrep -x "$app" &>/dev/null || return 0
+    # pgrep takes a regex, so escape app names like "T3 Code (Alpha)". -a counts this script's
+    # ancestors too.
+    pgrep -ax "$(printf '%s' "$app" | sed 's/[][\.*^$()+?{}|]/\\&/g')" &>/dev/null || return 0
+    if running_inside "$app"; then
+        echo "  $app is running this script, so it can't be quit; skipping. Re-run this script from"
+        echo "  another terminal."
+        return 1
+    fi
     if ! confirm "  $app is running and must be quit to change its settings. Quit $app now?"; then
         echo "  $app is running; skipping. Quit $app and re-run this script."
         return 1
@@ -145,6 +168,7 @@ install_apps() {
     for entry in \
         "claude:/Applications/Claude.app" \
         "chatgpt:/Applications/ChatGPT.app" \
+        "t3-code:/Applications/$T3_CODE_APP.app" \
         "codex:$(brew --prefix)/bin/codex"; do
         cask="${entry%%:*}"
         installed="${entry#*:}"
@@ -328,6 +352,84 @@ configure_codex() {
     echo "  Set output, sandbox, approval, data-sharing, and desktop app settings in $CODEX_CONFIG"
 }
 
+# ─── T3 Code desktop app ───
+
+configure_t3_code() {
+    echo "Configuring T3 Code..."
+    # Turn off anonymous usage telemetry. T3 Code only reads this from its environment, and an
+    # app opened from the Dock or Finder gets the launchd environment, not the shell's, so a
+    # LaunchAgent sets it at every login and launchctl sets it now.
+    local agent
+    agent="$(cat <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dotfiles.t3code-telemetry-off</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/launchctl</string>
+        <string>setenv</string>
+        <string>T3CODE_TELEMETRY_ENABLED</string>
+        <string>false</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+)"
+    if [ "$(cat "$T3_CODE_TELEMETRY_AGENT" 2>/dev/null)" == "$agent" ] &&
+        [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED)" == "false" ]; then
+        echo "  Telemetry is already off"
+    else
+        mkdir -p "$(dirname "$T3_CODE_TELEMETRY_AGENT")"
+        printf '%s\n' "$agent" > "$T3_CODE_TELEMETRY_AGENT"
+        launchctl setenv T3CODE_TELEMETRY_ENABLED false
+        echo "  Turned off telemetry (restart T3 Code if it's running)"
+    fi
+
+    # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 in
+    # auto mode, each in its own worktree; Add project starts in ~/Dev; threads continue after
+    # an app update; inactive threads settle after 5 days; old worktrees, browser artifacts, and
+    # logs are cleaned up; Cursor, Grok, and OpenCode are off.
+    local settings='
+        .defaultModelSelection = {"instanceId": "claudeAgent", "model": "claude-opus-5-5"}
+        | .defaultRuntimeMode = "auto"
+        | .defaultThreadEnvMode = "worktree"
+        | .addProjectBaseDirectory = "~/Dev"
+        | .continueThreadsAfterServerUpdate = true
+        | .sidebarAutoSettleAfterDays = 5
+        | .storageCleanup.worktreeAfterDays = 10
+        | .storageCleanup.worktreeOnMerge = true
+        | .storageCleanup.worktreeOnDelete = true
+        | .storageCleanup.worktreeUnchanged = true
+        | .storageCleanup.browserArtifactsAfterDays = 30
+        | .storageCleanup.logsAfterDays = 30
+        | .providers.cursor.enabled = false
+        | .providers.grok.enabled = false
+        | .providers.opencode.enabled = false
+    '
+    # Desktop settings: system notifications with sound and in-app notifications, a message
+    # sent mid-turn steers the running turn instead of queueing, and diffs open expanded
+    local client_settings='
+        .notificationMode = "notifications-and-sound"
+        | .inAppNotificationsEnabled = true
+        | .followUpBehavior = "steer"
+        | .diffFilesCollapsed = false
+    '
+    if json_applied "$T3_CODE_SETTINGS" "$settings" &&
+        json_applied "$T3_CODE_CLIENT_SETTINGS" "$client_settings"; then
+        echo "  Model, thread, cleanup, provider, and notification settings are already set"
+        return 0
+    fi
+    ensure_app_quit "$T3_CODE_APP" || return 0
+    json_merge "$T3_CODE_SETTINGS" "$settings"
+    json_merge "$T3_CODE_CLIENT_SETTINGS" "$client_settings"
+    echo "  Set model, thread, cleanup, provider, and notification settings"
+}
+
 # ─── User-level instructions (Claude Code + Codex) ───
 
 install_user_instructions() {
@@ -383,7 +485,7 @@ notifications_persistent() {
 
 open_manual_steps() {
     local bundle_id pending_notifications="" extension_installed=false open_extension=false targets=""
-    for bundle_id in com.mitchellh.ghostty com.anthropic.claudefordesktop com.openai.codex; do
+    for bundle_id in com.mitchellh.ghostty com.anthropic.claudefordesktop com.openai.codex com.t3tools.t3code; do
         notifications_persistent "$bundle_id" || pending_notifications+=" $bundle_id"
     done
     if compgen -G "$HOME/Library/Application Support/Google/Chrome/*/Extensions/$CLAUDE_CHROME_EXTENSION_ID" > /dev/null; then
@@ -396,10 +498,10 @@ open_manual_steps() {
     echo "Remaining manual steps (macOS doesn't let scripts change these):"
     if [ -n "$pending_notifications" ]; then
         echo "  1. System Settings → Notifications → Ghostty (and any other terminal you use), Claude,"
-        echo "     ChatGPT: turn on Allow notifications and set the alert style to Persistent."
+        echo "     ChatGPT, T3 Code: turn on Allow notifications and set the alert style to Persistent."
     else
-        echo "  1. System Settings → Notifications: Ghostty, Claude, and ChatGPT are already allowed and"
-        echo "     Persistent. Do the same for any other terminal you use."
+        echo "  1. System Settings → Notifications: Ghostty, Claude, ChatGPT, and T3 Code are already"
+        echo "     allowed and Persistent. Do the same for any other terminal you use."
     fi
     echo "  2. Claude in Chrome extension: install it and sign in (for claude --chrome)."
     echo "  3. ChatGPT app: Plugins → Computer Use, and Settings → Computer Use → Chrome."
@@ -440,6 +542,7 @@ main() {
     configure_claude_code
     configure_claude_desktop
     configure_codex
+    configure_t3_code
     install_user_instructions
     install_skills
     open_manual_steps

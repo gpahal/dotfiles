@@ -1,6 +1,6 @@
 # AI tools
 
-How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, and [Codex](#codex) (the Codex CLI and the ChatGPT desktop app). It covers installation, notifications, browser control, computer use, permissions, app settings, [privacy](#privacy), [user-level instructions](#user-level-instructions), and [skills](#skills).
+How to set up the AI tools on macOS: [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) (the Codex CLI and the ChatGPT desktop app), and [T3 Code](#t3-code). It covers installation, notifications, browser control, computer use, permissions, app settings, [privacy](#privacy), [user-level instructions](#user-level-instructions), and [skills](#skills).
 
 Scripts used here:
 
@@ -24,6 +24,9 @@ Scripts used here:
   - [Computer use](#computer-use-1)
   - [Permissions and output](#permissions-and-output)
   - [Desktop app settings](#desktop-app-settings-1)
+- [T3 Code](#t3-code)
+  - [Notifications](#notifications-2)
+  - [App settings](#app-settings)
 - [Privacy](#privacy)
 - [User-level instructions](#user-level-instructions)
 - [Skills](#skills)
@@ -38,15 +41,16 @@ bash ai_tools/setup.sh
 
 It's safe to re-run. Settings that are already in place are left alone, with no questions. Before editing a file that already exists, it asks whether to back it up to `<file>.bak`, unless that backup already matches the file. It does the following, and steps below marked **(script)** are done for you:
 
-- Installs the Claude desktop app, the ChatGPT desktop app, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
+- Installs the Claude desktop app, the ChatGPT desktop app, T3 Code, and the Codex CLI with brew, and Claude Code with its native installer. Apps that are already installed are skipped.
 - **Claude Code:** turns on **Push when actions required** and **Push when Claude decides**, starts new sessions in auto mode, turns off auto memory, and opts out of telemetry, error reports, surveys, and feedback, all in `~/.claude/settings.json`.
 - **Claude desktop app:** turns on **Draw attention on notifications**, **Keep computer awake while Claude works**, **Keep awake on battery power**, and scheduled tasks, sets **Archive inactive sessions** to 30 days, turns off **Show in menu bar**, sets quick entry to Option+Space, and sets up Cowork (browser tools in Chrome, web search, scheduled tasks, files in `~/Documents/Claude`).
 - **Codex:** sets terse output, the workspace-write sandbox with network access, approval on request, the PR merge method to squash, and the desktop app's notifications, keep-awake, menu bar, steering, detail view, link, and reasoning effort settings. It also turns off analytics and feedback uploads. All of these go in `~/.codex/config.toml`.
+- **T3 Code:** sets the default model, auto mode, and worktree threads, turns on notifications with sound, makes a mid-turn message steer the turn, sets up storage cleanup, and turns off the Cursor, Grok, and OpenCode providers, in `~/.t3/userdata/settings.json` and `~/.t3/userdata/client-settings.json`. It also turns off T3 Code's telemetry with a LaunchAgent.
 - **User-level instructions:** copies [`ai_tools/user-instructions.md`](./user-instructions.md) to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. See [User-level instructions](#user-level-instructions).
 - **Skills:** installs the skills in [`ai_tools/skills`](./skills/README.md) for Claude Code and Codex. See [Skills](#skills).
-- Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, and ChatGPT that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all three.
+- Opens **System Settings → Notifications** one at a time for each of Ghostty, Claude, ChatGPT, and T3 Code that isn't already allowed and Persistent, and opens the Claude in Chrome extension page if it isn't installed. macOS only lets a terminal with Full Disk Access read notification settings, so without it the script opens all four.
 
-The Claude and ChatGPT apps overwrite their settings files, so the script asks to quit them first. If they're still running (or the script isn't run from a terminal), it skips those settings and tells you to re-run.
+The Claude, ChatGPT, and T3 Code apps overwrite their settings files, so the script asks to quit them first. If they're still running (or the script isn't run from a terminal), it skips those settings and tells you to re-run. T3 Code can't be quit while the script runs in its built-in terminal, so run the script from Ghostty.
 
 Scripts can't do the rest. macOS doesn't let them change notification alert styles or Accessibility/Screen Recording permissions, extensions have to be installed from the browser, `/mcp` and `/chrome` are interactive, and the training opt-outs are account settings (see [Privacy](#privacy)). Follow the remaining steps below.
 
@@ -63,7 +67,7 @@ The `upgrade` shell function (in `zsh/aliases.zsh`) updates the AI tools along w
 - **Codex CLI and Claude Code installed with brew:** `brew upgrade`.
 - **Claude Code native install:** `claude update`.
 - **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. Plain `npm update -g` never moves Codex to a new 0.x minor version.
-- **Claude and ChatGPT desktop apps installed with brew:** `brew upgrade --cask --greedy`. They also update themselves. Apps that are running are skipped, with a message to quit them and re-run.
+- **Claude, ChatGPT, and T3 Code desktop apps installed with brew:** `brew upgrade --cask --greedy`. They also update themselves. Apps that are running are skipped, with a message to quit them and re-run.
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each plugin in `claude plugin list`, in the scope it was installed in. Claude Code has no update-all, and an updated plugin only takes effect the next time it starts.
 - **Codex plugins:** `codex plugin marketplace upgrade`. The bundled and runtime marketplaces (browser, computer use, documents, and so on) ship with the Codex CLI and update with it, so this only matters for a Git marketplace you add yourself.
 
@@ -71,7 +75,7 @@ The `upgrade` shell function (in `zsh/aliases.zsh`) updates the AI tools along w
 
 ## Before you start
 
-- Every app that sends notifications needs macOS permission with a **Persistent** alert style, so notifications stay on screen until you dismiss them. Set this in **System Settings → Notifications → (app)**: turn on **Allow notifications** and set the alert style to **Persistent**. The apps are your terminal (**Ghostty**, and any other terminal you run the CLIs in), **Claude**, and **ChatGPT**, plus **Codex Computer Use** if it's listed.
+- Every app that sends notifications needs macOS permission with a **Persistent** alert style, so notifications stay on screen until you dismiss them. Set this in **System Settings → Notifications → (app)**: turn on **Allow notifications** and set the alert style to **Persistent**. The apps are your terminal (**Ghostty**, and any other terminal you run the CLIs in), **Claude**, **ChatGPT**, and **T3 Code (Alpha)**, plus **Codex Computer Use** if it's listed.
 - Both CLIs send notifications through the terminal. For Ghostty, see [Ghostty notifications](../README.md#ghostty-notifications).
 - Install [Google Chrome](https://www.google.com/chrome/) and sign in to the sites you want the agents to use.
 
@@ -348,12 +352,91 @@ Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-se
 
 Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings)
 
+## T3 Code
+
+[T3 Code](https://t3.codes/) is a desktop app for running coding agents, and it's the one I use every day. It runs the `claude` and `codex` CLIs installed above, signed in with the same accounts, so their settings, [user-level instructions](#user-level-instructions), and [skills](#skills) apply in T3 Code too.
+
+Install **(script)**:
+
+```sh
+brew install --cask t3-code   # installs "T3 Code (Alpha).app", auto-updates
+```
+
+The `t3-code@nightly` cask installs nightly builds as a separate app, `T3 Code (Nightly).app`. The script and `upgrade` only handle `t3-code`.
+
+T3 Code has a built-in browser that agents can drive (**Settings → Agent browser access**, on by default), so it needs no browser or computer use setup.
+
+### Notifications
+
+1. **Settings → Thread notifications: Notifications and sound (script).** A system notification and a sound when a thread finishes, fails, or needs input or approval. They only arrive while T3 Code is open.
+2. **Settings → In-app notifications: On (script).**
+3. **System Settings → Notifications → T3 Code (Alpha)**: turn on **Allow notifications** and set the alert style to **Persistent**.
+
+Both settings are saved in `~/.t3/userdata/client-settings.json`:
+
+```json
+{
+  "notificationMode": "notifications-and-sound",
+  "inAppNotificationsEnabled": true
+}
+```
+
+### App settings
+
+The script merges these into `~/.t3/userdata/settings.json` **(script)**, keeping any other keys:
+
+```json
+{
+  "defaultModelSelection": { "instanceId": "claudeAgent", "model": "claude-opus-5-5" },
+  "defaultRuntimeMode": "auto",
+  "defaultThreadEnvMode": "worktree",
+  "addProjectBaseDirectory": "~/Dev",
+  "continueThreadsAfterServerUpdate": true,
+  "sidebarAutoSettleAfterDays": 5,
+  "storageCleanup": {
+    "worktreeAfterDays": 10,
+    "worktreeOnMerge": true,
+    "worktreeOnDelete": true,
+    "worktreeUnchanged": true,
+    "browserArtifactsAfterDays": 30,
+    "logsAfterDays": 30
+  },
+  "providers": {
+    "cursor": { "enabled": false },
+    "grok": { "enabled": false },
+    "opencode": { "enabled": false }
+  }
+}
+```
+
+- **Default model: Claude Opus 5.5 in auto mode.** New threads use Claude Code with `claude-opus-5-5`, in auto mode instead of the default full access. Update the model when a new one comes out.
+- **New thread mode: worktree.** Each new thread gets its own git worktree.
+- **Add project base directory: `~/Dev`.** The add-project picker starts there.
+- **Continue threads after restarts: On.** Threads that were running pick up again after T3 Code updates and restarts.
+- **Auto-settle inactive threads: 5 days** (the default is 3).
+- **Settings → Storage.** Deletes a worktree once its thread has been inactive for 10 days, its PR has merged, its thread is deleted, or it has no commits beyond the default branch. Branches and thread history stay. Saved browser captures and rotated logs are deleted after 30 days.
+- **Providers.** Only Claude Code and Codex are on. Cursor, Grok, and OpenCode are off (also their defaults).
+
+And into `~/.t3/userdata/client-settings.json` **(script)**:
+
+```json
+{
+  "followUpBehavior": "steer",
+  "diffFilesCollapsed": false
+}
+```
+
+- **Follow-up behavior: Steer.** A message sent mid-turn steers the running turn instead of waiting in a queue.
+- **Default diff file state: Expanded.** Files in a diff open expanded.
+
+Other settings, keybindings (`~/.t3/userdata/keybindings.json`), and themes keep the app's defaults.
+
 ## Privacy
 
-Neither tool has a config file setting that stops training on your chats. That is an account setting, so turn it off by hand:
+Neither Claude nor ChatGPT has a config file setting that stops training on your chats. That is an account setting, so turn it off by hand:
 
-- **Claude:** turn off model improvement in claude.ai → **Settings → Privacy** ([claude.ai/settings/data-privacy-controls](https://claude.ai/settings/data-privacy-controls)). This covers Claude Code and the desktop app. With it off, Anthropic keeps chats for 30 days instead of 5 years. Chats flagged for safety review can still be used.
-- **ChatGPT and Codex:** ChatGPT → **Settings → Data controls → Improve the model for everyone → Off**. This covers Codex tasks in the CLI and the desktop app. Codex also has a separate **Include environments** setting in its data controls on chatgpt.com/codex. It decides whether context from your Codex environments can be used for training, and the ChatGPT toggle doesn't change it, so turn it off too.
+- **Claude:** turn off model improvement in claude.ai → **Settings → Privacy** ([claude.ai/settings/data-privacy-controls](https://claude.ai/settings/data-privacy-controls)). This covers Claude Code (also when T3 Code runs it) and the desktop app. With it off, Anthropic keeps chats for 30 days instead of 5 years. Chats flagged for safety review can still be used.
+- **ChatGPT and Codex:** ChatGPT → **Settings → Data controls → Improve the model for everyone → Off**. This covers Codex tasks in the CLI, the desktop app, and T3 Code. Codex also has a separate **Include environments** setting in its data controls on chatgpt.com/codex. It decides whether context from your Codex environments can be used for training, and the ChatGPT toggle doesn't change it, so turn it off too.
 - **Don't rate replies.** For ChatGPT and Codex, a thumbs up or down or a feedback report sends the whole conversation to OpenAI even with training off. Treat Claude's thumbs the same way.
 
 The script turns off the telemetry each tool sends **(script)**. In `~/.claude/settings.json`:
@@ -391,11 +474,13 @@ enabled = false
 - `[analytics] enabled = false` turns off usage metrics and product events in the Codex CLI and the ChatGPT desktop app. The app starts Codex with `--analytics-default-enabled`, but an explicit `false` in `config.toml` wins.
 - `[feedback] enabled = false` rejects `/feedback` log uploads. It doesn't hide the thumbs in the desktop app.
 
+T3 Code sends anonymous usage events to PostHog unless `T3CODE_TELEMETRY_ENABLED=false` is in its environment. An app opened from the Dock or Finder gets the launchd environment, not your shell's, so the script installs `~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist`, which runs `launchctl setenv T3CODE_TELEMETRY_ENABLED false` at every login, and runs that command once right away. Restart T3 Code for it to take effect. To undo it, delete the plist and run `launchctl unsetenv T3CODE_TELEMETRY_ENABLED`.
+
 Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Claude privacy settings](https://privacy.claude.com/en/articles/12109829-how-do-i-change-my-model-improvement-privacy-settings), [Codex advanced config](https://learn.chatgpt.com/docs/config-file/config-advanced), [ChatGPT data controls](https://help.openai.com/en/articles/7730893-data-controls-in-chatgpt)
 
 ## User-level instructions
 
-[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, whatever the repo: finish tasks without check-ins, ask a specific question when stuck, and keep responses, comments, and docs concise.
+[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, including the ones T3 Code runs, whatever the repo: finish tasks without check-ins, ask a specific question when stuck, and keep responses, comments, and docs concise.
 
 **Install (script).** The script copies it to `~/.claude/CLAUDE.md` (Claude Code) and `~/.codex/AGENTS.md` (Codex). If either file already exists with different content, it asks before replacing it, and without a terminal it leaves the file alone.
 
@@ -411,7 +496,7 @@ To change them, edit the repo copy and re-run `bash ai_tools/setup.sh`. If you e
 npx skills@latest add ./ai_tools/skills --global --agent claude-code codex --skill '*' --yes
 ```
 
-The CLI copies each skill into `~/.agents/skills`, which Codex reads, and symlinks it into `~/.claude/skills` for Claude Code. Type `/` in either tool to see them.
+The CLI copies each skill into `~/.agents/skills`, which Codex reads, and symlinks it into `~/.claude/skills` for Claude Code. Type `/` in either tool, or in T3 Code, to see them.
 
 Notes:
 

@@ -390,6 +390,23 @@ PLIST
         echo "  Turned off telemetry (restart T3 Code if it's running)"
     fi
 
+    # Open at login: T3 Connect, which the phone app goes through, only runs while the app is
+    # open. The first run asks to let the terminal control System Events.
+    local login_items
+    if [ ! -d "/Applications/$T3_CODE_APP.app" ]; then
+        echo "  $T3_CODE_APP isn't installed; skipping open at login"
+    elif ! login_items="$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null)"; then
+        echo "  Couldn't read Login Items; skipping. Allow the terminal to control System Events in"
+        echo "  System Settings → Privacy & Security → Automation, or add $T3_CODE_APP in"
+        echo "  System Settings → General → Login Items."
+    elif [[ ", $login_items, " == *", $T3_CODE_APP, "* ]]; then
+        echo "  Already opens at login"
+    elif osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/$T3_CODE_APP.app\", hidden:false}" > /dev/null; then
+        echo "  Set to open at login"
+    else
+        echo "  Couldn't add $T3_CODE_APP to Login Items; add it in System Settings → General → Login Items."
+    fi
+
     # Server settings (Settings → General, Threads, Storage): new threads use Claude Opus 5.5 in
     # auto mode, each in its own worktree; Add project starts in ~/Dev; threads continue after
     # an app update; inactive threads settle after 5 days; old worktrees, browser artifacts, and

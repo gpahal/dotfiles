@@ -1,0 +1,131 @@
+[user]
+    name = Garvit Pahal
+    email = g10pahal@gmail.com
+
+[init]
+    defaultBranch = main
+
+[core]
+    pager = delta
+    fsmonitor = true
+    untrackedCache = true
+
+[interactive]
+    diffFilter = delta --color-only
+
+[push]
+    autoSetupRemote = true
+    followTags = true
+    useForceIfIncludes = true
+
+[pull]
+    rebase = true
+
+[fetch]
+    prune = true
+    pruneTags = true
+    parallel = 0
+    all = true
+
+[rebase]
+    autoStash = true
+    autoSquash = true
+    updateRefs = true
+
+[commit]
+    verbose = true
+
+[rerere]
+    enabled = true
+    autoUpdate = true
+
+[merge]
+    conflictstyle = zdiff3
+
+[diff]
+    colorMoved = default
+    algorithm = histogram
+    renames = copies
+    tool = difftastic
+    mnemonicPrefix = true
+
+[difftool]
+    prompt = false
+
+[difftool "difftastic"]
+    cmd = difft "$LOCAL" "$REMOTE"
+
+[pager]
+    difftool = true
+
+[stash]
+    showPatch = true
+
+[log]
+    date = human
+
+[transfer]
+    fsckObjects = true
+
+[column]
+    ui = auto
+
+[branch]
+    sort = -committerdate
+
+[tag]
+    sort = -version:refname
+
+[help]
+    autocorrect = prompt
+
+[delta]
+    navigate = true
+    line-numbers = true
+    syntax-theme = Dracula
+    file-style = bold yellow ul
+    file-decoration-style = none
+    hunk-header-decoration-style = cyan box ul
+    line-numbers-left-style = cyan
+    line-numbers-right-style = cyan
+    line-numbers-minus-style = 124
+    line-numbers-plus-style = 28
+
+[alias]
+    s = status -sb
+    d = diff
+    ds = diff --staged
+    dft = difftool
+    dlog = -c diff.external=difft log --ext-diff
+    dd = -c diff.external=difft diff
+    co = switch
+    cob = "!f() { b=$(git branch --format='%(refname:short)' | fzf --reverse) && git switch \"$b\"; }; f"
+    cobr = "!f() { b=$(git branch --remote --format='%(refname:short)' | grep / | fzf --reverse) && git switch \"${b#*/}\"; }; f"
+    del = branch -d
+    br = branch --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(contents:subject) %(color:green)(%(committerdate:relative)) [%(authorname)]' --sort=-committerdate
+    aa = add -A .
+    cm = commit -m
+    cp = cherry-pick
+    amend = commit --amend -m
+    oops = commit --amend --no-edit
+    unstage = restore --staged
+    undo = reset --soft HEAD~1
+    fixup = "!f() { git commit --fixup=${1:-HEAD}; }; f"
+    rib = "!f() { git rebase -i HEAD~${1:-5}; }; f"
+    last = log -1 --stat
+    lg = !git log --graph --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30
+    lga = !git log --graph --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit --all
+    ll = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s %C(dim green)(%cr) [%an]\" --abbrev-commit -30 --numstat
+    standup = !git log --pretty=format:\"%C(magenta)%h%Creset%C(red)%d%Creset %s\" --since='`date -v-1d \"+%Y-%m-%d 00:00:00\"`' --until='`date \"+%Y-%m-%d 00:00:00\"`' --all --author=\"`git config --get user.name`\" --abbrev-commit -30
+    find = "!f() { git log --pretty=format:'%C(magenta)%h%Creset %s %C(green)(%cr)' --all --grep=\"$1\"; }; f"
+    stats = shortlog -sn --all --no-merges
+    pushf = push --force-with-lease
+    wdiff = diff --word-diff
+    praise = blame -w
+    sp = stash pop
+    sl = stash list
+    ss = stash show -p
+
+# Last, so per-machine settings win. Git ignores the include when the file doesn't exist.
+[include]
+    path = ~/.gitconfig.local

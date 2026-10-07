@@ -1,0 +1,171 @@
+#!/bin/bash
+set -euo pipefail
+
+# git cleanup: delete local branches that are merged or squash-merged into the default branch,
+# and remove clean worktrees that have them checked out. Prints the plan and asks first.
+#
+# Squash-merge detection follows git-delete-squashed: build a commit with the branch's tree on
+# top of its merge base, then let git cherry check whether the base already has that patch.
+
+die() {
+    echo "git cleanup: $*" >&2
+    exit 1
+}
+
+git rev-parse --git-dir >/dev/null 2>&1 || die "not in a git repository"
+
+if ! git fetch --prune --quiet 2>/dev/null; then
+    echo "warning: git fetch failed; using local refs" >&2
+fi
+
+# Prefer the remote's default branch, then the usual names
+base="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)"
+for ref in "$base" refs/remotes/origin/main refs/remotes/origin/master refs/heads/main refs/heads/master; do
+    if git show-ref --verify --quiet "$ref"; then
+        base="$ref"
+        break
+    fi
+done
+[ -n "$base" ] || die "no origin/main, origin/master, main, or master to compare against"
+
+current="$(git symbolic-ref --quiet --short HEAD || true)"
+here="$(git rev-parse --show-toplevel)"
+
+# Worktree paths and their branches, in parallel arrays. The first worktree listed is the main one.
+wt_paths=()
+wt_branches=()
+wt_path=""
+main_wt=""
+while IFS= read -r line; do
+    case "$line" in
+        "worktree "*)
+            wt_path="${line#worktree }"
+            [ -n "$main_wt" ] || main_wt="$wt_path"
+            ;;
+        "branch refs/heads/"*)
+            wt_paths+=("$wt_path")
+            wt_branches+=("${line#branch refs/heads/}")
+            ;;
+    esac
+done < <(git worktree list --porcelain)
+
+# Print the path of the worktree that has the branch checked out, if any
+worktree_for() {
+    local i
+    for ((i = 0; i < ${#wt_branches[@]}; i++)); do
+        if [ "${wt_branches[$i]}" = "$1" ]; then
+            printf '%s\n' "${wt_paths[$i]}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+remove_wts=()
+merged=()
+squashed=()
+skipped=()
+
+while IFS= read -r branch; do
+    case "$branch" in
+        main | master | develop | "$current") continue ;;
+    esac
+
+    kind=""
+    # A branch whose reflog holds only its creation never had a commit. Its tip is an ancestor of
+    # the base, so it looks merged, but it is more likely new work.
+    empty=""
+    if [ "$(git rev-list --walk-reflogs --count "refs/heads/$branch" 2>/dev/null || echo 0)" = 1 ]; then
+        empty=1
+    fi
+    if git merge-base --is-ancestor "refs/heads/$branch" "$base"; then
+        kind=merged
+    elif mb="$(git merge-base "$base" "refs/heads/$branch")"; then
+        # The commit is thrown away, so give it a fixed identity rather than need the user's
+        if tmp="$(git -c user.name=git-cleanup -c user.email=git-cleanup@localhost \
+            commit-tree "refs/heads/$branch^{tree}" -p "$mb" -m _)" &&
+            git cherry "$base" "$tmp" | grep -q '^-'; then
+            kind=squashed
+        fi
+    fi
+    [ -n "$kind" ] || continue
+
+    if wt="$(worktree_for "$branch")"; then
+        if [ "$wt" = "$main_wt" ] || [ "$wt" = "$here" ]; then
+            skipped+=("$branch (checked out in $wt)")
+            continue
+        fi
+        if [ -n "$empty" ]; then
+            skipped+=("$branch (no commits yet, checked out in $wt)")
+            continue
+        fi
+        # A worktree whose directory is gone is pruned below; its branch can still go
+        if [ ! -d "$wt" ]; then
+            :
+        elif [ -n "$(git -C "$wt" status --porcelain 2>/dev/null || echo error)" ]; then
+            skipped+=("$branch (uncommitted changes in $wt)")
+            continue
+        else
+            remove_wts+=("$wt")
+        fi
+    fi
+
+    if [ "$kind" = merged ]; then
+        merged+=("$branch")
+    else
+        squashed+=("$branch")
+    fi
+done < <(git for-each-ref --format='%(refname:short)' refs/heads)
+
+print_group() {
+    local title="$1"
+    shift
+    [ "$#" -gt 0 ] || return 0
+    echo "$title:"
+    printf '  %s\n' "$@"
+}
+
+base_name="${base#refs/remotes/}"
+echo "Base: ${base_name#refs/heads/}"
+if [ "${#remove_wts[@]}" -eq 0 ] && [ "${#merged[@]}" -eq 0 ] && [ "${#squashed[@]}" -eq 0 ]; then
+    print_group "Skipped" ${skipped[@]+"${skipped[@]}"}
+    echo "Nothing to clean up."
+    exit 0
+fi
+print_group "Worktrees to remove" ${remove_wts[@]+"${remove_wts[@]}"}
+print_group "Branches to delete (merged)" ${merged[@]+"${merged[@]}"}
+print_group "Branches to delete (squash-merged)" ${squashed[@]+"${squashed[@]}"}
+print_group "Skipped" ${skipped[@]+"${skipped[@]}"}
+
+# /dev/tty can exist without a controlling terminal, so check that it actually opens
+if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+    echo "No terminal to confirm on; nothing deleted."
+    exit 0
+fi
+printf 'Proceed? [y/N] ' >&3
+reply=""
+read -r reply <&3 || true
+exec 3>&-
+case "$reply" in
+    [yY] | [yY][eE][sS]) ;;
+    *)
+        echo "Nothing deleted."
+        exit 0
+        ;;
+esac
+
+status=0
+for wt in ${remove_wts[@]+"${remove_wts[@]}"}; do
+    if git worktree remove "$wt"; then
+        echo "Removed worktree $wt"
+    else
+        status=1
+    fi
+done
+git worktree prune
+# -d checks against HEAD or the upstream, not the base, so it can refuse a branch merged into the
+# base (and a squash merge never looks merged to git). The checks above already confirmed both.
+for branch in ${merged[@]+"${merged[@]}"} ${squashed[@]+"${squashed[@]}"}; do
+    git branch -D "$branch" || status=1
+done
+exit "$status"

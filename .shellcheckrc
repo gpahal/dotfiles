@@ -1,0 +1,4 @@
+# Follow `source` lines to lib/common.sh, resolving `# shellcheck source=` paths relative to
+# each script
+external-sources=true
+source-path=SCRIPTDIR

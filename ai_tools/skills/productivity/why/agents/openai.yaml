@@ -1,0 +1,5 @@
+interface:
+  display_name: "Why"
+  short_description: "Find the cited rationale behind code"
+policy:
+  allow_implicit_invocation: false

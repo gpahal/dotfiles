@@ -1,0 +1,5 @@
+interface:
+  display_name: "Show Me Your Work"
+  short_description: "List the decisions behind the work so far"
+policy:
+  allow_implicit_invocation: false

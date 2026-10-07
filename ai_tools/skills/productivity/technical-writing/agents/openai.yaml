@@ -1,0 +1,5 @@
+interface:
+  display_name: "Technical Writing"
+  short_description: "Write docs, readmes, PRs and commits to a layered standard"
+policy:
+  allow_implicit_invocation: false

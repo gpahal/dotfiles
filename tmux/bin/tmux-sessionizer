@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+
+# Open a tmux session for a project directory, creating it if needed. With no argument, pick a
+# project from ~/Dev/<group>/<project> with fzf. Based on ThePrimeagen's tmux-sessionizer:
+# https://github.com/ThePrimeagen/dev/tree/HEAD/tmux-sessionizer
+
+list_projects() {
+    if command -v fd &>/dev/null; then
+        fd . "$HOME/Dev" --min-depth 2 --max-depth 2 --type d
+    else
+        find "$HOME/Dev" -mindepth 2 -maxdepth 2 -type d
+    fi
+}
+
+if [ $# -gt 0 ]; then
+    dir="$1"
+else
+    dir="$(list_projects | fzf)" || exit 0
+fi
+[ -n "$dir" ] || exit 0
+if [ ! -d "$dir" ]; then
+    echo "tmux-sessionizer: not a directory: $dir" >&2
+    exit 1
+fi
+dir="$(cd "$dir" && pwd)"
+
+# tmux treats . and : in target names as window and pane separators
+name="$(basename "$dir" | tr '.:' '__')"
+
+if [ -z "${TMUX:-}" ]; then
+    exec tmux new-session -A -s "$name" -c "$dir"
+fi
+# A leading = makes tmux match the session name exactly, not by prefix
+tmux has-session -t "=$name" 2>/dev/null || tmux new-session -d -s "$name" -c "$dir"
+tmux switch-client -t "=$name"

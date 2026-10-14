@@ -21,9 +21,8 @@ else
     GHOSTTY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
 fi
 
-# The snap, not 26.04's ghostty package: the snap is built from Ghostty's own repo and snapd moves
-# it to each release, while the LTS archive keeps 1.3.0 with fixes only. 24.04's archive has no
-# Ghostty, and the community .deb stopped getting new versions for it.
+# The snap is built from Ghostty's own repo and snapd moves it to each release, while Ubuntu
+# 26.04's archive keeps 1.3.0 with fixes only.
 ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }

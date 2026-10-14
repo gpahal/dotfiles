@@ -2,7 +2,7 @@
 
 Configuration and setup scripts for my Mac, and for the Ubuntu desktop I use from it over SSH. See [Ubuntu](#ubuntu-1) for what differs there.
 
-The Mac is Apple Silicon on macOS 15 (Sequoia) or later. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
+The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
 
 ![zsh prompt](./resources/prompt.png)
 
@@ -97,7 +97,7 @@ just alerts <ntfy-url|test>   # bash ubuntu/setup-alerts.sh, see "Phone alerts" 
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64, and 24.04 is best effort. [COMPATIBILITY.md](./COMPATIBILITY.md) records what has been checked where. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64. [COMPATIBILITY.md](./COMPATIBILITY.md) records what has been checked where. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
 
 What differs from macOS:
 

@@ -2,6 +2,15 @@
 
 What each full verification round tested, on what, and what it left to check by hand. Add a section for each new round at the top, and keep the older ones.
 
+## 2026-10-14 CI and zsh completion fixes
+
+Ubuntu 26.04 is the only Linux CI target. Both CI jobs now download yq 4.54.1 on macOS and Ubuntu. Zsh skips insecure completion paths, rebuilds empty completion caches, and only refreshes a cache after initialization succeeds.
+
+- On macOS 27.0.1 (arm64), `just check` and `TEST_FAIL_ON_SKIP=1 just test` passed under `/bin/bash` 3.2.57: 84 tests, zero failures, zero skips.
+- The new completion regression passed with missing, cached, empty, and expired dumps. The whole-config terminal test also passed with a world-writable completion directory on `FPATH`; before the fix, that reproduced both `compinit: initialization aborted` and `compdef: unknown command or service: git`.
+- Both CI matrices and yq installation blocks passed syntax checks. The actual macOS yq download ran in a temporary directory and passed `scripts/check-tool-versions.sh`.
+- GitHub Actions, the Ubuntu container tests, and `just test-ubuntu` weren't run in this round.
+
 ## 2026-10-12 Setup review fixes
 
 Fixed the findings from the 2026-10-12 setup reviews. Added one T3 Code server on Ubuntu, a firewall that has no temporary rules, daily health alerts and a boot notice, smartd warnings that repeat, and NUT for the UPS. Then ran a full setup in a systemd VM.
@@ -49,22 +58,21 @@ Still to check on macOS, which no round has covered:
 
 ## 2026-10-10 Ubuntu 26.04 retarget
 
-Moved the Ubuntu target to 26.04 LTS (resolute) and ran the test suite where 26.04 replaces sudo and coreutils with sudo-rs and Rust coreutils. 24.04 stays best effort.
+Moved the Ubuntu target to 26.04 LTS (resolute) and ran the test suite where 26.04 replaces sudo and coreutils with sudo-rs and Rust coreutils.
 
 | Machine | OS | CPU | sudo | coreutils |
 | --- | --- | --- | --- | --- |
 | Mac | macOS 27.0.1 (26A434) | arm64 | | |
 | Container | `ubuntu:26.04` (26.04.1 LTS) in OrbStack's Docker 29.4.0, as a non-root user | arm64 | sudo-rs 0.2.13-0ubuntu1.2 | uutils 0.10.0 (`rust-coreutils`) |
-| Container | `ubuntu:24.04` (24.04.5 LTS), the same way | arm64 | sudo 1.9.15p5 | GNU 9.4 |
 
-- Tools: on the Mac, `/bin/bash` 3.2.57, zsh 5.9.2, just 1.58.0, ShellCheck 0.11.0, jq 1.8.2, and yq 4.54.1. On 26.04, bash 5.3.9, zsh 5.9, tmux 3.6, git 2.53.0, just 1.45.0, jq 1.8.1, Vim 9.1, and OpenSSH 10.2p1. On 24.04, bash 5.2.21, zsh 5.9, tmux 3.4, git 2.43.0, just 1.21.0, jq 1.7.1, Vim 9.1, and OpenSSH 9.6p1. Both containers had ShellCheck 0.11.0 and yq 4.54.1 from their releases, and mise 2026.10.5, as CI installs them.
-- `just check` and `just test` with `TEST_FAIL_ON_SKIP=1` passed on all three: 75 tests, zero failures, zero skips. The suite ran from a copy of the repo with a fresh git index, and the containers ran with `--init`.
-- Before the fixes, two tests failed on both Ubuntu containers and passed on the Mac. `test-zsh-config.sh` reached the `mise` sentinel, and `test-ssh.sh` ran `ssh -G` on a config holding `UseKeychain`, which OpenSSH outside macOS rejects. Both were test bugs.
+- Tools: on the Mac, `/bin/bash` 3.2.57, zsh 5.9.2, just 1.58.0, ShellCheck 0.11.0, jq 1.8.2, and yq 4.54.1. On 26.04, bash 5.3.9, zsh 5.9, tmux 3.6, git 2.53.0, just 1.45.0, jq 1.8.1, Vim 9.1, and OpenSSH 10.2p1. The container had ShellCheck 0.11.0 and yq 4.54.1 from their releases, and mise 2026.10.5, as CI installs them.
+- `just check` and `just test` with `TEST_FAIL_ON_SKIP=1` passed on the Mac and Ubuntu 26.04: 75 tests, zero failures, zero skips. The suite ran from a copy of the repo with a fresh git index, and the container ran with `--init`.
+- Before the fixes, two tests failed on Ubuntu and passed on the Mac. `test-zsh-config.sh` reached the `mise` sentinel, and `test-ssh.sh` ran `ssh -G` on a config holding `UseKeychain`, which OpenSSH outside macOS rejects. Both were test bugs.
 - `test-harness.sh`'s TERM check failed twice while three suites ran at once. It now waits up to 5 s for the killed test's `sleep`. It didn't fail in 36 later runs, with or without load.
-- With the real sudo-rs and Rust coreutils, these forms gave the same results as 24.04's sudo and GNU coreutils: `sudo VAR=val`, `sudo -n` with and without cached credentials, `sudo -v`, `sudo tee` and `tee -a`, `sudo -u`, `sudo install -m` and `-d -m`, `sudo mktemp`, `sudo cp` and `cp -p`, `sudo test -e`, `stat -c %a`, `stat -L -c`, `stat -c %Y`, `sort -s -t`, `sort -k`, `-u`, `-un`, and `-nr`, `paste -sd`, `date -d @N`, `date +FORMAT`, `touch -t`, `mktemp` with and without a template, `readlink` and `readlink -f`, `cp -Rp`, `tail -c1`, `comm`, `uniq -d`, `sha256sum`, and `env -u`. With a password and no `NOPASSWD`, credentials cached by `sudo -v` reached a child shell on the same terminal and no other terminal, as with sudo. Only the error text differs ("interactive authentication is required"), and no script reads it.
-- Resolute's archive, checked in the container: `ghostty` 1.3.0, `apparmor` 5.0.2 with `/etc/apparmor.d/bwrap-userns-restrict` (24.04 ships it only in `apparmor-profiles`' extra profiles), `openssh-server` 10.2p1, whose postinst enables `ssh.socket` and which adds `sshd.service` as an alias of `ssh.service`, `ufw` 0.36.2 with the same `/etc/default/ufw` backend settings as 24.04, `gdm3` 50.1 with `/etc/gdm3/custom.conf`, and `unattended-upgrades` 2.12 with the same `20auto-upgrades` files.
+- These forms passed with the real sudo-rs and Rust coreutils: `sudo VAR=val`, `sudo -n` with and without cached credentials, `sudo -v`, `sudo tee` and `tee -a`, `sudo -u`, `sudo install -m` and `-d -m`, `sudo mktemp`, `sudo cp` and `cp -p`, `sudo test -e`, `stat -c %a`, `stat -L -c`, `stat -c %Y`, `sort -s -t`, `sort -k`, `-u`, `-un`, and `-nr`, `paste -sd`, `date -d @N`, `date +FORMAT`, `touch -t`, `mktemp` with and without a template, `readlink` and `readlink -f`, `cp -Rp`, `tail -c1`, `comm`, `uniq -d`, `sha256sum`, and `env -u`. With a password and no `NOPASSWD`, credentials cached by `sudo -v` reached a child shell on the same terminal and no other terminal, as with sudo. Only the error text differs ("interactive authentication is required"), and no script reads it.
+- Resolute's archive, checked in the container: `ghostty` 1.3.0, `apparmor` 5.0.2 with `/etc/apparmor.d/bwrap-userns-restrict`, `openssh-server` 10.2p1, whose postinst enables `ssh.socket` and which adds `sshd.service` as an alias of `ssh.service`, `ufw` 0.36.2 with its `/etc/default/ufw` backend settings, `gdm3` 50.1 with `/etc/gdm3/custom.conf`, and `unattended-upgrades` 2.12 with the same `20auto-upgrades` files.
 
-Changes from this round: the codex step installs `apparmor-profiles` only when the bwrap profile isn't in `/etc/apparmor.d` already. The `ghostty` step keeps the snap, which follows Ghostty's releases, over the archive's 1.3.0. CI's `check` job runs on `ubuntu-26.04` and `ubuntu-24.04`, and `ai-settings` on `ubuntu-26.04`. `just test-ubuntu` creates an `ubuntu:resolute` machine. Neither ran here.
+Changes from this round: the codex step installs `apparmor-profiles` only when the bwrap profile isn't in `/etc/apparmor.d` already. The `ghostty` step keeps the snap, which follows Ghostty's releases, over the archive's 1.3.0. CI added `ubuntu-26.04` to `check` and `ai-settings`. `just test-ubuntu` creates an `ubuntu:resolute` machine. Neither ran here.
 
 Not checked here. amd64 containers can't run on this Mac, since OrbStack's amd64 emulation is off, so every Linux run was arm64. No systemd, AppArmor, sshd, ufw, or snapd ran in the containers. Still to check on a native 26.04 x86_64 machine or a systemd VM: sshd socket activation and `sshd -T`, ufw's backend once enabled, systemd-oomd and linger, the unattended-upgrades defaults, GDM's automatic login, the installer's TPM encryption options, the codex step's AppArmor detection, `t3 browser setup`, T3 Code's `.deb`, the Ghostty quick terminal under GNOME 50, OrbStack's `ubuntu:resolute` image, and a full `setup.sh` and `ai_tools/setup.sh` run followed by a reboot and both `--status` reports.
 
@@ -91,7 +99,6 @@ Also still to check by hand, since the tests stub each of these:
 | Machine | OS | CPU |
 | --- | --- | --- |
 | Mac | macOS 27.0.1 (26A434) | arm64 |
-| Container | `ubuntu:24.04` in OrbStack, as a non-root user | arm64 |
 
 ### Versions on the Mac
 
@@ -125,7 +132,6 @@ All passed.
 
 - `just check` on the Mac.
 - `just test` on the Mac.
-- `tests/run.sh` in the `ubuntu:24.04` container with `TEST_FAIL_ON_SKIP=1`.
 - `scripts/check-ai-settings.sh` with the CLIs above.
 
 ### Manual checks left

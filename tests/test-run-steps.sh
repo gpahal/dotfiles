@@ -95,19 +95,17 @@ assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
-# macOS before 15 gets a warning, and the run carries on
+# macOS before 27 gets a warning, and the run carries on
 is_macos() { true; }
 is_ubuntu() { false; }
 stub uname '[ "$1" != -m ] || echo arm64'
 stub sw_vers '[ "$1" != -productVersion ] || echo 14.7.2'
 assert_exit 0 run_steps "" first
-assert_contains "$RUN_OUTPUT" "Warning: setup needs macOS 15 or later, not 14.7.2."
+assert_contains "$RUN_OUTPUT" "Warning: setup is tested on macOS 27, not 14.7.2."
 assert_contains "$RUN_OUTPUT" "first ran"
-for version in 15.0 26.1; do
-    stub sw_vers "[ \"\$1\" != -productVersion ] || echo $version"
-    assert_exit 0 run_steps "" first
-    assert_not_contains "$RUN_OUTPUT" "Warning" "the run on macOS $version"
-done
+stub sw_vers '[ "$1" != -productVersion ] || echo 27.0.1'
+assert_exit 0 run_steps "" first
+assert_not_contains "$RUN_OUTPUT" "Warning" "the run on macOS 27.0.1"
 
 # An Intel Mac fails before any step runs, status included
 stub uname '[ "$1" != -m ] || echo x86_64'

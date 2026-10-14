@@ -19,8 +19,6 @@ DOCKER_SOURCES="$SANDBOX/apt/sources.list.d/docker.sources"
 DOCKER_UNATTENDED_CONF="$SANDBOX/apt/52dotfiles-docker"
 DOCKER_DAEMON_CONFIG="$SANDBOX/daemon.json"
 OS_RELEASE="$SANDBOX/os-release"
-# 24.04, which stays best effort. The other tests run as 26.04, tests/lib.sh's release.
-printf '%s\n' ID=ubuntu VERSION_CODENAME=noble UBUNTU_CODENAME=noble > "$OS_RELEASE"
 
 # Packages listed in $SANDBOX/installed are installed. Installing Docker's adds them.
 stub dpkg-query 'grep -qxF "${!#}" "'"$SANDBOX"'/installed" && echo "install ok installed"'
@@ -229,8 +227,8 @@ reset
 echo 404 > "$SANDBOX/http-status"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu noble yet; re-run this step later."
-[ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written before Docker published packages for noble"
+assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu resolute yet; re-run this step later."
+[ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written before Docker published packages for resolute"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_file_not_contains "$STUB_LOG" "usermod"
 
@@ -249,12 +247,12 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
 assert_file_not_contains "$STUB_LOG" "curl"
 
-for state in deleted disabled jammy; do
+for state in deleted disabled stale-suite; do
     set_up_docker
     case "$state" in
         deleted) rm "$DOCKER_SOURCES" ;;
         disabled) echo "Enabled: no" >> "$DOCKER_SOURCES" ;;
-        jammy) docker_sources | sed 's/^Suites: .*/Suites: jammy/' > "$DOCKER_SOURCES" ;;
+        stale-suite) docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES" ;;
     esac
     cp "$DOCKER_SOURCES" "$SANDBOX/before" 2>/dev/null || rm -f "$SANDBOX/before"
     assert_exit 3 status
@@ -265,7 +263,7 @@ for state in deleted disabled jammy; do
     fi
     # Declined: nothing written
     assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Rewrite Docker's apt source for noble"
+    assert_contains "$RUN_OUTPUT" "Rewrite Docker's apt source for resolute"
     assert_contains "$RUN_OUTPUT" "Left unchanged"
     if [ -e "$SANDBOX/before" ]; then
         assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
@@ -287,17 +285,17 @@ done
 # listing the rewrite it can't do. Nothing here can fix that, so the step doesn't fail, and status
 # says what it waits for.
 set_up_docker
-docker_sources | sed 's/^Suites: .*/Suites: jammy/' > "$DOCKER_SOURCES"
+docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
 cp "$DOCKER_SOURCES" "$SANDBOX/before"
 echo 404 > "$SANDBOX/http-status"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu noble yet; re-run this step later."
+assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu resolute yet; re-run this step later."
 assert_not_contains "$RUN_OUTPUT" "Rewrite Docker's apt source"
 assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; Docker hasn't published packages for Ubuntu noble yet"
+assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; Docker hasn't published packages for Ubuntu resolute yet"
 # download.docker.com can't be reached, so the key's download fails: the step fails, changing
 # nothing
 echo 000 > "$SANDBOX/http-status"
@@ -309,7 +307,7 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 
 # Docker's update fails with the rewritten source: the old one comes back
 set_up_docker
-docker_sources | sed 's/^Suites: .*/Suites: jammy/' > "$DOCKER_SOURCES"
+docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
 cp "$DOCKER_SOURCES" "$SANDBOX/before"
 touch "$SANDBOX/docker-update-fails"
 export DOTFILES_ASSUME_YES=1

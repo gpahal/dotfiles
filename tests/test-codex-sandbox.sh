@@ -71,7 +71,7 @@ assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "apt doesn't offer"
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 
-# Restricted, with the profile in apparmor.d already, as 25.04's apparmor package installs it:
+# Restricted, with the profile in apparmor.d already, as 26.04's apparmor package installs it:
 # it's loaded, and nothing is installed, even where apt doesn't offer apparmor-profiles. A no first.
 reset 1 bubblewrap no-profiles
 touch "$BWRAP_PROFILE"

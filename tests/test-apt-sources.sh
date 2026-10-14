@@ -21,7 +21,7 @@ content="deb [signed-by=/k] https://example.com/ubuntu resolute main"
 assert_eq missing "$(apt_source_state "$file" "$content")" "no file"
 echo "$content" > "$file"
 assert_eq "" "$(apt_source_state "$file" "$content")" "the exact content"
-for changed in "# $content # disabled on upgrade to resolute" "${content/resolute/noble}" "$content
+for changed in "# $content # disabled on upgrade to resolute" "${content/resolute/stale-suite}" "$content
 deb https://example.com/other resolute main"; do
     echo "$changed" > "$file"
     assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$content")" "a changed file: $changed"
@@ -32,7 +32,7 @@ printf '%s\n' "$stanza" "Enabled: no" > "$file"
 assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$stanza")" "a stanza turned off"
 echo "$content" > "$file"
 assert_eq "  ok         Example's apt source ($file)" "$(status_apt_source Example "$file" "$content" example)" "status, ok"
-echo "${content/resolute/noble}" > "$file"
+echo "${content/resolute/stale-suite}" > "$file"
 assert_eq "  missing    Example's apt source ($file): differs from what setup writes; re-run the example step" \
     "$(status_apt_source Example "$file" "$content" example)" "status, differing"
 rm "$file"
@@ -57,10 +57,10 @@ add() {
 
 # No packages for this release yet: it says so, and changes nothing
 echo 404 > "$SANDBOX/http-status"
-echo "${content/resolute/noble}" > "$file"
+echo "${content/resolute/stale-suite}" > "$file"
 assert_exit "$APT_REPO_UNPUBLISHED" add
 assert_contains "$RUN_OUTPUT" "Example hasn't published packages for Ubuntu resolute yet; re-run this step later."
-assert_eq "${content/resolute/noble}" "$(cat "$file")" "the source while the repo has no packages for this release"
+assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source while the repo has no packages for this release"
 assert_file_not_contains "$STUB_LOG" "fetch"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 
@@ -76,13 +76,13 @@ assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=
 for http in 200 000; do
     echo "$http" > "$SANDBOX/http-status"
     echo old-key > "$keyring"
-    echo "${content/resolute/noble}" > "$file"
+    echo "${content/resolute/stale-suite}" > "$file"
     touch "$SANDBOX/fetch-fails"
     : > "$STUB_LOG"
     assert_exit 1 add
     rm "$SANDBOX/fetch-fails"
     assert_eq old-key "$(cat "$keyring")" "the key after its download failed ($http)"
-    assert_eq "${content/resolute/noble}" "$(cat "$file")" "the source after the key's download failed ($http)"
+    assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after the key's download failed ($http)"
     assert_file_not_contains "$STUB_LOG" "apt-get"
 done
 rm -rf "$APT_SOURCES_DIR" "$SANDBOX/keyrings"

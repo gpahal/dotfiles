@@ -28,12 +28,13 @@ autoload -U compinit colors zcalc
 # dump, which changes the site-functions directory's mtime, so a tool installed today completes.
 _zcompdump="${ZDOTDIR:-$HOME}/.zcompdump"
 _zcompdump_fresh=( $_zcompdump(N.mh-24) )
-if (( $#_zcompdump_fresh )) &&
+if (( $#_zcompdump_fresh )) && [[ -s $_zcompdump ]] &&
     [[ -z ${HOMEBREW_PREFIX:-} || ! $HOMEBREW_PREFIX/share/zsh/site-functions -nt $_zcompdump ]]; then
     compinit -C
 else
-    compinit
-    touch "$_zcompdump"
+    # Skip insecure completion paths without prompting; an unattended shell can't answer.
+    # Only refresh a successful dump, so an aborted initialization can't leave an empty cache.
+    compinit -i && touch "$_zcompdump"
 fi
 unset _zcompdump _zcompdump_fresh
 colors

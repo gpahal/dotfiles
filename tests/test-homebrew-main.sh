@@ -182,7 +182,7 @@ stub sudo 'exec env "$@"'
 stub apt-get 'S="'"$SANDBOX"'"
 [ "${*: -1}" == update ] || exit 0
 if [ -e "$S/apt-broken" ]; then
-    echo "E: The repository http://example.invalid noble Release does not have a Release file." >&2
+    echo "E: The repository http://example.invalid resolute Release does not have a Release file." >&2
     exit 100
 fi
 if [ -e "$S/apt-denied" ]; then
@@ -230,7 +230,7 @@ assert_not_contains "$RUN_OUTPUT" "apt's lists lock is held"
 rm "$SANDBOX/apt-denied"
 # apt-get update's progress shows as it runs, not only once it exits: the stub prints a line, then
 # waits for the test to see it
-stub apt-get 'echo "Get:1 http://example.invalid noble InRelease"
+stub apt-get 'echo "Get:1 http://example.invalid resolute InRelease"
 for _ in $(seq 50); do
     [ ! -e "'"$SANDBOX"'/progress-seen" ] || exit 0
     sleep 0.1

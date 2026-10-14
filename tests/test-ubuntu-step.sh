@@ -46,7 +46,7 @@ stub sudo 'for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refuse
 exec env "$@"'
 stub dpkg-query 'echo "install ok installed"'
 # systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled and ssh.service
-# disabled, as on 26.04 and 24.04, unless $SANDBOX/units/<unit> holds another state, which enable
+# disabled, as on 26.04, unless $SANDBOX/units/<unit> holds another state, which enable
 # of ssh.socket or ssh.service sets to enabled. A unit is active unless
 # $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables and starts them,
 # unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now

@@ -25,12 +25,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Versions: the Ubuntu legs are the deterministic ones. They take apt's packages, fixed per
-# release, and these pinned releases. macOS takes the latest from brew, so it doubles as the
-# floating compatibility check. scripts/check-tool-versions.sh fails a leg whose tools are older
+# Versions: Ubuntu takes apt's packages and these pinned releases. macOS takes the latest from
+# brew except for shellcheck and yq, so it checks compatibility with newer tools.
+# scripts/check-tool-versions.sh fails a leg whose tools are older
 # than the declared minimums. One shellcheck for every leg, from its release: versions report
 # different warnings, and Ubuntu's package is older. Ubuntu's yq package is a different tool, so
-# mikefarah's comes from its release, pinned here, while brew's on macOS may be newer.
+# mikefarah's comes from its release. Pin it on macOS too, where brew can lag behind our minimum.
 env:
   SHELLCHECK_VERSION: v0.11.0
   YQ_VERSION: v4.54.1
@@ -42,8 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 26.04 is the Ubuntu release setup targets, and 24.04 stays best effort
-        os: [macos-latest, ubuntu-26.04, ubuntu-24.04]
+        os: [macos-latest, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,7 +50,7 @@ jobs:
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install just jq yq tmux mise git fd
+          brew install just jq tmux mise git fd
           curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz" |
             sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
 
@@ -67,10 +66,18 @@ jobs:
           sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
           curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz" |
             sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-          sudo curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
-          sudo chmod +x /usr/local/bin/yq
           sudo curl -fsSL -o /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
           sudo chmod +x /usr/local/bin/mise
+
+      - name: Install pinned yq
+        env:
+          YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-bin"
+          curl -fsSL -o "$RUNNER_TEMP/ci-bin/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
+          chmod +x "$RUNNER_TEMP/ci-bin/yq"
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ci-bin/yq" --version
 
       # The 26.04 runner has classic sudo and Rust coreutils, where a 26.04 install has sudo-rs. The
       # tests stub sudo, and COMPATIBILITY.md's container runs cover sudo-rs. The log shows which ran.
@@ -119,7 +126,7 @@ jobs:
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install jq yq
+        run: brew install jq
 
       - name: Install tools (Ubuntu)
         if: runner.os == 'Linux'
@@ -127,8 +134,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq bubblewrap
-          sudo curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
-          sudo chmod +x /usr/local/bin/yq
+
+      - name: Install pinned yq
+        env:
+          YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-bin"
+          curl -fsSL -o "$RUNNER_TEMP/ci-bin/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
+          chmod +x "$RUNNER_TEMP/ci-bin/yq"
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ci-bin/yq" --version
 
       # AppArmor can stop bwrap creating user namespaces. The codex step loads AppArmor's bwrap
       # profile for that; a throwaway runner can turn the restriction off.

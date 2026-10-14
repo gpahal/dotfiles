@@ -97,7 +97,7 @@ just alerts <ntfy-url|test>   # bash ubuntu/setup-alerts.sh, see "Phone alerts" 
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64, and 24.04 is best effort. [COMPATIBILITY.md](./COMPATIBILITY.md) records what has been checked where. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64. [COMPATIBILITY.md](./COMPATIBILITY.md) records what has been checked where. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
 
 What differs from macOS:
 

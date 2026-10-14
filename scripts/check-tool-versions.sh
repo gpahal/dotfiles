@@ -2,22 +2,22 @@
 set -euo pipefail
 
 # Check that the tools `just check` and `just test` run are at least the versions the repo
-# declares. Each minimum is the tested floor, what Ubuntu 24.04's apt has, the oldest release CI
-# runs, not a version known to be required: an older one may work, but nothing tests it. GitHub's
-# Ubuntu runners ship a newer git than apt's, so CI doesn't test git's floor; the version this
+# declares. Each minimum is the tested floor from Ubuntu 26.04's apt, not a version known to be
+# required: an older one may work, but nothing tests it. GitHub's Ubuntu runners ship a newer git
+# than apt's, so CI doesn't test git's floor; the version this
 # prints for each tool is what the run tested. yq's is a real requirement: the codex step rewrites
 # config.toml with yq -o toml, whose encoder arrived in 4.52.1 and was fixed up to 4.54.1. CI
 # pins shellcheck instead, since each release reports different warnings. The scripts themselves
 # target /bin/bash 3.2. CI runs this first (.github/workflows/check.yml).
 
 # tool, minimum, and the command that prints its version
-TOOLS="jq 1.7.1 jq --version
+TOOLS="jq 1.8.1 jq --version
 yq 4.54.1 yq --version
-just 1.21 just --version
+just 1.45 just --version
 zsh 5.9 zsh --version
-tmux 3.4 tmux -V
+tmux 3.6 tmux -V
 vim 9.1 vim --version
-git 2.43 git --version"
+git 2.53 git --version"
 
 # version_at_least <version> <minimum>: compare dot-separated numbers, a missing part counting as 0
 version_at_least() {

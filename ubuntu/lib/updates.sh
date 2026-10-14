@@ -75,8 +75,7 @@ keep_conffiles_written() {
 # Print the packages apt-get upgrade would hold back, one per line. A simulation needs no root.
 # New dependencies are allowed, as unattended-upgrades allows them, so a kernel update that pulls
 # in a new package doesn't count; what's left needs a removal or a decision, or is on hold. Phased
-# updates count as upgradable too: apt 2.7 (24.04) otherwise lists them as kept back until their
-# phase reaches this machine, and the daily alert would flag them.
+# updates count as upgradable too, so the daily alert only flags packages that need action.
 held_back_packages() {
     local out
     out="$(LC_ALL=C run_bounded 60 apt-get -s -o APT::Get::Upgrade-Allow-New=true \

@@ -17,8 +17,8 @@ CODEX_CONFIG="$HOME/.codex/config.toml"
 # The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
 # the step rather than leaving Codex reading files setup never wrote
 CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
-# Ubuntu 24.04's apparmor-profiles ships this profile but doesn't load it. From 25.04, including
-# 26.04, the apparmor package installs it in /etc/apparmor.d, which loads it at boot.
+# Ubuntu 26.04's apparmor package installs this profile in /etc/apparmor.d, which loads it at
+# boot. The extra-profiles path is a fallback when that copy is missing.
 BWRAP_PROFILE_SOURCE=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces

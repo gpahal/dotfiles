@@ -2,7 +2,7 @@
 
 Configuration and setup scripts for my Mac, and for the Ubuntu desktop I use from it over SSH. See [Ubuntu](#ubuntu-1) for what differs there.
 
-The Mac is Apple Silicon on macOS 15 (Sequoia) or later. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
+The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
 
 ![zsh prompt](./resources/prompt.png)
 

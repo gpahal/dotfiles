@@ -25,8 +25,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Versions: Ubuntu takes apt's packages and these pinned releases. macOS takes the latest from
-# brew except for shellcheck and yq, so it checks compatibility with newer tools.
+# OS targets: macOS 27 (Apple Silicon) and Ubuntu 26.04 (x64). GitHub provides macOS 27 through
+# the xcode-27 public-preview runner: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
+# Ubuntu takes apt's packages and these pinned releases. macOS takes current Homebrew packages
+# except for shellcheck and yq, so it checks compatibility with newer tools.
 # scripts/check-tool-versions.sh fails a leg whose tools are older
 # than the declared minimums. One shellcheck for every leg, from its release: versions report
 # different warnings, and Ubuntu's package is older. Ubuntu's yq package is a different tool, so
@@ -42,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-26.04]
+        os: [xcode-27, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-26.04]
+        os: [xcode-27, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

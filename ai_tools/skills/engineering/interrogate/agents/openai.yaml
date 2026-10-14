@@ -1,0 +1,5 @@
+interface:
+  display_name: "Interrogate"
+  short_description: "Claude and Codex review a change adversarially"
+policy:
+  allow_implicit_invocation: false

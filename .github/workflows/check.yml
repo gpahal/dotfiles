@@ -1,0 +1,158 @@
+name: Check
+
+# main is the default branch (gh repo view). A pull request's pushes run once, as pull_request,
+# instead of also as push. Run it by hand on another branch with workflow_dispatch. The weekly run
+# is only for ai-settings, whose CLIs release without a change to this repo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+# Actions are pinned to the commit their release tag pointed to, with the tag in a comment. To
+# move to a new release, look its commit up with
+# git ls-remote https://github.com/actions/checkout 'refs/tags/<tag>*' and replace both. An
+# annotated tag prints two lines: take the one ending in ^{}, since the other is the tag object's.
+
+# A new push to a pull request or branch cancels its runs still in progress. The event is in the
+# group so the weekly run and a push to main don't cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Versions: the Ubuntu legs are the deterministic ones. They take apt's packages, fixed per
+# release, and these pinned releases. macOS takes the latest from brew, so it doubles as the
+# floating compatibility check. scripts/check-tool-versions.sh fails a leg whose tools are older
+# than the declared minimums. One shellcheck for every leg, from its release: versions report
+# different warnings, and Ubuntu's package is older. Ubuntu's yq package is a different tool, so
+# mikefarah's comes from its release, pinned here, while brew's on macOS may be newer.
+env:
+  SHELLCHECK_VERSION: v0.11.0
+  YQ_VERSION: v4.54.1
+
+jobs:
+  check:
+    if: github.event_name != 'schedule'
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 26.04 is the Ubuntu release setup targets, and 24.04 stays best effort
+        os: [macos-latest, ubuntu-26.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install just jq yq tmux mise git fd
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz" |
+            sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+
+      - name: Install tools (Ubuntu)
+        if: runner.os == 'Linux'
+        # Ubuntu has no mise package, and its fd package names the command fdfind, while brew's,
+        # which setup installs, is fd
+        env:
+          MISE_VERSION: v2026.10.5
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just jq zsh tmux vim fd-find
+          sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz" |
+            sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          sudo curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+          sudo curl -fsSL -o /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
+          sudo chmod +x /usr/local/bin/mise
+
+      # The 26.04 runner has classic sudo and Rust coreutils, where a 26.04 install has sudo-rs. The
+      # tests stub sudo, and COMPATIBILITY.md's container runs cover sudo-rs. The log shows which ran.
+      - name: Show the sudo and coreutils versions (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo --version | head -1
+          stat --version | head -1
+
+      - name: Check the tool versions
+        run: |
+          shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
+          bash scripts/check-tool-versions.sh
+
+      # Fails on a formula or cask brew dropped, deprecated, or disabled, or a formula Ubuntu gets
+      # that has no Linux bottle. The macOS leg runs it, since brew is on its PATH.
+      - name: Check the Homebrew packages still exist (macOS)
+        if: runner.os == 'macOS'
+        run: bash scripts/check-brew-packages.sh
+
+      # The tests stub sudo, and the steps expect a normal user. GitHub's runners run jobs as one.
+      - name: Check the job isn't root
+        run: test "$(id -u)" -ne 0
+
+      - run: just check
+      # A test skips when a tool it needs is missing. The steps above install them all, so a skip
+      # here means a runner lost one.
+      - run: just test
+        env:
+          TEST_FAIL_ON_SKIP: 1
+
+  # The settings the claude-code and codex steps write, checked by the latest Claude Code and Codex
+  # (scripts/check-ai-settings.sh), and the t3-code step's keys against the latest T3 Code
+  # (scripts/check-t3-settings.sh). Unpinned on purpose, so a release that renames or rejects a
+  # setting fails here. A job of its own, so a CLI release can't block the shell checks. `just check`
+  # runs neither script.
+  ai-settings:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install jq yq
+
+      - name: Install tools (Ubuntu)
+        if: runner.os == 'Linux'
+        # Codex's sandbox runs commands with bubblewrap on Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bubblewrap
+          sudo curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+
+      # AppArmor can stop bwrap creating user namespaces. The codex step loads AppArmor's bwrap
+      # profile for that; a throwaway runner can turn the restriction off.
+      - name: Let bwrap create user namespaces (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ "$(cat "$f" 2>/dev/null)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --ro-bind / / true
+
+      # Claude Code from the native installer, as the claude-code step installs it
+      - name: Install the latest Claude Code and Codex
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          npm install -g @openai/codex@latest
+
+      - run: bash scripts/check-ai-settings.sh < /dev/null
+
+      # The keys the t3-code step writes, against the latest T3 Code release's settings schemas
+      # Runs even when the check above fails, since it doesn't depend on it
+      - if: success() || failure()
+        run: bash scripts/check-t3-settings.sh < /dev/null
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -1,0 +1,5 @@
+# shellcheck reads only the nearest .shellcheckrc, so this repeats the repo root's
+external-sources=true
+source-path=SCRIPTDIR
+# Tests pass Bash snippets, such as stub bodies, in single quotes so they expand later
+disable=SC2016

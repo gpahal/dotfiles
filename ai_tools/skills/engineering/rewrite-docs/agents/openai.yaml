@@ -1,0 +1,5 @@
+interface:
+  display_name: "Rewrite Docs"
+  short_description: "Bring docs, agent files, and comments up to date and terse"
+policy:
+  allow_implicit_invocation: false

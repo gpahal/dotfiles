@@ -1,0 +1,46 @@
+# The Claude Code settings keys the claude-code step may write to ~/.claude/settings.json, one
+# path per line: object keys joined by dots, with * for a key the user picks, such as a model ID
+# under modelSettings. scripts/check-claude-keys.sh fails on a written key that isn't here, since
+# Claude Code ignores unknown keys and claude doctor doesn't report them. A new key the step
+# writes goes here once it's checked.
+#
+# Source: the settings schema in Claude Code 2.1.296, where each key is a property, checked
+# 2026-10-11, and https://code.claude.com/docs/en/settings for the documented ones.
+# hooks.SessionEnd: https://code.claude.com/docs/en/hooks, checked 2026-10-13.
+# No script checks the names against a newer CLI. `just check` runs check-claude-keys.sh against
+# this list, and scripts/check-ai-settings.sh adds claude doctor, which reports a wrong type or
+# value but not an unknown key. Recheck the list by hand against a new release's schema.
+#
+# To recheck, search the schema embedded in the claude binary, not SchemaStore's, which lags.
+# Each property appears as key:Type( or key:()=>Type(, so a count of 0 means the key is gone:
+#   strings "$(readlink -f "$(command -v claude)")" | grep -cE '[{,]switchModelsOnFlag:(\(\)=>)?[A-Za-z_$]+\('
+# Check a nested key by its last part, such as refreshInterval. Hook events, such as SessionEnd,
+# and env's variable names aren't schema keys; check them against the docs.
+agentPushNotifEnabled
+autoMemoryEnabled
+cleanupPeriodDays
+editorMode
+env
+env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY
+env.DISABLE_ERROR_REPORTING
+env.DISABLE_FEEDBACK_COMMAND
+feedbackDrafts
+hooks
+hooks.SessionEnd
+hooks.WorktreeCreate
+hooks.WorktreeRemove
+inputNeededNotifEnabled
+model
+modelSettings
+modelSettings.*
+modelSettings.*.effortLevel
+permissions
+permissions.defaultMode
+preferredNotifChannel
+remoteControlAtStartup
+statusLine
+statusLine.command
+statusLine.refreshInterval
+statusLine.type
+switchModelsOnFlag
+tui

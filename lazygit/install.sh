@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+# Copy the lazygit config. On macOS, lazygit reads ~/Library/Application Support/lazygit, not
+# ~/.config/lazygit, unless XDG_CONFIG_HOME is set (`lazygit --print-config-dir` shows which).
+# Ubuntu uses ~/.config/lazygit.
+
+# shellcheck source=../lib/common.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+config_path() {
+    local config_home="$HOME/.config"
+    is_macos && config_home="$HOME/Library/Application Support"
+    echo "${XDG_CONFIG_HOME:-$config_home}/lazygit/config.yml"
+}
+
+# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
+# or status_file to report it
+lazygit_files() {
+    "$1" "$DOTFILES_DIR/lazygit/config.yml" "$(config_path)"
+}
+
+status() {
+    lazygit_files status_file
+    status_result
+}
+
+main() {
+    step_args "$@"
+    if status_requested "$@"; then
+        status
+        return $?
+    fi
+    echo "Copying lazygit config..."
+    lazygit_files copy_file
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

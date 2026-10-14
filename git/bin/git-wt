@@ -1,0 +1,357 @@
+#!/bin/bash
+set -euo pipefail
+
+# git wt: keep a repo's worktrees at ~/.worktrees/<group>/<repo>/<name>, where <group>/<repo> is
+# the main checkout's path under ~/Dev (~/Dev/go/envl gives go/envl). A repo anywhere else uses
+# _/<basename>-<hash>, where <hash> is the first 8 characters of git hash-object of the checkout's
+# path, so repos with the same name in different places don't share a directory.
+# $WORKTREES_DIR replaces ~/.worktrees. Every command works the same from inside any of the
+# repo's worktrees, except a linked worktree of a --separate-git-dir repo, whose git dir doesn't
+# record the main checkout. There, every command fails and says to run it from the main checkout.
+#
+#   git wt path [<name>]       print the worktree path for <name>, or the repo's directory
+#   git wt add <name> [<base>] create branch <name> from <base> (default: origin's default branch,
+#                              else origin/main, origin/master, or HEAD) and a worktree for it,
+#                              then print its path. A branch that exists is checked out instead,
+#                              and one only origin has is checked out tracking it; a worktree
+#                              that exists has its path printed.
+#   git wt list                list the repo's worktrees under that directory
+#   git wt rm [-f] <name>      remove the worktree, then the directories that leaves empty. One
+#                              holding changes, untracked files, or ignored files other than
+#                              build output, such as .env, is listed and needs -f, which
+#                              deletes them all.
+#   git wt prune [--session <id>]
+#                              remove each worktree that Claude Code's worktree hook made a
+#                              branch for, and that branch, when the worktree is clean by
+#                              git wt rm's rule, but for ignored files the main checkout has
+#                              the same copy of, and the branch has no commits that another
+#                              branch, local or remote, lacks. --session <id> limits it to
+#                              the worktrees made for that Claude Code session. Without it,
+#                              run it only when no session is using the repo's worktrees.
+#
+# Only the path goes to stdout, so `cd "$(git wt add foo)"` works.
+
+die() {
+    echo "git wt: $*" >&2
+    exit 1
+}
+
+usage() {
+    sed -n 's/^#   //p' "$0" >&2
+    exit 1
+}
+
+[ $# -gt 0 ] || usage
+
+root="${WORKTREES_DIR:-$HOME/.worktrees}"
+root="${root%/}"
+
+common="$(git rev-parse --path-format=absolute --git-common-dir 2> /dev/null)" ||
+    die "not in a git repository"
+# Print the main checkout. For submodules and --separate-git-dir repos, the common dir's parent
+# is wrong, and git worktree list names the git dir as the main worktree. A submodule's git dir
+# records its checkout in core.worktree; a --separate-git-dir repo's records nothing, so from its
+# linked worktrees this fails rather than use the git dir. A bare repo has no checkout, so a
+# stand-in takes its place: repo/ for repo/.bare or repo/.git, and the sibling foo for foo.git,
+# so that foo.git and bar.git side by side get different paths.
+main_checkout() {
+    local first dir
+    if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$common" ] &&
+        git rev-parse --show-toplevel 2> /dev/null; then
+        return
+    fi
+    # Without core.worktree, --git-dir would make the current directory the checkout
+    if [ -n "$(git --git-dir="$common" config core.worktree 2> /dev/null)" ] &&
+        git --git-dir="$common" rev-parse --show-toplevel 2> /dev/null; then
+        return
+    fi
+    first="$(git worktree list --porcelain | sed -n '1,2p')"
+    dir="${first%%$'\n'*}"
+    dir="${dir#worktree }"
+    case "$first" in
+        *$'\nbare')
+            case "${dir##*/}" in
+                .bare | .git) dirname "$dir" ;;
+                *) printf '%s\n' "${dir%.git}" ;;
+            esac
+            ;;
+        *)
+            [ "$dir" != "$(cd -P "$common" && pwd)" ] ||
+                die "run git wt from the main checkout of a --separate-git-dir repo"
+            printf '%s\n' "$dir"
+            ;;
+    esac
+}
+main="$(main_checkout)"
+[ -n "$main" ] || die "couldn't find the main checkout"
+
+# Print <group>/<repo> for a main checkout at ~/Dev/<group>/<repo>, else _/<basename>-<hash>. git
+# prints resolved paths, so compare against ~/Dev resolved too.
+repo_key() {
+    local dev rel
+    for dev in "$HOME/Dev" "$(cd -P "$HOME/Dev" 2> /dev/null && pwd)"; do
+        [ -n "$dev" ] || continue
+        case "$main" in
+            "$dev"/*/*)
+                rel="${main#"$dev"/}"
+                case "$rel" in
+                    */*/*) ;;
+                    *)
+                        printf '%s\n' "$rel"
+                        return
+                        ;;
+                esac
+                ;;
+        esac
+    done
+    printf '_/%s-%s\n' "${main##*/}" "$(printf '%s' "$main" | git hash-object --stdin | cut -c1-8)"
+}
+
+repo_dir="$root/$(repo_key)"
+
+# Fail unless the name is usable as a branch name
+check_name() {
+    [ -n "$1" ] || usage
+    case "$1" in
+        -*) die "'$1' isn't a valid branch name" ;;
+    esac
+    git check-ref-format "refs/heads/$1" || die "'$1' isn't a valid branch name"
+}
+
+# Print the branch checked out in a worktree, or nothing. Not --short, which prints heads/<name>
+# for a branch a tag shares a name with.
+worktree_branch() {
+    local ref
+    ref="$(git -C "$1" symbolic-ref --quiet HEAD 2> /dev/null || true)"
+    printf '%s\n' "${ref#refs/heads/}"
+}
+
+# Succeeds when the directory is the top of one of this repo's worktrees
+is_repo_worktree() {
+    [ -d "$1" ] &&
+        [ "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2> /dev/null)" = "$common" ] &&
+        [ "$(cd -P "$1" && pwd)" = "$(git -C "$1" rev-parse --show-toplevel)" ]
+}
+
+# Remove the directory and its parents while they're empty, up to $root
+prune_empty() {
+    local dir="$1"
+    while [ "$dir" != "$root" ] && [ "${dir#"$root"/}" != "$dir" ] &&
+        { [ ! -e "$dir" ] || rmdir "$dir" 2> /dev/null; }; do
+        dir="$(dirname "$dir")"
+    done
+}
+
+cmd_path() {
+    if [ $# -eq 0 ]; then
+        printf '%s\n' "$repo_dir"
+        return
+    fi
+    check_name "$1"
+    printf '%s\n' "$repo_dir/$1"
+}
+
+cmd_add() {
+    local name="${1:-}" base="${2:-}" path origin_head ref
+    check_name "$name"
+    path="$repo_dir/$name"
+    if is_repo_worktree "$path"; then
+        [ "$(worktree_branch "$path")" = "$name" ] ||
+            die "$path is a worktree, but doesn't have $name checked out"
+        echo "git wt: $path already exists" >&2
+        printf '%s\n' "$path"
+        return
+    fi
+    # A worktree directory deleted by hand stays registered, and git would refuse the path. Drop
+    # only that registration: git worktree prune would drop every other missing one too. git
+    # registers the resolved path, and can't resolve a path through a symlink whose parents are
+    # gone, so make them first.
+    mkdir -p "$(dirname "$path")"
+    [ -e "$path" ] || git worktree remove "$path" 2> /dev/null || true
+    # git's own output goes to stderr, so stdout holds only the path
+    local add=()
+    if git show-ref --verify --quiet "refs/heads/$name"; then
+        [ -z "$base" ] || echo "git wt: branch $name exists, so $base is ignored" >&2
+        add=("$path" "$name")
+    elif [ -z "$base" ] && git show-ref --verify --quiet "refs/remotes/origin/$name"; then
+        # Full refs, so a tag or branch named origin/<name> can't stand in for origin's branch
+        add=(--track -b "$name" "$path" "refs/remotes/origin/$name")
+    else
+        if [ -z "$base" ]; then
+            base=HEAD
+            origin_head="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2> /dev/null || true)"
+            for ref in "$origin_head" refs/remotes/origin/main refs/remotes/origin/master; do
+                if [ -n "$ref" ] && git show-ref --verify --quiet "$ref"; then
+                    base="$ref"
+                    break
+                fi
+            done
+        fi
+        # --no-track: a branch made from origin/main would otherwise push to main
+        add=(--no-track -b "$name" "$path" "$base")
+    fi
+    if ! git worktree add "${add[@]}" >&2; then
+        prune_empty "$path"
+        exit 1
+    fi
+    printf '%s\n' "$path"
+}
+
+cmd_list() {
+    local dir line
+    # git lists resolved paths
+    dir="$(cd -P "$repo_dir" 2> /dev/null && pwd)" || return 0
+    git worktree list | while IFS= read -r line; do
+        case "$line" in
+            "$dir"/*) printf '%s\n' "$line" ;;
+        esac
+    done
+}
+
+# Print a worktree's ignored files and directories, except build output, caches, and dependencies
+# that can be rebuilt, and fail when git does. -z, since git otherwise quotes a name with a space or
+# non-ASCII character, and the quoted name isn't a path.
+kept_ignored() {
+    local entry path
+    git -C "$1" status --porcelain -z --ignored --untracked-files=normal 2> /dev/null |
+        while IFS= read -r -d '' entry; do
+            case "$entry" in
+                '!! '*) path="${entry#'!! '}" ;;
+                *) continue ;;
+            esac
+            case "${path%/}" in
+                node_modules | */node_modules | .venv | */.venv | venv | target | */target | dist | */dist | \
+                    build | */build | .next | */.next | .turbo | */.turbo | __pycache__ | */__pycache__ | \
+                    .pytest_cache | */.pytest_cache | .mypy_cache | */.mypy_cache | .ruff_cache | */.ruff_cache | \
+                    .cache | */.cache | coverage | */coverage | .gradle | */.gradle | .svelte-kit | */.svelte-kit | \
+                    .tox | */.tox | *.egg-info | .DS_Store | */.DS_Store) ;;
+                *) printf '%s\n' "$path" ;;
+            esac
+        done
+}
+
+# Print "<heading>:" and each line of $2 indented below it, when $2 isn't empty
+print_group() {
+    [ -n "$2" ] || return 0
+    echo "  $1:"
+    printf '%s\n' "$2" | sed 's/^/    /'
+}
+
+cmd_rm() {
+    local force=() name="" arg path changes tracked untracked ignored
+    # -f goes before or after the name
+    for arg in "$@"; do
+        case "$arg" in
+            -f | --force) force=(--force) ;;
+            *)
+                [ -z "$name" ] || usage
+                name="$arg"
+                ;;
+        esac
+    done
+    check_name "$name"
+    path="$repo_dir/$name"
+    # git worktree remove deletes ignored files without asking, and its own refusal names none of
+    # the changes that --force would delete, so list all three kinds first
+    if [ ${#force[@]} -eq 0 ] && [ -d "$path" ]; then
+        changes="$(git -C "$path" status --porcelain --untracked-files=normal 2> /dev/null)" || changes=""
+        tracked="$(printf '%s\n' "$changes" | sed -n '/^??/d; s/^...//p')"
+        untracked="$(printf '%s\n' "$changes" | sed -n 's/^?? //p')"
+        ignored="$(kept_ignored "$path")" || ignored=""
+        if [ -n "$tracked$untracked$ignored" ]; then
+            {
+                echo "git wt: removing $path would delete:"
+                print_group "modified or staged files" "$tracked"
+                print_group "untracked files" "$untracked"
+                print_group "ignored files" "$ignored"
+            } >&2
+            die "keep what you need, then run git wt rm -f $name, which deletes all of these"
+        fi
+    fi
+    git worktree remove ${force[@]+"${force[@]}"} "$path"
+    prune_empty "$(dirname "$path")"
+}
+
+# Files the worktree hook (ai_tools/claude-code/worktree-hook.sh) writes in a worktree's git dir
+# when it creates the worktree's branch: one that says it did, and the session it did it for
+CREATED_BRANCH_MARKER=worktree-hook-created-branch
+SESSION_MARKER=worktree-hook-session
+
+# Succeeds when a worktree holds no changes or untracked files, and no ignored files other than
+# build output, dependencies, and copies of the main checkout's. The last are what the worktree
+# hook copies from .worktreeinclude, such as a .env; one that differs from the main checkout's,
+# or that it lacks, keeps the worktree.
+is_clean() {
+    local changes files file
+    changes="$(git -C "$1" status --porcelain --untracked-files=normal)" || return 1
+    [ -z "$changes" ] || return 1
+    # exit, not return: the loop runs in a subshell, and pipefail fails the pipeline with it
+    files="$(kept_ignored "$1" | while IFS= read -r file; do find "$1/${file%/}" ! -type d || exit 1; done)" ||
+        return 1
+    while IFS= read -r file; do
+        [ -z "$file" ] || cmp -s "$file" "$main/${file#"$1"/}" || return 1
+    done <<< "$files"
+}
+
+# Succeeds when another branch, local or remote, has every commit branch $1 has. The list is read
+# whole first: grep -q exits at the first match, which would kill a long listing with SIGPIPE.
+is_merged() {
+    local refs
+    refs="$(git for-each-ref --contains "refs/heads/$1" --format='%(refname)' refs/heads refs/remotes)" ||
+        return 1
+    [ -n "$refs" ] && grep -qvxF "refs/heads/$1" <<< "$refs"
+}
+
+cmd_prune() {
+    local session="" dir here list path name gitdir status=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --session)
+                [ -n "${2:-}" ] || usage
+                session="$2"
+                shift 2
+                ;;
+            *) usage ;;
+        esac
+    done
+    # git lists resolved paths
+    dir="$(cd -P "$repo_dir" 2> /dev/null && pwd)" || return 0
+    # git can't remove the worktree it's run from, such as a claude -w session's own
+    here="$(pwd -P)"
+    # Read the whole list before removing anything from it
+    list="$(git worktree list --porcelain | sed -n 's/^worktree //p')"
+    while IFS= read -r path; do
+        case "$path" in "$dir"/*) ;; *) continue ;; esac
+        case "$here/" in "$path"/*) continue ;; esac
+        name="${path#"$dir"/}"
+        gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2> /dev/null)" || continue
+        [ -f "$gitdir/$CREATED_BRANCH_MARKER" ] || continue
+        if [ -n "$session" ] && [ "$(cat "$gitdir/$SESSION_MARKER" 2> /dev/null)" != "$session" ]; then
+            continue
+        fi
+        # The hook names the branch after the worktree. Another branch checked out there isn't
+        # the one it made.
+        if [ "$(worktree_branch "$path")" != "$name" ] || ! is_clean "$path" || ! is_merged "$name"; then
+            continue
+        fi
+        if git worktree remove "$path" && git branch -D "$name" > /dev/null; then
+            echo "git wt: removed $path and branch $name" >&2
+        else
+            status=1
+        fi
+        # Not $path: git resolves it, and prune_empty stops outside $root, which may not be resolved
+        prune_empty "$(dirname "$repo_dir/$name")"
+    done <<< "$list"
+    return "$status"
+}
+
+command="$1"
+shift
+case "$command" in
+    path) cmd_path "$@" ;;
+    add) cmd_add "$@" ;;
+    list) cmd_list ;;
+    rm | remove) cmd_rm "$@" ;;
+    prune) cmd_prune "$@" ;;
+    *) usage ;;
+esac

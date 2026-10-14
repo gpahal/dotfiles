@@ -1,0 +1,43 @@
+# shellcheck shell=bash
+# Tailscale for the ubuntu step.
+# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+
+# Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
+# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does.
+tailscale_configured() {
+    local prefs
+    prefs="$(tailscale debug prefs 2>/dev/null)" || return 1
+    jq -e --arg user "$(id -un)" '.AutoUpdate.Apply == true and .OperatorUser == $user' \
+        <<< "$prefs" &>/dev/null
+}
+
+tailscale_state() {
+    tailscale status --json 2>/dev/null | jq -r '.BackendState // empty'
+}
+
+tailscale_running() {
+    [ "$(tailscale_state)" == Running ]
+}
+
+# Before the first tailscale up, which resets the auto-update and operator settings, so the step
+# leaves them until after it
+tailscale_needs_login() {
+    [ "$(tailscale_state)" == NeedsLogin ]
+}
+
+# The one-line source Tailscale's install script writes, which its updater rewrites to change track
+tailscale_list_line() {
+    echo "deb [signed-by=$TAILSCALE_KEYRING] $TAILSCALE_REPO $(ubuntu_codename) main"
+}
+
+# Tailscale's Release file for this release, which is a 404 until Tailscale publishes packages for it
+tailscale_release_url() {
+    echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
+}
+
+# See add_apt_repo, whose return status this passes on. The key's URL names the release, as in
+# Tailscale's install script.
+add_tailscale_repo() {
+    add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
+        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$(tailscale_release_url)"
+}

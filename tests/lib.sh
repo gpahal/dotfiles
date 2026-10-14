@@ -1,0 +1,385 @@
+# Helpers for the tests in tests/. Source it from a test-*.sh file, call setup_sandbox, then run
+# steps or load_script their functions, and check the results with the assert_* functions, and
+# end with test_done. A failed assertion prints why and the test carries on; the test exits 1 at
+# the end. Bash 3.2.
+#
+# setup_sandbox gives the test a temp HOME and puts a failing sentinel first on PATH for each
+# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A test that
+# lacks a tool it needs calls skip. tests/run.sh runs each test and says how skips and timeouts
+# count.
+# shellcheck shell=bash
+
+TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
+
+# A test run by a relative path, as bash tests/test-vim.sh or tests/run.sh runs it, starts again
+# by its absolute path. step_args finds a step's path from the outermost script, which is the test
+# when it loads a step, and the test cd's into its sandbox, where the relative path is gone.
+case "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}" in
+    /*) ;;
+    */test-*.sh | test-*.sh) exec "$BASH" "$TESTS_DIR/${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]##*/}" "$@" ;;
+esac
+TEST_FAILURES=0
+TEST_SKIPPED=false
+TEST_DONE=false
+
+# Commands a test must stub, since a test that runs one without stubbing it fails, even under
+# `|| true`. Add a command here when a test would otherwise reach one that changes the real machine,
+# uses the network, or reads real hardware or system state:
+# - commands that change the machine or use the network
+# - orb, which would reach OrbStack's real machines
+# - ss, whose real connections would decide what the ubuntu step's firewall allows
+# - read-only commands whose output depends on the real machine: the status diagnostics'
+#   smartctl, fwupdmgr, fdesetup, socketfilterfw, nmcli, apt-config, apt-mark, and journalctl,
+#   which read the real disks, firmware, security settings, network, apt config, holds, and logs,
+#   the ubuntu step's nut-scanner and upsc, which read a real UPS, udevadm, which reads the real
+#   devices, and lsblk, which reads the real disks' encryption
+# Other read-only commands the tests rely on, such as dscl, dpkg, uname, and id, stay real. A test
+# that needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs
+# that.
+SENTINELS="brew apt apt-get add-apt-repository snap systemctl launchctl defaults softwareupdate mas
+osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill open xdg-open
+locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss
+smartctl fwupdmgr fdesetup socketfilterfw notify-send runuser logger nmcli apt-config journalctl
+orb nut-scanner upsc udevadm activateSettings apt-mark lsblk"
+
+# Point HOME, TMUX_TMPDIR, and WORKTREES_DIR at a new temp dir, unset the variables that would
+# send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos, put
+# $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
+# sudo is stubbed to fail, as it does when not cached, so no test runs it for real, even on a CI
+# runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
+# failing sentinel (see _sentinel). Sets an EXIT trap that removes the
+# temp dir and makes the test exit 1 when an assertion failed or a sentinel ran, so a test mustn't
+# set its own.
+setup_sandbox() {
+    local var cmd
+    # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
+    # /tmp to /private/tmp there, so paths the steps print match $HOME.
+    SANDBOX="$(cd -P "$(mktemp -d /tmp/dotfiles-test.XXXXXX)" && pwd)"
+    trap _sandbox_exit EXIT
+    # GIT_* covers what a git hook, a worktree, or `git -c` exports: GIT_DIR and GIT_WORK_TREE
+    # would point the steps' git at the real repo, and GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT,
+    # and GIT_CONFIG_KEY_n/VALUE_n would add config, such as a url rewrite, to every git command
+    for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_|GIT_)' || true); do
+        unset "$var"
+    done
+    # SSH_AUTH_SOCK would let ssh-add and ssh reach the real agent and its keys, and the ubuntu
+    # step reads the real SSH session's login from SSH_USER_AUTH.
+    # BASH_ENV would run a file in every bash a step starts, and MISE_* would point mise at the
+    # real config and state.
+    unset CDPATH BASH_ENV TMUX TMUX_PANE ZDOTDIR CODEX_HOME CLAUDE_CONFIG_DIR SSH_AUTH_SOCK \
+        SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
+        MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
+    # git reads no system config, and reaches only local repos, never the network. A test that
+    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as test-config-steps.sh
+    # does for tpm.
+    export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
+    export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
+    # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
+    # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
+    # test to override them.
+    export APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d" OS_RELEASE="$SANDBOX/os-release"
+    mkdir -p "$APT_SOURCES_DIR"
+    printf '%s\n' ID=ubuntu VERSION_ID='"26.04"' VERSION_CODENAME=resolute UBUNTU_CODENAME=resolute > "$OS_RELEASE"
+    export STUB_DIR="$SANDBOX/stubs" STUB_LOG="$SANDBOX/stub.log"
+    mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$STUB_DIR"
+    : > "$STUB_LOG"
+    _stubs_first
+    for cmd in $SENTINELS; do
+        _sentinel "$cmd"
+    done
+    stub sudo 'exit 1'
+    # The PAM config the macos step's status and the Touch ID script read, so none sees the host's
+    export DOTFILES_PAM_DIR="$SANDBOX/pam.d" DOTFILES_PAM_MODULES_DIR="$SANDBOX/pam-modules" \
+        DOTFILES_PAM_LOCAL_MODULES_DIR="$SANDBOX/pam-local-modules"
+    # The real free space would decide whether a status report needs attention, so df reports
+    # each path it's given on a filesystem with 900 of 1000 GiB free
+    stub df 'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857600 943718400 10% $path" ;; esac; done'
+    exec < /dev/null
+}
+
+_sandbox_exit() {
+    local status=$?
+    # A sentinel that ran under `|| true` or in a command expected to fail still fails the test
+    if [ -s "$SANDBOX/unstubbed.log" ]; then
+        echo "Commands ran that the test didn't stub:" >&2
+        _show "$(cat "$SANDBOX/unstubbed.log")"
+        TEST_FAILURES=$((TEST_FAILURES + 1))
+    fi
+    # A tmux server a test started lives on after its socket's directory is gone
+    _stop_tmux_servers
+    case "${SANDBOX:-}" in
+        /tmp/dotfiles-test.* | /private/tmp/dotfiles-test.*)
+            chmod -R u+w "$SANDBOX" 2>/dev/null || true
+            rm -rf "$SANDBOX"
+            ;;
+    esac
+    # When set -u stops a script, bash 3.2 gives the EXIT trap a $? of 0, so a test that exits 0
+    # without reaching test_done stopped early
+    if [ "$status" -eq 0 ] && ! "$TEST_DONE"; then
+        echo "The test stopped before its test_done line" >&2
+        status=1
+    fi
+    if [ "$TEST_FAILURES" -gt 0 ]; then
+        echo "$TEST_FAILURES check(s) failed" >&2
+        # A test that failed, then skipped the rest, failed
+        [ "$status" -ne 0 ] && [ "$status" -ne 77 ] || status=1
+    elif [ "$status" -eq 0 ] && "$TEST_SKIPPED"; then
+        status=77
+    fi
+    exit "$status"
+}
+
+# Stop every tmux server with a socket under $TMUX_TMPDIR, and wait up to 5 s for it and its
+# panes' processes to exit. kill-server returns first, and a pane's shell can still write to HOME
+# as it exits, as macOS's zsh writes ~/.zsh_history, which would race removing the sandbox.
+_stop_tmux_servers() {
+    local sock pids="" pid i=0 alive
+    command -v tmux &>/dev/null || return 0
+    for sock in "$TMUX_TMPDIR"/tmux-*/*; do
+        [ -S "$sock" ] || continue
+        # A stale socket's server is gone, so list-panes fails, which mustn't end the EXIT trap
+        pids="$pids $(tmux -S "$sock" list-panes -a -F '#{pid} #{pane_pid}' 2>/dev/null | tr '\n' ' ' || true)"
+        tmux -S "$sock" kill-server &>/dev/null || true
+    done
+    while [ "$i" -lt 50 ]; do
+        alive=false
+        for pid in $pids; do
+            ! kill -0 "$pid" 2>/dev/null || alive=true
+        done
+        "$alive" || return 0
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
+
+# Put $STUB_DIR back at the front of PATH. lib/common.sh prepends Homebrew's and mise's
+# directories, which would hide the stubs.
+_stubs_first() {
+    local path=":$PATH:"
+    path="${path//:$STUB_DIR:/:}"
+    path="${path#:}"
+    export PATH="$STUB_DIR:${path%:}"
+}
+
+# Write an executable stub for a command to $STUB_DIR. It appends "<cmd> <args>" to $STUB_LOG,
+# then runs the body, a Bash snippet that gets the stub's arguments as "$@". Without a body it
+# succeeds and prints nothing.
+# e.g. stub systemctl '[ "$2" != is-active ] || echo active'
+stub() {
+    local name="$1" body="${2:-}"
+    {
+        echo '#!/bin/bash'
+        cat << 'EOF'
+printf '%s\n' "${0##*/}${*:+ $*}" >> "$STUB_LOG"
+EOF
+        printf '%s\n' "$body"
+    } > "$STUB_DIR/$name"
+    chmod +x "$STUB_DIR/$name"
+}
+
+# Stub apt-config shell, which takes <var> <key> pairs and prints <var>='<value>' for each key
+# that's set. The body prints the config as apt-config dump does, one 'Key "value";' line per
+# setting; the last line for a key wins.
+# e.g. stub_apt_config 'echo "APT::Periodic::Unattended-Upgrade \"1\";"'
+stub_apt_config() {
+    stub apt-config "config() {
+${1:-:}
+}
+$(
+        cat << 'EOF'
+[ "$1" == shell ] || exit 100
+shift
+dump="$(config)"
+while [ $# -ge 2 ]; do
+    awk -v var="$1" -v key="$2" -v q="'" '
+        index($0, key " \"") == 1 { value = substr($0, length(key) + 3); sub(/";$/, "", value); found = 1 }
+        END { if (found) print var "=" q value q }' <<< "$dump"
+    shift 2
+done
+EOF
+    )"
+}
+
+# Write a sentinel for a command to $STUB_DIR: it logs "<cmd> <args>" to $SANDBOX/unstubbed.log,
+# says so on stderr, and exits 127, as a missing command would. The log is outside $STUB_DIR, so
+# a step that runs a sentinel with HOME or the environment changed still logs it. stub replaces a
+# sentinel.
+_sentinel() {
+    {
+        echo '#!/bin/bash'
+        printf 'log=%q\n' "$SANDBOX/unstubbed.log"
+        cat << 'EOF'
+printf '%s\n' "${0##*/}${*:+ $*}" >> "$log"
+echo "unstubbed command: ${0##*/}" >&2
+exit 127
+EOF
+    } > "$STUB_DIR/$1"
+    chmod +x "$STUB_DIR/$1"
+}
+
+# Make commands missing for the rest of the test, even where they're installed: PATH becomes
+# $STUB_DIR and a dir of links to every other command on PATH, and the commands' stubs and
+# sentinels go. lib/common.sh puts Homebrew's dirs on PATH when it finds no brew, so hide brew
+# exports DOTFILES_NO_LOAD_BREW, which stops that in sourced scripts and in steps run as their own
+# process. The first hide in each shell works on its own copy of $STUB_DIR and the links, so a
+# hide in a subshell can't delete the parent's sentinels and let it reach the real command.
+# e.g. hide fzf
+hide() {
+    local dir name dirs
+    # BASH_SUBSHELL tells a subshell from the shell that set _HIDE_SHELL; bash 3.2 has no BASHPID
+    if [ "${_HIDE_SHELL-}" != "$BASH_SUBSHELL" ]; then
+        _HIDE_SHELL="$BASH_SUBSHELL"
+        dir="$(mktemp -d "$SANDBOX/hide.XXXXXX")"
+        cp -Rp "$STUB_DIR" "$dir/stubs"
+        _HIDE_LINKS="$dir/path"
+        mkdir "$_HIDE_LINKS"
+        IFS=: read -ra dirs <<< "$PATH"
+        # An earlier hide's links dir links on, so what it hid stays hidden
+        for dir in ${dirs[@]+"${dirs[@]}"}; do
+            [ "$dir" != "$STUB_DIR" ] && [ -d "$dir" ] || continue
+            # ln skips a name an earlier dir already linked, as PATH would, and carries on
+            ln -s "$dir"/* "$_HIDE_LINKS"/ 2> /dev/null || true
+        done
+        STUB_DIR="${_HIDE_LINKS%/path}/stubs"
+    fi
+    # Also when a later hide in this shell finds a PATH a script changed
+    export PATH="$STUB_DIR:$_HIDE_LINKS"
+    for name in "$@"; do
+        rm -f "$_HIDE_LINKS/$name" "$STUB_DIR/$name"
+        [ "$name" != brew ] || export DOTFILES_NO_LOAD_BREW=1
+    done
+}
+
+# Skip the test: print why, and exit 77, which tests/run.sh reports as SKIP. Use it when a tool
+# the test needs isn't installed. skip_rest prints why and carries on, and the test then exits 77
+# unless it failed.
+# e.g. command -v jq &> /dev/null || skip "jq isn't installed"
+skip() {
+    echo "SKIP: $1"
+    exit 77
+}
+
+skip_rest() {
+    echo "SKIP: $1"
+    TEST_SKIPPED=true
+}
+
+# Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
+test_done() {
+    TEST_DONE=true
+}
+
+# Source lib/common.sh or a step script, given relative to the repo, so the test can call its
+# functions. Remaining arguments become the script's "$@". A step runs main only when run
+# directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
+# A syntax error in the script or in lib/common.sh, which steps source, ends the test with status
+# 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
+# e.g. load_script vim/install.sh
+load_script() {
+    local script="$REPO_DIR/$1" f
+    shift
+    for f in "$script" "$REPO_DIR/lib/common.sh"; do
+        if ! "$BASH" -n "$f"; then
+            echo "Syntax error in $f" >&2
+            exit 2
+        fi
+    done
+    # shellcheck source=/dev/null
+    source "$script" "$@"
+    _stubs_first
+}
+
+# Run a command in a subshell with errexit on, as a step's own `set -e` would run it, and keep
+# its combined stdout and stderr in $RUN_OUTPUT and its exit status in $RUN_STATUS. It always
+# succeeds, so a test under set -e carries on.
+# e.g. run bash "$REPO_DIR/setup.sh" vim
+run() {
+    local errexit=false
+    case "$-" in *e*) errexit=true ;; esac
+    set +e
+    RUN_OUTPUT="$(
+        set -e
+        "$@" 2>&1
+    )"
+    RUN_STATUS=$?
+    if "$errexit"; then
+        set -e
+    fi
+    return 0
+}
+
+# Record a failed check, naming the test line that made it
+# e.g. [ -x "$HOME/.local/bin/git-wt" ] || fail "git-wt isn't executable"
+fail() {
+    local i=1
+    TEST_FAILURES=$((TEST_FAILURES + 1))
+    while [ "${BASH_SOURCE[$i]:-}" == "${BASH_SOURCE[0]}" ]; do
+        i=$((i + 1))
+    done
+    echo "FAIL ${BASH_SOURCE[$i]##*/}:${BASH_LINENO[$((i - 1))]}: $1" >&2
+}
+
+# Print text indented under a failure, if there is any. Only builtins, so it works after hide.
+_show() {
+    local line
+    [ -n "$1" ] || return 0
+    while IFS= read -r line; do
+        printf '    %s\n' "$line" >&2
+    done <<< "$1"
+}
+
+# e.g. assert_eq "ok" "$state" "vimrc status"
+assert_eq() {
+    [ "$1" == "$2" ] && return 0
+    fail "${3:-values differ}: expected '$1', got '$2'"
+    return 0
+}
+
+# Check that a string contains, or doesn't contain, a fixed string
+# e.g. assert_contains "$RUN_OUTPUT" "Copied"
+assert_contains() {
+    [[ "$1" == *"$2"* ]] && return 0
+    fail "${3:-output} doesn't contain '$2'. It was:"
+    _show "$1"
+    return 0
+}
+
+assert_not_contains() {
+    [[ "$1" != *"$2"* ]] && return 0
+    fail "${3:-output} contains '$2'. It was:"
+    _show "$1"
+    return 0
+}
+
+# Check that a file has, or doesn't have, a line containing a fixed string
+# e.g. assert_file_contains "$STUB_LOG" "systemctl --user restart t3-code"
+assert_file_contains() {
+    if [ ! -f "$1" ]; then
+        fail "$1 doesn't exist"
+    elif ! grep -qF -- "$2" "$1"; then
+        fail "$1 doesn't contain '$2'. It has:"
+        _show "$(cat "$1")"
+    fi
+    return 0
+}
+
+assert_file_not_contains() {
+    if [ -f "$1" ] && grep -qF -- "$2" "$1"; then
+        fail "$1 contains '$2'"
+    fi
+    return 0
+}
+
+# Run a command with run and check its exit status. $RUN_OUTPUT is left for further checks.
+# e.g. assert_exit 3 bash "$REPO_DIR/vim/install.sh" --status
+assert_exit() {
+    local expected="$1"
+    shift
+    run "$@"
+    [ "$RUN_STATUS" == "$expected" ] && return 0
+    fail "'$*' exited $RUN_STATUS, not $expected. Its output:"
+    _show "$RUN_OUTPUT"
+    return 0
+}

@@ -1,0 +1,4 @@
+.DS_Store
+.env*.local
+.scratch/
+**/.claude/settings.local.json

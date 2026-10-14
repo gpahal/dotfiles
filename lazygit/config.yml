@@ -1,0 +1,6 @@
+# Render diffs with delta, which takes the rest of its settings from [delta] in the git config.
+# lazygit 0.66 calls these diffRenderers; older versions used git.paging or git.pagers.
+git:
+  diffRenderers:
+    - command: delta --dark --paging=never
+      colorArg: always

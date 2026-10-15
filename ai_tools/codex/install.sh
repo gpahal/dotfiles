@@ -325,7 +325,8 @@ bwrap_profile_can_fix() {
     fi
     if [ ! -f "$BWRAP_PROFILE" ]; then
         echo "  bwrap needs AppArmor's $BWRAP_PROFILE, which is missing. Reinstall the" >&2
-        echo "  apparmor package that provides it: sudo apt-get install --reinstall apparmor" >&2
+        echo "  apparmor package that provides it, restoring its deleted config files:" >&2
+        echo "  sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor" >&2
         return 1
     fi
 }

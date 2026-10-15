@@ -50,7 +50,7 @@ main() {
     add_block "$block" || return 1
     chmod 600 "$SSH_CONFIG"
     echo "Added a block for $alias ($hostname) to $SSH_CONFIG. Connect with: ssh $alias"
-    echo "It reuses one connection until 10 minutes after the last session closes; ssh -O exit $alias closes it."
+    echo "It reuses one connection until a minute after the last session closes; ssh -O exit $alias closes it."
 }
 
 main "$@"

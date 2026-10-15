@@ -33,12 +33,14 @@ ALLOWED_AI=()
 #   a failed git step still fails the test.
 # - claude-code, codex, t3-code: signing in to Claude Code and Codex, and linking T3 Connect, each
 #   need a browser and a person.
+# - t3-code: t3 browser setup needs root, and the step only prints it for you to run with sudo.
 ALLOWED_ITEMS=(
     "ubuntu: Tailscale connected (run sudo tailscale up)"
     "git: Logged in to GitHub with gh"
     "claude-code: Signed in to Claude Code: run claude auth login"
     "codex: Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
     "t3-code: T3 Connect linked and publishing agent activity: run t3 connect --headless, then t3 connect publish and t3 service restart (see ai_tools/README.md → Manual steps)"
+    "t3-code: T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup"
 )
 # Items allowed only while another item of the same step is missing, as
 # "<step>: <item pattern>|<item it waits for>"

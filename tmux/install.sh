@@ -43,7 +43,7 @@ plugin_installed() {
 install_tmux_plugin() {
     local repo="$1" sha="$2" dir="$PLUGIN_DIR/${1##*/}"
     if { [ -d "$dir/.git" ] || git init -q "$dir"; } &&
-        git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha" &&
+        GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha" &&
         git -C "$dir" checkout -q --detach FETCH_HEAD; then
         echo "  Installed tmux plugin $repo at ${sha:0:7}"
         return 0

@@ -491,7 +491,7 @@ t3_code_print_other_server() {
 
 configure_t3_code_ubuntu() {
     echo "Configuring the T3 Code server..."
-    local have_cli=true cli_status=0 step_failed=false
+    local have_cli=true cli_status=0 step_failed=false update_status=0
     install_t3_cli || cli_status=$?
     [ "$cli_status" -eq 0 ] || have_cli=false
 
@@ -503,14 +503,19 @@ configure_t3_code_ubuntu() {
     if [ -n "$other" ]; then
         t3_code_print_other_server "$other"
     else
-        # Settings that fail to apply don't stop the service or the browser setup below
-        update_t3_code_server || step_failed=true
+        # Settings that fail to apply don't stop the service or the browser setup below. A drop-in
+        # that isn't written and loaded does stop the service, which would serve on every
+        # interface without it.
+        update_t3_code_server || update_status=$?
+        [ "$update_status" -eq 0 ] || step_failed=true
         # The service runs the server from boot, so the phone app (through T3 Connect) and the
         # Mac can reach it without a login
-        if "$have_cli"; then
-            ensure_t3_code_service || step_failed=true
-        else
+        if ! "$have_cli"; then
             echo "  Without the t3 CLI there's no service to install; skipping it."
+        elif [ "$update_status" -eq 2 ]; then
+            echo "  Without its drop-in, the service would serve on every interface; skipping it." >&2
+        else
+            ensure_t3_code_service || step_failed=true
         fi
     fi
 
@@ -522,17 +527,19 @@ configure_t3_code_ubuntu() {
     [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
-# Set the server settings and write the service's drop-in (telemetry and port). The running
-# server writes settings.json too, and keeps its environment until it restarts, so when either
-# needs changing a running service is stopped around the change, after asking once.
+# Set the server settings and write the service's drop-in (telemetry, port, and host). The
+# running server writes settings.json too, and keeps its environment until it restarts, so when
+# either needs changing a running service is stopped around the change, after asking once. Fails
+# with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
+# Fails with 1 when only something else failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0
+    local settings_set=false stopped=false result=0 drop_in_ok=true
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
     # server lacks its environment
     if t3_code_drop_in_current; then
-        t3_code_load_drop_in || return 1
+        t3_code_load_drop_in || return 2
     fi
     if "$settings_set" && t3_code_drop_in_current && ! t3_code_restart_pending; then
         echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
@@ -556,15 +563,20 @@ update_t3_code_server() {
     fi
     if ! t3_code_drop_in_current; then
         { mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")" &&
-            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || result=1
+            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || drop_in_ok=false
     fi
-    t3_code_load_drop_in || result=1
-    if "$stopped"; then
+    if "$drop_in_ok" && ! t3_code_load_drop_in; then
+        drop_in_ok=false
+    fi
+    if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
         wait_for_t3_code_service || result=1
+    elif "$stopped"; then
+        echo "  Left the T3 Code service stopped, since it would start without its drop-in" >&2
     fi
-    if [ "$result" -ne 0 ]; then
+    if [ "$result" -ne 0 ] || ! "$drop_in_ok"; then
         echo "  Couldn't set all of the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN" >&2
+        "$drop_in_ok" || return 2
         return 1
     fi
     echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN"

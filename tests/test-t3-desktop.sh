@@ -135,4 +135,9 @@ esac'
 run status
 assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
 assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in one status report"
+# When brew info fails, the report still runs, asking brew each time
+stub brew '[ "$1" != info ] || exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "t3-code (cask)"
+assert_contains "$RUN_OUTPUT" "Server settings in ~/.t3/userdata/settings.json"
 test_done

@@ -155,6 +155,9 @@ chmod 664 "$MODULE"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "brew install pam-reattach"
 assert_file_not_contains "$STUB_LOG" "sudo"
+# and status names the install first
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "isn't root's alone to write; run brew install pam-reattach, then just touch-id"
 chmod 444 "$MODULE"
 
 # Without pam-reattach: pam_tid alone, and the homebrew step is named as what installs it

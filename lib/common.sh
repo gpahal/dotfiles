@@ -708,8 +708,15 @@ cask_app_path() {
 # Ask brew once for the app cask $1 installs, and have cask_app_path answer from that for the
 # rest of the caller, which declares CASK_APP_CACHE local so the answer ends with it
 # e.g. local CASK_APP_CACHE; cache_cask_app_path t3-code
+# When brew fails, nothing is cached and cask_app_path asks brew each time, so the caller's report
+# still runs.
 cache_cask_app_path() {
-    CASK_APP_CACHE="$1"$'\t'"$(cask_app_path "$1")"
+    local app
+    if app="$(cask_app_path "$1")"; then
+        CASK_APP_CACHE="$1"$'\t'"$app"
+    else
+        CASK_APP_CACHE=""
+    fi
 }
 
 # Print the app path installed_cask_apps's output gives for a cask, failing when it isn't listed
@@ -957,12 +964,14 @@ file_mode() {
 # Replace a file's contents with a temp file's, then remove the temp file. The contents go to a new
 # file in the same directory, given the old one's mode, which is then moved into place, so a full
 # disk can't leave the file cut short. A symlink's target is replaced the same way, so the link
-# stays. Fails, keeping the temp file and saying where it is, when the write does.
+# stays. A dangling symlink fails, as json_merge does. Fails, keeping the temp file and saying
+# where it is, when the write does.
 write_back() {
     local new="$1" dest="$2" tmp mode="" target
     if [ -L "$dest" ]; then
-        # macOS's readlink and GNU's both take -f, and follow every link in the chain
-        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ]; then
+        # macOS's readlink and GNU's both take -f, and follow every link in the chain. On a dangling
+        # link macOS's prints the path and fails, and GNU's succeeds, so check the target exists.
+        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
             echo "  Couldn't write $dest. The new contents are in $new." >&2
             return 1
         fi

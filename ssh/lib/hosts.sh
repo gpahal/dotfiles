@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # The Host blocks of ~/.ssh/config, $SSH_CONFIG, which the sourcing script sets: finding a host's
 # block and adding one above the first catch-all. ssh/add-host.sh sources this file for add_block,
-# and the ssh step for host_line and SSH_CONFIG_AWK. It only defines functions and that variable.
+# and the ssh step for host_star_block and SSH_CONFIG_AWK. It only defines functions and that
+# variable.
 
 # Comments may mention hosts or settings. Keep hashes inside quotes or escaped with a backslash.
 strip_ssh_comments() {
@@ -73,6 +74,15 @@ host_patterns() {
 host_line() {
     [ -f "$SSH_CONFIG" ] && awk -v host="$1" "$SSH_CONFIG_AWK"'
         { n = host_patterns($0, p); for (i = 1; i <= n; i++) if (p[i] == host) found = 1 }
+        END { exit !found }
+    ' "$SSH_CONFIG"
+}
+
+# Succeeds when a Host line in the config lists * alone. `Host * !bastion` leaves a host out, so it
+# isn't one.
+host_star_block() {
+    [ -f "$SSH_CONFIG" ] && awk "$SSH_CONFIG_AWK"'
+        host_patterns($0, p) == 1 && p[1] == "*" { found = 1 }
         END { exit !found }
     ' "$SSH_CONFIG"
 }

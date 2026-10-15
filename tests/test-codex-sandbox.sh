@@ -63,7 +63,7 @@ assert_eq "" "$(sudo_calls)" "sudo calls with a broken bwrap"
 # Restricted, and the profile file is missing: fails before asking, saying to reinstall apparmor
 reset 1 bubblewrap
 assert_exit 1 setup_codex_sandbox
-assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall apparmor"
+assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 
 # Restricted, with the profile in apparmor.d, as the apparmor package installs it: it's loaded,
@@ -106,7 +106,7 @@ sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(sudo_calls)
 reset 1
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 setup_codex_sandbox
-assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall apparmor"
+assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
 assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
 

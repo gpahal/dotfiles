@@ -212,12 +212,13 @@ configure_sshd() {
     if ! output="$(sudo sshd -t 2>&1)"; then
         printf '%s\n' "$output" >&2
         bad="$(sshd_error_file "$output")"
-        if "$existed"; then
-            write_root_file "$SSHD_DROP_IN" "$old"
+        if "$existed" && write_root_file "$SSHD_DROP_IN" "$old"; then
             echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, so the old one is back." >&2
-        else
-            sudo rm -f "$SSHD_DROP_IN"
+        elif ! "$existed" && sudo rm -f "$SSHD_DROP_IN"; then
             echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, so it was removed." >&2
+        else
+            echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, and it couldn't be" >&2
+            echo "  put back, so the broken drop-in is still in place: $SSHD_DROP_IN" >&2
         fi
         echo "  Fix the error above and re-run." >&2
         return 1

@@ -28,16 +28,21 @@ tmux_pin() {
     awk -v r="$1" '$1 == r { print $2 }' "$LOCK"
 }
 
+# A blank line in plugins.lock is no plugin
+echo >> "$LOCK"
+
 # Upstream, vim-surround and tmux-yank have moved to $NEW, fzf.vim's HEAD can't be read, and every
 # other plugin is still at its pin. vim-plug has a newer release, 99.0.0.
 : > "$SANDBOX/heads"
 while read -r repo sha; do
     echo "https://github.com/$repo $sha" >> "$SANDBOX/heads"
-done < <(sed -n "s/^ *Plug '\([^']*\)'.*'commit': '\([0-9a-f]*\)'.*/\1 \2/p" "$VIMRC"; grep -v '^#' "$LOCK")
+done < <(sed -n "s/^ *Plug '\([^']*\)'.*'commit': '\([0-9a-f]*\)'.*/\1 \2/p" "$VIMRC"; awk '!/^#/ && NF' "$LOCK")
 sed -i.bak -e "s|^\(https://github.com/tpope/vim-surround\) .*|\1 $NEW|" \
     -e "s|^\(https://github.com/tmux-plugins/tmux-yank\) .*|\1 $NEW|" \
     -e "/^https:\/\/github.com\/junegunn\/fzf.vim /d" "$SANDBOX/heads"
+# git fails unless it can't prompt for a login, as for a deleted or private repo
 stub git 'url="${!#}"
+[ "${GIT_TERMINAL_PROMPT:-}" = 0 ] || exit 1
 case "$*" in
     "ls-remote --tags --refs https://github.com/junegunn/vim-plug")
         printf "%s\trefs/tags/%s\n" a 0.9.0 b 99.0.0 c 0.14.0 ;;
@@ -68,6 +73,7 @@ assert_contains "$RUN_OUTPUT" "tpope/vim-sensible: unchanged"
 # A HEAD it can't read keeps the pin and fails the script
 assert_eq "$old_fzf" "$(vim_pin junegunn/fzf.vim)" "fzf.vim's pin"
 assert_contains "$RUN_OUTPUT" "Couldn't read junegunn/fzf.vim's HEAD"
+assert_not_contains "$RUN_OUTPUT" "Couldn't read 's HEAD"
 # The rest of each file is as it was
 assert_eq "$(sed -e "s/$old_surround/$NEW/" "$REPO_DIR/vim/vimrc")" "$(cat "$VIMRC")" "the vimrc, apart from the moved pin"
 assert_eq "$(sed -e "s/$old_yank/$NEW/" "$REPO_DIR/tmux/plugins.lock")" "$(cat "$LOCK")" "plugins.lock, apart from the moved pin"
@@ -77,6 +83,7 @@ assert_eq 99.0.0 "$(cat "$REPO/vim/plug.vim.version")" "the vendored vim-plug's 
 assert_file_contains "$REPO/vim/plug.vim" "https://raw.githubusercontent.com/junegunn/vim-plug/99.0.0/plug.vim"
 assert_contains "$RUN_OUTPUT" "https://github.com/junegunn/vim-plug/compare/$old_tag...99.0.0"
 assert_contains "$RUN_OUTPUT" "just bump-plugins"
+assert_contains "$RUN_OUTPUT" "PlugUpdate --sync"
 assert_eq "" "$(ls -A "$HOME")" "what the script left in HOME"
 
 # Once every HEAD can be read, the script succeeds, and a second run changes nothing

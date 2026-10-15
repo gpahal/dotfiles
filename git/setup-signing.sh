@@ -6,9 +6,10 @@ set -euo pipefail
 # a message. Make a lightweight tag with git tag --no-sign.
 # macOS signs with ~/.ssh/id_ed25519 and offers to load it into the agent from the keychain.
 # Ubuntu signs with a separate key without a passphrase, ~/.ssh/id_ed25519_signing, since the
-# T3 Code service's agents have no ssh-agent or terminal to unlock one. Settings go to
-# ~/.gitconfig, which holds per-machine git settings (see git/install.sh), replacing any signing
-# settings there. Idempotent: safe to re-run.
+# T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets user.signingkey,
+# gpg.format, gpg.ssh.allowedSignersFile, commit.gpgsign, and tag.gpgsign in ~/.gitconfig, which
+# holds per-machine git settings (see git/install.sh), and leaves its other settings as they are.
+# Idempotent: safe to re-run.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

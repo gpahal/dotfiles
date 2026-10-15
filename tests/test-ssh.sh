@@ -225,6 +225,14 @@ for line in 'Host=*' 'Host "*"' 'host *'; do
     printf '%s\n  AddKeysToAgent yes\n  UseKeychain=yes\n' "$line" > "$SSH_CONFIG"
     assert_eq "" "$(host_star_missing)" "the lines missing after: $line"
 done
+# So a config whose only block for * leaves a host out gets the step's own Host * block, and
+# status then reports it ok
+printf 'Host * !bastion\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
+assert_exit 0 add_host_star
+assert_contains "$RUN_OUTPUT" "Added a Host * block"
+assert_eq 1 "$(host_star_count)" "Host * blocks after Host * !bastion"
+run status_host_star
+assert_contains "$RUN_OUTPUT" "ok         The Host * block in ~/.ssh/config has AddKeysToAgent and UseKeychain"
 
 # A config it can't write fails, without saying it added the block, whether empty or not. main
 # runs it under ||, which turns set -e off inside it.

@@ -49,7 +49,8 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "tmux plugins already at their pinned commits"
 assert_not_contains "$RUN_OUTPUT" "Installed"
 
-# A plugin at another commit, as tpm's update leaves it, is missing until a re-run moves it back
+# A plugin at another commit, as an older checkout or a bumped pin leaves it, is missing until a
+# re-run moves it to its pin
 git -C "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" rev-parse HEAD > "$SANDBOX/head"
 git -C "$HOME/.tmux/plugins/tmux-yank" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
 git -C "$HOME/.tmux/plugins/tmux-yank" checkout -q --detach FETCH_HEAD

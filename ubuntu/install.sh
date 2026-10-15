@@ -218,7 +218,7 @@ lingering() {
 # Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
 # credentials are cached, and is otherwise unverified.
 status() {
-    local ufw=0 uuid name wired=false item packages todo problems="" rule
+    local ufw=0 uuid name wired=false item packages todo problems="" rule where
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
     if ! is_ubuntu; then
         status_item skipped "Running around the clock: Ubuntu only"
@@ -334,8 +334,14 @@ status() {
             esac
             if [ "$ufw" -ne 2 ]; then
                 while IFS= read -r rule; do
-                    [ -z "$rule" ] ||
-                        status_item missing "No ufw rule that lets SSH in from outside the private ranges and the tailnet: $rule (sudo ufw status numbered lists them; sudo ufw delete <number> removes one)"
+                    [ -n "$rule" ] || continue
+                    # The source is the rule's last field, as ufw_rule_broad_ssh reads it
+                    where=anywhere
+                    if [[ "${rule%% # *}" =~ \ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] &&
+                        [ "${BASH_REMATCH[3]}" != Anywhere ]; then
+                        where="${BASH_REMATCH[3]}, outside the private ranges"
+                    fi
+                    status_item missing "ufw rule lets SSH in from $where: $rule; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
                 done < <(ufw_broad_ssh_rules -n || true)
             fi
         fi

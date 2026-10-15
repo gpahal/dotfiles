@@ -425,8 +425,8 @@ for interrupted in "outdated " "info "; do
 done
 stub brew
 
-# A tmux plugin at another commit, as tpm's update leaves it, moves back to its pin, never to
-# HEAD, and one that can't be fetched fails the tmux plugins stage
+# A tmux plugin at another commit, as an older checkout or a bumped pin leaves it, moves to its
+# pin, never to HEAD, and one that can't be fetched fails the tmux plugins stage
 plugin="$HOME/.tmux/plugins/tmux-yank"
 pin="$(git -C "$plugin" rev-parse HEAD)"
 git -C "$plugin" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"

@@ -445,7 +445,7 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step, then `brew cleanup`. On Ubuntu it then refreshes the font cache.
 - Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
-- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `vim/vimrc` pins.
+- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `~/.vimrc` pins. The vim step copies that file from `vim/vimrc`.
 - tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
 - mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips `npm update -g`, which would run the old Node.
@@ -494,7 +494,7 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 
 Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
-Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result, then re-run `bash setup.sh vim tmux` on each machine.
+Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
 
 After a full verification round, add its results to the top of [`COMPATIBILITY.md`](./COMPATIBILITY.md). [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 

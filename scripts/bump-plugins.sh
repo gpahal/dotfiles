@@ -4,7 +4,8 @@ set -euo pipefail
 
 # Move the pinned vim and tmux plugins to their default branch's HEAD, and the vendored vim-plug
 # to its latest release, in this repo's vim/vimrc, tmux/plugins.lock, and vim/plug.vim. Prints a
-# link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps for that.
+# link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps, then
+# PlugUpdate, for that.
 # A repo whose HEAD can't be read keeps its pin and fails the script once the rest are done.
 # `just bump-plugins` runs it. Needs git and the network.
 # Usage: bump-plugins.sh
@@ -26,7 +27,7 @@ usage() {
 # Print a repo's default branch HEAD, e.g. head_sha tpope/vim-sensible
 head_sha() {
     local sha
-    sha="$(git ls-remote "https://github.com/$1" HEAD | awk 'NR == 1 { print $1 }')" || return 1
+    sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "https://github.com/$1" HEAD | awk 'NR == 1 { print $1 }')" || return 1
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
     echo "$sha"
 }
@@ -87,13 +88,13 @@ bump_tmux_plugins() {
         [ -n "$new" ] || continue
         rewrite "$PLUGINS_LOCK" awk -v repo="$repo" -v new="$new" \
             '!/^#/ && $1 == repo { $2 = new } { print }' || status=1
-    done < <(grep -v '^#' "$PLUGINS_LOCK")
+    done < <(awk '!/^#/ && NF' "$PLUGINS_LOCK")
     return "$status"
 }
 
 # Print the highest x.y.z tag, as BSD and GNU sort both order it
 latest_plug_tag() {
-    git ls-remote --tags --refs "https://github.com/$PLUG_REPO" | sed -n 's|.*refs/tags/||p' |
+    GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "https://github.com/$PLUG_REPO" | sed -n 's|.*refs/tags/||p' |
         grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
 }
 
@@ -144,7 +145,8 @@ main() {
     bump_plug_vim 2>&1 || status=1
     echo
     echo "Review the diffs (git diff, and the links above), run just check and just test, and commit."
-    echo "Then re-run bash setup.sh vim tmux on each machine."
+    echo "Then on each machine, re-run bash setup.sh vim tmux, and move the installed vim plugins with"
+    echo "upgrade, or only: vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa"
     [ "$status" -eq 0 ] || echo "Some pins couldn't be checked; see above. Re-run just bump-plugins to retry them." >&2
     return "$status"
 }

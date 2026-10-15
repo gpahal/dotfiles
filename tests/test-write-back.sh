@@ -54,6 +54,18 @@ for link in link.json relative-link.json; do
     [ ! -e "$new" ] || fail "write_back through $link left the temp file"
 done
 
+# A dangling symlink fails on both OSes, as json_merge does: the link stays, no target is made,
+# and the new contents are kept
+ln -s "$HOME/real/nowhere.json" "$HOME/dangling.json"
+new="$(mktemp)"
+printf 'new\n' > "$new"
+assert_exit 1 write_back "$new" "$HOME/dangling.json"
+assert_contains "$RUN_OUTPUT" "Couldn't write $HOME/dangling.json. The new contents are in $new."
+[ -L "$HOME/dangling.json" ] || fail "write_back replaced a dangling symlink"
+[ ! -e "$HOME/real/nowhere.json" ] || fail "write_back wrote through a dangling symlink"
+[ -e "$new" ] || fail "a failed write_back through a dangling symlink removed the new contents"
+rm -f "$new" "$HOME/dangling.json"
+
 # A write that fails leaves the file as it was and keeps the new contents
 if [ "$(id -u)" -ne 0 ]; then
     mkdir -p "$HOME/ro"

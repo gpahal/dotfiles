@@ -70,10 +70,13 @@ run_hook
 assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: $SANDBOX/no-ntfy.sh is missing"
 assert_file_not_contains "$STUB_LOG" "curl"
 
-# The hook in the repo ignores the old test variables, so nothing can point root at another file
+# The hook ignores the old test variables, so nothing can point root at another file. A copy whose
+# constants name sandbox paths that don't exist, rather than the real /etc and /usr/local, sends
+# nothing though the variables name a valid URL file and ntfy code.
+ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/no-url" "$SANDBOX/no-ntfy.sh" "$HOOK"
 : > "$STUB_LOG"
 assert_exit 0 env DOTFILES_NTFY_URL_FILE="$URL_FILE" DOTFILES_NTFY_LIB="$REPO_DIR/ubuntu/lib/ntfy.sh" \
-    SMARTD_MESSAGE=test "$BASH" "$REPO_DIR/ubuntu/smartd-notify.sh"
+    SMARTD_MESSAGE=test "$BASH" "$HOOK"
 assert_file_not_contains "$STUB_LOG" "curl"
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
 

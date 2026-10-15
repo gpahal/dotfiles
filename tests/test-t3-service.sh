@@ -8,8 +8,9 @@ set -euo pipefail
 # asking, and left alone when it's already both. The step warns when the service lacks the docker
 # group you're in. A running service is restarted, after asking once, when its settings or its
 # drop-in change, and they change only once it has stopped. A declined restart is offered again.
-# The drop-in holds only the telemetry and port settings, and the step installs no desktop app.
-# Settings it can't apply fail the step, after the service and browser setup still run.
+# The drop-in holds only the telemetry, port, and host settings, and the step installs no desktop
+# app. Settings it can't apply fail the step, after the service and browser setup still run. A
+# drop-in it can't write or load fails the step and keeps the service from starting.
 # Stubs stand in for systemctl, pgrep, id, getent, sleep, and the t3 CLI, and the functions that
 # read /proc and /var, and run the installer, are replaced.
 
@@ -479,6 +480,29 @@ echo "not json" > "$T3_CODE_SETTINGS"
 assert_exit 1 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "t3 service install"
 assert_file_contains "$STUB_LOG" "t3 browser setup"
+
+# A drop-in it can't write fails the step and installs no service, which would serve on every
+# interface without it. The browser setup still runs.
+reset
+mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
+touch "$T3_CODE_SERVICE_UNIT.d"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Without its drop-in, the service would serve on every interface; skipping it."
+assert_file_not_contains "$STUB_LOG" "t3 service install"
+assert_file_contains "$STUB_LOG" "t3 browser setup"
+# Nor does a running service it stopped for the change start again without the drop-in
+reset
+installed_unit
+different_drop_in
+touch "$STATE/active" "$STATE/enabled"
+stub systemctl '[ "$2" != daemon-reload ] || exit 1
+'"$SYSTEMCTL_STUB"
+confirm() { echo "$1"; }
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Left the T3 Code service stopped, since it would start without its drop-in"
+assert_file_not_contains "$STUB_LOG" "systemctl --user start"
+confirm() { echo "$1"; false; }
+stub systemctl "$SYSTEMCTL_STUB"
 
 # Released CLIs without the browser subcommand are skipped; failures in supported CLIs are not.
 cat > "$HOME/.local/bin/t3" << 'EOF'

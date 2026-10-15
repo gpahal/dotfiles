@@ -200,12 +200,14 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
-    "OpenSSH                    ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+    "OpenSSH                    ALLOW       Anywhere" \
+    "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-rules"
 assert_exit 0 ufw_configured -n
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
-assert_contains "$RUN_OUTPUT" "missing    No ufw rule that lets SSH in from outside the private ranges and the tailnet: 22/tcp ALLOW Anywhere (sudo ufw status numbered lists them; sudo ufw delete <number> removes one)"
-assert_contains "$RUN_OUTPUT" "missing    No ufw rule that lets SSH in from outside the private ranges and the tailnet: OpenSSH ALLOW Anywhere"
+assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
+assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
+assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
 # Without cached sudo they can't be read, so they aren't reported
 not_cached
 assert_exit 0 status

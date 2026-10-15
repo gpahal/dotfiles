@@ -53,7 +53,7 @@ add_host_star() {
     if [ -z "$missing" ]; then
         echo "  $SSH_CONFIG already loads keys into the agent from the keychain for every host"
         return 0
-    elif host_line '*'; then
+    elif host_star_block; then
         echo "  $SSH_CONFIG already has a Host * block, so it's left alone. To have ssh load"
         echo "  keys into the agent from the keychain, add these lines to it:"
         printf '%s\n' "$missing" | sed 's/^/  /'
@@ -69,7 +69,7 @@ status_host_star() {
     local text="The Host * block in ~/.ssh/config has AddKeysToAgent and UseKeychain" missing
     if [ -z "$(host_star_missing)" ]; then
         status_item ok "$text"
-    elif host_line '*'; then
+    elif host_star_block; then
         missing="$(host_star_missing | sed 's/^ *//' | awk 'NR > 1 { printf " and " } { printf "%s", $0 }')"
         status_item missing "$text; add $missing to it by hand"
     else

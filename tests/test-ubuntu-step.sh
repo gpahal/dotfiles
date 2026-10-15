@@ -22,6 +22,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
+# The system dirs sbin_cmd searches for sysctl and ufw, here the stubs
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
 lingering() { true; }
 # test-diagnostics.sh covers SMART health and firmware updates
@@ -702,6 +705,8 @@ no_sbin_path="$(tr : '\n' <<< "$PATH" | grep -vxE '/usr/sbin|/sbin' | paste -sd:
 sysctl_without_sbin() { PATH="$no_sbin_path" sysctl_in_effect; }
 assert_exit 0 sysctl_without_sbin
 mv "$SANDBOX/sbin/sysctl" "$STUB_DIR/"
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 
 # --- the sshd drop-in ---
 # A changed drop-in sshd accepts replaces the old one, and sshd reloads
@@ -766,6 +771,8 @@ unset -f sshd_drop_in
 # the sandbox
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
 lingering() { true; }
 status_smart() { :; }

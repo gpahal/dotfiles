@@ -1,12 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which /etc/pam.d/sudo includes on
-# macOS 14 and later, and which OS updates keep. Each run rebuilds the file from scratch
-# (desired_sudo_local in macos/pam.sh): pam_tid, after pam_reattach when the homebrew step has
-# installed pam-reattach, so Touch ID works inside tmux too. Any other line in sudo_local goes:
-# unlike the files AGENTS.md says are never replaced, macOS reserves sudo_local for local sudo
-# changes such as this one, and rebuilding it keeps status and setup in agreement.
+# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which /etc/pam.d/sudo includes, and
+# which OS updates keep. Each run rebuilds the file from scratch (desired_sudo_local in
+# macos/pam.sh): pam_tid, after pam_reattach when the homebrew step has installed pam-reattach, so
+# Touch ID works inside tmux too. sudo loads a root-owned copy of pam-reattach's module in
+# /usr/local/lib/pam, which this script installs from Homebrew's and updates when it changes.
+# Any other line in sudo_local goes: unlike the files AGENTS.md says are never replaced, macOS
+# reserves sudo_local for local sudo changes such as this one, and rebuilding it keeps status and
+# setup in agreement.
 # setup.sh doesn't run it, since it changes /etc with sudo. Idempotent: safe to re-run. --status
 # reports, changing nothing.
 
@@ -18,6 +20,12 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 usage() {
     echo "Usage: bash macos/setup-touch-id-sudo.sh [--status] (or: just touch-id)"
     echo "Turns on Touch ID for sudo in $SUDO_LOCAL, and in tmux with pam-reattach. macOS only."
+}
+
+# Copy Homebrew's module to the root-owned dir. Read-only, like the modules macOS ships.
+install_reattach_module() {
+    sudo install -d -o root -g wheel -m 755 "$PAM_LOCAL_MODULES_DIR" &&
+        sudo install -o root -g wheel -m 444 "$(reattach_source)" "$REATTACH_MODULE"
 }
 
 write_sudo_local() {
@@ -40,7 +48,7 @@ status() {
 }
 
 main() {
-    local desired
+    local desired copy=false write=false
     case "${1:-}" in
         --status)
             status
@@ -60,34 +68,54 @@ main() {
         echo "Touch ID for sudo is macOS only. Nothing to do here."
         return 0
     fi
-    if ! sudo_reads_sudo_local; then
-        echo "$PAM_DIR/sudo doesn't include sudo_local, which macOS 14 added. Update macOS first." >&2
-        return 1
-    fi
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
 
+    # Without Homebrew's module, a copy others can write can't be put right
+    if [ -f "$REATTACH_MODULE" ] && ! reattach_source_installed && ! reattach_module_safe; then
+        echo "$REATTACH_MODULE, which sudo loads, isn't root's alone to write. Run brew install pam-reattach, then re-run this script." >&2
+        return 1
+    fi
+
     echo "Touch ID for sudo ($SUDO_LOCAL):"
-    if ! reattach_installed; then
+    if [ ! -f "$REATTACH_MODULE" ] && ! reattach_source_installed; then
         echo "  pam-reattach isn't installed, so Touch ID won't work inside tmux. The homebrew step"
         echo "  installs it; then re-run this script."
     fi
     desired="$(desired_sudo_local)"
-    if [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ]; then
+    reattach_copy_needed && copy=true
+    [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ] || write=true
+    if ! "$copy" && ! "$write"; then
         echo "  Touch ID for sudo is already on."
-    else
+        return 0
+    fi
+    if "$copy"; then
+        echo "  pam-reattach's module will be copied, root-owned and read-only, to $REATTACH_MODULE."
+    fi
+    if "$write"; then
         echo "  $SUDO_LOCAL will read:"
         printf '%s\n' "$desired" | sed 's/^/    /'
-        if ! confirm "  Write it with sudo?"; then
-            echo "  Left unchanged. Run this script from a terminal to write it."
-        elif write_sudo_local "$desired"; then
-            echo "  Wrote $SUDO_LOCAL. sudo now takes Touch ID."
-        else
+    fi
+    if ! confirm "  Do it with sudo?"; then
+        echo "  Left unchanged. Run this script from a terminal to do it."
+        return 0
+    fi
+    # The copy goes first, so sudo_local never loads a module that isn't there
+    if "$copy"; then
+        if ! install_reattach_module; then
+            echo "  Couldn't install $REATTACH_MODULE." >&2
+            return 1
+        fi
+        echo "  Installed $REATTACH_MODULE."
+    fi
+    if "$write"; then
+        if ! write_sudo_local "$desired"; then
             echo "  Couldn't write $SUDO_LOCAL." >&2
             return 1
         fi
+        echo "  Wrote $SUDO_LOCAL. sudo now takes Touch ID."
     fi
 }
 

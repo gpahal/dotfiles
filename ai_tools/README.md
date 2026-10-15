@@ -211,7 +211,7 @@ The machine runs one T3 Code server all the time, as a service, so the Mac and t
 - **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service failed in the meantime, run `systemctl --user reset-failed t3code` first, or systemd refuses to start it for 5 minutes.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.
-- **Browser (script, T3 Code 0.0.46+).** The script runs `sudo t3 browser setup`, after asking, when T3 Code's browser needs an AppArmor profile or libraries.
+- **Browser (T3 Code 0.0.46+).** When T3 Code's browser needs an AppArmor profile or libraries, the script prints the command that adds them, and `--status` reports it missing until you run it. The script doesn't run that command, because `~/.local/bin/t3` updates itself and you can write to it. Check it before you run it as root.
 
 ## Manual steps
 
@@ -234,7 +234,7 @@ Scripts can't do these. `bash ai_tools/setup.sh manual-steps` prints the list fo
 
 Over SSH, the logins print a link to open on the Mac.
 
-1. **Sudo work.** If you ran setup without a terminal, it skipped what needs sudo: bubblewrap and its AppArmor profile, `libatomic1` for the `t3` CLI, and `sudo t3 browser setup`. Run `bash ai_tools/setup.sh codex t3-code` from a terminal to do it.
+1. **Sudo work.** If you ran setup without a terminal, it skipped what needs sudo: bubblewrap and its AppArmor profile, and `libatomic1` for the `t3` CLI. Run `bash ai_tools/setup.sh codex t3-code` from a terminal to do it.
 2. **Claude Code.** Run `claude auth login`.
 3. **Codex.** Turn on device code login in ChatGPT's **Settings → Security** on chatgpt.com, then run `codex login --device-auth`.
 4. **Claude in Chrome.** At the Ubuntu desktop, set it up as [Browser (Claude in Chrome)](#browser-claude-in-chrome) says.
@@ -244,6 +244,7 @@ Over SSH, the logins print a link to open on the Mac.
    - In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
    - Run `t3 pair --tailscale`, and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't add the machine with T3 Code's SSH connection type, which starts its own server whenever its check for a running one fails. Remove any such connection there.
    - After an agent first opens T3 Code's browser in a thread, which downloads the browser, re-run `bash ai_tools/setup.sh t3-code`.
+   - If that run or `--status` says the browser needs root, check that `~/.local/bin/t3` is the `t3` you installed, then run `sudo ~/.local/bin/t3 browser setup`.
 6. **Claude phone app, training opt-outs, and GitHub repository settings** belong to your accounts, so doing them once from the Mac covers this machine.
 
 ## Check it works

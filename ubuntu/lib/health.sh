@@ -22,10 +22,12 @@ smartd_ready() {
     smartd_enabled && { in_vm || smartd_active; }
 }
 
-# Print the path of a command in /usr/sbin, such as smartctl, ufw, or sysctl. A user's PATH may
-# lack /usr/sbin.
+# Print the path of a system command such as smartctl, ufw, or sysctl, found only in $SBIN_PATH.
+# A user's PATH may lack /usr/sbin, and searching it would find a command planted in a
+# user-writable dir such as ~/.cargo/bin, which sudo would then run as root: sudo runs an
+# absolute path as given, without its secure_path.
 sbin_cmd() {
-    PATH="$PATH:$SBIN_PATH" command -v "$1"
+    PATH="$SBIN_PATH" command -v "$1"
 }
 
 smartctl_cmd() {

@@ -336,7 +336,7 @@ The TextEdit setting needs [Full Disk Access](#macos-1) for the terminal.
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. After you uninstall pam-reattach, re-run it, or sudo may fail. Any process running as you can replace pam-reattach's module in the Homebrew prefix, and the next `sudo` runs it as root.
+`just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
 
 ## Manual steps
 

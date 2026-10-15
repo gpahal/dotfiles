@@ -488,6 +488,18 @@ assert_exit 2 t3_code_browser_ready
 assert_exit 1 setup_t3_code_browser
 echo needs-root > "$STATE/browser-mode"
 assert_exit 1 t3_code_browser_ready
+# Needing root, the step prints the command for you to run and doesn't fail. ~/.local/bin/t3 is
+# yours to write and updates itself, so the step never runs it under sudo, even when you'd agree.
+stub sudo 'exec "$@"'
+confirm() { echo "$1"; }
+: > "$STUB_LOG"
+assert_exit 0 setup_t3_code_browser
+assert_contains "$RUN_OUTPUT" 'sudo ~/.local/bin/t3 browser setup'
+assert_file_not_contains "$STUB_LOG" 'sudo'
+run status
+assert_contains "$RUN_OUTPUT" "missing    T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup"
+stub sudo 'exit 1'
+confirm() { echo "$1"; false; }
 echo ready > "$STATE/browser-mode"
 assert_exit 0 t3_code_browser_ready
 

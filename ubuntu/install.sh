@@ -44,8 +44,9 @@ SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
 SSHD_RUN_DIR=/run/sshd
 # openssh-server's daemon, outside the PATH of a user who isn't root
 SSHD_BIN=/usr/sbin/sshd
-# Where sbin_cmd looks for a command such as ufw or sysctl, past the user's PATH
-SBIN_PATH=/usr/sbin:/sbin
+# The only dirs sbin_cmd looks in for a command such as ufw or smartctl: system dirs, since the
+# result can run under sudo
+SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 # Stops what masking can't: GNOME then hides suspend, and stops trying it on UPS battery
 SLEEP_CONF=/etc/systemd/sleep.conf.d/10-dotfiles.conf
 SLEEP_CONF_CONTENT='# From the dotfiles ubuntu step: never sleep, alongside the masked sleep targets

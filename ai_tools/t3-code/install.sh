@@ -7,13 +7,13 @@ set -euo pipefail
 #
 # On Ubuntu, install the t3 CLI and run its server as a systemd user service, which starts at boot
 # (with linger, from the ubuntu step) and which the Mac reaches over Tailscale HTTPS. Set the server's
-# settings, turn off its telemetry, and let its browser run in Chrome's sandbox. Ubuntu gets no
-# desktop app.
+# settings and turn off its telemetry. When its browser needs root to run in Chrome's sandbox, print
+# the command for you to run, since the step never runs the user-writable t3 under sudo. Ubuntu gets
+# no desktop app.
 #
 # A temp HOME doesn't isolate this step. On macOS it installs its cask and runs launchctl. On
-# Ubuntu it installs libatomic1, runs sudo t3 browser setup, and runs systemctl --user. Test the
-# cask in a macOS VM or on a spare Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such
-# as an OrbStack machine.
+# Ubuntu it installs libatomic1 and runs systemctl --user. Test the cask in a macOS VM or on a spare
+# Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such as an OrbStack machine.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -629,7 +629,7 @@ warn_t3_code_service_docker_group() {
     echo "  \`sudo systemctl restart user@$(id -u)\`, which stops the service and tmux."
 }
 
-# Ubuntu 23.10 and later block Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
+# Ubuntu blocks Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
 # profile allows it. `t3 browser setup` adds the profile and any libraries the browser is missing.
 # Without sudo it changes nothing and, when there's something to do, says it needs root. Returns 0
 # when there's nothing to do, 1 when it needs root, 2 on failure, and 3 for older releases that
@@ -647,7 +647,7 @@ t3_code_browser_ready() {
 }
 
 setup_t3_code_browser() {
-    local t3="$HOME/.local/bin/t3" ready=0
+    local ready=0
     t3_code_browser_ready || ready=$?
     if [ "$ready" -eq 3 ]; then
         echo "  This t3 release does not provide t3 browser setup; skipping."
@@ -661,13 +661,9 @@ setup_t3_code_browser() {
         echo "  T3 Code's browser can already run in Chrome's sandbox"
         return 0
     fi
-    confirm_sudo_changes "Let T3 Code's browser run in Chrome's sandbox: sudo t3 browser setup" || return 0
-    # t3 finds your ~/.t3 through SUDO_USER. Check the result again rather than trust its exit code.
-    sudo "$t3" browser setup || true
-    if ! t3_code_browser_ready; then
-        echo "  T3 Code's browser still can't run in Chrome's sandbox. Check: t3 browser setup" >&2
-        return 1
-    fi
+    echo "  T3 Code's browser needs a one-time root setup to run in Chrome's sandbox. Run:"
+    echo "    sudo ~/.local/bin/t3 browser setup"
+    echo "  The step doesn't run it: t3 is writable by you and updates itself, so check it's the one you installed."
 }
 
 # Status's check that the service runs. --quick checks once that it's active, instead of
@@ -759,7 +755,7 @@ status() {
         t3_code_browser_ready || ready=$?
         case "$ready" in
             0) status_item ok "T3 Code's browser can run in Chrome's sandbox" ;;
-            1) status_item missing "T3 Code's browser can run in Chrome's sandbox: needs sudo t3 browser setup" ;;
+            1) status_item missing "T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup" ;;
             3) status_item skipped "Browser sandbox: this t3 release does not provide t3 browser setup" ;;
             *) status_item unknown "T3 Code's browser sandbox: t3 browser setup failed; run it directly to inspect the error" ;;
         esac

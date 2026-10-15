@@ -1,5 +1,7 @@
 # Run every recipe line with -e, so a loop fails when any iteration does, not only the last, and
-# with pipefail, so a failing command before a pipe, such as git ls-files in check, fails it too
+# with pipefail, so a failing command before a pipe, such as git ls-files in check, fails it too.
+# Arguments reach a recipe quoted, or as "$@" with [positional-arguments], so the shell never runs
+# them as code.
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # List recipes
@@ -15,8 +17,9 @@ check:
     bash scripts/check-claude-keys.sh > /dev/null
 
 # Run the tests in tests/: every one, or only the named ones (e.g. just test harness). The scripts target /bin/bash 3.2 on macOS, so the tests run under it.
+[positional-arguments]
 test *tests:
-    /bin/bash tests/run.sh {{tests}}
+    /bin/bash tests/run.sh "$@"
 
 # Run setup.sh and ai_tools/setup.sh in a throwaway OrbStack Ubuntu machine, restart it, check --status and the T3 Code service, then delete it. Needs OrbStack.
 test-ubuntu:
@@ -27,16 +30,18 @@ bump-plugins:
     bash scripts/bump-plugins.sh
 
 # Run setup.sh: every step, or only the named ones (e.g. just setup git zsh)
+[positional-arguments]
 setup *steps:
-    bash setup.sh {{steps}}
+    bash setup.sh "$@"
 
 # Run ai_tools/setup.sh: every step, or only the named ones (e.g. just setup-ai codex)
+[positional-arguments]
 setup-ai *steps:
-    bash ai_tools/setup.sh {{steps}}
+    bash ai_tools/setup.sh "$@"
 
 # Report what every step of setup.sh and ai_tools/setup.sh has set up, changing nothing. With quick, skip the slowest checks (--quick). Exits 1 when a step failed, 3 when one needs attention.
 status mode="":
-    @case "{{mode}}" in "") f="" ;; quick) f=--quick ;; *) echo "Usage: just status [quick]" >&2; exit 2 ;; esac; a=0; bash setup.sh --status $f || a=$?; echo; b=0; bash ai_tools/setup.sh --status $f || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
+    @case {{quote(mode)}} in "") f="" ;; quick) f=--quick ;; *) echo "Usage: just status [quick]" >&2; exit 2 ;; esac; a=0; bash setup.sh --status $f || a=$?; echo; b=0; bash ai_tools/setup.sh --status $f || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
 
 # Sign git commits on this machine with an SSH key
 git-signing:

@@ -9,6 +9,7 @@ set -euo pipefail
 # group you're in. A running service is restarted, after asking once, when its settings or its
 # drop-in change, and they change only once it has stopped. A declined restart is offered again.
 # The drop-in holds only the telemetry and port settings, and the step installs no desktop app.
+# Settings it can't apply fail the step, after the service and browser setup still run.
 # Stubs stand in for systemctl, pgrep, id, getent, sleep, and the t3 CLI, and the functions that
 # read /proc and /var, and run the installer, are replaced.
 
@@ -469,6 +470,15 @@ assert_eq 0 "$RUN_STATUS" "main's exit status"
 assert_file_contains "$STUB_LOG" "t3 service install"
 assert_not_contains "$RUN_OUTPUT" "desktop app"
 [ ! -e "$HOME/.profile" ] || assert_file_not_contains "$HOME/.profile" "T3CODE_TELEMETRY_ENABLED"
+
+# A settings.json it can't parse fails the step, after it still installs the service and sets up
+# the browser
+reset
+mkdir -p "$(dirname "$T3_CODE_SETTINGS")"
+echo "not json" > "$T3_CODE_SETTINGS"
+assert_exit 1 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "t3 service install"
+assert_file_contains "$STUB_LOG" "t3 browser setup"
 
 # Released CLIs without the browser subcommand are skipped; failures in supported CLIs are not.
 cat > "$HOME/.local/bin/t3" << 'EOF'

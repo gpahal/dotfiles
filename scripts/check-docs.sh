@@ -310,6 +310,7 @@ stage_doc() {
         "upgrade:vim plugins") echo PlugUpdate ;;
         "upgrade:tmux plugins") echo 'tmux/plugins.lock' ;;
         upgrade:mise) echo 'mise upgrade' ;;
+        "upgrade:mise hook-env") echo 'mise hook-env' ;;
         upgrade:npm) echo 'npm update -g' ;;
         upgrade:uv) echo 'uv tool upgrade --all' ;;
         upgrade:rustup) echo 'rustup update' ;;

@@ -448,6 +448,7 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `vim/vimrc` pins.
 - tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
+- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips the npm updates here and in `upgrade-ai-tools`, which would run the old Node.
 - Global npm packages: `npm update -g`
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`

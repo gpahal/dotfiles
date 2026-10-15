@@ -262,7 +262,7 @@ stub pgrep 'exit 1'
 # apt, mise, and t3 update fail: every stage still runs, and both functions name what failed and
 # fail
 stub sudo 'exit 1'
-stub mise '[ "$1" != upgrade ]'
+stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
 : > "$STUB_LOG"
 if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
@@ -289,6 +289,30 @@ for invalid in 'not json' '{}' ''; do
         "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
     assert_contains "$RUN_OUTPUT" 'claude plugin list'
 done
+
+# Ctrl-C during claude plugin list stops upgrade-ai-tools, running nothing after it
+stub claude '[ "$*" != "plugin list --json" ] || exit 130'
+: > "$STUB_LOG"
+assert_exit 130 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
+assert_file_not_contains "$STUB_LOG" "t3 "
+assert_file_not_contains "$STUB_LOG" "codex "
+
+# mise hook-env fails, or prints nothing: npm would run the Node from before mise upgrade, so
+# neither npm update -g nor upgrade-ai-tools' npm installs run, and upgrade names the stage and
+# fails
+stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
+for hook in 'exit 1' 'exit 0'; do
+    stub mise '[ "$1" != hook-env ] || '"$hook"
+    : > "$STUB_LOG"
+    assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR"
+    assert_contains "$RUN_OUTPUT" "mise hook-env"
+    assert_file_not_contains "$STUB_LOG" "npm"
+    assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
+done
+stub mise
 
 # No installed plugins is a valid empty list, not a discovery failure.
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'

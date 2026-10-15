@@ -18,32 +18,31 @@ SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
 # Keep a blank line between existing content and a block appended next
 start_block() {
     if [ -s "$SSH_CONFIG" ]; then
-        end_with_newline "$SSH_CONFIG"
-        echo "" >> "$SSH_CONFIG"
+        end_with_newline "$SSH_CONFIG" && echo "" >> "$SSH_CONFIG"
     fi
 }
 
 # Print the lines to add to the Host * block, as they'd be written: "AddKeysToAgent yes" and
-# "UseKeychain yes", each unless a block whose Host line lists the pattern * already sets it. Lines
-# above the first Host or Match line apply to every host too, so they count as Host *'s.
+# "UseKeychain yes", each unless a block for * alone already sets it. A block that lists other
+# patterns too, such as Host * !bastion, leaves some host out. Lines above the first Host or Match
+# line apply to every host too, so they count as Host *'s.
 host_star_missing() {
     local found=""
     if [ -f "$SSH_CONFIG" ]; then
-        found="$(awk '
+        found="$(awk "$SSH_CONFIG_AWK"'
             BEGIN { star = 1 }
-            tolower($1) ~ /^(host|match)$/ {
-                star = 0
-                if (tolower($1) == "host") for (i = 2; i <= NF && $i !~ /^#/; i++) if ($i == "*") star = 1
+            { keyword = ssh_keyword($0) }
+            keyword == "host" || keyword == "match" {
+                star = keyword == "host" && host_patterns($0, p) == 1 && p[1] == "*"
                 next
             }
             # ssh ignores a commented-out setting, such as #UseKeychain yes
-            star && $1 !~ /^#/ { print tolower($1) }
+            star && keyword !~ /^(#|$)/ { print keyword }
         ' "$SSH_CONFIG")"
     fi
     case "$found" in *addkeystoagent*) ;; *) echo "  AddKeysToAgent yes" ;; esac
     case "$found" in *usekeychain*) ;; *) echo "  UseKeychain yes" ;; esac
 }
-
 
 # macOS: a Host * block at the end, so every host loads its key into the agent and the agent
 # takes the passphrase from the keychain. ssh uses the first value it finds for each setting, so
@@ -60,8 +59,7 @@ add_host_star() {
         printf '%s\n' "$missing" | sed 's/^/  /'
         return 0
     fi
-    start_block
-    printf 'Host *\n  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SSH_CONFIG"
+    start_block && printf 'Host *\n  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SSH_CONFIG" || return 1
     echo "  Added a Host * block that loads keys into the agent from the keychain to $SSH_CONFIG"
 }
 

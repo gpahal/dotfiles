@@ -135,8 +135,11 @@ upgrade_ai_tools() {
     fi
 
     # CLIs installed with npm: `npm update -g` stays within the installed semver range,
-    # which for 0.x versions (Codex) never reaches a new minor release
-    if command -v npm &>/dev/null; then
+    # which for 0.x versions (Codex) never reaches a new minor release. Skipped when upgrade
+    # couldn't load the Node mise just installed, since npm would install into the old one.
+    if "${node_stale:-false}"; then
+        echo "Skipping the npm installs of Codex and Claude Code, which would run the Node from before mise upgrade."
+    elif command -v npm &>/dev/null; then
         local pkg
         for pkg in @openai/codex @anthropic-ai/claude-code; do
             if npm ls -g --depth=0 "$pkg" &>/dev/null; then
@@ -182,7 +185,7 @@ upgrade_ai_tools() {
                 claude plugin update "$id" --scope "$scope" || _stage_failed "claude plugin $id" "$?"
             done 3<<< "$rows"
         else
-            failed+=("claude plugin list")
+            _stage_failed "claude plugin list" "$?"
         fi
     fi
 
@@ -266,12 +269,25 @@ upgrade() {
     # This script's PATH has the Node from before the upgrade, so apply mise's hook, as from ~, and
     # npm below and upgrade_ai_tools run the Node mise just installed. --force, since the hook
     # skips its work when no config file changed.
+    # When the hook fails, or prints nothing, npm here and in upgrade_ai_tools (node_stale) would
+    # run the old Node, so both skip it.
+    local node_stale=false hook rc
     if command -v mise &>/dev/null; then
         (cd ~ && mise upgrade) || _stage_failed mise "$?"
-        eval "$(cd ~ && mise hook-env --force -s bash)"
+        rc=0
+        hook="$(cd ~ && mise hook-env --force -s bash)" || rc=$?
+        [ "$rc" -ne 0 ] || [ -n "$hook" ] || rc=1
+        if [ "$rc" -eq 0 ]; then
+            eval "$hook"
+        else
+            _stage_failed "mise hook-env" "$rc"
+            node_stale=true
+        fi
     fi
 
-    if command -v npm &>/dev/null; then
+    if "$node_stale"; then
+        echo "Skipping npm update -g, which would run the Node from before mise upgrade."
+    elif command -v npm &>/dev/null; then
         npm update -g || _stage_failed npm "$?"
     fi
 

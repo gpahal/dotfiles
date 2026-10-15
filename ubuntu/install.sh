@@ -133,8 +133,8 @@ TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
 TAILSCALE_LIST="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}/tailscale.list"
 # User services, such as tmux at boot and the T3 Code server, get the user manager's PATH, which
-# has no Homebrew. The user manager doesn't see an XDG_CONFIG_HOME set in the shell, so the file
-# goes in ~/.config.
+# has neither Homebrew nor ~/.local/bin. The user manager doesn't see an XDG_CONFIG_HOME set in the
+# shell, so the file goes in ~/.config.
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 

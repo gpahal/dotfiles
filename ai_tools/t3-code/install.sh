@@ -492,7 +492,7 @@ t3_code_print_other_server() {
 
 configure_t3_code_ubuntu() {
     echo "Configuring the T3 Code server..."
-    local have_cli=true cli_status=0 service_failed=false
+    local have_cli=true cli_status=0 step_failed=false
     install_t3_cli || cli_status=$?
     [ "$cli_status" -eq 0 ] || have_cli=false
 
@@ -504,21 +504,23 @@ configure_t3_code_ubuntu() {
     if [ -n "$other" ]; then
         t3_code_print_other_server "$other"
     else
-        update_t3_code_server || return 1
+        # Settings that fail to apply don't stop the service or the browser setup below
+        update_t3_code_server || step_failed=true
         # The service runs the server from boot, so the phone app (through T3 Connect) and the
         # Mac can reach it without a login
         if "$have_cli"; then
-            ensure_t3_code_service || service_failed=true
+            ensure_t3_code_service || step_failed=true
         else
             echo "  Without the t3 CLI there's no service to install; skipping it."
         fi
     fi
 
     if "$have_cli"; then
-        setup_t3_code_browser || return 1
+        setup_t3_code_browser || step_failed=true
     fi
-    # A failed install or service fails the step, after the rest above; a declined install doesn't
-    [ "$cli_status" -ne 1 ] && ! "$service_failed"
+    # A failed install, setting, service, or browser setup fails the step, after the rest above; a
+    # declined install doesn't
+    [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
 # Set the server settings and write the service's drop-in (telemetry and port). The running

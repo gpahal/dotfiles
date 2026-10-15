@@ -5,7 +5,8 @@ set -euo pipefail
 # directory given: inside tmux it creates the session detached and switches to it, and outside
 # tmux it attaches with new-session -A. Two projects with the same name get api and api_2, a
 # project goes back to its session whatever names are free, also under LC_ALL=C, a . in the name
-# becomes _, fd and find list the same projects, a cancelled pick does nothing, and a failed
+# or a # in the name becomes _, a # stays literal in the session's path, a relative directory is
+# the one in the current directory whatever CDPATH says, fd and find list the same projects, a cancelled pick does nothing, and a failed
 # listing still lets fzf pick. Without fzf it fails with bash's "command not found" (127). Runs a
 # tmux server on the sandbox's TMUX_TMPDIR.
 
@@ -94,6 +95,29 @@ assert_file_not_contains "$STUB_LOG" "switch-client"
 : > "$STUB_LOG"
 LC_ALL=C assert_exit 0 bash "$SESSIONIZER" "$HOME/Dev/go/api"
 assert_file_contains "$STUB_LOG" "tmux new-session -A -s api -c $HOME/Dev/go/api"
+
+# Inside tmux again. A relative directory is the one in the current directory, even when CDPATH
+# has one of the same name, which cd would go to and print.
+TMUX="$TMUX_TMPDIR/tmux-$(id -u)/default,1,0"
+export TMUX
+: > "$STUB_LOG"
+assert_exit 0 env CDPATH="$HOME/Dev/go" bash -c 'cd "$1" && exec bash "$2" api' bash "$HOME/Dev/js" "$SESSIONIZER"
+assert_file_contains "$STUB_LOG" "tmux switch-client -t =api_2"
+assert_file_not_contains "$STUB_LOG" "new-session"
+
+# tmux expands formats in a new session's name and directory, so a # in the directory name stays
+# literal in the path, becomes _ in the name, and a second run goes back to the session
+mkdir -p "$HOME/Dev/web/C#{host}x"
+: > "$STUB_LOG"
+assert_exit 0 bash "$SESSIONIZER" "$HOME/Dev/web/C#{host}x"
+assert_eq "$HOME/Dev/web/C#{host}x" "$(session_path 'C_{host}x')" "the path of the session for C#{host}x"
+assert_file_contains "$STUB_LOG" "tmux switch-client -t =C_{host}x"
+: > "$STUB_LOG"
+assert_exit 0 bash "$SESSIONIZER" "$HOME/Dev/web/C#{host}x"
+assert_file_not_contains "$STUB_LOG" "new-session"
+assert_file_contains "$STUB_LOG" "tmux switch-client -t =C_{host}x"
+unset TMUX
+rmdir "$HOME/Dev/web/C#{host}x"
 
 # fd and find list the same projects: hidden groups and projects stay out, an .ignore file
 # doesn't hide one, and the dots in the sandbox's own path don't matter

@@ -53,7 +53,7 @@ Steps marked **(script)** below are done for you. The script adds no MCP servers
 The `upgrade` shell function updates the AI tools with everything else, through `upgrade-ai-tools`, which you can also run on its own. It updates only what's installed, and lists the failed stages at the end:
 
 - **Claude Code native install:** `claude update`.
-- **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. mise later removes the Node version that holds them, so prefer brew or `mise use -g npm:<package>`, which the main [`upgrade`](../README.md#updating) updates.
+- **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. `upgrade` skips it when it couldn't put mise's new Node on PATH. mise later removes the Node version that holds them, so prefer brew or `mise use -g npm:<package>`, which the main [`upgrade`](../README.md#updating) updates.
 - **t3 CLI and the T3 Code service:** `t3 update`. It asks before restarting a running service.
 - **Desktop apps installed with brew:** `brew upgrade --cask --greedy`, skipping running apps.
 - **Codex CLI installed with brew:** `brew upgrade --cask --greedy codex`, even while it runs.

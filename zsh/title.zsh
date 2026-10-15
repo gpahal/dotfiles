@@ -6,6 +6,8 @@ _title_precmd() {
 }
 
 _title_preexec() {
+    # A leading space keeps a command out of history (hist_ignore_space), so out of the title too
+    [[ $1 == ' '* ]] && return
     # Control characters, such as a newline in a multi-line command, would end the sequence early
     [[ $TERM == dumb ]] || print -rn -- $'\e]2;'"${${1//[[:cntrl:]]/ }[1,100]}"$'\a'
 }

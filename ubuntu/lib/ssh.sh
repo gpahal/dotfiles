@@ -8,18 +8,8 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
-# Print the unit that starts sshd at boot: the one enabled, ssh.socket first, or else
-# ssh.socket, the default on every supported release
-ssh_unit() {
-    local unit
-    for unit in ssh.socket ssh.service; do
-        [ "$(systemctl is-enabled "$unit" 2>/dev/null)" != enabled ] || { echo "$unit"; return 0; }
-    done
-    echo ssh.socket
-}
-
 sshd_enabled() {
-    [ "$(systemctl is-enabled "$(ssh_unit)" 2>/dev/null)" == enabled ]
+    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ]
 }
 
 # Print the SHA256 fingerprint of each public key in ~/.ssh/authorized_keys, one per line
@@ -217,16 +207,18 @@ configure_sshd() {
         old="$(sudo cat "$SSHD_DROP_IN")" || return 1
     fi
     new="$(sshd_drop_in "$old")"
-    printf '%s\n' "$new" | sudo tee "$SSHD_DROP_IN" > /dev/null || return 1
+    # A failed write leaves the old drop-in whole, so there is nothing to put back
+    write_root_file "$SSHD_DROP_IN" "$new" || return 1
     if ! output="$(sudo sshd -t 2>&1)"; then
         printf '%s\n' "$output" >&2
         bad="$(sshd_error_file "$output")"
-        if "$existed"; then
-            printf '%s\n' "$old" | sudo tee "$SSHD_DROP_IN" > /dev/null
+        if "$existed" && write_root_file "$SSHD_DROP_IN" "$old"; then
             echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, so the old one is back." >&2
-        else
-            sudo rm -f "$SSHD_DROP_IN"
+        elif ! "$existed" && sudo rm -f "$SSHD_DROP_IN"; then
             echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, so it was removed." >&2
+        else
+            echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, and it couldn't be" >&2
+            echo "  put back, so the broken drop-in is still in place: $SSHD_DROP_IN" >&2
         fi
         echo "  Fix the error above and re-run." >&2
         return 1
@@ -234,7 +226,7 @@ configure_sshd() {
     # Ubuntu starts sshd on the first connection (ssh.socket), so it may not be running yet
     if ! sudo systemctl try-reload-or-restart ssh.service; then
         if "$existed"; then
-            printf '%s\n' "$old" | sudo tee "$SSHD_DROP_IN" > /dev/null || return 1
+            write_root_file "$SSHD_DROP_IN" "$old" || return 1
         else
             sudo rm -f "$SSHD_DROP_IN" || return 1
         fi

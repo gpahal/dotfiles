@@ -201,7 +201,7 @@ chmod 644 "$SSHD_DROP_IN"
 # The docker step: a daemon.json only root can read
 load_script docker/install.sh
 is_macos() { false; }
-# Docker's packages are installed, and none that conflict with them
+# Docker's packages are installed
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'exit 1'

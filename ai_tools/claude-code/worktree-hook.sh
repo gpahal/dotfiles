@@ -22,7 +22,7 @@ set -euo pipefail
 
 # Claude Code started from the Dock or a launcher may have only the system's PATH. git wt is in
 # ~/.local/bin, and jq may be only in Homebrew's.
-for dir in /home/linuxbrew/.linuxbrew/bin /usr/local/bin /opt/homebrew/bin; do
+for dir in /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin; do
     if [ -d "$dir" ]; then
         PATH="$dir:$PATH"
     fi
@@ -266,7 +266,8 @@ remove() {
     if [ -n "$dir" ] && [ "${path#"$dir"/}" != "$path" ]; then
         name="${path#"$dir"/}"
     else
-        # Not one of ours, such as one made before this hook was set up
+        # Not one of ours: a worktree outside ~/.worktrees, or one of a --separate-git-dir repo,
+        # where dir is empty
         git worktree remove --force "$path" >&2
         return
     fi

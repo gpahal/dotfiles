@@ -4,11 +4,11 @@ set -euo pipefail
 # scripts/upgrade.sh, which zsh's upgrade and upgrade-ai-tools functions run, runs each tool's
 # update, in order, on each OS, with every tool stubbed: apt on Ubuntu only, the Brewfile's new
 # formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
-# ~/.cargo/bin when it isn't on PATH, the plugin managers, Claude Code's and Codex's own updaters
-# only for their native installs, even with HOME reached through a symlink, Claude Code's plugins
-# outside project, local, and managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
+# ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
+# even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
+# managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
-# alone, and tpm updates the tmux plugins with its own tmux server.
+# alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -55,18 +55,19 @@ ln -s "$JQ" "$STUB_DIR/jq"
 for cmd in mas vim uv rustup t3 fc-cache; do
     stub "$cmd"
 done
+# rustup's installer puts it in ~/.cargo/bin, which isn't on PATH
+mkdir -p "$HOME/.cargo/bin"
+mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 # upgrade runs mise from ~, away from any project's mise.toml in the dir it was started in. After
 # mise upgrade, it applies mise's hook-env, so npm, and upgrade-ai-tools after it, run the new
 # Node. The hook-env stub puts $SANDBOX/new-node, whose npm logs as "new-node npm", first on PATH.
 # shellcheck disable=SC2016 # expanded by the stub
 stub mise '[ "$PWD" == "$HOME" ] || echo "mise ran in $PWD" >> "$STUB_LOG"
 [ "$*" != "hook-env --force -s bash" ] || echo "export PATH='"$SANDBOX/new-node"':\$PATH"'
-# npm lists Claude Code as a global package, not Codex
-stub npm '[ "$*" != "ls -g --depth=0 @openai/codex" ]'
+stub npm
 mkdir -p "$SANDBOX/new-node"
 # shellcheck disable=SC2016 # expanded by the script
-printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' \
-    '[ "$*" != "ls -g --depth=0 @openai/codex" ]' > "$SANDBOX/new-node/npm"
+printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' > "$SANDBOX/new-node/npm"
 chmod +x "$SANDBOX/new-node/npm"
 stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"a@m\", \"scope\": \"user\"},
@@ -75,9 +76,11 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"d@m\", \"scope\": \"managed\"}
 ]"'
 stub codex
-mkdir -p "$HOME/.vim/autoload" "$HOME/.tmux/plugins/tpm/bin" "$SANDBOX/tmp"
+mkdir -p "$HOME/.vim/autoload" "$SANDBOX/tmp"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
-cp "$STUB_DIR/mas" "$HOME/.tmux/plugins/tpm/bin/update_plugins"
+# The tmux plugins are at their pins, from local repos in place of GitHub
+fake_tmux_plugins
+"$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$REPO_DIR" > /dev/null
 # uname -s names the OS upgrade_on runs as, so the homebrew step's is_macos agrees with OSTYPE.
 # Unlike a stub, it doesn't log.
 printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || exec cat "'"$SANDBOX"'/uname-s"' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
@@ -101,12 +104,10 @@ upgrade_on() {
     sed -e "s|$HOME|~|g" -e "s|$REPO_DIR/|REPO/|g" -e "/^$(basename "$JQ") /d" "$STUB_LOG"
 }
 
-# macOS. Claude Code and Codex are native installs: claude updates itself, and codex too.
-mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions" "$HOME/.codex/packages/standalone/bin"
+# macOS. Claude Code is the native install, which updates itself.
+mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
 mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
 ln -s "$HOME/.local/share/claude/versions/2.0.0" "$HOME/.local/bin/claude"
-mv "$STUB_DIR/codex" "$HOME/.codex/packages/standalone/bin/codex"
-ln -s "$HOME/.codex/packages/standalone/bin/codex" "$HOME/.local/bin/codex"
 assert_eq "brew update
 brew upgrade
 (not auto_updates casks)
@@ -127,17 +128,13 @@ brew list --cask appcleaner
 brew list --cask the-unarchiver
 brew list --cask logi-options+
 mas upgrade
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpgrade -c PlugUpdate --sync -c qa
-update_plugins all
+vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
 mise upgrade
 mise hook-env --force -s bash
 new-node npm update -g
 uv tool upgrade --all
 rustup update
 claude update
-new-node npm ls -g --depth=0 @openai/codex
-new-node npm ls -g --depth=0 @anthropic-ai/claude-code
-new-node npm install -g @anthropic-ai/claude-code@latest
 brew list --cask claude
 brew outdated --cask --greedy --quiet claude
 brew info --json=v2 --cask claude
@@ -145,7 +142,6 @@ pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
-codex update
 claude plugin marketplace update
 claude plugin list --json
 claude plugin update a@m --scope user
@@ -160,13 +156,11 @@ env HOME="$SANDBOX/home-link" PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR" \
     < /dev/null > "$SANDBOX/output" 2>&1 || true
 assert_file_contains "$STUB_LOG" "claude update"
-assert_file_contains "$STUB_LOG" "codex update"
 
-# rustup from its installer, in ~/.cargo/bin, which isn't on PATH
-mkdir -p "$HOME/.cargo/bin"
-mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
-assert_contains "$(upgrade_on darwin25.0)" "rustup update" "commands upgrade runs with rustup in ~/.cargo/bin"
+# A rustup elsewhere on PATH isn't the runtimes step's, so it's left alone
 mv "$HOME/.cargo/bin/rustup" "$STUB_DIR/rustup"
+assert_not_contains "$(upgrade_on darwin25.0)" "rustup" "commands upgrade runs with rustup only on PATH"
+mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 
 # brew bundle check fails on a missing App Store app, which brew bundle install can't fix without
 # an App Store sign-in, so upgrade has it skip the Brewfile's App Store apps by id. Here only those
@@ -202,11 +196,10 @@ assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
 assert_file_not_contains "$STUB_LOG" "pgrep"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
-# Ubuntu. Claude Code and Codex come from elsewhere, so neither updates itself. The Zed cask is outdated, and brew upgrade skips
-# it, as it does on macOS.
-rm "$HOME/.local/bin/claude" "$HOME/.local/bin/codex"
+# Ubuntu. Claude Code comes from elsewhere, so it doesn't update itself. The Zed cask is outdated,
+# and brew upgrade skips it, as it does on macOS.
+rm "$HOME/.local/bin/claude"
 mv "$HOME/.local/share/claude/versions/2.0.0" "$STUB_DIR/claude"
-mv "$HOME/.codex/packages/standalone/bin/codex" "$STUB_DIR/codex"
 stub brew 'case "$*" in
     upgrade) [ -z "${HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS:-}" ] || echo "(not auto_updates casks)" >> "$STUB_LOG" ;;
     "list --cask zed") ;;
@@ -229,16 +222,12 @@ brew list --cask zed
 brew outdated --cask --greedy --quiet zed
 pgrep -x zed-editor
 brew upgrade --cask --greedy zed
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpgrade -c PlugUpdate --sync -c qa
-update_plugins all
+vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
 mise upgrade
 mise hook-env --force -s bash
 new-node npm update -g
 uv tool upgrade --all
 rustup update
-new-node npm ls -g --depth=0 @openai/codex
-new-node npm ls -g --depth=0 @anthropic-ai/claude-code
-new-node npm install -g @anthropic-ai/claude-code@latest
 brew list --cask claude
 brew list --cask chatgpt
 brew list --cask t3-code
@@ -262,7 +251,7 @@ stub pgrep 'exit 1'
 # apt, mise, and t3 update fail: every stage still runs, and both functions name what failed and
 # fail
 stub sudo 'exit 1'
-stub mise '[ "$1" != upgrade ]'
+stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
 : > "$STUB_LOG"
 if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
@@ -289,6 +278,29 @@ for invalid in 'not json' '{}' ''; do
         "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
     assert_contains "$RUN_OUTPUT" 'claude plugin list'
 done
+
+# Ctrl-C during claude plugin list stops upgrade-ai-tools, running nothing after it
+stub claude '[ "$*" != "plugin list --json" ] || exit 130'
+: > "$STUB_LOG"
+assert_exit 130 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
+assert_file_not_contains "$STUB_LOG" "t3 "
+assert_file_not_contains "$STUB_LOG" "codex "
+
+# mise hook-env fails, or prints nothing: npm would run the Node from before mise upgrade, so
+# npm update -g doesn't run, and upgrade names the stage and fails
+stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
+for hook in 'exit 1' 'exit 0'; do
+    stub mise '[ "$1" != hook-env ] || '"$hook"
+    : > "$STUB_LOG"
+    assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR"
+    assert_contains "$RUN_OUTPUT" "mise hook-env"
+    assert_file_not_contains "$STUB_LOG" "npm"
+    assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
+done
+stub mise
 
 # No installed plugins is a valid empty list, not a discovery failure.
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
@@ -383,21 +395,7 @@ assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
 assert_not_contains "$RUN_OUTPUT" "Interrupted"
 assert_file_contains "$STUB_LOG" "rustup update"
-# upgrade-ai-tools too, here when npm is interrupted, and when brew is, upgrading a cask
-stub brew
-stub npm '[ "$1" != install ] || exit 130'
-: > "$STUB_LOG"
-assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
-assert_file_not_contains "$STUB_LOG" "brew list"
-assert_file_not_contains "$STUB_LOG" "claude plugin"
-stub npm '[ "$1" != install ] || exit 1'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-assert_file_contains "$STUB_LOG" "claude plugin marketplace update"
-stub npm
+# upgrade-ai-tools too, here when brew is interrupted upgrading a cask
 stub brew 'case "$*" in
     "list --cask claude") ;;
     "list --cask"*) exit 1 ;;
@@ -427,18 +425,21 @@ for interrupted in "outdated " "info "; do
 done
 stub brew
 
-# tpm updates the plugins against the repo's tmux config, so it runs with no TMUX and in a new
-# TMUX_TMPDIR, where it starts its own tmux server rather than reading a running one's config
-# shellcheck disable=SC2016 # expanded by the script
-printf '%s\n' '#!/bin/bash' 'echo "${TMUX-unset} $TMUX_TMPDIR" > "'"$SANDBOX"'/tpm-env"' \
-    > "$HOME/.tmux/plugins/tpm/bin/update_plugins"
-run env TMUX=/tmp/caller,1,0 PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
-read -r tpm_tmux tpm_tmpdir < "$SANDBOX/tpm-env"
-assert_eq unset "$tpm_tmux" "the TMUX update_plugins sees"
-[ -n "$tpm_tmpdir" ] && [ "$tpm_tmpdir" != "$TMUX_TMPDIR" ] ||
-    fail "update_plugins ran with TMUX_TMPDIR '$tpm_tmpdir', not a new dir"
-[ ! -e "$tpm_tmpdir" ] || fail "upgrade left update_plugins' TMUX_TMPDIR behind"
+# A tmux plugin at another commit, as an older checkout or a bumped pin leaves it, moves to its
+# pin, never to HEAD, and one that can't be fetched fails the tmux plugins stage
+plugin="$HOME/.tmux/plugins/tmux-yank"
+pin="$(git -C "$plugin" rev-parse HEAD)"
+git -C "$plugin" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
+git -C "$plugin" checkout -q --detach FETCH_HEAD
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+assert_eq "$pin" "$(git -C "$plugin" rev-parse HEAD)" "tmux-yank's commit after upgrade"
+assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank"
+assert_not_contains "$RUN_OUTPUT" "Failed: tmux plugins"
+rm -rf "$HOME/.tmux/plugins/tmux-open"
+mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
+assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
 
 # zsh's upgrade and upgrade-ai-tools run the script from the repo DOTFILES_DIR names
 mkdir -p "$SANDBOX/fake-repo/scripts"

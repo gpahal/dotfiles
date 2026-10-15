@@ -13,34 +13,58 @@ SUDO_LOCAL="$PAM_DIR/sudo_local"
 SUDO_LOCAL_HEADER="# sudo_local: local config file which survives system update and is included for sudo"
 TID_LINE="auth       sufficient     pam_tid.so"
 
-# /etc/pam.d/sudo reads sudo_local only on macOS 14 and later
-sudo_reads_sudo_local() {
-    grep -qE '^[[:space:]]*auth[[:space:]]+include[[:space:]]+sudo_local([[:space:]]|$)' "$PAM_DIR/sudo" 2>/dev/null
-}
+# Where sudo_local loads pam-reattach's module from: a copy in a root-owned dir that just
+# touch-id installs, since sudo runs it as root and anything running as you can write Homebrew's
+# copy. It also keeps sudo working after pam-reattach is uninstalled.
+REATTACH_MODULE="$PAM_LOCAL_MODULES_DIR/pam_reattach.so"
+# The owner the copy and its dir must have; tests, whose sandbox files are theirs, change it
+PAM_ROOT_UID=0
 
-# Print where pam-reattach's module is once it's installed: Homebrew links it under its prefix.
-# Prints nothing without Homebrew.
-reattach_module() {
+# Print where Homebrew links pam-reattach's module, the copy's source. Prints nothing without
+# Homebrew.
+reattach_source() {
     local prefix
     command -v brew &>/dev/null || return 0
     prefix="$(brew --prefix 2>/dev/null)" || return 0
     echo "$prefix/lib/pam/pam_reattach.so"
 }
 
-reattach_installed() {
-    local module
-    module="$(reattach_module)"
-    [ -n "$module" ] && [ -f "$module" ]
+reattach_source_installed() {
+    local source
+    source="$(reattach_source)"
+    [ -n "$source" ] && [ -f "$source" ]
+}
+
+# Succeeds when $PAM_ROOT_UID owns $1 and neither its group nor others can write it
+root_only_writable() {
+    local perms owner
+    read -r perms _ owner _ < <(/bin/ls -ldn "$1" 2>/dev/null) || return 1
+    [ "$owner" == "$PAM_ROOT_UID" ] && [ "${perms:5:1}" != w ] && [ "${perms:8:1}" != w ]
+}
+
+# Succeeds when the copy and its dir are root's alone to write
+reattach_module_safe() {
+    root_only_writable "$PAM_LOCAL_MODULES_DIR" && root_only_writable "$REATTACH_MODULE"
+}
+
+# Succeeds when the copy needs installing: Homebrew's module exists, and the copy is missing,
+# differs from it, or isn't root's alone to write
+reattach_copy_needed() {
+    local source
+    reattach_source_installed || return 1
+    source="$(reattach_source)"
+    ! { [ -f "$REATTACH_MODULE" ] && cmp -s "$source" "$REATTACH_MODULE" && reattach_module_safe; }
 }
 
 # Print sudo_local as it should be, whatever it holds now: the template's header, then, when
-# pam-reattach is installed, its module with ignore_ssh, so sudo over SSH asks for the password
-# rather than showing a Touch ID prompt on the Mac's screen, then pam_tid. pam_reattach must come
-# first for Touch ID to work inside tmux.
+# pam-reattach is installed or its copy is in place, the copy with ignore_ssh, so sudo over SSH
+# asks for the password rather than showing a Touch ID prompt on the Mac's screen, then pam_tid.
+# pam_reattach must come first for Touch ID to work inside tmux. just touch-id installs the copy
+# before writing the file, so the line never names a missing module.
 desired_sudo_local() {
     echo "$SUDO_LOCAL_HEADER"
-    if reattach_installed; then
-        echo "auth       optional       $(reattach_module) ignore_ssh"
+    if [ -f "$REATTACH_MODULE" ] || reattach_source_installed; then
+        echo "auth       optional       $REATTACH_MODULE ignore_ssh"
     fi
     echo "$TID_LINE"
 }
@@ -85,18 +109,9 @@ pam_module_exists() {
 
 # status_touch_id <state>: report Touch ID for sudo, with <state> (missing or skipped) for off.
 # Touch ID is optional in the macos step, which skips it when off. Every module sudo_local loads
-# must exist: pam-reattach can be uninstalled under it, and then sudo may fail, depending on the
-# stack.
+# must exist: one can be removed under it, and then sudo may fail, depending on the stack.
 status_touch_id() {
-    local off="$1" module
-    if [ -e "$PAM_DIR/sudo" ] && [ ! -r "$PAM_DIR/sudo" ]; then
-        status_item unverified "Touch ID for sudo: $PAM_DIR/sudo isn't readable, so whether sudo reads $SUDO_LOCAL is unknown; check it with sudo cat $PAM_DIR/sudo"
-        return 0
-    fi
-    if ! sudo_reads_sudo_local; then
-        status_item "$off" "Touch ID for sudo: $PAM_DIR/sudo doesn't include sudo_local, which macOS 14 added"
-        return 0
-    fi
+    local off="$1" module source fix
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
@@ -105,15 +120,28 @@ status_touch_id() {
         status_item "$off" "Touch ID for sudo: off, an option that just touch-id turns on"
     elif [ "$(cat "$SUDO_LOCAL")" == "$(desired_sudo_local)" ]; then
         status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
-        reattach_installed ||
+        source="$(reattach_source)"
+        if [ -f "$REATTACH_MODULE" ]; then
+            # just touch-id reinstalls the copy from Homebrew's, so it refuses without that
+            fix="re-run just touch-id"
+            reattach_source_installed || fix="run brew install pam-reattach, then just touch-id"
+            if ! root_only_writable "$PAM_LOCAL_MODULES_DIR"; then
+                status_item missing "Touch ID in tmux: $PAM_LOCAL_MODULES_DIR, which sudo loads pam-reattach from, isn't root's alone to write; $fix"
+            elif ! root_only_writable "$REATTACH_MODULE"; then
+                status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't root's alone to write; $fix"
+            elif [ -n "$source" ] && [ -f "$source" ] && ! cmp -s "$source" "$REATTACH_MODULE"; then
+                status_item missing "Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id to install the new module"
+            fi
+        elif ! reattach_source_installed; then
             status_item skipped "Touch ID in tmux: pam-reattach isn't installed; the homebrew step installs it, then re-run just touch-id"
+        fi
     else
         status_item missing "Touch ID for sudo: $SUDO_LOCAL differs from what just touch-id writes; run it to rewrite the file"
     fi
     while IFS= read -r module; do
         pam_module_exists "$module" && continue
         if [[ "$module" == */pam_reattach.so ]]; then
-            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so Touch ID in tmux doesn't work and sudo may fail; re-run the homebrew step to put pam-reattach back, or just touch-id to drop the line"
+            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so Touch ID in tmux doesn't work and sudo may fail; run brew install pam-reattach, then just touch-id"
         else
             status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so sudo may fail; just touch-id rewrites the file without it"
         fi

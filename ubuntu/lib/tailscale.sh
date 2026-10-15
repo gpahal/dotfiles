@@ -3,7 +3,9 @@
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
 # Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
-# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does.
+# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
+# anything else running as you, and `tailscale funnel` too, which puts a port on the internet, when
+# the tailnet policy grants the funnel attribute.
 tailscale_configured() {
     local prefs
     prefs="$(tailscale debug prefs 2>/dev/null)" || return 1
@@ -35,9 +37,9 @@ tailscale_release_url() {
     echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
 }
 
-# See add_apt_repo, whose return status this passes on. The key's URL names the release, as in
-# Tailscale's install script.
+# Run it once apt_repo_published says Tailscale has packages for this release. The key's URL names
+# the release, as in Tailscale's install script.
 add_tailscale_repo() {
     add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
-        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$(tailscale_release_url)"
+        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING"
 }

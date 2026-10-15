@@ -16,9 +16,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # suite come from Google's Release file:
 # https://dl.google.com/linux/chrome-stable/deb/dists/stable/Release
 UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-google-chrome
-# Where Chrome's .deb adds Google's repo: google-chrome.list, or google-chrome.sources in newer
-# versions
-APT_SOURCES_DIR=/etc/apt/sources.list.d
+# Where Chrome's .deb adds Google's repo. Its postinst writes this file and removes any
+# google-chrome.list.
+GOOGLE_SOURCES=/etc/apt/sources.list.d/google-chrome.sources
 # The .deb adds Google's repo on the first install only, and later only when this file sets
 # repo_add_once="true", which its postinst then sets back to false. See Chromium's
 # chrome/installer/linux/common/apt.include.
@@ -69,13 +69,10 @@ allow_repo_readd() {
 }repo_add_once=\"true\""
 }
 
-# Succeeds when the source file Chrome's .deb writes is there and on: a .list with a line that
-# isn't a comment, or a .sources without Enabled: no. A release upgrade comments out the one or
-# adds Enabled: no to the other. The .deb owns the file's content, so nothing else is checked.
+# Succeeds when the source file Chrome's .deb writes is there and lacks the Enabled: no a release
+# upgrade adds. The .deb owns the file's content, so nothing else is checked.
 google_source_exists() {
-    local list="$APT_SOURCES_DIR/google-chrome.list" sources="$APT_SOURCES_DIR/google-chrome.sources"
-    grep -qE '^[[:space:]]*[^#[:space:]]' "$list" 2>/dev/null ||
-        { [ -r "$sources" ] && ! grep -qiE '^Enabled:[[:space:]]*no[[:space:]]*$' "$sources"; }
+    [ -r "$GOOGLE_SOURCES" ] && ! grep -qiE '^Enabled:[[:space:]]*no[[:space:]]*$' "$GOOGLE_SOURCES"
 }
 
 status() {
@@ -96,7 +93,7 @@ status() {
             *) status_item unknown "google-chrome-stable: couldn't reach dl.google.com to check for its .deb" ;;
         esac
     fi
-    status_check "Google's apt source ($APT_SOURCES_DIR/google-chrome.sources or .list)" google_source_exists
+    status_check "Google's apt source ($GOOGLE_SOURCES)" google_source_exists
     status_check "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" auto_updates_configured
     status_result
 }

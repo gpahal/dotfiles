@@ -2,7 +2,7 @@
 
 Configuration and setup scripts for my Mac, and for the Ubuntu desktop I use from it over SSH. See [Ubuntu](#ubuntu-1) for what differs there.
 
-The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
+The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On ARM Ubuntu, they warn and carry on. A package with no ARM build then fails its step, except Chrome, which the chrome step skips.
 
 ![zsh prompt](./resources/prompt.png)
 
@@ -25,7 +25,7 @@ Set up the Mac first, then the Ubuntu machine: Ubuntu's **SSH key** manual step 
 ### macOS
 
 1. Run `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. The first `git` command asks to install the Command Line Tools. Install them, then run the clone again.
-2. Sign in to the App Store and buy [Dato](https://apps.apple.com/app/dato/id1470584107) once, so the `homebrew` step can install it with the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. If you don't buy it, remove its line from `homebrew/Brewfile`, or the `homebrew` step fails.
+2. Sign in to the App Store and buy [Dato](https://apps.apple.com/app/dato/id1470584107) once, so the `homebrew` step can install it with the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. Buy it only if you want Dato. Without it, the `homebrew` step still passes but warns that the App Store apps aren't installed, and `--status` lists them as missing.
 3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
 4. Give Ghostty Full Disk Access, then quit and reopen it. The first of the macOS [manual steps](#macos-1) says how.
 5. Do the rest of the macOS [manual steps](#macos-1), commit signing included.
@@ -59,8 +59,8 @@ bash setup.sh
 | `lazygit` | Copies the lazygit config |
 | `ssh` | Makes `~/.ssh` private. On macOS, keeps your keys in the keychain and loads them at login |
 | `zsh` | Copies the zsh and starship config, adds its lines to `~/.zshrc` and the other startup files, and offers to make zsh the login shell |
-| `vim` | Copies the vim config |
-| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins. On Ubuntu, sets tmux to start at boot |
+| `vim` | Copies the vim config and installs vim-plug |
+| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
 | `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
 | `editorconfig` | Copies `~/.editorconfig` |
@@ -79,6 +79,8 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
+**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs or trusts them without a pinned checksum or key fingerprint, as each vendor's instructions do, so a vendor's HTTPS server decides what runs.
+
 **XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
 
 The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md). It needs Node from the `runtimes` step.
@@ -92,7 +94,7 @@ just status [quick]       # bash setup.sh --status, then bash ai_tools/setup.sh 
 just git-signing          # bash git/setup-signing.sh, see "Commit signing"
 just touch-id             # bash macos/setup-touch-id-sudo.sh, see "Touch ID for sudo"
 just ssh-host <alias> [hostname]   # bash ssh/add-host.sh, see "SSH"
-just alerts <ntfy-url|test>   # bash ubuntu/setup-alerts.sh, see "Phone alerts" in Manual steps for Ubuntu
+just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in Manual steps for Ubuntu
 ```
 
 ## Ubuntu
@@ -120,8 +122,8 @@ The Ubuntu machine stays on so the Mac and the phone can reach its agents at any
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
 - **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.
-- **Tailscale.** Once you've logged in, Tailscale updates itself, and `tailscale serve` works without `sudo`. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
-- **Firewall.** ufw lets SSH in only from private addresses and the tailnet. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
+- **Tailscale.** Once you've logged in, Tailscale updates itself, and `tailscale serve` works without `sudo`. So can anything else running as you, and it can run `tailscale funnel` too, which opens a port to the internet, if the tailnet's policy grants funnel. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
+- **Firewall.** ufw lets SSH in only from private addresses, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
 - **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`. For containers to reach a port on the host, run `sudo ufw allow in on docker0`.
 - **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
 
@@ -167,7 +169,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 ### SSH
 
 - On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
-- `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open 10 minutes after the last session closes. `ssh -O exit <alias>` closes it
+- `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
 
 ### vim
 
@@ -180,7 +182,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
   - [vim-airline](https://github.com/vim-airline/vim-airline) with [vim-airline-themes](https://github.com/vim-airline/vim-airline-themes)
 - Relative line numbers, persistent undo, smart case search, a space leader key, and the mouse in tmux too
 - `Space e` toggles NERDTree. `Space f` finds files, `Space /` searches contents with ripgrep, and `Space b` lists buffers
-- Copied to `~/.vimrc`. vim installs vim-plug and missing plugins when it starts
+- Copied to `~/.vimrc`, with the vim-plug release the repo vendors. vim installs missing plugins when it starts, at the commits `vim/vimrc` pins
 
 ### zsh
 
@@ -212,7 +214,7 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 ### Zed
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
-- Settings and keymap copied to `~/.config/zed/`. AI features are off
+- Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
 
 ### tmux
 
@@ -326,17 +328,17 @@ Installed from the Mac App Store with mas, once you're signed in to the App Stor
 
 The `macos` step sets these:
 
-- **Finder:** hidden files, extensions, path and status bars, list view, folders first, search the current folder
-- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes, or period on double-space
-- **Dock:** auto-hide with no delay, no recent apps. Spaces keep their order
+- **Finder:** hidden files, extensions, path and status bars, the full path in the window title, list view, folders first, search the current folder, no warning when changing an extension
+- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
+- **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
 - **Screenshots:** PNG in `~/Screenshots`, without window shadows
-- **Misc:** no `.DS_Store` on network or USB volumes, expanded save dialogs that save to disk, plain-text TextEdit, all processes in Activity Monitor
+- **Misc:** no `.DS_Store` on network or USB volumes, expanded save and print dialogs, new documents saved to disk rather than iCloud, plain-text TextEdit, all processes in Activity Monitor
 
 The TextEdit setting needs [Full Disk Access](#macos-1) for the terminal.
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. After you uninstall pam-reattach, re-run it, or sudo may fail. Any process running as you can replace pam-reattach's module in the Homebrew prefix, and the next `sudo` runs it as root.
+`just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
 
 ## Manual steps
 
@@ -403,7 +405,7 @@ Once, before or right after setup:
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the Ubuntu desktop, open Solaar and pair your devices.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need a desktop session, and a reboot ends it. Turn on GNOME's Remote Login in **Settings → System → Remote Desktop**, set its username and password, and connect over Tailscale with the Mac's Windows App. Or turn on automatic login in GDM, which starts a session at boot but leaves the login keyring locked.
-13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts https://ntfy.sh/<topic>`, then `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
+13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts`. Paste the topic name at its prompt, which hides it, or a full `https://` URL for a topic on another ntfy server. Then run `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
 14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Test it: unplug the UPS from the wall and wait for the low-battery push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` starts the shutdown at once). Plug it back in, and check that the machine starts and `just status` reports the UPS on mains. Separately, check the fallback for a UPS that keeps its power on, at the machine: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power.
 15. **Backups.** Back up `~`, including `~/.t3` and `~/.worktrees`, and `/var/lib/docker/volumes` off the machine, with restic or Borg on a schedule. Restore a few files once to check it.
 16. **Livepatch (optional).** With a free Ubuntu Pro token, run `sudo pro attach <token>` and `sudo pro enable livepatch` for kernel fixes without a reboot.
@@ -443,13 +445,16 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step, then `brew cleanup`. On Ubuntu it then refreshes the font cache.
 - Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
-- vim plugins: vim-plug's `PlugUpgrade`, then `PlugUpdate`.
-- tmux plugins: tpm's `update_plugins all`.
+- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `~/.vimrc` pins. The vim step copies that file from `vim/vimrc`.
+- tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
+- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips `npm update -g`, which would run the old Node.
 - Global npm packages: `npm update -g`
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
+
+Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
 
 macOS itself updates from **System Settings → General → Software Update**, and snapd updates the Ghostty snap.
 
@@ -489,12 +494,15 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 
 Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
+Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
+
 After a full verification round, add its results to the top of [`COMPATIBILITY.md`](./COMPATIBILITY.md). [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 
 ```sh
 just check                # shellcheck every script, syntax-check the zsh files, and check the docs, skills, and Claude settings keys against the code
 just test [name...]       # bash tests/run.sh, which runs each test in tests/ in a temp HOME with stub commands
 just test-ubuntu          # bash scripts/test-ubuntu.sh: a full Ubuntu setup in a throwaway OrbStack machine
+just bump-plugins         # bash scripts/bump-plugins.sh, which moves the plugin pins to the latest versions
 ```
 
 ## License

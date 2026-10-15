@@ -137,7 +137,7 @@ echo 0 > "$SANDBOX/exit/ai_tools"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: All clear on $(hostname)"
 assert_file_contains "$STUB_LOG" "-H Tags: white_check_mark"
-assert_file_contains "$STUB_LOG" "--data-binary Nothing needs attention any more."
+assert_file_contains "$STUB_LOG" "--data-raw Nothing needs attention any more."
 assert_contains "$(cat "$STATE")" " clear"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
@@ -185,7 +185,7 @@ echo 0 > "$SANDBOX/exit/setup"
 chmod 000 "$DOTFILES_NTFY_URL_FILE"
 if [ ! -r "$DOTFILES_NTFY_URL_FILE" ]; then
     assert_exit 1 "$BASH" "$ALERT" status
-    assert_contains "$RUN_OUTPUT" "just alerts <ntfy-url>"
+    assert_contains "$RUN_OUTPUT" "Save the URL again with just alerts."
 fi
 chmod 644 "$DOTFILES_NTFY_URL_FILE"
 
@@ -206,7 +206,7 @@ echo 0 > "$SANDBOX/exit/setup"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
-assert_file_contains "$STUB_LOG" "--data-binary $(hostname) started at "
+assert_file_contains "$STUB_LOG" "--data-raw $(hostname) started at "
 assert_file_not_contains "$STUB_LOG" "sleep"
 touch "$SANDBOX/curl-fails"
 : > "$STUB_LOG"

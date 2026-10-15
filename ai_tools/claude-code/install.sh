@@ -11,6 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
+CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
 # The paths above and the docs all assume ~/.claude, so another CLAUDE_CONFIG_DIR fails the step
 # rather than leaving Claude Code reading files setup never wrote
 CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); unset CLAUDE_CONFIG_DIR or move it"
@@ -122,8 +123,9 @@ install_claude_code() {
 claude_code_settings() {
     local register_hook="${1:-true}"
     # /config → Push when actions required, Push when Claude decides
-    #   (mobile push notifications through the Claude app while Remote Control is active), and
-    #   Enable Remote Control for all sessions, so every session can push
+    #   (mobile push notifications through the Claude app while Remote Control is active). Enable
+    #   Remote Control for all sessions stays off, since a connected session takes prompts from
+    #   claude.ai and the phone app, so only a session /remote-control connects can push
     # Start new sessions in auto mode. Only user or managed settings can make auto the default.
     # Turn off auto memory. Keep transcripts 90 days instead of 30, so /resume reaches further back.
     # Default to Opus 5.5 with medium effort, the fullscreen TUI, and normal key bindings.
@@ -170,7 +172,7 @@ claude_code_settings() {
 
         .inputNeededNotifEnabled = true
         | .agentPushNotifEnabled = true
-        | .remoteControlAtStartup = true
+        | .remoteControlAtStartup = false
         | .permissions.defaultMode = "auto"
         | .autoMemoryEnabled = false
         | .cleanupPeriodDays = 90
@@ -214,13 +216,13 @@ configure_claude_code() {
     done
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
-        echo "  Push notifications, Remote Control, auto mode, no auto memory, transcript retention,"
+        echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
         echo "  model, TUI, worktree, status line, and data-sharing settings are already set"
         return 0
     fi
     json_merge "$CLAUDE_CODE_SETTINGS" "$settings" || return 1
-    echo "  Turned on push notifications, Remote Control, and auto mode by default, turned off auto"
-    echo "  memory, kept transcripts 90 days, set the model, TUI, worktree, and status line settings,"
+    echo "  Turned on push notifications and auto mode by default, turned off Remote Control at startup"
+    echo "  and auto memory, kept transcripts 90 days, set the model, TUI, worktree, and status line settings,"
     echo "  and opted out of error reports, surveys, and feedback"
 }
 
@@ -233,13 +235,9 @@ script_files() {
     return "$status"
 }
 
-# Pass the user-level instructions, as source and destination, to a function, followed by any
-# further arguments: copy_file_ask to copy them, or status_file to report them. They may hold
-# instructions added by hand, so copy_file_ask only replaces them when asked.
+# See user_instructions_to
 user_instructions_files() {
-    local action="$1"
-    shift
-    "$action" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$HOME/.claude/CLAUDE.md" "$@"
+    user_instructions_to "$CLAUDE_CODE_INSTRUCTIONS" "$@"
 }
 
 install_scripts() {
@@ -248,11 +246,6 @@ install_scripts() {
     script_files copy_file || status=1
     chmod 755 "$CLAUDE_CODE_STATUSLINE" "$CLAUDE_CODE_WORKTREE_HOOK" || status=1
     return "$status"
-}
-
-install_user_instructions() {
-    echo "  User-level instructions:"
-    user_instructions_files copy_file_ask
 }
 
 status() {
@@ -321,7 +314,7 @@ main() {
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false
     configure_claude_code "$register_hook" || status=1
-    install_user_instructions || status=1
+    install_user_instructions "$CLAUDE_CODE_INSTRUCTIONS" || status=1
     if ! claude_code_have_git_wt; then
         echo "  $CLAUDE_CODE_NO_GIT_WT" >&2
         return 1

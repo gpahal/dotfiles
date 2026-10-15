@@ -344,8 +344,9 @@ assert_eq '"high" "fast"' "$(get .model_reasoning_effort) $(get .service_tier)" 
 
 # Status reports the sign-in from `codex login status`, which exits 0 when signed in and prints
 # "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. Another
-# failure, or no codex, is unknown.
+# failure, or no codex, is unknown. The stubbed codex stands in for the cask's.
 stub brew 'exit 1'
+codex_cask_path() { echo "$STUB_DIR/codex"; }
 stub codex 'echo "Logged in using ChatGPT" >&2'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Signed in to Codex"

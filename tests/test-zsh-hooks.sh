@@ -129,8 +129,8 @@ else
     wait "$client_pid" 2> /dev/null || true
 fi
 # zsh/title.zsh sets the title with OSC 2: the directory at the prompt, and the command line, with
-# its control characters as spaces and cut to 100 characters, while it runs. A dumb terminal gets
-# nothing.
+# its control characters as spaces and cut to 100 characters, while it runs, unless it starts with
+# a space. A dumb terminal gets nothing.
 mkdir -p "$HOME/proj"
 long="$(printf 'x%.0s' $(seq 1 120))"
 # shellcheck disable=SC2016 # expanded by zsh
@@ -140,4 +140,7 @@ assert_eq "$(printf '\033]2;~/proj\a\033]2;echo a  b\a')" \
 assert_eq "$(printf '\033]2;~/proj\a\033]2;%s\a' "${long:0:100}")" \
     "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" "$long")" "a long command's title"
 assert_eq "" "$(TERM=dumb zsh -f -c "$title_script" zsh "$REPO_DIR" ls)" "the titles in a dumb terminal"
+# A command with a leading space, which history leaves out, keeps the prompt's title
+assert_eq "$(printf '\033]2;~/proj\a')" \
+    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" ' export TOKEN=secret')" "a hidden command's title"
 test_done

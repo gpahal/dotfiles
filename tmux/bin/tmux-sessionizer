@@ -39,7 +39,8 @@ if [ ! -d "$dir" ]; then
     echo "tmux-sessionizer: not a directory: $dir" >&2
     exit 1
 fi
-dir="$(cd "$dir" && pwd)"
+# Without CDPATH, cd goes to the directory given, not one CDPATH names, and prints nothing
+dir="$(CDPATH='' cd -- "$dir" && pwd)"
 
 # The session already open for the directory, whatever its name. Matching by path, not name,
 # keeps js/api on its api_2 after go/api's api is gone. list-sessions fails when no server runs.
@@ -52,12 +53,13 @@ while IFS=$'\t' read -r session_path session_name; do
     fi
 done < <(tmux -u list-sessions -F '#{session_path}'$'\t''#{session_name}' 2>/dev/null || true)
 
-# Otherwise a free name. tmux treats . and : in target names as window and pane separators.
+# Otherwise a free name. tmux treats . and : in target names as window and pane separators, and
+# expands formats, which start with #, in a new session's name.
 # Projects with the same basename, such as ~/Dev/go/api and ~/Dev/js/api, get api, api_2, and so
 # on. A leading = makes tmux match the session name exactly, not by prefix. has-session fails when
 # no server runs, which ends the loop.
 if [ -z "$name" ]; then
-    base="$(basename "$dir" | tr '.:' '__')"
+    base="$(basename "$dir" | tr '.:#' '___')"
     name="$base"
     n=1
     while tmux has-session -t "=$name" 2>/dev/null; do
@@ -66,8 +68,10 @@ if [ -z "$name" ]; then
     done
 fi
 
+# tmux expands formats in -c too, and ## there to a literal #
+start_dir="${dir//\#/##}"
 if [ -z "${TMUX:-}" ]; then
-    exec tmux new-session -A -s "$name" -c "$dir"
+    exec tmux new-session -A -s "$name" -c "$start_dir"
 fi
-tmux has-session -t "=$name" 2>/dev/null || tmux new-session -d -s "$name" -c "$dir"
+tmux has-session -t "=$name" 2>/dev/null || tmux new-session -d -s "$name" -c "$start_dir"
 tmux switch-client -t "=$name"

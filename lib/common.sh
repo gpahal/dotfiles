@@ -50,7 +50,8 @@ apt_lists_locked() {
 
 # apt_get update with the arguments given, tried again while another update, such as
 # apt-daily's after boot, holds the lists lock. Any other failure returns at once. The output
-# shows as it comes, and a copy is kept to check for the lock.
+# shows as it comes, and a copy is kept to check for the lock. The notice of each wait goes to
+# stderr, so a caller that captures apt-get's output, as add_apt_repo does, still shows it.
 apt_get_update() {
     local try=1 dir status
     dir="$(mktemp -d)" || return 1
@@ -62,7 +63,7 @@ apt_get_update() {
             rm -rf "$dir"
             return "$status"
         fi
-        echo "  apt's lists lock is held by another update; trying again in $APT_UPDATE_RETRY_DELAY s ($try of $APT_UPDATE_TRIES)."
+        echo "  apt's lists lock is held by another update; trying again in $APT_UPDATE_RETRY_DELAY s ($try of $APT_UPDATE_TRIES)." >&2
         sleep "$APT_UPDATE_RETRY_DELAY"
         try=$((try + 1))
     done
@@ -74,9 +75,36 @@ file_is() {
     [ "$(cat "$1" 2>/dev/null)" == "$2" ]
 }
 
-# Write content to a root-owned file with sudo, creating its directory
+# Replace a root-owned file with a copy of a local file, with sudo, creating its directory. The
+# copy goes to a temp file in the same directory, which is then renamed into place, so a failed
+# write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
+# setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
+# *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
+# Usage: install_root_file <src> <dest> [mode]
+install_root_file() {
+    local src="$1" dest="$2" mode="${3:-}" dir tmp
+    dir="$(dirname "$dest")"
+    sudo mkdir -p "$dir" || return 1
+    # Through sudo, since the file or its directory may be root-only
+    if [ -z "$mode" ]; then
+        mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
+            return 1
+    fi
+    tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
+    if sudo install -m "${mode:-644}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
+        return 0
+    fi
+    sudo rm -f "$tmp"
+    return 1
+}
+
+# Write content, plus a newline, to a root-owned file, as install_root_file does
 write_root_file() {
-    sudo mkdir -p "$(dirname "$1")" && printf '%s\n' "$2" | sudo tee "$1" > /dev/null
+    local src status=0
+    src="$(mktemp)" || return 1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" || status=1
+    rm -f "$src"
+    return "$status"
 }
 
 # List the system changes a step still needs, and ask once before making them with sudo.
@@ -101,17 +129,11 @@ require_supported_os() {
     return 1
 }
 
-# Warn when macOS is older than the tested release, 27, or Ubuntu's CPU isn't x86_64, the one
-# setup is tested on. Setup carries on, and a package with no build for the CPU fails its step.
+# Warn when Ubuntu's CPU isn't x86_64, the one setup is tested on. Setup carries on, and a package
+# with no build for the CPU fails its step.
 warn_untested_platform() {
-    local arch version
-    if is_macos; then
-        version="$(sw_vers -productVersion 2>/dev/null)" || version=""
-        case "${version%%.*}" in
-            [0-9] | 1[0-9] | 2[0-6]) echo "Warning: setup is tested on macOS 27, not $version. Carrying on. A package that needs a newer macOS fails its step." >&2 ;;
-        esac
-        return 0
-    fi
+    local arch
+    is_macos && return 0
     arch="$(uname -m)"
     [ "$arch" == x86_64 ] && return 0
     echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2
@@ -160,14 +182,35 @@ for arg in "$@"; do
 done
 unset arg
 
+# has_arg <flag> [arg...]: succeeds when <flag> is among the arguments
+# e.g. has_arg --quick "$@"
+has_arg() {
+    local flag="$1" arg
+    shift
+    for arg in "$@"; do
+        [ "$arg" != "$flag" ] || return 0
+    done
+    return 1
+}
+
 # Succeeds when --status is among the arguments. A step's main gets them all, so it reports
 # wherever the flag is.
 # e.g. if status_requested "$@"; then status; return $?; fi
-status_requested() {
-    local arg
-    for arg in "$@"; do
-        [ "$arg" != --status ] || return 0
-    done
+status_requested() { has_arg --status "$@"; }
+
+# Succeeds when --quick is among the arguments
+quick_requested() { has_arg --quick "$@"; }
+
+# The flags every step and runner takes, besides -h and --help
+SHARED_FLAGS="--status --quick --backup --no-backup"
+
+# Succeeds, saying why, when the arguments have --quick without --status, which would otherwise
+# run the steps instead of reporting. The caller then prints its usage and exits 2.
+quick_without_status() {
+    if ! status_requested "$@" && quick_requested "$@"; then
+        echo "--quick only works with --status" >&2
+        return 0
+    fi
     return 1
 }
 
@@ -191,8 +234,9 @@ step_args() {
         esac
     done
     for arg in "$@"; do
+        # shellcheck disable=SC2086 # split into the flags
+        has_arg "$arg" $SHARED_FLAGS && continue
         case "$arg" in
-            --status | --quick | --backup | --no-backup) ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 echo "$usage" >&2
@@ -205,20 +249,10 @@ step_args() {
                 ;;
         esac
     done
-    if ! status_requested "$@" && quick_requested "$@"; then
-        echo "--quick only works with --status" >&2
+    if quick_without_status "$@"; then
         echo "$usage" >&2
         exit 2
     fi
-}
-
-# Succeeds when --quick is among the arguments
-quick_requested() {
-    local arg
-    for arg in "$@"; do
-        [ "$arg" != --quick ] || return 0
-    done
-    return 1
 }
 
 # Succeeds when stdin is a terminal, so a question can be answered. stdout may be piped, as in
@@ -479,6 +513,25 @@ backup_file() {
     echo "  Backed up $file to $bak"
 }
 
+# user_instructions_to <dest> <action> [arg...]
+# Pass ai_tools/user-instructions.md and <dest>, where an AI tool reads its user-level
+# instructions, to <action>, followed by any further arguments: copy_file_ask to copy them, or
+# status_file to report them. They may hold instructions added by hand, so copy_file_ask only
+# replaces them when asked. A step wraps it in a *_files function, which scripts/check-docs.sh
+# finds.
+# e.g. user_instructions_to "$HOME/.codex/AGENTS.md" status_file "merge by hand"
+user_instructions_to() {
+    local dest="$1" action="$2"
+    shift 2
+    "$action" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$dest" "$@"
+}
+
+# Copy the user-level instructions to <dest>, asking before replacing an edited copy
+install_user_instructions() {
+    echo "  User-level instructions:"
+    user_instructions_to "$1" copy_file_ask
+}
+
 # Like copy_file, but for files that may hold changes made by hand, such as settings an app also
 # edits. One that differs and isn't what setup last installed is replaced only when the user
 # agrees, and left alone without a terminal. Agreeing backs it up too, without a second question,
@@ -641,9 +694,29 @@ install_cask() {
 # with no app, such as a font or one that runs an installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app
+# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app. Callers run
+# it in $(...), where nothing it caches would last, so a report that asks about one cask several
+# times runs cache_cask_app_path first.
 cask_app_path() {
+    if [ -n "${CASK_APP_CACHE:-}" ] && [ "${CASK_APP_CACHE%%$'\t'*}" == "$1" ]; then
+        printf '%s\n' "${CASK_APP_CACHE#*$'\t'}"
+        return 0
+    fi
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
+}
+
+# Ask brew once for the app cask $1 installs, and have cask_app_path answer from that for the
+# rest of the caller, which declares CASK_APP_CACHE local so the answer ends with it
+# e.g. local CASK_APP_CACHE; cache_cask_app_path t3-code
+# When brew fails, nothing is cached and cask_app_path asks brew each time, so the caller's report
+# still runs.
+cache_cask_app_path() {
+    local app
+    if app="$(cask_app_path "$1")"; then
+        CASK_APP_CACHE="$1"$'\t'"$app"
+    else
+        CASK_APP_CACHE=""
+    fi
 }
 
 # Print the app path installed_cask_apps's output gives for a cask, failing when it isn't listed
@@ -762,27 +835,22 @@ apt_repo_published() {
 # was none before
 restore_apt_key() {
     if [ -n "$1" ]; then
-        sudo cp "$1" "$2"
+        install_root_file "$1" "$2" 0644
     else
         sudo rm -f "$2"
     fi
 }
 
-# What add_apt_repo returns when the repo has no packages for this release yet
-APT_REPO_UNPUBLISHED=3
-
 # Add a third-party apt repo whose source file a step owns: install its key, write the source when
 # its content differs, and update from that file alone, so a failure is the repo's. A source apt
 # can't use fails every later apt-get update, so on failure the previous source and key come
-# back, or the new ones go. Returns APT_REPO_UNPUBLISHED, changing nothing, when the repo hasn't
-# published packages for this release (apt_repo_published), so its caller waits rather than fails.
-# Callers check that first too, to ask for nothing they can't do. Run it as
-# `add_apt_repo ... || ...`, where set -e is off, so each command checks its own failure.
-# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$(docker_release_url)"
+# back, or the new ones go. Callers first check apt_repo_published, before asking for sudo, so
+# they ask for nothing they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so
+# each command checks its own failure.
+# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
 add_apt_repo() {
-    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5" release_url="$6"
+    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5"
     local key old_key="" output="" previous="" reason=""
-    apt_repo_published "$name" "$release_url" || return "$APT_REPO_UNPUBLISHED"
     # Read the source to restore before the key changes, so failing to read it changes nothing
     if [ -e "$file" ]; then
         previous="$(sudo cat "$file")" || return 1
@@ -797,33 +865,35 @@ add_apt_repo() {
         rm -f "$key" "$old_key"
         return 1
     fi
-    # A write that fails partway leaves a key apt can't use
-    if ! sudo install -m 0644 "$key" "$keyring"; then
-        restore_apt_key "$old_key" "$keyring"
+    # A failed write leaves the old key
+    if ! install_root_file "$key" "$keyring" 0644; then
         rm -f "$key" "$old_key"
         return 1
     fi
     rm -f "$key"
-    # A write that fails partway leaves a source apt can't use, so it gets the same rollback as a
-    # failed update. --error-on=any fails on a key apt can't verify, which apt-get update otherwise
-    # only warns about. A lists lock another update still holds after apt_get_update's tries says
-    # nothing about this source.
+    # A failed write leaves the old source, but the key has changed, so it gets the same rollback
+    # as a failed update. --error-on=any fails on a key apt can't verify, which apt-get update
+    # otherwise only warns about. A lists lock another update still holds after apt_get_update's
+    # tries says nothing about this source.
     if ! file_is "$file" "$content" && ! write_root_file "$file" "$content"; then
         reason="Writing $file failed"
-    elif ! output="$(apt_get_update --error-on=any -o Dir::Etc::sourcelist="$file" \
-        -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 2>&1)"; then
-        printf '%s\n' "$output" >&2
-        reason="apt-get update failed with the new $file alone"
-        # The new file and the key it names stay then
-        if apt_lists_locked <<< "$output"; then
-            echo "  Another apt-get update holds apt's lock, so $file was kept. Re-run once it finishes." >&2
-            rm -f "$old_key"
-            return 1
+    else
+        echo "  Updating apt's lists for $name (this waits while another apt update holds the lock)..."
+        if ! output="$(apt_get_update --error-on=any -o Dir::Etc::sourcelist="$file" \
+            -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0)"; then
+            printf '%s\n' "$output" >&2
+            reason="apt-get update failed with the new $file alone"
+            # The new file and the key it names stay then
+            if apt_lists_locked <<< "$output"; then
+                echo "  Another apt-get update holds apt's lock, so $file was kept. Re-run once it finishes." >&2
+                rm -f "$old_key"
+                return 1
+            fi
         fi
     fi
     if [ -n "$reason" ]; then
         if [ -n "$previous" ]; then
-            if printf '%s\n' "$previous" | sudo tee "$file" > /dev/null; then
+            if write_root_file "$file" "$previous"; then
                 echo "  $reason, so the old one is back. Fix the error above and re-run." >&2
             else
                 echo "  $reason, and putting the old one back failed too. Fix $file by hand, or delete it, then re-run." >&2
@@ -893,17 +963,19 @@ file_mode() {
 
 # Replace a file's contents with a temp file's, then remove the temp file. The contents go to a new
 # file in the same directory, given the old one's mode, which is then moved into place, so a full
-# disk can't leave the file cut short. A symlink is written through instead, so it stays a link.
-# Fails, keeping the temp file and saying where it is, when the write does.
+# disk can't leave the file cut short. A symlink's target is replaced the same way, so the link
+# stays. A dangling symlink fails, as json_merge does. Fails, keeping the temp file and saying
+# where it is, when the write does.
 write_back() {
-    local new="$1" dest="$2" tmp mode=""
+    local new="$1" dest="$2" tmp mode="" target
     if [ -L "$dest" ]; then
-        if ! cat "$new" > "$dest"; then
+        # macOS's readlink and GNU's both take -f, and follow every link in the chain. On a dangling
+        # link macOS's prints the path and fails, and GNU's succeeds, so check the target exists.
+        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
             echo "  Couldn't write $dest. The new contents are in $new." >&2
             return 1
         fi
-        rm -f "$new"
-        return 0
+        dest="$target"
     fi
     if [ -e "$dest" ]; then
         mode="$(file_mode "$dest")" || mode=""
@@ -923,14 +995,21 @@ write_back() {
 
 # Merge a jq expression into a JSON file, creating the file if needed
 json_merge() {
-    local file="$1" filter="$2" tmp
+    local file="$1" filter="$2" tmp input=""
     require_cmd jq || return 1
+    # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
+    # dangling symlink, fails rather than start from {} and lose what it holds. Back up and write
+    # nothing until jq succeeds with one JSON value, so a filter that fails, or yields no value or
+    # several, leaves the file as it was and asks nothing.
+    if [ -e "$file" ] || [ -L "$file" ]; then
+        if ! input="$(cat -- "$file")"; then
+            echo "  Couldn't read $file, so it was left as it is." >&2
+            return 1
+        fi
+    fi
+    [[ "$input" =~ [^[:space:]] ]] || input='{}'
     tmp="$(mktemp)"
-    # A missing, empty, or whitespace-only file starts as {}. Back up and write nothing until jq
-    # succeeds with one JSON value, so a filter that fails, or yields no value or several, leaves
-    # the file as it was and asks nothing.
-    if ! { if grep -q '[^[:space:]]' "$file" 2>/dev/null; then cat "$file"; else echo '{}'; fi; } |
-        jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
+    if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         echo "  Couldn't update $file with jq." >&2
         rm -f "$tmp"
         return 1
@@ -1226,9 +1305,9 @@ runner_args() {
         esac
     done
     for arg in "$@"; do
+        # shellcheck disable=SC2086 # split into the flags
+        has_arg "$arg" $SHARED_FLAGS && continue
         case "$arg" in
-            --status) RUNNER_MODE=--status ;;
-            --quick | --backup | --no-backup) ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 usage >&2
@@ -1237,8 +1316,8 @@ runner_args() {
             *) RUNNER_STEPS+=("$arg") ;;
         esac
     done
-    if [ -z "$RUNNER_MODE" ] && quick_requested "$@"; then
-        echo "--quick only works with --status" >&2
+    ! status_requested "$@" || RUNNER_MODE=--status
+    if quick_without_status "$@"; then
         usage >&2
         exit 2
     fi
@@ -1297,6 +1376,14 @@ unknown_step() {
     fi
 }
 
+# Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so
+# the caller stops too. brew catches SIGINT and exits 130, so bash doesn't see the signal itself
+# and would carry on. Other codes above 128, such as 141 from SIGPIPE or 255 from ssh, are
+# failures like any other.
+interrupted_status() {
+    [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
+}
+
 # run_steps <mode> [step...]
 # Run named steps in order, each in its own process, with the script step_script prints. With no
 # names, run every step in $STEPS. A failing step doesn't stop the rest; the failures are listed
@@ -1323,16 +1410,14 @@ run_steps() {
         status=0
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
-            # as manual-steps) prints nothing. fflush streams each line as it comes.
+            # as manual-steps) prints nothing. fflush streams each line as it comes. The runners'
+            # set -o pipefail keeps the step's status, such as 3, rather than awk's 0.
             "$BASH" "$script" --status | awk -v header="$step:" 'NR == 1 { print header } { print; fflush() }' ||
                 status=$?
         else
             "$BASH" "$script" || status=$?
         fi
-        # SIGHUP, SIGINT (Ctrl-C), or SIGTERM: stop. brew catches SIGINT and exits 130, so bash
-        # doesn't see the signal itself and would carry on to the next step. Other codes above
-        # 128, such as 141 from SIGPIPE or 255 from ssh, are failures like any other.
-        if [ "$status" -eq 129 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then
+        if interrupted_status "$status"; then
             echo "  The $step step was interrupted; stopping." >&2
             return "$status"
         elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then

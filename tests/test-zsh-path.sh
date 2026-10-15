@@ -208,15 +208,15 @@ assert_before "$output" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "sh -
 output="$(env -i HOME="$HOME" MISE_DATA_DIR="$SANDBOX/no-mise" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null)"
 assert_not_contains "$output" "mise" "sh -lc's PATH with MISE_DATA_DIR set to a dir without shims"
 rm -r "$HOME/.local/share/mise"
-# A login sh started from another one adds Cargo's and Go's dirs only once
-nested="$(env -i HOME="$HOME" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc '/bin/sh -lc "echo \"\$PATH\""' < /dev/null | tr : '\n')"
-for dir in "$HOME/.cargo/bin" "$HOME/go/bin"; do
-    assert_eq 1 "$(grep -cxF "$dir" <<< "$nested")" "copies of $dir in a nested sh -l"
-done
-# A PATH that already has Cargo's dir, as rustup's own env line leaves it, still gets Go's
-with_cargo="$(env -i HOME="$HOME" PATH="$HOME/.cargo/bin:$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null | tr : '\n')"
-assert_eq 1 "$(grep -cxF "$HOME/go/bin" <<< "$with_cargo")" "copies of ~/go/bin with Cargo's dir already on PATH"
-assert_eq 1 "$(grep -cxF "$HOME/.cargo/bin" <<< "$with_cargo")" "copies of ~/.cargo/bin with it already on PATH"
+# A PATH that already has Homebrew ahead of Cargo's and Go's dirs, as a desktop session's PATH
+# from systemd has once brew shellenv runs, still ends up in ~/.zprofile's order
+mkdir -p "$HOME/.local/share/mise/shims"
+# macOS's /etc/profile moves the system dirs first, so compare only the first copy of each of these
+expected="$(printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "$HOME/go/bin" "$BREW/bin")"
+output="$(env -i HOME="$HOME" PATH="$BREW/bin:$HOME/.cargo/bin:$HOME/go/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null |
+    tr : '\n' | grep -xF -- "$expected" | awk '!seen[$0]++')"
+assert_eq "$expected" "$output" "sh -lc's PATH with Homebrew ahead of Cargo's and Go's dirs"
+rm -r "$HOME/.local/share/mise"
 # On Ubuntu, ~/.zshenv puts Homebrew and ~/.local/bin on PATH for commands run directly over SSH
 # (`ssh host codex`), which start a zsh that is neither login nor interactive. The sandbox Homebrew
 # stands in for /home/linuxbrew/.linuxbrew.
@@ -270,10 +270,10 @@ output="$(env -i HOME="$HOME" HOMEBREW_PREFIX="$BREW" PATH="/first:/usr/bin:/bin
 assert_eq "$(printf '%s\n' /first /usr/bin /bin)" "$output" "zsh -c under a Homebrew shell"
 
 # On Ubuntu, systemd user services, such as the T3 Code service and its agents, get PATH from the
-# environment.d file the ubuntu step copies: Cargo's and Go's dirs, then Homebrew's. systemd
+# environment.d file the ubuntu step copies: ~/.local/bin, Cargo's and Go's dirs, then Homebrew's. systemd
 # expands ${VAR} there as sh does, so sh stands in for it.
 output="$(env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/sh -c '. "$1"; echo "$PATH"' sh \
     "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf" | tr : '\n')"
-assert_eq "$(printf '%s\n' "$HOME/.cargo/bin" "$HOME/go/bin" /home/linuxbrew/.linuxbrew/bin \
+assert_eq "$(printf '%s\n' "$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" /home/linuxbrew/.linuxbrew/bin \
     /home/linuxbrew/.linuxbrew/sbin /usr/bin /bin)" "$output" "PATH from environment.d"
 test_done

@@ -157,7 +157,10 @@ is_macos() { true; }
 # write_sudo_local
 assert_eq "" "$(declare -F usage write_sudo_local || true)" "the Touch ID script's functions"
 SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
-REATTACH="$SANDBOX/brew/lib/pam/pam_reattach.so"
+# The root-owned copy sudo loads, which in the sandbox is yours
+REATTACH="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
+# shellcheck disable=SC2034 # macos/pam.sh reads it
+PAM_ROOT_UID="$(id -u)"
 HEADER="# sudo_local: local config file which survives system update and is included for sudo"
 TID_LINE="auth       sufficient     pam_tid.so"
 stub brew '[ "$1" != --prefix ] || echo "$(dirname "$STUB_LOG")/brew"'
@@ -176,15 +179,17 @@ assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo: off"
 # On, as just touch-id writes it
 mkdir -p "$(dirname "$REATTACH")"
 touch "$REATTACH"
+chmod 755 "$(dirname "$REATTACH")"
+chmod 444 "$REATTACH"
 printf '%s\n' "$HEADER" "auth       optional       $REATTACH ignore_ssh" "$TID_LINE" > "$SUDO_LOCAL"
 assert_exit 0 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 # A module it loads that's gone, such as after brew bundle cleanup, needs attention, without
-# claiming sudo always fails, and names the homebrew step that puts it back
+# claiming sudo always fails, and leads with the fix that needs no sudo
 rm "$REATTACH"
 assert_exit 3 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $REATTACH, which doesn't exist"
-assert_contains "$RUN_OUTPUT" "homebrew step"
+assert_contains "$RUN_OUTPUT" "run brew install pam-reattach, then just touch-id"
 assert_contains "$RUN_OUTPUT" "sudo may fail"
 # A bare name that isn't there, such as a module a newer macOS dropped, needs attention too
 printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"
@@ -197,7 +202,7 @@ printf '%s\n' "auth       sufficient     /usr/local/lib/pam/pam_watchid.so" "$TI
 assert_exit 3 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads /usr/local/lib/pam/pam_watchid.so, which doesn't exist"
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL differs"
-assert_not_contains "$RUN_OUTPUT" "homebrew step"
+assert_not_contains "$RUN_OUTPUT" "pam-reattach"
 # A sudo_local it can't read is unverified. Skipped as root, which reads any file.
 chmod 000 "$SUDO_LOCAL"
 if [ ! -r "$SUDO_LOCAL" ]; then
@@ -205,14 +210,6 @@ if [ ! -r "$SUDO_LOCAL" ]; then
     assert_contains "$RUN_OUTPUT" "unverified Touch ID for sudo: $SUDO_LOCAL isn't readable"
 fi
 chmod 644 "$SUDO_LOCAL"
-# So is a /etc/pam.d/sudo it can't read, which would say whether sudo reads sudo_local at all
-chmod 000 "$DOTFILES_PAM_DIR/sudo"
-if [ ! -r "$DOTFILES_PAM_DIR/sudo" ]; then
-    assert_exit 0 diag status_touch_id skipped
-    assert_contains "$RUN_OUTPUT" "unverified Touch ID for sudo: $DOTFILES_PAM_DIR/sudo isn't readable"
-    assert_not_contains "$RUN_OUTPUT" "skipped"
-fi
-chmod 644 "$DOTFILES_PAM_DIR/sudo"
 # The sudo_local isn't touched, and the module isn't put back
 assert_eq "auth       sufficient     /usr/local/lib/pam/pam_watchid.so
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local"
@@ -314,6 +311,9 @@ unset DOTFILES_PAM_DIR
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
 in_vm() { false; }
+# The system dirs sbin_cmd searches, here the stubs
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 # sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise
 stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
 [ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
@@ -339,6 +339,21 @@ disk() {
     echo "${4:-0}" > "$SANDBOX/smart/$1.status"
 }
 HEADER='smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.17.0] (local build)\nSerial Number:    S6B0NX0T123456\n\n=== START OF READ SMART DATA SECTION ===\n'
+
+# smartctl runs under sudo, so it comes only from the system dirs in SBIN_PATH, never from the
+# user's PATH, where a smartctl planted in a dir such as ~/.cargo/bin would run as root
+mkdir -p "$HOME/.cargo/bin"
+printf '#!/bin/bash\n' > "$HOME/.cargo/bin/smartctl"
+chmod +x "$HOME/.cargo/bin/smartctl"
+PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
+assert_eq "$STUB_DIR/smartctl" "$RUN_OUTPUT" "the smartctl chosen"
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$SANDBOX/no-such-dir"
+PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
+assert_eq 1 "$RUN_STATUS" "smartctl_cmd's exit status with smartctl only on PATH: $RUN_OUTPUT"
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
+rm "$HOME/.cargo/bin/smartctl"
 
 : > "$SANDBOX/disks"
 disk nvme0 nvme "${HEADER}SMART overall-health self-assessment test result: PASSED\n"
@@ -422,6 +437,8 @@ unset -f smartctl_cmd
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
 in_vm() { false; }
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 read_only
 
 # --- the ubuntu step: firmware ---
@@ -585,7 +602,6 @@ assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
 # The docker step's report includes it once Docker is installed
 docker_installed() { true; }
-conflicting_packages() { :; }
 status_apt_source() { :; }
 docker_df 'Images\t1\t1GB\t0B\n'
 run status

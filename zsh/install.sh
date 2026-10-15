@@ -51,14 +51,14 @@ ZPROFILE_LINES=(
 # as Zed's language servers, find these tools. Ubuntu's ~/.profile adds ~/.local/bin before these
 # lines, which would leave it behind Homebrew, so add it again after: the same order as
 # ~/.zprofile. The comment keeps the line from matching one already in the file, which
-# append_line would skip. Cargo's and Go's dirs each go on only once, since a login sh started
-# from another one reads ~/.profile again, and each has its own check, since rustup's env line
-# may have put Cargo's on already.
+# append_line would skip. Each dir goes in front even when PATH has it, as the PATH systemd gives
+# the desktop session does, since brew shellenv may have put Homebrew ahead of it. A login sh
+# started from another one adds them again, which changes nothing.
 # shellcheck disable=SC2016
 PROFILE_LINES=(
     '[ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
-    'case ":$PATH:" in *":$HOME/go/bin:"*) ;; *) PATH="$HOME/go/bin:$PATH" ;; esac'
-    'case ":$PATH:" in *":$HOME/.cargo/bin:"*) ;; *) PATH="$HOME/.cargo/bin:$PATH" ;; esac'
+    'PATH="$HOME/go/bin:$PATH"'
+    'PATH="$HOME/.cargo/bin:$PATH"'
     '[ ! -d "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" ] || PATH="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH"'
     'PATH="$HOME/.local/bin:$PATH" # ahead of Homebrew'
 )
@@ -212,16 +212,12 @@ setup_zshenv() {
     echo "  Updated the skip_global_compinit and PATH lines in ~/.zshenv"
 }
 
-# Print the zsh to use as the login shell. On Ubuntu it's apt's; on macOS the system one comes
-# first, so the login shell doesn't depend on Homebrew.
+# Print the zsh to use as the login shell: apt's on Ubuntu and the system's on macOS, so the login
+# shell doesn't depend on Homebrew. Both are in /etc/shells, which chsh requires.
 login_zsh_path() {
-    if is_ubuntu; then
-        [ -x /usr/bin/zsh ] && echo /usr/bin/zsh
-    elif [ -x /bin/zsh ]; then
-        echo /bin/zsh
-    else
-        command -v zsh
-    fi
+    local zsh_path=/bin/zsh
+    is_ubuntu && zsh_path=/usr/bin/zsh
+    [ -x "$zsh_path" ] && echo "$zsh_path"
 }
 
 # Print the account's login shell. $SHELL only changes at the next login, so it's stale right
@@ -276,14 +272,6 @@ set_login_shell() {
         echo "  Login shell left as $current. To switch later, run: chsh -s $zsh_path"
         return 0
     fi
-    # chsh refuses a shell that isn't in /etc/shells
-    if ! grep -qxF "$zsh_path" /etc/shells; then
-        echo "Adding $zsh_path to /etc/shells..."
-        if ! echo "$zsh_path" | sudo tee -a /etc/shells; then
-            echo "  Failed. Run manually: echo '$zsh_path' | sudo tee -a /etc/shells && chsh -s $zsh_path" >&2
-            return 1
-        fi
-    fi
     # chsh asks for the account's password, which fails unattended. Root's chsh doesn't ask.
     if sudo_cached; then
         sudo -n chsh -s "$zsh_path" "$(id -un)" && return 0
@@ -321,7 +309,7 @@ main() {
             echo "  /usr/bin/zsh is missing. Run the homebrew step, which installs zsh with apt, then" >&2
             echo "  re-run this step." >&2
         else
-            echo "  zsh is missing. Install zsh and re-run this step." >&2
+            echo "  /bin/zsh is missing." >&2
         fi
         return 1
     fi

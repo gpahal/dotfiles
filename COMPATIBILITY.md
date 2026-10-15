@@ -2,6 +2,33 @@
 
 What each full verification round tested, on what, and what it left to check by hand. Add a section for each new round at the top, and keep the older ones.
 
+## 2026-10-15 review fixes
+
+Fixed the findings from the 2026-10-15 Codex review, then checked the changed steps on the Mac and the root writes in a container.
+
+| Machine | OS | CPU | sudo | coreutils |
+| --- | --- | --- | --- | --- |
+| Mac | macOS 27.0.1 (26A434), `/bin/bash` 3.2.57 | arm64 | | |
+| Container | `ubuntu:26.04` (26.04.1 LTS) in OrbStack's Docker 29.8.2, as a non-root user, bash 5.3.9 | arm64 | sudo-rs 0.2.13-0ubuntu1.2 | uutils (`coreutils-from-uutils`) |
+
+- `just check` and `just test` passed on the Mac: 87 tests, zero failures, zero skips.
+- On the Mac, the `vim`, `tmux`, `zsh`, `ssh`, `git`, `ghostty`, `lazygit`, and `zed` steps each ran twice in a temp `HOME`, with every `XDG_*` variable unset, stdin from `/dev/null`, and `TMUX_TMPDIR` in the temp dir. `chsh`, `sudo`, and `pkill` were stubs, so the `ghostty` step's reload signal never reached the running Ghostty. Every run passed, and the second run changed no file. `--status` then reported each item `ok` or `skipped`, apart from the `git` step's gh login and the credential helper that waits for it.
+- The plugin pins resolved over the network. The `tmux` step cloned tpm and 5 plugins at the commits `tmux/plugins.lock` pins, and tmux 3.8 started with the new config without errors. Vim 9.2, started in a terminal, installed all 16 plugins at the commits `vim/vimrc` pins, and created `~/.vim/undodir` with mode 700. `vim -Es` doesn't install them, since silent Ex mode skips the vimrc unless `-u` names it.
+- In the container, with `jq` and `openssh-server` installed and `systemctl` and `dockerd` stubbed:
+  - `write_root_file` and `install_root_file` gave a new file mode 644 and root as owner, kept an existing file's mode, wrote into a root-only directory, and left no temp file. With a missing source, the old file stayed whole.
+  - `configure_sshd` wrote `/etc/ssh/sshd_config.d/10-dotfiles.conf`, and both `sshd -t` and the `sshd -T` check passed. `sshd_configured` then held, and a second run passed.
+  - `configure_daemon` wrote a new `/etc/docker/daemon.json`, did nothing on a second run, and merged its keys into an existing file with mode 600, keeping `data-root` and the mode and removing its backup. With an invalid file, `configure_daemon` failed before it called `dockerd --validate`, and the file stayed as it was.
+- The `codex` step no longer installs `apparmor-profiles` when `/etc/apparmor.d/bwrap-userns-restrict` is missing. It now fails and prints the command that reinstalls `apparmor`. This replaces the fallback the 2026-10-10 section first described, and that section's note now describes the new behavior.
+
+Not run in this round: CI, `just test-ubuntu`, setup on the real Mac or the Ubuntu machine, and reboots. The `runtimes` step's change went untested beyond `test-runtimes.sh`, since a run downloads Node, Go, and Rust. The `macos`, `codex`, `t3-code`, and `claude-code` steps and the Touch ID script install apps or change the system whatever `HOME` is, so only their tests ran. No systemd, sshd reload, or Docker daemon ran in the container.
+
+## 2026-10-15 Codex review verification
+
+- On macOS 27.0.1 (arm64), under `/bin/bash` 3.2.57, `just check` and `scripts/check-tool-versions.sh` passed.
+- The initial sandboxed `just test` run passed 74 scripts and failed 10 because the OS sandbox blocked tmux sockets, process inspection, and Atuin's `nice` call. All 10 passed in targeted reruns outside that OS sandbox, with temporary HOME and test command stubs retained. Across the runs, all 84 test scripts passed, with zero skips.
+- The review also used isolated failure and concurrency reproductions. The findings went into an implementation plan; setup code was not changed.
+- Ubuntu container/VM tests, `just test-ubuntu`, real setup, reboots, and hardware checks were not run.
+
 ## 2026-10-14 CI and zsh completion fixes
 
 Ubuntu 26.04 is the only Linux CI target. Both CI jobs now download yq 4.54.1 on macOS and Ubuntu. Zsh skips insecure completion paths, rebuilds empty completion caches, and only refreshes a cache after initialization succeeds.
@@ -72,7 +99,7 @@ Moved the Ubuntu target to 26.04 LTS (resolute) and ran the test suite where 26.
 - These forms passed with the real sudo-rs and Rust coreutils: `sudo VAR=val`, `sudo -n` with and without cached credentials, `sudo -v`, `sudo tee` and `tee -a`, `sudo -u`, `sudo install -m` and `-d -m`, `sudo mktemp`, `sudo cp` and `cp -p`, `sudo test -e`, `stat -c %a`, `stat -L -c`, `stat -c %Y`, `sort -s -t`, `sort -k`, `-u`, `-un`, and `-nr`, `paste -sd`, `date -d @N`, `date +FORMAT`, `touch -t`, `mktemp` with and without a template, `readlink` and `readlink -f`, `cp -Rp`, `tail -c1`, `comm`, `uniq -d`, `sha256sum`, and `env -u`. With a password and no `NOPASSWD`, credentials cached by `sudo -v` reached a child shell on the same terminal and no other terminal, as with sudo. Only the error text differs ("interactive authentication is required"), and no script reads it.
 - Resolute's archive, checked in the container: `ghostty` 1.3.0, `apparmor` 5.0.2 with `/etc/apparmor.d/bwrap-userns-restrict`, `openssh-server` 10.2p1, whose postinst enables `ssh.socket` and which adds `sshd.service` as an alias of `ssh.service`, `ufw` 0.36.2 with its `/etc/default/ufw` backend settings, `gdm3` 50.1 with `/etc/gdm3/custom.conf`, and `unattended-upgrades` 2.12 with the same `20auto-upgrades` files.
 
-Changes from this round: the codex step installs `apparmor-profiles` only when the bwrap profile isn't in `/etc/apparmor.d` already. The `ghostty` step keeps the snap, which follows Ghostty's releases, over the archive's 1.3.0. CI added `ubuntu-26.04` to `check` and `ai-settings`. `just test-ubuntu` creates an `ubuntu:resolute` machine. Neither ran here.
+Changes from this round: the codex step loads the bwrap profile `apparmor` puts in `/etc/apparmor.d`. The `ghostty` step keeps the snap, which follows Ghostty's releases, over the archive's 1.3.0. CI added `ubuntu-26.04` to `check` and `ai-settings`. `just test-ubuntu` creates an `ubuntu:resolute` machine. Neither ran here.
 
 Not checked here. amd64 containers can't run on this Mac, since OrbStack's amd64 emulation is off, so every Linux run was arm64. No systemd, AppArmor, sshd, ufw, or snapd ran in the containers. Still to check on a native 26.04 x86_64 machine or a systemd VM: sshd socket activation and `sshd -T`, ufw's backend once enabled, systemd-oomd and linger, the unattended-upgrades defaults, GDM's automatic login, the installer's TPM encryption options, the codex step's AppArmor detection, `t3 browser setup`, T3 Code's `.deb`, the Ghostty quick terminal under GNOME 50, OrbStack's `ubuntu:resolute` image, and a full `setup.sh` and `ai_tools/setup.sh` run followed by a reboot and both `--status` reports.
 

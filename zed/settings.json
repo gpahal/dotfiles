@@ -24,7 +24,7 @@
     "dock": "left"
   },
   "telemetry": {
-    "diagnostics": true,
+    "diagnostics": false,
     "metrics": false
   },
   "vim_mode": false,

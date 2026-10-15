@@ -117,7 +117,7 @@ configure_health_alerts() {
     health_timer_on || systemctl --user enable --now dotfiles-health.timer || return 1
     boot_notice_on || systemctl --user enable dotfiles-boot-notice.service || return 1
     echo "  Turned on the daily health alert and the boot notice ($HEALTH_UNIT_DIR). They push to"
-    echo "  ntfy once just alerts <ntfy-url> saves a URL."
+    echo "  ntfy once just alerts saves a URL."
 }
 
 # status_last_run <label> <unit>: report a failed last run of an installed alert service, such as
@@ -155,7 +155,7 @@ status_health_alerts() {
     status_last_run "Daily health alert's last run" dotfiles-health.service
     status_last_run "Boot notice's last run" dotfiles-boot-notice.service
     if [ ! -e "$NTFY_URL_FILE" ]; then
-        status_item info "$url_label not set; just alerts <ntfy-url> sets it"
+        status_item info "$url_label not set; just alerts sets it"
     else
         status_item info "$url_label set ($NTFY_URL_FILE)"
     fi

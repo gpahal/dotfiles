@@ -7,13 +7,13 @@ set -euo pipefail
 #
 # On Ubuntu, install the t3 CLI and run its server as a systemd user service, which starts at boot
 # (with linger, from the ubuntu step) and which the Mac reaches over Tailscale HTTPS. Set the server's
-# settings, turn off its telemetry, and let its browser run in Chrome's sandbox. Ubuntu gets no
-# desktop app.
+# settings and turn off its telemetry. When its browser needs root to run in Chrome's sandbox, print
+# the command for you to run, since the step never runs the user-writable t3 under sudo. Ubuntu gets
+# no desktop app.
 #
 # A temp HOME doesn't isolate this step. On macOS it installs its cask and runs launchctl. On
-# Ubuntu it installs libatomic1, runs sudo t3 browser setup, and runs systemctl --user. Test the
-# cask in a macOS VM or on a spare Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such
-# as an OrbStack machine.
+# Ubuntu it installs libatomic1 and runs systemctl --user. Test the cask in a macOS VM or on a spare
+# Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such as an OrbStack machine.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -56,12 +56,16 @@ T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # instead, and T3's unit (StartLimitIntervalSec=300, StartLimitBurst=5, RestartSec=5) stops
 # retrying after about 25 s, while status names the other server. The drop-in leaves
 # systemd-oomd's preference to T3: before 0.0.46 agents share the server's cgroup, and sparing it
-# would spare a runaway agent too, while Restart= brings the server back.
+# would spare a runaway agent too, while Restart= brings the server back. It also binds the server
+# to loopback, since `t3 serve` otherwise listens on every interface, and ufw lets the tailnet reach
+# every port: `tailscale serve`, which T3 points at 127.0.0.1, is the tailnet's way in, over HTTPS.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
 T3_CODE_PORT=3773
+T3_CODE_HOST=127.0.0.1
 T3_CODE_SERVICE_DROP_IN_CONTENT="[Service]
 Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=$T3_CODE_PORT"
+Environment=T3CODE_PORT=$T3_CODE_PORT
+Environment=T3CODE_HOST=$T3_CODE_HOST"
 
 # The default model and its effort, values you can change (replace_custom_value).
 # t3_code_choose_custom_values sets T3_CODE_REPLACE_MODEL and T3_CODE_REPLACE_EFFORT to whether to
@@ -86,12 +90,12 @@ T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cl
 # starts in ~/Dev; threads continue after an app update; inactive threads settle after 5 days; old
 # worktrees, browser artifacts, and logs are cleaned up; pull requests start with squash merge;
 # commit and PR text follows custom instructions. Existing worktree setup actions wait for
-# completion: T3 has no global async default, so both the current and legacy action lists get it.
+# completion: T3 has no global async default, so each action list gets it.
 # A model of your own keeps its instance and options, a custom Claude instance's included, and its
 # effort is left to you too. Replacing it switches to Claude's instance, which drops another
 # provider's options. Model options are set in place, so any others and their order survive a
-# re-run. The global worktreeCleanup holds the worktree rules, which it takes over from
-# storageCleanup's older worktree fields. Project overrides are left alone, but for their setup actions.
+# re-run. The global worktreeCleanup holds the worktree rules. Project overrides are left alone,
+# but for their setup actions.
 # T3 Code 0.0.46 and later write only values that differ from a key's default, so a value equal to
 # it never settles. Checked against T3 Code 0.0.45; scripts/check-t3-settings.sh checks every key,
 # and warns about such values, against the latest release in CI.
@@ -112,8 +116,7 @@ t3_code_server_filter() {
         end;
     (
         .defaultProjectScripts[]?,
-        .projectSettingsOverrides[]?.defaultProjectScripts[]?,
-        .projectScriptOverrides[]?[]?
+        .projectSettingsOverrides[]?.defaultProjectScripts[]?
     ) |= if .runOnWorktreeCreate == true then .async = false else . end
     | if (.defaultModelSelection.model // "") as $model
         | $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
@@ -437,7 +440,8 @@ t3_code_drop_in_loaded() {
     [ "$(systemctl --user show -p NeedDaemonReload --value t3code.service 2>/dev/null)" == no ] || return 1
     environment=" $(systemctl --user show -p Environment --value t3code.service 2>/dev/null) "
     [[ "$environment" == *" T3CODE_TELEMETRY_ENABLED=false "* ]] &&
-        [[ "$environment" == *" T3CODE_PORT=$T3_CODE_PORT "* ]]
+        [[ "$environment" == *" T3CODE_PORT=$T3_CODE_PORT "* ]] &&
+        [[ "$environment" == *" T3CODE_HOST=$T3_CODE_HOST "* ]]
 }
 
 # Have systemd load the drop-in when the unit exists and hasn't: a new drop-in, or a reload that
@@ -465,6 +469,7 @@ t3_code_running_env_current() {
     environment="$(t3_code_process_environ "$pid" 2>/dev/null)" || return 1
     grep -qxF 'T3CODE_TELEMETRY_ENABLED=false' <<< "$environment" &&
         grep -qxF "T3CODE_PORT=$T3_CODE_PORT" <<< "$environment" &&
+        grep -qxF "T3CODE_HOST=$T3_CODE_HOST" <<< "$environment" &&
         [ "$pid" == "$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" ]
 }
 
@@ -486,7 +491,7 @@ t3_code_print_other_server() {
 
 configure_t3_code_ubuntu() {
     echo "Configuring the T3 Code server..."
-    local have_cli=true cli_status=0 service_failed=false
+    local have_cli=true cli_status=0 step_failed=false update_status=0
     install_t3_cli || cli_status=$?
     [ "$cli_status" -eq 0 ] || have_cli=false
 
@@ -498,34 +503,43 @@ configure_t3_code_ubuntu() {
     if [ -n "$other" ]; then
         t3_code_print_other_server "$other"
     else
-        update_t3_code_server || return 1
+        # Settings that fail to apply don't stop the service or the browser setup below. A drop-in
+        # that isn't written and loaded does stop the service, which would serve on every
+        # interface without it.
+        update_t3_code_server || update_status=$?
+        [ "$update_status" -eq 0 ] || step_failed=true
         # The service runs the server from boot, so the phone app (through T3 Connect) and the
         # Mac can reach it without a login
-        if "$have_cli"; then
-            ensure_t3_code_service || service_failed=true
-        else
+        if ! "$have_cli"; then
             echo "  Without the t3 CLI there's no service to install; skipping it."
+        elif [ "$update_status" -eq 2 ]; then
+            echo "  Without its drop-in, the service would serve on every interface; skipping it." >&2
+        else
+            ensure_t3_code_service || step_failed=true
         fi
     fi
 
     if "$have_cli"; then
-        setup_t3_code_browser || return 1
+        setup_t3_code_browser || step_failed=true
     fi
-    # A failed install or service fails the step, after the rest above; a declined install doesn't
-    [ "$cli_status" -ne 1 ] && ! "$service_failed"
+    # A failed install, setting, service, or browser setup fails the step, after the rest above; a
+    # declined install doesn't
+    [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
-# Set the server settings and write the service's drop-in (telemetry and port). The running
-# server writes settings.json too, and keeps its environment until it restarts, so when either
-# needs changing a running service is stopped around the change, after asking once.
+# Set the server settings and write the service's drop-in (telemetry, port, and host). The
+# running server writes settings.json too, and keeps its environment until it restarts, so when
+# either needs changing a running service is stopped around the change, after asking once. Fails
+# with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
+# Fails with 1 when only something else failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0
+    local settings_set=false stopped=false result=0 drop_in_ok=true
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
     # server lacks its environment
     if t3_code_drop_in_current; then
-        t3_code_load_drop_in || return 1
+        t3_code_load_drop_in || return 2
     fi
     if "$settings_set" && t3_code_drop_in_current && ! t3_code_restart_pending; then
         echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
@@ -549,15 +563,20 @@ update_t3_code_server() {
     fi
     if ! t3_code_drop_in_current; then
         { mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")" &&
-            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || result=1
+            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || drop_in_ok=false
     fi
-    t3_code_load_drop_in || result=1
-    if "$stopped"; then
+    if "$drop_in_ok" && ! t3_code_load_drop_in; then
+        drop_in_ok=false
+    fi
+    if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
         wait_for_t3_code_service || result=1
+    elif "$stopped"; then
+        echo "  Left the T3 Code service stopped, since it would start without its drop-in" >&2
     fi
-    if [ "$result" -ne 0 ]; then
+    if [ "$result" -ne 0 ] || ! "$drop_in_ok"; then
         echo "  Couldn't set all of the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN" >&2
+        "$drop_in_ok" || return 2
         return 1
     fi
     echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN"
@@ -629,7 +648,7 @@ warn_t3_code_service_docker_group() {
     echo "  \`sudo systemctl restart user@$(id -u)\`, which stops the service and tmux."
 }
 
-# Ubuntu 23.10 and later block Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
+# Ubuntu blocks Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
 # profile allows it. `t3 browser setup` adds the profile and any libraries the browser is missing.
 # Without sudo it changes nothing and, when there's something to do, says it needs root. Returns 0
 # when there's nothing to do, 1 when it needs root, 2 on failure, and 3 for older releases that
@@ -647,7 +666,7 @@ t3_code_browser_ready() {
 }
 
 setup_t3_code_browser() {
-    local t3="$HOME/.local/bin/t3" ready=0
+    local ready=0
     t3_code_browser_ready || ready=$?
     if [ "$ready" -eq 3 ]; then
         echo "  This t3 release does not provide t3 browser setup; skipping."
@@ -661,13 +680,9 @@ setup_t3_code_browser() {
         echo "  T3 Code's browser can already run in Chrome's sandbox"
         return 0
     fi
-    confirm_sudo_changes "Let T3 Code's browser run in Chrome's sandbox: sudo t3 browser setup" || return 0
-    # t3 finds your ~/.t3 through SUDO_USER. Check the result again rather than trust its exit code.
-    sudo "$t3" browser setup || true
-    if ! t3_code_browser_ready; then
-        echo "  T3 Code's browser still can't run in Chrome's sandbox. Check: t3 browser setup" >&2
-        return 1
-    fi
+    echo "  T3 Code's browser needs a one-time root setup to run in Chrome's sandbox. Run:"
+    echo "    sudo ~/.local/bin/t3 browser setup"
+    echo "  The step doesn't run it: t3 is writable by you and updates itself, so check it's the one you installed."
 }
 
 # Status's check that the service runs. --quick checks once that it's active, instead of
@@ -718,6 +733,9 @@ status() {
         status_result
         return
     fi
+    # The version, the app's path, and the cask's state each ask brew which app it installs
+    local CASK_APP_CACHE=""
+    ! is_macos || ! command -v brew &>/dev/null || cache_cask_app_path t3-code
     t3_code_use_version "$(t3_code_version)"
     if is_macos; then
         status_cask t3-code "$(t3_code_app_path || true)"
@@ -734,7 +752,7 @@ status() {
     local have_cli=false ready=0
     [ -x "$HOME/.local/bin/t3" ] && have_cli=true
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
-    status_check "Telemetry off and port $T3_CODE_PORT in the service drop-in" \
+    status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
     status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
     t3_code_status_custom_values
@@ -759,7 +777,7 @@ status() {
         t3_code_browser_ready || ready=$?
         case "$ready" in
             0) status_item ok "T3 Code's browser can run in Chrome's sandbox" ;;
-            1) status_item missing "T3 Code's browser can run in Chrome's sandbox: needs sudo t3 browser setup" ;;
+            1) status_item missing "T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup" ;;
             3) status_item skipped "Browser sandbox: this t3 release does not provide t3 browser setup" ;;
             *) status_item unknown "T3 Code's browser sandbox: t3 browser setup failed; run it directly to inspect the error" ;;
         esac

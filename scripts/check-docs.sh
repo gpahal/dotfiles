@@ -217,7 +217,10 @@ cmp -s "$tmp/ubuntu-packages" "$tmp/ubuntu-packages-doc" ||
 # machine or use the network fails the check when sourcing or a *_files function runs it.
 copy_home="$tmp/home"
 mkdir -p "$copy_home" "$tmp/sentinels"
-for cmd in apt-get brew curl defaults gh git launchctl mise snap sudo systemctl; do
+# shellcheck source=../tests/sentinels.sh
+source "$REPO_DIR/tests/sentinels.sh"
+# git and sudo too, which tests/lib.sh leaves real or stubs on its own
+for cmd in $SENTINELS git sudo; do
     printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$cmd" "$tmp/sentinels.log" > "$tmp/sentinels/$cmd"
     chmod +x "$tmp/sentinels/$cmd"
 done
@@ -307,18 +310,17 @@ stage_doc() {
         upgrade:fc-cache) echo 'font cache' ;;
         "upgrade:self-updating casks") echo 'brew upgrade --cask --greedy <cask>' ;;
         upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins") echo PlugUpgrade ;;
-        "upgrade:tmux plugins") echo 'update_plugins all' ;;
+        "upgrade:vim plugins") echo PlugUpdate ;;
+        "upgrade:tmux plugins") echo 'tmux/plugins.lock' ;;
         upgrade:mise) echo 'mise upgrade' ;;
+        "upgrade:mise hook-env") echo 'mise hook-env' ;;
         upgrade:npm) echo 'npm update -g' ;;
         upgrade:uv) echo 'uv tool upgrade --all' ;;
         upgrade:rustup) echo 'rustup update' ;;
         upgrade:upgrade-ai-tools) echo 'upgrade-ai-tools' ;;
         "upgrade-ai-tools:claude update") echo 'claude update' ;;
-        'upgrade-ai-tools:npm $pkg') echo 'npm install -g <package>@latest' ;;
         "upgrade-ai-tools:desktop apps") echo 'brew upgrade --cask --greedy' ;;
         "upgrade-ai-tools:codex cask") echo 'brew upgrade --cask --greedy codex' ;;
-        "upgrade-ai-tools:codex update") echo 'codex update' ;;
         "upgrade-ai-tools:claude marketplaces") echo 'claude plugin marketplace update' ;;
         'upgrade-ai-tools:claude plugin $id') echo 'claude plugin update' ;;
         "upgrade-ai-tools:claude plugin list") echo 'claude plugin list' ;;
@@ -335,9 +337,9 @@ stage_code() {
         "upgrade:brew bundle") echo 'brew bundle install' ;;
         upgrade:casks) echo '_install_new_casks' ;;
         upgrade:fc-cache) echo 'fc-cache -f' ;;
-        upgrade:rustup) echo '"$rustup" update' ;;
+        upgrade:rustup) echo '.cargo/bin/rustup update' ;;
         "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
-        'upgrade-ai-tools:npm $pkg') echo 'npm install -g "$pkg@latest"' ;;
+        "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
         "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools ' ;;
         "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;
         *) stage_doc "$1" "$2" ;;

@@ -335,8 +335,9 @@ assert_contains "$RUN_OUTPUT" "skipped    UPS monitored by NUT: this is a VM"
 stub systemd-detect-virt 'exit 1'
 
 # --- the notifier ---
-NOTIFY="$REPO_DIR/ubuntu/ups-notify.sh"
-export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_NTFY_LIB="$REPO_DIR/ubuntu/lib/ntfy.sh"
+URL_FILE="$SANDBOX/ntfy-url"
+NOTIFY="$SANDBOX/ups-notify.sh"
+ntfy_hook_copy ubuntu/ups-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NOTIFY"
 stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
 [ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
 stub logger
@@ -350,12 +351,12 @@ notify ONBATT "UPS ups@localhost on battery"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 # A URL saved: each event is pushed, the URL on stdin, and urgent for a low battery or a shutdown
-echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
+echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 notify ONBATT "UPS ups@localhost on battery"
-assert_file_contains "$STUB_LOG" "-H Title: UPS on battery on $(hostname) -H Priority: high -H Tags: electric_plug --data-binary UPS ups@localhost on battery -K -"
+assert_file_contains "$STUB_LOG" "-H Title: UPS on battery on $(hostname) -H Priority: high -H Tags: electric_plug --data-raw UPS ups@localhost on battery -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 notify ONLINE "UPS ups@localhost on line power"
-assert_file_contains "$STUB_LOG" "-H Title: UPS on mains power on $(hostname) -H Priority: default -H Tags: white_check_mark --data-binary UPS ups@localhost on line power -K -"
+assert_file_contains "$STUB_LOG" "-H Title: UPS on mains power on $(hostname) -H Priority: default -H Tags: white_check_mark --data-raw UPS ups@localhost on line power -K -"
 notify LOWBATT "UPS ups@localhost battery is low"
 assert_file_contains "$STUB_LOG" "-H Priority: urgent"
 notify SHUTDOWN "Auto logout and shutdown proceeding"
@@ -376,6 +377,7 @@ fi
 rm "$SANDBOX/curl-fails"
 
 # Without its ntfy code, it logs that and exits 0
-DOTFILES_NTFY_LIB="$SANDBOX/no-ntfy.sh" notify ONBATT "UPS ups@localhost on battery"
+ntfy_hook_copy ubuntu/ups-notify.sh "$URL_FILE" "$SANDBOX/no-ntfy.sh" "$NOTIFY"
+notify ONBATT "UPS ups@localhost on battery"
 assert_file_contains "$STUB_LOG" "logger -t dotfiles-ups -- couldn't push the UPS event to ntfy: $SANDBOX/no-ntfy.sh is missing"
 test_done

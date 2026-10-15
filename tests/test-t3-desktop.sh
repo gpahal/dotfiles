@@ -32,17 +32,14 @@ esac'
 }
 stub_launchd
 stub pgrep 'exit 1'
-OLD_AGENT='<?xml version="1.0" encoding="UTF-8"?>
+DIFFERENT_AGENT='<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>dotfiles.t3code-telemetry-off</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/launchctl</string>
-        <string>setenv</string>
-        <string>T3CODE_TELEMETRY_ENABLED</string>
-        <string>false</string>
+        <string>/usr/bin/true</string>
     </array>
 </dict>
 </plist>'
@@ -79,9 +76,9 @@ assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
 assert_exit 0 configure_t3_code
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 
-# The agent from an earlier version, which only set the variable, counts as missing, and a re-run
+# A LaunchAgent whose content differs from what the step writes counts as missing, and a re-run
 # replaces it
-printf '%s\n' "$OLD_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
+printf '%s\n' "$DIFFERENT_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
 run status
 assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
 assert_exit 0 configure_t3_code
@@ -123,4 +120,24 @@ rm "$T3_CODE_SETTINGS"
 assert_exit 0 configure_t3_code
 assert_contains "$RUN_OUTPUT" "T3 Code (Alpha) is running; skipping."
 [ ! -e "$T3_CODE_SETTINGS" ] || fail "the settings were written while T3 Code ran"
+
+# A status report asks brew about the cask once, though the version, the app path, and the cask's
+# state each need the app brew names
+load_script ai_tools/t3-code/install.sh
+is_macos() { true; }
+is_ubuntu() { false; }
+stub plutil 'echo 0.0.45'
+# shellcheck disable=SC2016 # expanded by the stub
+stub brew 'case "$1" in
+    info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
+esac'
+: > "$STUB_LOG"
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in one status report"
+# When brew info fails, the report still runs, asking brew each time
+stub brew '[ "$1" != info ] || exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "t3-code (cask)"
+assert_contains "$RUN_OUTPUT" "Server settings in ~/.t3/userdata/settings.json"
 test_done

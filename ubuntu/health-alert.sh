@@ -35,14 +35,14 @@ BOOT_RETRY_SECONDS=10
 usage() {
     echo "Usage: bash ubuntu/health-alert.sh status | boot"
     echo "status pushes what setup's --status --quick reports needs attention to ntfy; boot pushes"
-    echo "that this machine started. Both do nothing until just alerts <ntfy-url> saves a URL."
+    echo "that this machine started. Both do nothing until just alerts saves a URL."
 }
 
 # Print the saved URL. Fails, saying why, when the file is there but unreadable.
 ntfy_url() {
     [ -e "$NTFY_URL_FILE" ] || return 0
     if [ ! -r "$NTFY_URL_FILE" ]; then
-        echo "Can't read $NTFY_URL_FILE. Save the URL again with just alerts <ntfy-url>." >&2
+        echo "Can't read $NTFY_URL_FILE. Save the URL again with just alerts." >&2
         return 1
     fi
     head -n 1 "$NTFY_URL_FILE"

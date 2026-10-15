@@ -7,10 +7,11 @@ set -euo pipefail
 # updates daily and keep edited conffiles through them, start user services (the T3 Code server)
 # at boot without a login, start sshd at boot and take SSH logins only for you, and with keys only
 # once a session shows your key logs in, install Tailscale, turn on the firewall, letting SSH in
-# only from the private ranges and the tailnet, once no SSH session comes from elsewhere, and wake
-# on LAN. These need sudo, so the step lists what's missing and asks once. When one part fails,
-# the step still does the others, then fails. It also puts Homebrew on PATH for user services, and
-# turns on a daily health alert and a boot notice pushed to ntfy, which need no sudo.
+# only from the private ranges and anything in from the tailnet (tailscale0), which Tailscale's
+# ACLs limit, once no SSH session comes from elsewhere, and wake on LAN. These need sudo, so the
+# step lists what's missing and asks once. When one part fails, the step still does the others,
+# then fails. It also puts Homebrew on PATH for user services, and turns on a daily health alert
+# and a boot notice pushed to ntfy, which need no sudo.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo, systemctl, and
 # loginctl. Test it in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -44,8 +45,12 @@ SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
 SSHD_RUN_DIR=/run/sshd
 # openssh-server's daemon, outside the PATH of a user who isn't root
 SSHD_BIN=/usr/sbin/sshd
-# Where sbin_cmd looks for a command such as ufw or sysctl, past the user's PATH
-SBIN_PATH=/usr/sbin:/sbin
+# The unit that starts sshd at boot, 26.04's default. ssh.service, which it starts on the first
+# connection, is the one that reloads sshd's config.
+SSH_UNIT=ssh.socket
+# The only dirs sbin_cmd looks in for a command such as ufw or smartctl: system dirs, since the
+# result can run under sudo
+SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 # Stops what masking can't: GNOME then hides suspend, and stops trying it on UPS battery
 SLEEP_CONF=/etc/systemd/sleep.conf.d/10-dotfiles.conf
 SLEEP_CONF_CONTENT='# From the dotfiles ubuntu step: never sleep, alongside the masked sleep targets
@@ -131,8 +136,8 @@ TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
 TAILSCALE_LIST="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}/tailscale.list"
 # User services, such as tmux at boot and the T3 Code server, get the user manager's PATH, which
-# has no Homebrew. The user manager doesn't see an XDG_CONFIG_HOME set in the shell, so the file
-# goes in ~/.config.
+# has neither Homebrew nor ~/.local/bin. The user manager doesn't see an XDG_CONFIG_HOME set in the
+# shell, so the file goes in ~/.config.
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 
@@ -213,7 +218,7 @@ lingering() {
 # Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
 # credentials are cached, and is otherwise unverified.
 status() {
-    local ufw=0 uuid name wired=false item packages todo problems=""
+    local ufw=0 uuid name wired=false item packages todo problems="" rule where
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
     if ! is_ubuntu; then
         status_item skipped "Running around the clock: Ubuntu only"
@@ -263,7 +268,7 @@ status() {
     elif sshd_enabled; then
         status_item ok "sshd starts at boot"
     else
-        status_item missing "sshd starts at boot (run sudo systemctl enable --now $(ssh_unit))"
+        status_item missing "sshd starts at boot (run sudo systemctl enable --now $SSH_UNIT)"
     fi
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_cached; then
         status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
@@ -327,6 +332,18 @@ status() {
                 1) status_item missing "$rules (re-run the ubuntu step)" ;;
                 *) status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)" ;;
             esac
+            if [ "$ufw" -ne 2 ]; then
+                while IFS= read -r rule; do
+                    [ -n "$rule" ] || continue
+                    # The source is the rule's last field, as ufw_rule_broad_ssh reads it
+                    where=anywhere
+                    if [[ "${rule%% # *}" =~ \ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] &&
+                        [ "${BASH_REMATCH[3]}" != Anywhere ]; then
+                        where="${BASH_REMATCH[3]}, outside the private ranges"
+                    fi
+                    status_item missing "ufw rule lets SSH in from $where: $rule; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
+                done < <(ufw_broad_ssh_rules -n || true)
+            fi
         fi
     else
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
@@ -357,7 +374,7 @@ main() {
         return 0
     fi
     local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false repo_status=0
+    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
     # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
@@ -398,7 +415,7 @@ main() {
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
-        pending+=("Start sshd at boot: systemctl enable --now $(ssh_unit)")
+        pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
     fi
     sshd_configured || pending+=("Write $SSHD_DROP_IN: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')")
     # Unreadable, the drop-in may already turn them off, which configure_sshd keeps
@@ -469,14 +486,13 @@ main() {
         fi
         # Installing the package enables sshd, so this catches one turned off since
         if apt_installed openssh-server && ! sshd_enabled; then
-            sudo systemctl enable --now "$(ssh_unit)" || result=1
+            sudo systemctl enable --now "$SSH_UNIT" || result=1
         fi
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
-            add_tailscale_repo || repo_status=$?
-            if [ "$repo_status" -eq 0 ]; then
+            if add_tailscale_repo; then
                 command -v tailscale &>/dev/null || apt_get install -y tailscale || result=1
-            elif [ "$repo_status" -ne "$APT_REPO_UNPUBLISHED" ]; then
+            else
                 result=1
             fi
         fi

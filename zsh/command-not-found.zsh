@@ -19,9 +19,10 @@ if [[ $OSTYPE == linux* ]]; then
         fi
         return 127
     }
-# Homebrew's handler suggests the formula that provides an unknown command. Skip it without brew.
-elif [[ -n ${HOMEBREW_REPOSITORY:-} ]] || (( $+commands[brew] )); then
-    HOMEBREW_COMMAND_NOT_FOUND_HANDLER="${HOMEBREW_REPOSITORY:-$(brew --repository)}/Library/Homebrew/command-not-found/handler.sh"
+# Homebrew's handler suggests the formula that provides an unknown command. brew shellenv sets
+# HOMEBREW_REPOSITORY; skip the handler without it.
+elif [[ -n ${HOMEBREW_REPOSITORY:-} ]]; then
+    HOMEBREW_COMMAND_NOT_FOUND_HANDLER="$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
     if [ -f "$HOMEBREW_COMMAND_NOT_FOUND_HANDLER" ]; then
         source "$HOMEBREW_COMMAND_NOT_FOUND_HANDLER"
     fi

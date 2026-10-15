@@ -3,7 +3,8 @@ set -euo pipefail
 
 # ssh/add-host.sh adds a Host block for an alias, once. It rejects an alias or hostname ssh would
 # read as several patterns or a comment, and puts the block above a Host * block, so the
-# catch-all's settings don't win over it.
+# catch-all's settings don't win over it. It finds a block however ssh would read its Host line,
+# and fails without saying it added one when it can't write the config.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -72,7 +73,7 @@ Host box2
   ServerAliveInterval 30
   ControlMaster auto
   ControlPath ~/.ssh/cm-%C
-  ControlPersist 10m
+  ControlPersist 1m
 
 # Every host
 Host *
@@ -115,6 +116,27 @@ assert_exit 0 add_host box6
 assert_eq "Host box6" "$(sed -n 3p "$config")" "the block's line with an Include loop"
 assert_exit 0 add_host box6
 assert_eq 1 "$(grep -c '^Host box6$' "$config")" "box6 blocks after a second run"
+
+# A block for the alias counts however its Host line is written, with = or quotes, or in
+# lowercase, as ssh reads it: no second block goes above Host *
+for existing in 'Host=box7' 'Host = box7' 'Host "box7"' 'host box7'; do
+    printf '%s\n  User me\n\nHost *\n  ServerAliveInterval 60\n' "$existing" > "$config"
+    cp "$config" "$SANDBOX/config-before"
+    assert_exit 0 add_host box7
+    assert_contains "$RUN_OUTPUT" "already has a block for box7"
+    cmp -s "$SANDBOX/config-before" "$config" || fail "add-host added a block next to: $existing"
+    assert_exit 0 ssh -G -F "$config" box7
+    assert_contains "$RUN_OUTPUT" "user me"
+done
+
+# A config it can't write fails, without saying it added the block
+if [ "$(id -u)" -ne 0 ]; then
+    : > "$config"
+    chmod 444 "$config"
+    assert_exit 1 add_host box8
+    assert_not_contains "$RUN_OUTPUT" "Added"
+    chmod 600 "$config"
+fi
 
 # A symlinked config stays a symlink, with the block written to the file it points to
 printf 'Host *\n  ServerAliveInterval 60\n' > "$SANDBOX/real-config"

@@ -5,7 +5,7 @@ set -euo pipefail
 # AddKeysToAgent and UseKeychain, and a LaunchAgent that runs ssh-add --apple-load-keychain at
 # login. It never edits a Host * block you wrote. Ubuntu has no keychain, so it skips both.
 # add_block, from ssh/lib/hosts.sh, which ssh/add-host.sh uses, puts a block above the first
-# catch-all.
+# catch-all. Host lines are read as ssh reads them, and a failed write fails the step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -46,7 +46,7 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    The Host * block in ~/.ssh/config has AddKeysToAgent and UseKeychain; add AddKeysToAgent yes and UseKeychain yes to it by hand"
 
 # With one setting, it prints only the other
-printf 'host * !box\n  usekeychain yes\n' > "$SSH_CONFIG"
+printf 'host *\n  usekeychain yes\n' > "$SSH_CONFIG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "  AddKeysToAgent yes"
 assert_not_contains "$RUN_OUTPUT" "  UseKeychain yes"
@@ -201,6 +201,55 @@ for line in "Match all host other" "Match canonical" "# Match all" "Host other #
     printf 'Host other\n  User other\n\n%s\n  AddKeysToAgent no\n' "$line" > "$SSH_CONFIG"
     assert_eq "" "$(catch_all_line)" "the catch-all's line with: $line"
 done
+
+# ssh reads a Host line's keyword in any case, after = as well as whitespace, and a quoted
+# pattern whole
+host_line_case 'Host=box' box 0
+host_line_case 'Host = box' box 0
+host_line_case 'Host "box"' box 0
+host_line_case 'host box' box 0
+host_line_case $'HOST\t"my box" box' box 0
+host_line_case 'Hostname box' box 1
+host_line_case 'Host "my box"' box 1
+assert_eq "$(printf '%s\n' a 'b c' d)" "$(host_patterns 'Host=a "b c" d # e')" "the patterns of a Host line"
+assert_eq "" "$(host_patterns 'HostName box')" "the patterns of a HostName line"
+
+# A block for one host isn't global, however its Host line is written, and neither is one for *
+# with another pattern: only Host * alone counts
+for line in 'Host=box' 'Host = box' 'Host "box"' 'host box' 'Host * !box' 'Host box *'; do
+    printf '%s\n  AddKeysToAgent yes\n  UseKeychain yes\n' "$line" > "$SSH_CONFIG"
+    assert_eq "$(printf '  AddKeysToAgent yes\n  UseKeychain yes')" "$(host_star_missing)" \
+        "the lines missing after: $line"
+done
+for line in 'Host=*' 'Host "*"' 'host *'; do
+    printf '%s\n  AddKeysToAgent yes\n  UseKeychain=yes\n' "$line" > "$SSH_CONFIG"
+    assert_eq "" "$(host_star_missing)" "the lines missing after: $line"
+done
+# So a config whose only block for * leaves a host out gets the step's own Host * block, and
+# status then reports it ok
+printf 'Host * !bastion\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
+assert_exit 0 add_host_star
+assert_contains "$RUN_OUTPUT" "Added a Host * block"
+assert_eq 1 "$(host_star_count)" "Host * blocks after Host * !bastion"
+run status_host_star
+assert_contains "$RUN_OUTPUT" "ok         The Host * block in ~/.ssh/config has AddKeysToAgent and UseKeychain"
+
+# A config it can't write fails, without saying it added the block, whether empty or not. main
+# runs it under ||, which turns set -e off inside it.
+add_host_star_checked() {
+    add_host_star || return 1
+}
+if [ "$(id -u)" -ne 0 ]; then
+    for content in '' 'Host box\n  User me\n'; do
+        rm -f "$SSH_CONFIG"
+        # shellcheck disable=SC2059 # the content holds \n
+        printf "$content" > "$SSH_CONFIG"
+        chmod 444 "$SSH_CONFIG"
+        assert_exit 1 add_host_star_checked
+        assert_not_contains "$RUN_OUTPUT" "Added"
+        chmod 600 "$SSH_CONFIG"
+    done
+fi
 
 # A failed Host * block doesn't stop the rest under set -e, which run turns on, and fails the step
 is_macos() { true; }

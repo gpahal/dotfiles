@@ -59,7 +59,7 @@ gh_credential_helper_set() {
         awk '{ i = index($0, " "); v = i ? substr($0, i + 1) : "" }
             v == "" { first = ""; next }
             first == "" { first = v }
-            END { exit first !~ /gh(\.exe)? auth git-credential/ }'
+            END { exit first !~ /gh auth git-credential/ }'
 }
 
 setup_github_auth() {

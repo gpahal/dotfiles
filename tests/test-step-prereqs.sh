@@ -74,7 +74,6 @@ codex() {
     is_macos() { true; }
     is_ubuntu() { false; }
     install_cask() { echo "install $1" >> "$STUB_LOG"; }
-    codex_outside_homebrew() { return 1; }
     codex_cask_path() { :; }
     main
 }
@@ -97,7 +96,6 @@ docker_step() {
     load_script docker/install.sh
     is_macos() { false; }
     is_ubuntu() { true; }
-    conflicting_packages() { :; }
     main
 }
 # The ubuntu step without Tailscale, whose apt key it would download to install it

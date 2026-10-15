@@ -77,14 +77,13 @@ fail_defaults
 rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
 
 # --- zsh ---
-# The account's login shell is bash, and the zsh to switch to isn't in /etc/shells. The step reads
-# both from the system, so those two functions are replaced. sudo -n true, which sudo_cached runs,
-# succeeds only with SUDO_CACHED set.
+# The account's login shell is bash. The step reads it and the zsh to switch to from the system,
+# so those two functions are replaced. sudo -n true, which sudo_cached runs, succeeds only with
+# SUDO_CACHED set.
 # shellcheck disable=SC2016 # expanded by the stub
 stub sudo '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1
 [ "$1" != -n ] || shift
 exec "$@"'
-stub tee 'cat > /dev/null'
 stub chsh
 load_script zsh/install.sh
 current_login_shell() { echo /bin/bash; }
@@ -95,11 +94,10 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Login shell left as /bin/bash"
 assert_file_contains "$HOME/.zshrc" "source \$HOME/.zsh/main.zsh"
 
-# Applied: /etc/shells gets the path, and chsh switches to it
+# Applied: chsh switches to it
 : > "$STUB_LOG"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo tee -a /etc/shells"
 assert_file_contains "$STUB_LOG" "chsh -s $SANDBOX/bin/zsh"
 assert_file_not_contains "$STUB_LOG" "sudo -n chsh"
 
@@ -109,11 +107,7 @@ export SUDO_CACHED=1
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo -n chsh -s $SANDBOX/bin/zsh $(id -un)"
 
-# A failed tee or chsh fails the step, and prints the command to run
-stub tee 'exit 1'
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo tee -a /etc/shells"
-stub tee 'cat > /dev/null'
+# A failed chsh fails the step, and prints the command to run
 stub chsh 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Run manually: chsh -s $SANDBOX/bin/zsh"
@@ -161,10 +155,8 @@ assert_file_contains "$STUB_LOG" "chsh -s /bin/zsh"
 unset DOTFILES_ASSUME_YES
 
 # --- ghostty ---
-# On Ubuntu, with no other Ghostty installed. pkill is stubbed, so no running Ghostty gets a signal.
+# On Ubuntu. pkill is stubbed, so no running Ghostty gets a signal.
 stub pkill 'exit 1'
-stub dpkg-query 'exit 1'
-hide ghostty
 load_script ghostty/install.sh
 is_ubuntu() { true; }
 is_macos() { false; }

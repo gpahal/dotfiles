@@ -23,25 +23,9 @@ TEST_FAILURES=0
 TEST_SKIPPED=false
 TEST_DONE=false
 
-# Commands a test must stub, since a test that runs one without stubbing it fails, even under
-# `|| true`. Add a command here when a test would otherwise reach one that changes the real machine,
-# uses the network, or reads real hardware or system state:
-# - commands that change the machine or use the network
-# - orb, which would reach OrbStack's real machines
-# - ss, whose real connections would decide what the ubuntu step's firewall allows
-# - read-only commands whose output depends on the real machine: the status diagnostics'
-#   smartctl, fwupdmgr, fdesetup, socketfilterfw, nmcli, apt-config, apt-mark, and journalctl,
-#   which read the real disks, firmware, security settings, network, apt config, holds, and logs,
-#   the ubuntu step's nut-scanner and upsc, which read a real UPS, udevadm, which reads the real
-#   devices, and lsblk, which reads the real disks' encryption
-# Other read-only commands the tests rely on, such as dscl, dpkg, uname, and id, stay real. A test
-# that needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs
-# that.
-SENTINELS="brew apt apt-get add-apt-repository snap systemctl launchctl defaults softwareupdate mas
-osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill open xdg-open
-locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss
-smartctl fwupdmgr fdesetup socketfilterfw notify-send runuser logger nmcli apt-config journalctl
-orb nut-scanner upsc udevadm activateSettings apt-mark lsblk"
+# SENTINELS: the commands a test must stub
+# shellcheck source=sentinels.sh
+source "$TESTS_DIR/sentinels.sh"
 
 # Point HOME, TMUX_TMPDIR, and WORKTREES_DIR at a new temp dir, unset the variables that would
 # send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos, put
@@ -71,8 +55,8 @@ setup_sandbox() {
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
     # git reads no system config, and reaches only local repos, never the network. A test that
-    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as test-config-steps.sh
-    # does for tpm.
+    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as fake_tmux_plugins does
+    # for the tmux plugins.
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
     # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
@@ -271,6 +255,30 @@ test_done() {
     TEST_DONE=true
 }
 
+# Stand in for GitHub for the tmux plugins in tmux/plugins.lock: give each a local repo with two
+# commits, under $SANDBOX/remotes, which a git url rewrite makes https://github.com/<repo>, and pin
+# each to its first commit, not HEAD, in a lock file the tmux step reads through
+# DOTFILES_TMUX_PLUGINS_LOCK. Sets FAKE_PLUGIN_REMOTES to the remotes' dir.
+fake_tmux_plugins() {
+    local repo sha remote n
+    FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
+    export DOTFILES_TMUX_PLUGINS_LOCK="$SANDBOX/plugins.lock"
+    echo "# Test pins" > "$DOTFILES_TMUX_PLUGINS_LOCK"
+    while read -r repo _; do
+        remote="$FAKE_PLUGIN_REMOTES/$repo"
+        git init -q "$remote"
+        for n in 1 2; do
+            echo "$repo $n" > "$remote/README"
+            git -C "$remote" add README
+            git -C "$remote" -c user.name=test -c user.email=test@example.com commit -qm "$n"
+            [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
+        done
+        echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
+    done < <(awk '!/^#/ && NF' "$REPO_DIR/tmux/plugins.lock")
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
+    export GIT_CONFIG_VALUE_0=https://github.com/
+}
+
 # Source lib/common.sh or a step script, given relative to the repo, so the test can call its
 # functions. Remaining arguments become the script's "$@". A step runs main only when run
 # directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
@@ -289,6 +297,18 @@ load_script() {
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first
+}
+
+# Copy a root ntfy hook (ubuntu/smartd-notify.sh or ubuntu/ups-notify.sh) to <dest>, with its
+# NTFY_URL_FILE and NTFY_LIB constants pointed at <url-file> and <lib>. The hooks hard-code the
+# installed paths, since root runs them, so no variable may redirect them.
+# e.g. ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/ntfy-url" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$SANDBOX/hook"
+ntfy_hook_copy() {
+    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
+        "$REPO_DIR/$1" > "$4"
+    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4"; then
+        fail "$1 has no NTFY_URL_FILE= or NTFY_LIB= line to point at the sandbox"
+    fi
 }
 
 # Run a command in a subshell with errexit on, as a step's own `set -e` would run it, and keep

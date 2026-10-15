@@ -33,9 +33,23 @@ concurrency:
 # than the declared minimums. One shellcheck for every leg, from its release: versions report
 # different warnings, and Ubuntu's package is older. Ubuntu's yq package is a different tool, so
 # mikefarah's comes from its release. Pin it on macOS too, where brew can lag behind our minimum.
+#
+# Each downloaded release is checked against a pinned SHA-256 before it's installed: from the
+# release's checksum file where it has one (mise's SHASUMS256.txt, yq's checksums), else hashed from
+# a download (shellcheck). A version bump needs new hashes.
 env:
   SHELLCHECK_VERSION: v0.11.0
+  SHELLCHECK_SHA256_DARWIN_AARCH64: 56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79
+  SHELLCHECK_SHA256_LINUX_X86_64: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
   YQ_VERSION: v4.54.1
+  YQ_SHA256_DARWIN_ARM64: fee511a181bd8b3e6b7da98842b41973bfac8cd3bcd341ed29a584620b5b2844
+  YQ_SHA256_LINUX_AMD64: 8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
+
+# bash runs every step as bash --noprofile --norc -eo pipefail, so a failed download in a pipe
+# fails its step
+defaults:
+  run:
+    shell: bash
 
 jobs:
   check:
@@ -47,14 +61,19 @@ jobs:
         os: [xcode-27, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
+      # No token left in .git/config for later steps to read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install just jq tmux mise git fd
-          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz" |
-            sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          f="$RUNNER_TEMP/shellcheck.tar.xz"
+          curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz"
+          echo "$SHELLCHECK_SHA256_DARWIN_AARCH64  $f" | shasum -a 256 -c -
+          sudo tar -xJ -f "$f" -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
 
       - name: Install tools (Ubuntu)
         if: runner.os == 'Linux'
@@ -62,22 +81,31 @@ jobs:
         # which setup installs, is fd
         env:
           MISE_VERSION: v2026.10.5
+          MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
         run: |
           sudo apt-get update
           sudo apt-get install -y just jq zsh tmux vim fd-find
           sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
-          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz" |
-            sudo tar -xJ -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-          sudo curl -fsSL -o /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
-          sudo chmod +x /usr/local/bin/mise
+          f="$RUNNER_TEMP/shellcheck.tar.xz"
+          curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          echo "$SHELLCHECK_SHA256_LINUX_X86_64  $f" | sha256sum -c -
+          sudo tar -xJ -f "$f" -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          f="$RUNNER_TEMP/mise"
+          curl -fsSL -o "$f" "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
+          echo "$MISE_SHA256_LINUX_X64  $f" | sha256sum -c -
+          sudo install -m 755 "$f" /usr/local/bin/mise
 
       - name: Install pinned yq
         env:
           YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
+          YQ_SHA256: ${{ runner.os == 'macOS' && env.YQ_SHA256_DARWIN_ARM64 || env.YQ_SHA256_LINUX_AMD64 }}
         run: |
           mkdir -p "$RUNNER_TEMP/ci-bin"
-          curl -fsSL -o "$RUNNER_TEMP/ci-bin/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
-          chmod +x "$RUNNER_TEMP/ci-bin/yq"
+          f="$RUNNER_TEMP/yq_$YQ_PLATFORM"
+          curl -fsSL -o "$f" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
+          if command -v sha256sum > /dev/null; then sha=(sha256sum); else sha=(shasum -a 256); fi
+          echo "$YQ_SHA256  $f" | "${sha[@]}" -c -
+          install -m 755 "$f" "$RUNNER_TEMP/ci-bin/yq"
           echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ci-bin/yq" --version
 
@@ -86,8 +114,8 @@ jobs:
       - name: Show the sudo and coreutils versions (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          sudo --version | head -1
-          stat --version | head -1
+          sudo --version | sed -n 1p
+          stat --version | sed -n 1p
 
       - name: Check the tool versions
         run: |
@@ -125,6 +153,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
@@ -140,10 +170,14 @@ jobs:
       - name: Install pinned yq
         env:
           YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
+          YQ_SHA256: ${{ runner.os == 'macOS' && env.YQ_SHA256_DARWIN_ARM64 || env.YQ_SHA256_LINUX_AMD64 }}
         run: |
           mkdir -p "$RUNNER_TEMP/ci-bin"
-          curl -fsSL -o "$RUNNER_TEMP/ci-bin/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
-          chmod +x "$RUNNER_TEMP/ci-bin/yq"
+          f="$RUNNER_TEMP/yq_$YQ_PLATFORM"
+          curl -fsSL -o "$f" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
+          if command -v sha256sum > /dev/null; then sha=(sha256sum); else sha=(shasum -a 256); fi
+          echo "$YQ_SHA256  $f" | "${sha[@]}" -c -
+          install -m 755 "$f" "$RUNNER_TEMP/ci-bin/yq"
           echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ci-bin/yq" --version
 

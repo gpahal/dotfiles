@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # The ubuntu step's firewall helpers: sshd_ports adds the ports ssh.socket listens on to sshd's,
-# and outside_address tells the addresses the firewall would cut off.
+# outside_address tells the addresses the firewall would cut off, and ufw_broad_ssh_rules finds
+# the rules that let SSH in from elsewhere.
 # test-ufw-recheck.sh covers the step around them.
 
 # shellcheck source=lib.sh
@@ -51,4 +52,61 @@ for address in 203.0.113.9 172.32.0.1 172.15.0.1 192.169.1.1 11.0.0.1 2001:db8::
     fec0::1 fd::1 198.51.100.1; do
     assert_eq outside "$(outside "$address")" "$address"
 done
+
+# --- ufw_broad_ssh_rules: rules letting SSH in from beyond the private ranges and tailscale0 ---
+# SSH on 22 and 2222. ufw status lists the rules in $SANDBOX/ufw-rules.
+stub sshd '[ "$1" != -T ] || printf "%s\n" "port 22" "port 2222"'
+stub systemctl '[ "$1" != is-active ] || exit 3'
+stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
+wanted_rules() {
+    local port range
+    printf '%s\n' "Status: active" "" "To                         Action      From" \
+        "--                         ------      ----"
+    for port in 22 2222; do
+        for range in "${SSH_RANGES[@]}"; do
+            printf '%-26s ALLOW       %s\n' "$port/tcp" "$range"
+        done
+    done
+    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" \
+        "41641/udp                  ALLOW       Anywhere" \
+        "Anywhere (v6) on tailscale0 ALLOW       Anywhere (v6)" \
+        "41641/udp (v6)             ALLOW       Anywhere (v6)"
+}
+# Only the wanted rules, a narrower private range, and other ports: none
+{
+    wanted_rules
+    printf '%s\n' "22/tcp                     ALLOW       192.168.1.0/24" \
+        "80/tcp                     ALLOW       Anywhere" \
+        "22/udp                     ALLOW       Anywhere" \
+        "22/tcp                     ALLOW OUT   Anywhere" \
+        "22/tcp                     DENY        Anywhere" \
+        "8000:8100/tcp              ALLOW       Anywhere"
+} > "$SANDBOX/ufw-rules"
+assert_eq "" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules among the wanted ones"
+# ufw allow ssh, OpenSSH's profile, a range, a list, every port, and a public source: each listed
+{
+    wanted_rules
+    printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
+        "22/tcp (v6)                ALLOW       Anywhere (v6)" \
+        "OpenSSH                    LIMIT       Anywhere" \
+        "2000:3000/tcp              ALLOW       Anywhere" \
+        "80,2222/tcp                ALLOW       Anywhere # web" \
+        "Anywhere                   ALLOW       203.0.113.9" \
+        "22                         ALLOW       10.0.0.0/7" \
+        "192.168.1.5 22/tcp on eth0 ALLOW       Anywhere"
+} > "$SANDBOX/ufw-rules"
+assert_eq "22/tcp ALLOW Anywhere
+22/tcp (v6) ALLOW Anywhere (v6)
+OpenSSH LIMIT Anywhere
+2000:3000/tcp ALLOW Anywhere
+80,2222/tcp ALLOW Anywhere # web
+Anywhere ALLOW 203.0.113.9
+22 ALLOW 10.0.0.0/7
+192.168.1.5 22/tcp on eth0 ALLOW Anywhere" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
+# Unreadable rules or SSH ports fail it
+stub ufw 'exit 1'
+assert_exit 1 ufw_broad_ssh_rules -n
+stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
+stub sshd 'exit 255'
+assert_exit 1 ufw_broad_ssh_rules -n
 test_done

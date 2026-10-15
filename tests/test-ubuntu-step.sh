@@ -22,6 +22,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
+# The system dirs sbin_cmd searches for sysctl and ufw, here the stubs
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
 lingering() { true; }
 # test-diagnostics.sh covers SMART health and firmware updates
@@ -45,11 +48,10 @@ assert_eq "$HOME/.config/environment.d/99-homebrew.conf" \
 stub sudo 'for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refused: $a" >&2; exit 1 ;; esac; done
 exec env "$@"'
 stub dpkg-query 'echo "install ok installed"'
-# systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled and ssh.service
-# disabled, as on 26.04, unless $SANDBOX/units/<unit> holds another state, which enable
-# of ssh.socket or ssh.service sets to enabled. A unit is active unless
-# $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables and starts them,
-# unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
+# systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
+# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled.
+# A unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers
+# enables and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
 # ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is enabled
 # once systemctl --user enable ran, and active once enable --now did. A user unit needs a
 # daemon-reload while $SANDBOX/reload-needed exists, which daemon-reload removes, unless
@@ -73,11 +75,10 @@ case "$1" in
     is-enabled) case "$2" in
         smartmontools.service) cat "'"$SANDBOX"'/smartd" 2> /dev/null || echo disabled ;;
         apt-daily.timer | apt-daily-upgrade.timer | ssh.socket) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo enabled ;;
-        ssh.service) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo disabled ;;
         *) echo masked ;;
     esac ;;
     enable)
-        case "$3" in ssh.socket | ssh.service) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
+        case "$3" in ssh.socket) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
         if [ "$3" == apt-daily.timer ]; then
             [ ! -e "'"$SANDBOX"'/timers-fail" ] || exit 1
             for unit in "${@:3}"; do rm -f "'"$SANDBOX"'/units/$unit" "'"$SANDBOX"'/units/$unit.inactive"; done
@@ -201,7 +202,7 @@ assert_contains "$RUN_OUTPUT" "missing    Reboot 10 s after a kernel panic, and 
 assert_contains "$RUN_OUTPUT" "missing    smartmontools, with smartd enabled at boot"
 assert_contains "$RUN_OUTPUT" "missing    smartd running"
 assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK)"
-assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts not set; just alerts <ntfy-url> sets it"
+assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts not set; just alerts sets it"
 assert_contains "$RUN_OUTPUT" "missing    $KEEP_CONFFILES"
 assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user"
@@ -359,18 +360,11 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running"
 rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 
-# sshd starts at boot through the unit the system uses: ssh.socket when it's enabled, else
-# ssh.service when it is. With neither, Ubuntu's default, ssh.socket.
+# sshd starts at boot through ssh.socket, 26.04's default
 echo disabled > "$SANDBOX/units/ssh.socket"
-echo disabled > "$SANDBOX/units/ssh.service"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot (run sudo systemctl enable --now ssh.socket)"
-echo enabled > "$SANDBOX/units/ssh.service"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
-rm "$SANDBOX/units/"*
-# The step enables the unit status names, after asking
-echo disabled > "$SANDBOX/units/ssh.socket"
+# The step enables it, after asking
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=0 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.socket"
@@ -702,6 +696,8 @@ no_sbin_path="$(tr : '\n' <<< "$PATH" | grep -vxE '/usr/sbin|/sbin' | paste -sd:
 sysctl_without_sbin() { PATH="$no_sbin_path" sysctl_in_effect; }
 assert_exit 0 sysctl_without_sbin
 mv "$SANDBOX/sbin/sysctl" "$STUB_DIR/"
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 
 # --- the sshd drop-in ---
 # A changed drop-in sshd accepts replaces the old one, and sshd reloads
@@ -720,6 +716,18 @@ stub_systemctl
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
+
+# A failed write leaves the old drop-in whole, its settings and all, and sshd isn't reloaded
+printf '%s\n' "PermitRootLogin no" "PasswordAuthentication no" "# old" > "$SSHD_DROP_IN"
+cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
+stub mv 'case "$*" in *10-dotfiles.conf*) exit 1 ;; esac
+exec /bin/mv "$@"'
+: > "$STUB_LOG"
+assert_exit 1 configure_sshd
+rm "$STUB_DIR/mv"
+assert_exit 0 cmp -s "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
+assert_eq 10-dotfiles.conf "$(/bin/ls -A "$SANDBOX/sshd_config.d")" "files beside the drop-in after a failed write"
+assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 
 # A broken file elsewhere: the working drop-in stays, sshd isn't reloaded, the step names the
 # file, and still does the rest
@@ -741,6 +749,14 @@ assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in after sshd rejected the new one"
 assert_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
 assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
+# When the old one can't go back, the step says the broken one is still in place
+eval "real_write_root_file() $(declare -f write_root_file | tail -n +2)"
+write_root_file() { [ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"; }
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "the broken drop-in is still in place: $SSHD_DROP_IN"
+assert_not_contains "$RUN_OUTPUT" "the old one is back"
+eval "write_root_file() $(declare -f real_write_root_file | tail -n +2)"
+echo "# old, working" > "$SSHD_DROP_IN"
 
 # The same with no drop-in before: the rejected one is removed
 rm "$SSHD_DROP_IN"
@@ -766,6 +782,8 @@ unset -f sshd_drop_in
 # the sandbox
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
 lingering() { true; }
 status_smart() { :; }

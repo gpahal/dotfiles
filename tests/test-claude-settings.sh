@@ -36,6 +36,10 @@ json_merge "$settings" "$(claude_code_settings)" > /dev/null
 assert_eq '{"defaultMode":"auto"}' "$(jq -c '.permissions' "$settings")" "permissions on a fresh install"
 # worktree.baseRef is left to Claude Code's default, fresh, which the worktree hook assumes too
 assert_eq null "$(jq -c '.worktree' "$settings")" "worktree on a fresh install"
+# Remote Control stays off until /remote-control turns it on for a session, since a connected
+# session can be driven from the phone app; pushes are on, for the sessions that connect
+assert_eq false "$(jq -c '.remoteControlAtStartup' "$settings")" "remoteControlAtStartup on a fresh install"
+assert_eq true "$(jq -c '.agentPushNotifEnabled' "$settings")" "agentPushNotifEnabled on a fresh install"
 
 # The refresh interval: unset, it's set to 5 without a question. One of your own is kept without a
 # terminal, and status names it. With a terminal, setup asks every run and replaces it on yes, and

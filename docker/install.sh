@@ -13,10 +13,6 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
-# The packages Docker's install docs say to remove first: Ubuntu's own Docker packages, and the
-# containerd and runc that containerd.io bundles
-# https://docs.docker.com/engine/install/ubuntu/#uninstall-old-versions
-DOCKER_CONFLICTS=(docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
@@ -52,15 +48,6 @@ docker_installed() {
     done
 }
 
-# Print the installed packages that conflict with Docker's, space-separated
-conflicting_packages() {
-    local package found=()
-    for package in "${DOCKER_CONFLICTS[@]}"; do
-        apt_installed "$package" && found+=("$package")
-    done
-    echo "${found[*]:-}"
-}
-
 docker_auto_updates_configured() {
     file_is "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
 }
@@ -85,15 +72,14 @@ docker_source_ok() {
     file_is "$DOCKER_SOURCES" "$(docker_sources)"
 }
 
-# See add_apt_repo, whose return status this passes on
+# Run it once apt_repo_published says Docker has packages for this release
 add_docker_repo() {
-    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" \
-        "$(docker_release_url)"
+    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
 }
 
 # main runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
 install_docker() {
-    add_docker_repo || return $?
+    add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
     if ! apt_get_update; then
         echo "  apt-get update failed; it may not be Docker's source. Fix the error above and re-run." >&2
@@ -202,12 +188,7 @@ status() {
         status_item skipped "Docker: OrbStack, from the homebrew step, provides it on macOS"
         return 0
     fi
-    local installed=false conflicts
-    conflicts="$(conflicting_packages)"
-    if [ -n "$conflicts" ]; then
-        status_item skipped "Docker: $conflicts, which conflict with Docker's packages, installed instead"
-        return 0
-    fi
+    local installed=false
     docker_installed && installed=true
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
@@ -233,7 +214,7 @@ status() {
 
 # Merge the settings into the file, keeping its other keys. Nothing is written until jq succeeds.
 configure_daemon() {
-    local current='{}' exists=false tmp backup="" running=false
+    local current='{}' exists=false tmp backup="$DOCKER_DAEMON_CONFIG.dotfiles-bak" running=false
     if sudo test -e "$DOCKER_DAEMON_CONFIG"; then
         exists=true
         if ! current="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
@@ -259,40 +240,41 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    if "$exists"; then
-        backup="$(sudo mktemp "$DOCKER_DAEMON_CONFIG.bak.XXXXXX")" || { rm -f "$tmp"; return 1; }
-        if ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
-            rm -f "$tmp"
-            return 1
-        fi
-        echo "  Backed up $DOCKER_DAEMON_CONFIG to $backup"
+    # A backup to put back if Docker won't restart with the new file. It goes once Docker does.
+    if "$exists" && ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
+        rm -f "$tmp"
+        return 1
     fi
-    # cp onto the existing file keeps its mode and owner. main runs this as
-    # `configure_daemon || ...`, where set -e is off, so the writes check their own failure.
-    if "$exists"; then
-        sudo cp "$tmp" "$DOCKER_DAEMON_CONFIG" || { rm -f "$tmp"; return 1; }
-    else
-        if ! sudo mkdir -p "$(dirname "$DOCKER_DAEMON_CONFIG")" ||
-            ! sudo install -m 0644 "$tmp" "$DOCKER_DAEMON_CONFIG"; then
-            rm -f "$tmp"
-            return 1
-        fi
+    # A failed write leaves the old file whole. main runs this as `configure_daemon || ...`, where
+    # set -e is off, so each command checks its own failure.
+    if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
+        rm -f "$tmp"
+        "$exists" && sudo rm -f "$backup"
+        return 1
     fi
     rm -f "$tmp"
     # Only a running daemon needs the restart; a stopped one reads the file when it starts
     systemctl is-active --quiet docker.service && running=true
     if ! sudo systemctl try-restart docker.service; then
         if "$exists"; then
-            sudo cp "$backup" "$DOCKER_DAEMON_CONFIG" || return 1
+            if ! install_root_file "$backup" "$DOCKER_DAEMON_CONFIG"; then
+                echo "  Docker activation failed, and putting the previous configuration back failed too. Copy $backup to $DOCKER_DAEMON_CONFIG by hand." >&2
+                return 1
+            fi
+            echo "  Docker activation failed; restored the previous configuration, which is also in $backup. Fix the error and re-run." >&2
         else
             sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
+            echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
         fi
-        echo "  Docker activation failed; restored the previous configuration. Fix the error and re-run." >&2
         if "$running"; then
             sudo systemctl start docker.service ||
                 echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
         fi
         return 1
+    fi
+    # Docker took the new file
+    if "$exists"; then
+        sudo rm -f "$backup"
     fi
 }
 
@@ -310,13 +292,6 @@ main() {
     require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
-    local conflicts
-    conflicts="$(conflicting_packages)"
-    if [ -n "$conflicts" ]; then
-        echo "  $conflicts conflict with Docker's packages; skipping. To use Docker's packages instead,"
-        echo "  remove them (sudo apt-get remove $conflicts) and re-run this step."
-        return 0
-    fi
 
     # Installed Docker updates only while its source is the one this step writes. A release upgrade
     # turns third-party sources off, and a re-run rewrites this one for the new release once Docker
@@ -332,7 +307,7 @@ main() {
     docker_installed || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo")
+    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo. The group is root-equivalent: anything running as you, agents included, can get root with docker run -v /:/host")
     # Freshly installed packages enable and start both units
     if docker_installed && ! starts_at_boot; then
         pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")
@@ -349,20 +324,17 @@ main() {
     fi
     docker_auto_updates_configured || pending+=("Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF")
 
-    local result=0 repo_status=0
+    local result=0
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Docker is already installed and set up."
         return 0
     fi
     confirm_sudo_changes "${pending[@]}" || return 0
     if ! docker_installed; then
-        install_docker || repo_status=$?
         # The rest needs Docker's packages, and the docker group they add
-        [ "$repo_status" -ne "$APT_REPO_UNPUBLISHED" ] || return 0
-        [ "$repo_status" -eq 0 ] || return 1
+        install_docker || return 1
     elif "$repair_source"; then
-        add_docker_repo || repo_status=$?
-        [ "$repo_status" -eq 0 ] || [ "$repo_status" -eq "$APT_REPO_UNPUBLISHED" ] || result=1
+        add_docker_repo || result=1
     fi
     # Each part from here on runs whether or not the one before it failed
     if ! in_docker_group; then

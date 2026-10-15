@@ -53,11 +53,9 @@ Steps marked **(script)** below are done for you. The script adds no MCP servers
 The `upgrade` shell function updates the AI tools with everything else, through `upgrade-ai-tools`, which you can also run on its own. It updates only what's installed, and lists the failed stages at the end:
 
 - **Claude Code native install:** `claude update`.
-- **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. mise later removes the Node version that holds them, so prefer brew or `mise use -g npm:<package>`, which the main [`upgrade`](../README.md#updating) updates.
 - **t3 CLI and the T3 Code service:** `t3 update`. It asks before restarting a running service.
 - **Desktop apps installed with brew:** `brew upgrade --cask --greedy`, skipping running apps.
 - **Codex CLI installed with brew:** `brew upgrade --cask --greedy codex`, even while it runs.
-- **Codex CLI from its standalone installer:** `codex update`.
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. A running session keeps the old version until `/reload-plugins`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
@@ -69,7 +67,7 @@ Install **(script)** with the native installer, which auto-updates. Browser cont
 
 Claude Code notifies when it finishes or waits on a permission prompt while you're away from the terminal. It sends desktop notifications in Ghostty, iTerm2, and kitty, inside tmux too. In other terminals, such as Apple Terminal, set `"preferredNotifChannel": "terminal_bell"`.
 
-The script turns on push notifications to the Claude phone app, and Remote Control for all sessions, which pushes need **(script)**. If `/config` shows **No mobile registered**, open the Claude app once. Docs: [Mobile push notifications](https://code.claude.com/docs/en/remote-control#mobile-push-notifications).
+The script turns on push notifications to the Claude phone app, and leaves Remote Control off **(script)**. Pushes need Remote Control, so they come only from a session you connect with `/remote-control`. If `/config` shows **No mobile registered**, open the Claude app once. Docs: [Mobile push notifications](https://code.claude.com/docs/en/remote-control#mobile-push-notifications).
 
 ### Browser (Claude in Chrome)
 
@@ -107,7 +105,7 @@ The Claude desktop app **(script)** stays out of the menu bar, bounces its Dock 
 
 ## Codex
 
-The Codex desktop app is part of the **ChatGPT desktop app**, which alone has the browser, Chrome control, and computer use. The script installs the app and the CLI with brew **(script)**, and leaves alone a Codex from its standalone installer.
+The Codex desktop app is part of the **ChatGPT desktop app**, which alone has the browser, Chrome control, and computer use. The script installs the app and the CLI with brew **(script)**.
 
 ### Notifications
 
@@ -163,7 +161,7 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 ### App settings
 
-The script merges its settings into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**. New threads use Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. Threads continue after T3 Code restarts, a mid-turn message steers the turn, and pull requests squash-merge. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. T3 Code documents these keys only in its source; they were checked against T3 Code 0.0.45's [settings schema](https://github.com/pingdotgg/t3code/blob/v0.0.45/packages/contracts/src/settings.ts).
+The script merges its settings into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**. New threads use Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A new worktree branches from the local base branch, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. **Add project** starts in `~/Dev`. A mid-turn message steers the turn, and threads idle 5 days settle in the sidebar. Pull requests squash-merge, and T3's commit and PR text follows custom instructions: concise titles and short bullet points. T3 deletes browser artifacts and logs after 30 days. Threads continue after a server update: T3 Code 0.0.46 and later do this by default, and for earlier versions the script sets it. Notifications play a sound and show in the app too, and the sidebar shows the working shelf. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. T3 Code documents these keys only in its source; they were checked against T3 Code 0.0.45's [settings schema](https://github.com/pingdotgg/t3code/blob/v0.0.45/packages/contracts/src/settings.ts).
 
 The script also makes T3 wait for existing worktree setup actions before it starts the agent. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
 
@@ -199,6 +197,8 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. It runs `claude-code`, `codex`, `t3-code`, `skills`, and `manual-steps`. They set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
+Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file.
+
 ### Notifications over SSH
 
 Claude Code and Codex send notifications as escape sequences, which travel over SSH to Ghostty on the Mac. A tmux pane may not know it's in Ghostty, so the script sets Claude Code's channel to `ghostty` and Codex's to `osc9` **(script)**, unless you've set your own. Check it with `scripts/test-notification.sh` inside tmux over SSH.
@@ -207,11 +207,11 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
-- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773 with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
+- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
 - **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service failed in the meantime, run `systemctl --user reset-failed t3code` first, or systemd refuses to start it for 5 minutes.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.
-- **Browser (script, T3 Code 0.0.46+).** The script runs `sudo t3 browser setup`, after asking, when T3 Code's browser needs an AppArmor profile or libraries.
+- **Browser (T3 Code 0.0.46+).** When T3 Code's browser needs an AppArmor profile or libraries, the script prints the command that adds them, and `--status` reports it missing until you run it. The script doesn't run that command, because `~/.local/bin/t3` updates itself and you can write to it. Check it before you run it as root.
 
 ## Manual steps
 
@@ -234,7 +234,7 @@ Scripts can't do these. `bash ai_tools/setup.sh manual-steps` prints the list fo
 
 Over SSH, the logins print a link to open on the Mac.
 
-1. **Sudo work.** If you ran setup without a terminal, it skipped what needs sudo: bubblewrap and its AppArmor profile, `libatomic1` for the `t3` CLI, and `sudo t3 browser setup`. Run `bash ai_tools/setup.sh codex t3-code` from a terminal to do it.
+1. **Sudo work.** If you ran setup without a terminal, it skipped what needs sudo: bubblewrap and its AppArmor profile, and `libatomic1` for the `t3` CLI. Run `bash ai_tools/setup.sh codex t3-code` from a terminal to do it.
 2. **Claude Code.** Run `claude auth login`.
 3. **Codex.** Turn on device code login in ChatGPT's **Settings → Security** on chatgpt.com, then run `codex login --device-auth`.
 4. **Claude in Chrome.** At the Ubuntu desktop, set it up as [Browser (Claude in Chrome)](#browser-claude-in-chrome) says.
@@ -244,6 +244,7 @@ Over SSH, the logins print a link to open on the Mac.
    - In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
    - Run `t3 pair --tailscale`, and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't add the machine with T3 Code's SSH connection type, which starts its own server whenever its check for a running one fails. Remove any such connection there.
    - After an agent first opens T3 Code's browser in a thread, which downloads the browser, re-run `bash ai_tools/setup.sh t3-code`.
+   - If that run or `--status` says the browser needs root, check that `~/.local/bin/t3` is the `t3` you installed, then run `sudo ~/.local/bin/t3 browser setup`.
 6. **Claude phone app, training opt-outs, and GitHub repository settings** belong to your accounts, so doing them once from the Mac covers this machine.
 
 ## Check it works

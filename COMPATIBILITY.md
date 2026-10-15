@@ -2,6 +2,26 @@
 
 What each full verification round tested, on what, and what it left to check by hand. Add a section for each new round at the top, and keep the older ones.
 
+## 2026-10-15 review fixes
+
+Fixed the findings from the 2026-10-15 Codex review, then checked the changed steps on the Mac and the root writes in a container.
+
+| Machine | OS | CPU | sudo | coreutils |
+| --- | --- | --- | --- | --- |
+| Mac | macOS 27.0.1 (26A434), `/bin/bash` 3.2.57 | arm64 | | |
+| Container | `ubuntu:26.04` (26.04.1 LTS) in OrbStack's Docker 29.8.2, as a non-root user, bash 5.3.9 | arm64 | sudo-rs 0.2.13-0ubuntu1.2 | uutils (`coreutils-from-uutils`) |
+
+- `just check` and `just test` passed on the Mac: 87 tests, zero failures, zero skips.
+- On the Mac, the `vim`, `tmux`, `zsh`, `ssh`, `git`, `ghostty`, `lazygit`, and `zed` steps each ran twice in a temp `HOME`, with every `XDG_*` variable unset, stdin from `/dev/null`, and `TMUX_TMPDIR` in the temp dir. `chsh`, `sudo`, and `pkill` were stubs, so the `ghostty` step's reload signal never reached the running Ghostty. Every run passed, and the second run changed no file. `--status` then reported each item `ok` or `skipped`, apart from the `git` step's gh login and the credential helper that waits for it.
+- The plugin pins resolved over the network. The `tmux` step cloned tpm and 5 plugins at the commits `tmux/plugins.lock` pins, and tmux 3.8 started with the new config without errors. Vim 9.2, started in a terminal, installed all 16 plugins at the commits `vim/vimrc` pins, and created `~/.vim/undodir` with mode 700. `vim -Es` doesn't install them, since silent Ex mode skips the vimrc unless `-u` names it.
+- In the container, with `jq` and `openssh-server` installed and `systemctl` and `dockerd` stubbed:
+  - `write_root_file` and `install_root_file` gave a new file mode 644 and root as owner, kept an existing file's mode, wrote into a root-only directory, and left no temp file. With a missing source, the old file stayed whole.
+  - `configure_sshd` wrote `/etc/ssh/sshd_config.d/10-dotfiles.conf`, and both `sshd -t` and the `sshd -T` check passed. `sshd_configured` then held, and a second run passed.
+  - `configure_daemon` wrote a new `/etc/docker/daemon.json`, did nothing on a second run, and merged its keys into an existing file with mode 600, keeping `data-root` and the mode and removing its backup. With an invalid file, `configure_daemon` failed before it called `dockerd --validate`, and the file stayed as it was.
+- The `codex` step no longer installs `apparmor-profiles` when `/etc/apparmor.d/bwrap-userns-restrict` is missing. It now fails and prints the command that reinstalls `apparmor`. This replaces the fallback the 2026-10-10 section first described, and that section's note now describes the new behavior.
+
+Not run in this round: CI, `just test-ubuntu`, setup on the real Mac or the Ubuntu machine, and reboots. The `runtimes` step's change went untested beyond `test-runtimes.sh`, since a run downloads Node, Go, and Rust. The `macos`, `codex`, `t3-code`, and `claude-code` steps and the Touch ID script install apps or change the system whatever `HOME` is, so only their tests ran. No systemd, sshd reload, or Docker daemon ran in the container.
+
 ## 2026-10-15 Codex review verification
 
 - On macOS 27.0.1 (arm64), under `/bin/bash` 3.2.57, `just check` and `scripts/check-tool-versions.sh` passed.

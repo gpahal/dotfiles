@@ -71,8 +71,8 @@ setup_sandbox() {
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
     # git reads no system config, and reaches only local repos, never the network. A test that
-    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as test-config-steps.sh
-    # does for tpm.
+    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as fake_tmux_plugins does
+    # for the tmux plugins.
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
     # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
@@ -269,6 +269,30 @@ skip_rest() {
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
 test_done() {
     TEST_DONE=true
+}
+
+# Stand in for GitHub for the tmux plugins in tmux/plugins.lock: give each a local repo with two
+# commits, under $SANDBOX/remotes, which a git url rewrite makes https://github.com/<repo>, and pin
+# each to its first commit, not HEAD, in a lock file the tmux step reads through
+# DOTFILES_TMUX_PLUGINS_LOCK. Sets FAKE_PLUGIN_REMOTES to the remotes' dir.
+fake_tmux_plugins() {
+    local repo sha remote n
+    FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
+    export DOTFILES_TMUX_PLUGINS_LOCK="$SANDBOX/plugins.lock"
+    echo "# Test pins" > "$DOTFILES_TMUX_PLUGINS_LOCK"
+    while read -r repo _; do
+        remote="$FAKE_PLUGIN_REMOTES/$repo"
+        git init -q "$remote"
+        for n in 1 2; do
+            echo "$repo $n" > "$remote/README"
+            git -C "$remote" add README
+            git -C "$remote" -c user.name=test -c user.email=test@example.com commit -qm "$n"
+            [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
+        done
+        echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
+    done < <(grep -v '^#' "$REPO_DIR/tmux/plugins.lock")
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
+    export GIT_CONFIG_VALUE_0=https://github.com/
 }
 
 # Source lib/common.sh or a step script, given relative to the repo, so the test can call its

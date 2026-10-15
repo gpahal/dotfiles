@@ -8,7 +8,7 @@ set -euo pipefail
 # only for their native installs, even with HOME reached through a symlink, Claude Code's plugins
 # outside project, local, and managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
-# alone, and tpm updates the tmux plugins with its own tmux server.
+# alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -75,9 +75,11 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"d@m\", \"scope\": \"managed\"}
 ]"'
 stub codex
-mkdir -p "$HOME/.vim/autoload" "$HOME/.tmux/plugins/tpm/bin" "$SANDBOX/tmp"
+mkdir -p "$HOME/.vim/autoload" "$SANDBOX/tmp"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
-cp "$STUB_DIR/mas" "$HOME/.tmux/plugins/tpm/bin/update_plugins"
+# The tmux plugins are at their pins, from local repos in place of GitHub
+fake_tmux_plugins
+"$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$REPO_DIR" > /dev/null
 # uname -s names the OS upgrade_on runs as, so the homebrew step's is_macos agrees with OSTYPE.
 # Unlike a stub, it doesn't log.
 printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || exec cat "'"$SANDBOX"'/uname-s"' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
@@ -127,8 +129,7 @@ brew list --cask appcleaner
 brew list --cask the-unarchiver
 brew list --cask logi-options+
 mas upgrade
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpgrade -c PlugUpdate --sync -c qa
-update_plugins all
+vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
 mise upgrade
 mise hook-env --force -s bash
 new-node npm update -g
@@ -229,8 +230,7 @@ brew list --cask zed
 brew outdated --cask --greedy --quiet zed
 pgrep -x zed-editor
 brew upgrade --cask --greedy zed
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpgrade -c PlugUpdate --sync -c qa
-update_plugins all
+vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
 mise upgrade
 mise hook-env --force -s bash
 new-node npm update -g
@@ -427,18 +427,21 @@ for interrupted in "outdated " "info "; do
 done
 stub brew
 
-# tpm updates the plugins against the repo's tmux config, so it runs with no TMUX and in a new
-# TMUX_TMPDIR, where it starts its own tmux server rather than reading a running one's config
-# shellcheck disable=SC2016 # expanded by the script
-printf '%s\n' '#!/bin/bash' 'echo "${TMUX-unset} $TMUX_TMPDIR" > "'"$SANDBOX"'/tpm-env"' \
-    > "$HOME/.tmux/plugins/tpm/bin/update_plugins"
-run env TMUX=/tmp/caller,1,0 PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
-read -r tpm_tmux tpm_tmpdir < "$SANDBOX/tpm-env"
-assert_eq unset "$tpm_tmux" "the TMUX update_plugins sees"
-[ -n "$tpm_tmpdir" ] && [ "$tpm_tmpdir" != "$TMUX_TMPDIR" ] ||
-    fail "update_plugins ran with TMUX_TMPDIR '$tpm_tmpdir', not a new dir"
-[ ! -e "$tpm_tmpdir" ] || fail "upgrade left update_plugins' TMUX_TMPDIR behind"
+# A tmux plugin at another commit, as tpm's update leaves it, moves back to its pin, never to
+# HEAD, and one that can't be fetched fails the tmux plugins stage
+plugin="$HOME/.tmux/plugins/tmux-yank"
+pin="$(git -C "$plugin" rev-parse HEAD)"
+git -C "$plugin" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
+git -C "$plugin" checkout -q --detach FETCH_HEAD
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+assert_eq "$pin" "$(git -C "$plugin" rev-parse HEAD)" "tmux-yank's commit after upgrade"
+assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank"
+assert_not_contains "$RUN_OUTPUT" "Failed: tmux plugins"
+rm -rf "$HOME/.tmux/plugins/tmux-open"
+mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
+assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
 
 # zsh's upgrade and upgrade-ai-tools run the script from the repo DOTFILES_DIR names
 mkdir -p "$SANDBOX/fake-repo/scripts"

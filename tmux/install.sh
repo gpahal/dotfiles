@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the tmux config and tmux-sessionizer, and install tpm and the plugins tmux.conf lists into
-# ~/.tmux/plugins. On Ubuntu, have tmux-continuum enable its systemd user unit, which starts tmux
-# at boot and restores the sessions.
+# Copy the tmux config and tmux-sessionizer, and install tpm and the plugins into ~/.tmux/plugins,
+# each at the commit tmux/plugins.lock pins. tpm loads them when tmux starts. On Ubuntu, have
+# tmux-continuum enable its systemd user unit, which starts tmux at boot and restores the sessions.
 #
 # A temp HOME doesn't isolate the Ubuntu part, which enables the unit in your real user manager.
 # Test it in an ubuntu:26.04 container, which has no user manager, or with systemctl stubbed, as
@@ -17,14 +17,52 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 PLUGIN_DIR="$HOME/.tmux/plugins"
+# Lines of "<owner>/<repo> <commit>". tpm's #ref goes to git clone -b, which takes no commit, so the
+# pins live here, not in tmux.conf. The tests point DOTFILES_TMUX_PLUGINS_LOCK at their own pins.
+PLUGINS_LOCK="${DOTFILES_TMUX_PLUGINS_LOCK:-$DOTFILES_DIR/tmux/plugins.lock}"
 
-# Print the plugins tmux.conf lists, tpm among them, e.g. tmux-plugins/tmux-yank
+# Print the pinned plugins, tpm among them, e.g. tmux-plugins/tmux-yank
 tmux_plugins() {
-    sed -n "s/^set -g @plugin '\(.*\)'/\1/p" "$DOTFILES_DIR/tmux/tmux.conf"
+    awk '!/^#/ && NF { print $1 }' "$PLUGINS_LOCK"
 }
 
+# Print a plugin's pinned commit
+tmux_plugin_pin() {
+    awk -v repo="$1" '$1 == repo { print $2 }' "$PLUGINS_LOCK"
+}
+
+# Succeeds when the plugin's dir is a git checkout of its pinned commit. The .git check stops git
+# from finding a repo above a plain dir.
 plugin_installed() {
-    [ -d "$PLUGIN_DIR/${1##*/}" ]
+    local dir="$PLUGIN_DIR/${1##*/}"
+    [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$(tmux_plugin_pin "$1")" ]
+}
+
+# Check out a plugin at a commit, fetching only that commit. A missing dir or a plain one becomes
+# a new checkout, and an existing checkout moves to the commit, whatever branch it was on.
+install_tmux_plugin() {
+    local repo="$1" sha="$2" dir="$PLUGIN_DIR/${1##*/}"
+    if { [ -d "$dir/.git" ] || git init -q "$dir"; } &&
+        git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha" &&
+        git -C "$dir" checkout -q --detach FETCH_HEAD; then
+        echo "  Installed tmux plugin $repo at ${sha:0:7}"
+        return 0
+    fi
+    echo "  Couldn't install tmux plugin $repo at ${sha:0:7}." >&2
+    return 1
+}
+
+# Install each plugin that isn't at its pin. Fails when one fails, after trying the rest.
+# upgrade.sh runs it too.
+sync_tmux_plugins() {
+    local plugin status=0 changed=false
+    while IFS= read -r plugin; do
+        plugin_installed "$plugin" && continue
+        changed=true
+        install_tmux_plugin "$plugin" "$(tmux_plugin_pin "$plugin")" || status=1
+    done < <(tmux_plugins)
+    "$changed" || echo "  tmux plugins already at their pinned commits."
+    return "$status"
 }
 
 # Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
@@ -75,7 +113,7 @@ status() {
     local plugin
     tmux_files status_file
     while IFS= read -r plugin; do
-        status_check "tmux plugin $plugin" plugin_installed "$plugin"
+        status_check "tmux plugin $plugin at $(tmux_plugin_pin "$plugin" | cut -c1-7)" plugin_installed "$plugin"
     done < <(tmux_plugins)
     if is_ubuntu; then
         status_check "tmux starts at boot (continuum's systemd user unit, $TMUX_BOOT_UNIT)" tmux_boot_enabled
@@ -91,42 +129,14 @@ main() {
         status
         return $?
     fi
-    local plugin missing=false status=0
-    # Without tmux, tpm's install script fails with a misleading "not configured in tmux.conf"
+    local status=0
     require_cmd git || return 1
     require_cmd tmux || return 1
     echo "Copying tmux config..."
     tmux_files copy_file || status=1
     chmod 755 "$HOME/.local/bin/tmux-sessionizer" || status=1
-
-    if plugin_installed tmux-plugins/tpm; then
-        echo "tpm already installed."
-    else
-        echo "Installing tmux plugin manager (tpm)..."
-        git clone https://github.com/tmux-plugins/tpm "$PLUGIN_DIR/tpm" || status=1
-    fi
-
-    while IFS= read -r plugin; do
-        plugin_installed "$plugin" || missing=true
-    done < <(tmux_plugins)
-    if ! "$missing"; then
-        echo "tmux plugins already installed."
-    elif [ ! -x "$PLUGIN_DIR/tpm/bin/install_plugins" ]; then
-        echo "tpm isn't installed, so the tmux plugins aren't either." >&2
-        status=1
-    else
-        echo "Installing tmux plugins..."
-        # tpm reads its settings from a tmux server, and a running one may have loaded an older
-        # config. Point tmux at a socket in a new directory, so tpm starts its own server with
-        # the config above.
-        local tmpdir
-        if tmpdir="$(mktemp -d)"; then
-            env -u TMUX TMUX_TMPDIR="$tmpdir" "$PLUGIN_DIR/tpm/bin/install_plugins" || status=1
-            rm -rf "$tmpdir"
-        else
-            status=1
-        fi
-    fi
+    echo "Installing tmux plugins..."
+    sync_tmux_plugins || status=1
     if is_ubuntu; then
         setup_tmux_boot || status=1
     fi

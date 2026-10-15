@@ -6,9 +6,10 @@ set -euo pipefail
 # On Ubuntu, the tmux step has tmux-continuum enable its systemd user unit, tmux.service, which
 # starts tmux at boot. continuum does that when a tmux server loads tmux.conf, so the step starts
 # one on a new socket, and fails when the unit still isn't enabled. Without a user manager to
-# reach, as in a container, it says so and carries on. A failed tpm clone or plugin install still
-# enables it, then fails the step. macOS skips it. Stubs stand in for tmux and systemctl, then a
-# real tmux server loads the real tmux.conf, with a fake tpm in place of continuum.
+# reach, as in a container, it says so and carries on. A failed plugin install still enables it,
+# then fails the step. macOS skips it. Stubs stand in for tmux and systemctl, and local repos for
+# the plugins' GitHub repos, then a real tmux server loads the real tmux.conf, with a fake tpm in
+# place of continuum.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,6 +17,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 REAL_TMUX="$(command -v tmux || true)"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
+fake_tmux_plugins
 load_script tmux/install.sh
 is_ubuntu() { true; }
 is_macos() { false; }
@@ -32,9 +34,7 @@ esac'
 stub tmux 'echo "TMUX_TMPDIR=$TMUX_TMPDIR TMUX=${TMUX-unset}" >> "'"$SANDBOX"'/tmux-env"
 [ "$1" != start-server ] || [ -e "'"$SANDBOX"'/broken" ] || touch "'"$SANDBOX"'/enabled"'
 # Every plugin is installed, so main goes straight to the unit
-while IFS= read -r plugin; do
-    mkdir -p "$HOME/.tmux/plugins/${plugin##*/}"
-done < <(tmux_plugins)
+sync_tmux_plugins > /dev/null
 
 run status
 assert_contains "$RUN_OUTPUT" "missing    tmux starts at boot (continuum's systemd user unit, tmux.service)"
@@ -73,33 +73,16 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Couldn't reach your systemd user manager"
 assert_file_not_contains "$STUB_LOG" "tmux start-server"
 
-# A failed tpm clone leaves the plugins uninstalled and fails the step, but the unit still gets
-# enabled
+# A failed plugin install fails the step, but the unit still gets enabled
 touch "$SANDBOX/manager"
 rm "$SANDBOX/broken"
-rm -rf "$HOME/.tmux/plugins/tpm"
-stub git 'exit 128'
-assert_exit 1 main
-assert_file_contains "$STUB_LOG" "git clone https://github.com/tmux-plugins/tpm"
-assert_contains "$RUN_OUTPUT" "tpm isn't installed"
-assert_contains "$RUN_OUTPUT" "Enabled tmux.service"
-rm "$STUB_DIR/git"
-
-# So does a failed plugin install, which leaves no temp socket dir behind
-rm "$SANDBOX/enabled"
 rm -rf "$HOME/.tmux/plugins/tmux-open"
-mkdir -p "$HOME/.tmux/plugins/tpm/bin"
-# shellcheck disable=SC2016 # expanded by the fake install_plugins
-printf '#!/bin/sh\necho "TMUX_TMPDIR=$TMUX_TMPDIR" > "%s/install-env"\nexit 1\n' "$SANDBOX" \
-    > "$HOME/.tmux/plugins/tpm/bin/install_plugins"
-chmod +x "$HOME/.tmux/plugins/tpm/bin/install_plugins"
+mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/open"
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Installing tmux plugins"
+assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-open"
 assert_contains "$RUN_OUTPUT" "Enabled tmux.service"
-tmpdir="$(sed -n 's/^TMUX_TMPDIR=//p' "$SANDBOX/install-env")"
-[ -n "$tmpdir" ] && [ ! -e "$tmpdir" ] || fail "install_plugins' socket dir is still there: '$tmpdir'"
-rm -rf "$HOME/.tmux/plugins/tpm/bin"
-mkdir "$HOME/.tmux/plugins/tmux-open"
+mv "$SANDBOX/open" "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open"
+sync_tmux_plugins > /dev/null
 
 # macOS leaves systemd alone
 is_ubuntu() { false; }

@@ -4,8 +4,8 @@ set -euo pipefail
 # The config steps run through setup.sh twice in a sandbox: the second run changes nothing, and
 # --status then reports everything set up apart from the GitHub login and the settings that depend
 # on it. Stubs stand in for what would touch the real machine: gh, the account's login
-# shell (dscl, getent), launchctl, systemctl, chsh, brew, and lib.sh's sudo. tpm's clone from GitHub
-# gets a fake local tpm.
+# shell (dscl, getent), launchctl, systemctl, chsh, brew, and lib.sh's sudo. Local repos stand in
+# for the tmux plugins' GitHub repos.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,7 +14,7 @@ setup_sandbox
 
 STEPS=(git lazygit ssh zsh vim tmux zed editorconfig)
 command -v git &>/dev/null || skip "git isn't installed"
-# The tmux step needs tmux installed, though the fake tpm below never runs it
+# The tmux step needs tmux installed, though nothing here runs it
 if ! command -v tmux &>/dev/null; then
     skip_rest "the tmux step: tmux isn't installed"
     STEPS=(git lazygit ssh zsh vim zed editorconfig)
@@ -34,24 +34,7 @@ stub launchctl '[ "$1" == print ]'
 # covers enabling it
 stub systemctl '[ "$*" == "--user is-enabled --quiet tmux.service" ]'
 
-# A local tpm whose install_plugins makes a directory for each plugin the installed tmux.conf
-# lists, in place of cloning them from GitHub
-TPM_REPO="$SANDBOX/tpm"
-mkdir -p "$TPM_REPO/bin"
-cat > "$TPM_REPO/bin/install_plugins" << 'EOF'
-#!/bin/bash
-printf '%s\n' "install_plugins" >> "$STUB_LOG"
-sed -n "s/^set -g @plugin '\(.*\)'/\1/p" "${XDG_CONFIG_HOME:-$HOME/.config}/tmux/tmux.conf" |
-    while IFS= read -r plugin; do
-        mkdir -p "$HOME/.tmux/plugins/${plugin##*/}"
-    done
-EOF
-chmod +x "$TPM_REPO/bin/install_plugins"
-git -C "$TPM_REPO" -c init.defaultBranch=main init -q
-git -C "$TPM_REPO" add -A
-git -C "$TPM_REPO" -c user.name=test -c user.email=test@example.com commit -qm tpm
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$TPM_REPO.insteadOf"
-export GIT_CONFIG_VALUE_0=https://github.com/tmux-plugins/tpm
+fake_tmux_plugins
 
 assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
 assert_contains "$RUN_OUTPUT" "Copied"
@@ -60,12 +43,8 @@ assert_contains "$RUN_OUTPUT" "Copied"
 
 # The second run copies and adds nothing
 assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
-changes="$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added' || true)"
-assert_eq "" "$changes" "the second run's Copied and Added lines"
-
-if [[ " ${STEPS[*]} " == *" tmux "* ]]; then
-    assert_eq 1 "$(grep -c '^install_plugins$' "$STUB_LOG")" "tpm plugin installs"
-fi
+changes="$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added|Installed' || true)"
+assert_eq "" "$changes" "the second run's Copied, Added, and Installed lines"
 for cmd in brew chsh sudo "launchctl bootstrap"; do
     assert_file_not_contains "$STUB_LOG" "$cmd"
 done

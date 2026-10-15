@@ -22,6 +22,10 @@ test *tests:
 test-ubuntu:
     bash scripts/test-ubuntu.sh
 
+# Move the pinned vim and tmux plugins, and the vendored vim-plug, to their latest versions in this repo, for review
+bump-plugins:
+    bash scripts/bump-plugins.sh
+
 # Run setup.sh: every step, or only the named ones (e.g. just setup git zsh)
 setup *steps:
     bash setup.sh {{steps}}

@@ -243,23 +243,20 @@ upgrade() {
         fi
     fi
 
-    # Plugins the vim and tmux steps install, and vim-plug itself. vim -es skips the vimrc unless
-    # -u names it, and -u alone turns on 'compatible', which breaks the vimrc's line continuations,
-    # hence -N. Keep stdin on the terminal: vim -es exits mid-update when stdin hits end-of-file.
+    # The plugins the vim and tmux steps install, each moved to the commit the repo pins and never
+    # past it; just bump-plugins moves the pins. vim-plug itself stays the version the vim step
+    # installs. vim -es skips the vimrc unless -u names it, and -u alone turns on 'compatible',
+    # which breaks the vimrc's line continuations, hence -N. Keep stdin on the terminal: vim -es
+    # exits mid-update when stdin hits end-of-file.
     if [ -f ~/.vimrc ] && [ -f ~/.vim/autoload/plug.vim ]; then
-        vim -Nes -u ~/.vimrc -i NONE -c PlugUpgrade -c 'PlugUpdate --sync' -c qa || _stage_failed "vim plugins" "$?"
+        vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa || _stage_failed "vim plugins" "$?"
     fi
-    if [ -x ~/.tmux/plugins/tpm/bin/update_plugins ]; then
-        # A socket in a new dir, so tpm starts its own server with the repo's config, not a running
-        # server's older one, as the tmux step does when it installs them
-        local tmpdir status=0
-        if tmpdir="$(mktemp -d)"; then
-            env -u TMUX TMUX_TMPDIR="$tmpdir" ~/.tmux/plugins/tpm/bin/update_plugins all || status=$?
-            rm -rf "$tmpdir"
-        else
-            status=1
-        fi
-        [ "$status" -eq 0 ] || _stage_failed "tmux plugins" "$status"
+    # In its own bash, since the step's script sets its own shell options and sources lib/common.sh
+    # again
+    if [ -d ~/.tmux/plugins/tpm ]; then
+        # shellcheck disable=SC2016 # expanded by the inner bash
+        "$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$DOTFILES_DIR" ||
+            _stage_failed "tmux plugins" "$?"
     fi
 
     # mise removes the Node versions upgrade moves away from once upgrade.prune_after passes (24h by

@@ -307,8 +307,8 @@ stage_doc() {
         upgrade:fc-cache) echo 'font cache' ;;
         "upgrade:self-updating casks") echo 'brew upgrade --cask --greedy <cask>' ;;
         upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins") echo PlugUpgrade ;;
-        "upgrade:tmux plugins") echo 'update_plugins all' ;;
+        "upgrade:vim plugins") echo PlugUpdate ;;
+        "upgrade:tmux plugins") echo 'tmux/plugins.lock' ;;
         upgrade:mise) echo 'mise upgrade' ;;
         upgrade:npm) echo 'npm update -g' ;;
         upgrade:uv) echo 'uv tool upgrade --all' ;;
@@ -337,6 +337,7 @@ stage_code() {
         upgrade:fc-cache) echo 'fc-cache -f' ;;
         upgrade:rustup) echo '"$rustup" update' ;;
         "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
+        "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
         'upgrade-ai-tools:npm $pkg') echo 'npm install -g "$pkg@latest"' ;;
         "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools ' ;;
         "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;

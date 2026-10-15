@@ -1,20 +1,41 @@
 #!/bin/bash
 set -euo pipefail
 
-# The vimrc, as the vim step installs it, creates its undo dir, starts without errors when
-# vim-plug's download fails, leaves no half-written plug.vim behind, and installs vim-plug on a
-# later start. curl is stubbed, and the vim-plug it "downloads" is a
-# fake with no plugins, so nothing reaches the network.
+# The vim step installs the vendored vim-plug, and status flags a copy that differs until a re-run
+# restores it. The vimrc downloads nothing, pins every plugin to a commit, creates its undo dir,
+# and starts without errors with or without vim-plug. A fake vim-plug with no plugins stands in
+# for the real one when vim starts, so nothing reaches the network.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+PLUG="$HOME/.vim/autoload/plug.vim"
+
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
+assert_contains "$RUN_OUTPUT" "Installed vim-plug"
+cmp -s "$REPO_DIR/vim/plug.vim" "$PLUG" || fail "the step didn't install vim/plug.vim at $PLUG"
+assert_exit 0 bash "$REPO_DIR/vim/install.sh" --status
+assert_contains "$RUN_OUTPUT" "ok         vim-plug at the pinned version (~/.vim/autoload/plug.vim)"
+assert_exit 0 bash "$REPO_DIR/vim/install.sh"
+assert_contains "$RUN_OUTPUT" "vim-plug is already at the pinned version"
+
+# A copy that differs, such as one vim-plug's PlugUpgrade wrote, is missing until a re-run
+echo '" changed' >> "$PLUG"
+assert_exit 3 bash "$REPO_DIR/vim/install.sh" --status
+assert_contains "$RUN_OUTPUT" "missing    vim-plug at the pinned version (~/.vim/autoload/plug.vim)"
+assert_exit 0 bash "$REPO_DIR/vim/install.sh"
+cmp -s "$REPO_DIR/vim/plug.vim" "$PLUG" || fail "a re-run didn't restore $PLUG"
+
+# vim-plug ships with the repo, so the vimrc never downloads it, and vims starting at once can't
+# race to write it
+assert_file_not_contains "$REPO_DIR/vim/vimrc" "curl"
+assert_file_not_contains "$REPO_DIR/vim/vimrc" "raw.githubusercontent.com"
+# Every plugin is pinned to a full commit
+unpinned="$(grep -E "^ *Plug '" "$REPO_DIR/vim/vimrc" | grep -vE "'commit': '[0-9a-f]{40}'" || true)"
+assert_eq "" "$unpinned" "Plug lines without a pinned commit"
 
 command -v vim &> /dev/null || skip "vim isn't installed"
-
-PLUG="$HOME/.vim/autoload/plug.vim"
 
 # Start vim on the vimrc and quit. -es skips the vimrc unless -u names it, and exits 1 when a
 # command in it fails.
@@ -22,22 +43,14 @@ start_vim() {
     vim -Nes -u "$HOME/.vimrc" -c 'qa!' 2>&1
 }
 
-# A download that fails partway leaves a partial file where curl was told to write, then fails
-stub curl 'while [ $# -gt 0 ]; do case "$1" in -*o) out="$2"; shift ;; esac; shift; done
-mkdir -p "$(dirname "$out")" && echo "partial" > "$out"
-exit 56'
+# Without vim-plug, vim starts without plugins and without errors
+rm "$PLUG"
 assert_exit 0 start_vim
-assert_not_contains "$RUN_OUTPUT" "E117" "vim output offline"
-assert_not_contains "$RUN_OUTPUT" "E121" "vim output offline"
-[ ! -e "$PLUG" ] || fail "a failed download left $PLUG"
-[ ! -e "$PLUG.tmp" ] || fail "a failed download left $PLUG.tmp"
-assert_eq 1 "$(grep -c '^curl' "$STUB_LOG")" "curl runs offline"
+assert_not_contains "$RUN_OUTPUT" "E117" "vim output without vim-plug"
 [ -d "$HOME/.vim/undodir" ] || fail "vim didn't create ~/.vim/undodir"
 
-# A temp file left by an interrupted start doesn't stop the next download
-echo "partial" > "$PLUG.tmp"
-stub curl 'while [ $# -gt 0 ]; do case "$1" in -*o) out="$2"; shift ;; esac; shift; done
-mkdir -p "$(dirname "$out")" && cat > "$out" << "EOF"
+# With vim-plug, the vimrc loads it
+cat > "$PLUG" << "EOF"
 let g:plugs = {}
 function! plug#begin(...)
 endfunction
@@ -45,16 +58,9 @@ function! plug#end()
     let g:fake_plug_loaded = 1
 endfunction
 command! -nargs=+ -bar Plug :
-EOF'
+EOF
 run vim -Nes -u "$HOME/.vimrc" -c 'if !exists("g:fake_plug_loaded") | cquit | endif' -c 'qa!'
-assert_eq 0 "$RUN_STATUS" "vim's status once the download works. Its output: $RUN_OUTPUT"
-assert_file_contains "$PLUG" "fake_plug_loaded"
-[ ! -e "$PLUG.tmp" ] || fail "the download left $PLUG.tmp"
-
-# With vim-plug in place, vim doesn't download it again
-: > "$STUB_LOG"
-assert_exit 0 start_vim
-assert_eq 0 "$(grep -c '^curl' "$STUB_LOG")" "curl runs with vim-plug installed"
+assert_eq 0 "$RUN_STATUS" "vim's status with vim-plug. Its output: $RUN_OUTPUT"
 
 # Inside tmux, the mouse works past column 223 and reports drags: Vim uses SGR mouse codes there.
 # Vim 9.2 leaves ttymouse at xterm under tmux's TERM, so the vimrc sets it. A tmux server on the

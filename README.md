@@ -59,8 +59,8 @@ bash setup.sh
 | `lazygit` | Copies the lazygit config |
 | `ssh` | Makes `~/.ssh` private. On macOS, keeps your keys in the keychain and loads them at login |
 | `zsh` | Copies the zsh and starship config, adds its lines to `~/.zshrc` and the other startup files, and offers to make zsh the login shell |
-| `vim` | Copies the vim config |
-| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins. On Ubuntu, sets tmux to start at boot |
+| `vim` | Copies the vim config and installs vim-plug |
+| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
 | `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
 | `editorconfig` | Copies `~/.editorconfig` |
@@ -180,7 +180,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
   - [vim-airline](https://github.com/vim-airline/vim-airline) with [vim-airline-themes](https://github.com/vim-airline/vim-airline-themes)
 - Relative line numbers, persistent undo, smart case search, a space leader key, and the mouse in tmux too
 - `Space e` toggles NERDTree. `Space f` finds files, `Space /` searches contents with ripgrep, and `Space b` lists buffers
-- Copied to `~/.vimrc`. vim installs vim-plug and missing plugins when it starts
+- Copied to `~/.vimrc`, with the vim-plug release the repo vendors. vim installs missing plugins when it starts, at the commits `vim/vimrc` pins
 
 ### zsh
 
@@ -443,13 +443,15 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step, then `brew cleanup`. On Ubuntu it then refreshes the font cache.
 - Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
-- vim plugins: vim-plug's `PlugUpgrade`, then `PlugUpdate`.
-- tmux plugins: tpm's `update_plugins all`.
+- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `vim/vimrc` pins.
+- tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
 - Global npm packages: `npm update -g`
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
+
+Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
 
 macOS itself updates from **System Settings → General → Software Update**, and snapd updates the Ghostty snap.
 
@@ -489,12 +491,15 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 
 Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
+Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result, then re-run `bash setup.sh vim tmux` on each machine.
+
 After a full verification round, add its results to the top of [`COMPATIBILITY.md`](./COMPATIBILITY.md). [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 
 ```sh
 just check                # shellcheck every script, syntax-check the zsh files, and check the docs, skills, and Claude settings keys against the code
 just test [name...]       # bash tests/run.sh, which runs each test in tests/ in a temp HOME with stub commands
 just test-ubuntu          # bash scripts/test-ubuntu.sh: a full Ubuntu setup in a throwaway OrbStack machine
+just bump-plugins         # bash scripts/bump-plugins.sh, which moves the plugin pins to the latest versions
 ```
 
 ## License

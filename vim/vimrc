@@ -1,28 +1,20 @@
-" Install vim-plug if it's missing, and any missing plugins on every start
-" (https://github.com/junegunn/vim-plug/wiki/tips#automatic-installation).
-" curl writes to a temp file that replaces plug.vim only when the download
-" succeeds, so an interrupted one leaves nothing for the next start to load.
-" Offline, vim starts without plugins and tries again next time.
+" The vim step installs vim-plug, and vim installs any missing plugins, at
+" their pinned commits, when it starts. Without vim-plug, vim starts without
+" plugins.
 let s:plug = expand('~/.vim/autoload/plug.vim')
-if !filereadable(s:plug)
-    silent execute '!curl --connect-timeout 5 --max-time 30 -fsLo ' . shellescape(s:plug . '.tmp') . ' --create-dirs'
-        \ 'https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
-        \ '&& mv -f' shellescape(s:plug . '.tmp') shellescape(s:plug)
-        \ '|| rm -f' shellescape(s:plug . '.tmp')
-endif
-
 if filereadable(s:plug)
     autocmd VimEnter * if len(filter(values(g:plugs), '!isdirectory(v:val.dir)'))
         \| PlugInstall --sync | source $MYVIMRC
     \| endif
 
+    " Plugins are pinned to commits; just bump-plugins moves the pins
     call plug#begin('~/.vim/plugged')
     " Sensible defaults
-    Plug 'tpope/vim-sensible'
+    Plug 'tpope/vim-sensible', { 'commit': '0ce2d843d6f588bb0c8c7eec6449171615dc56d9' }
 
     " File navigation
-    Plug 'preservim/nerdtree', { 'on': 'NERDTreeToggle' }
-    Plug 'Xuyuanp/nerdtree-git-plugin', { 'on': 'NERDTreeToggle' }
+    Plug 'preservim/nerdtree', { 'on': 'NERDTreeToggle', 'commit': '690d061b591525890f1471c6675bcb5bdc8cdff9' }
+    Plug 'Xuyuanp/nerdtree-git-plugin', { 'on': 'NERDTreeToggle', 'commit': 'e1fe727127a813095854a5b063c15e955a77eafb' }
 
     " Fuzzy finder (use brew-installed fzf). $HOMEBREW_PREFIX is unset when vim
     " doesn't start from a shell that loaded brew, so try each prefix after it.
@@ -32,30 +24,30 @@ if filereadable(s:plug)
             break
         endif
     endfor
-    Plug 'junegunn/fzf.vim'
+    Plug 'junegunn/fzf.vim', { 'commit': '023de3c0e158ff9c2b0992175af10be97c2f2158' }
 
     " Git
-    Plug 'airblade/vim-gitgutter'
-    Plug 'tpope/vim-fugitive'
+    Plug 'airblade/vim-gitgutter', { 'commit': '90b75207bd9b55d8ac4af15f72b4e935462014d0' }
+    Plug 'tpope/vim-fugitive', { 'commit': '3b753cf8c6a4dcde6edee8827d464ba9b8c4a6f0' }
 
     " Tmux integration (seamless Ctrl+hjkl navigation between vim and tmux)
-    Plug 'christoomey/vim-tmux-navigator'
+    Plug 'christoomey/vim-tmux-navigator', { 'commit': 'e41c431a0c7b7388ae7ba341f01a0d217eb3a432' }
 
     " Editing essentials
-    Plug 'tpope/vim-commentary'
-    Plug 'tpope/vim-surround'
-    Plug 'tpope/vim-repeat'
-    Plug 'jiangmiao/auto-pairs'
-    Plug 'andymass/vim-matchup'
+    Plug 'tpope/vim-commentary', { 'commit': '64a654ef4a20db1727938338310209b6a63f60c9' }
+    Plug 'tpope/vim-surround', { 'commit': '3d188ed2113431cf8dac77be61b842acb64433d9' }
+    Plug 'tpope/vim-repeat', { 'commit': '65846025c15494983dafe5e3b46c8f88ab2e9635' }
+    Plug 'jiangmiao/auto-pairs', { 'commit': '39f06b873a8449af8ff6a3eee716d3da14d63a76' }
+    Plug 'andymass/vim-matchup', { 'commit': '0106b1afd4a2f7e1098037b5ceb161bab7471088' }
 
     " Status line
-    Plug 'vim-airline/vim-airline'
-    Plug 'vim-airline/vim-airline-themes'
+    Plug 'vim-airline/vim-airline', { 'commit': '8dc1bd0a116de527f6bc58c1d04386ba357c624f' }
+    Plug 'vim-airline/vim-airline-themes', { 'commit': '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab' }
 
     " Language support
     " Its Go tools (gopls and others) take minutes to install, so run :GoInstallBinaries once by hand
-    Plug 'fatih/vim-go'
-    Plug 'rust-lang/rust.vim'
+    Plug 'fatih/vim-go', { 'commit': '47694979496d4bf2e90ce75d95f1dec3f41cbefb' }
+    Plug 'rust-lang/rust.vim', { 'commit': '889b9a7515db477f4cb6808bef1769e53493c578' }
     call plug#end()
 endif
 

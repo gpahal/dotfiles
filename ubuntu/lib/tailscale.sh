@@ -3,7 +3,9 @@
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
 # Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
-# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does.
+# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
+# anything else running as you, and `tailscale funnel` too, which puts a port on the internet, when
+# the tailnet policy grants the funnel attribute.
 tailscale_configured() {
     local prefs
     prefs="$(tailscale debug prefs 2>/dev/null)" || return 1

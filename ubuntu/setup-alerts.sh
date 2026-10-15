@@ -2,9 +2,12 @@
 set -euo pipefail
 
 # Push the alerts to a phone through ntfy: smartd's disk warnings, the UPS's events, the daily
-# health alert, and the boot notice. Save a topic's URL in /etc/dotfiles/ntfy-url, which the hooks
+# health alert, and the boot notice. Ask for a topic name, which goes to ntfy.sh, or a topic's full
+# https URL, without showing what you type, save the URL in /etc/dotfiles/ntfy-url, which the hooks
 # the ubuntu step installs (ubuntu/smartd-notify.sh and ubuntu/ups-notify.sh) and
-# ubuntu/health-alert.sh read, and send a test push.
+# ubuntu/health-alert.sh read, and send a test push. The topic is the URL's only secret, so it's
+# read from the terminal, or stdin, never taken as an argument, which any user can read, and no
+# message shows it.
 # --test runs the installed smartd hook with a made-up warning, and the UPS notifier, when a UPS is
 # set up, with a test event, which they push to ntfy. The topic is yours to pick, so setup.sh
 # doesn't run this. Idempotent: safe to re-run.
@@ -21,10 +24,37 @@ UPS_NOTIFY=/usr/local/libexec/dotfiles-ups-notify
 NTFY_URL_FILE=/etc/dotfiles/ntfy-url
 
 usage() {
-    echo "Usage: bash ubuntu/setup-alerts.sh <ntfy-url> | --test (or: just alerts <ntfy-url> | test)"
-    echo "Saves the ntfy topic URL in $NTFY_URL_FILE, and sends a test push. Four alerts go there:"
-    echo "smartd's disk warnings, the UPS's events, the daily health alert, and the boot notice."
-    echo "--test runs the disk warning hook and the UPS notifier with test events. Ubuntu only."
+    echo "Usage: bash ubuntu/setup-alerts.sh [--test] (or: just alerts [test])"
+    echo "Asks for a ntfy topic name (on ntfy.sh) or a topic's https URL, saves the URL in"
+    echo "$NTFY_URL_FILE, and sends a test push. Four alerts go there: smartd's disk warnings,"
+    echo "the UPS's events, the daily health alert, and the boot notice. The URL isn't an argument,"
+    echo "since any user can read those. --test runs the disk warning hook and the UPS notifier with"
+    echo "test events. Ubuntu only."
+}
+
+# Read the topic or URL: hidden from a terminal, else a line from stdin. Prints it trimmed.
+read_topic() {
+    local input=""
+    if [ -t 0 ]; then
+        read -rs -p "ntfy topic or URL (hidden): " input || true
+        echo >&2
+    else
+        read -r input || true
+    fi
+    input="${input#"${input%%[![:space:]]*}"}"
+    printf '%s' "${input%"${input##*[![:space:]]}"}"
+}
+
+# Print the topic URL for a topic name, as ntfy.sh's, or a full https URL, as given. Fails for
+# anything else. A topic name follows ntfy's rule.
+topic_url() {
+    if [[ "$1" =~ ^https://[^[:space:]/]+/[^[:space:]]+$ ]]; then
+        printf '%s' "$1"
+    elif [[ "$1" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
+        printf 'https://ntfy.sh/%s' "$1"
+    else
+        return 1
+    fi
 }
 
 # Prints nothing when the file is missing or unreadable
@@ -76,32 +106,28 @@ run_test_ups() {
 
 main() {
     local url status=0
-    case "${1:-}" in
-        -h | --help)
+    case "$#:${1:-}" in
+        1:-h | 1:--help)
             usage
             return 0
             ;;
-        "")
+        0: | 1:--test) ;;
+        *)
             usage >&2
             return 2
             ;;
     esac
-    if [ $# -gt 1 ]; then
-        usage >&2
-        return 2
-    fi
     if ! is_ubuntu; then
         echo "The alerts are Ubuntu only. Nothing to do here."
         return 0
     fi
-    if [ "$1" == --test ]; then
+    if [ $# -eq 1 ]; then
         run_test_warning || status=$?
         run_test_ups || status=1
         return "$status"
     fi
-    url="$1"
-    if ! [[ "$url" =~ ^https://[^[:space:]/]+/[^[:space:]]+$ ]]; then
-        echo "Not an https ntfy topic URL: $url. Give one such as https://ntfy.sh/<topic>." >&2
+    if ! url="$(topic_url "$(read_topic)")"; then
+        echo "Not a ntfy topic name or https topic URL." >&2
         return 2
     fi
     require_cmd curl || return 1
@@ -123,7 +149,7 @@ main() {
     if send_test_push "$url"; then
         echo "  Sent a test push. Check that it reached your phone."
     else
-        echo "  The test push failed. Check the URL, then run just alerts test." >&2
+        echo "  The test push failed. Check the topic, then run just alerts test." >&2
         return 1
     fi
 }

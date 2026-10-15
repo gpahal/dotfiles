@@ -10,6 +10,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+load_script lib/common.sh
 PLUG="$HOME/.vim/autoload/plug.vim"
 
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
@@ -48,6 +49,11 @@ rm "$PLUG"
 assert_exit 0 start_vim
 assert_not_contains "$RUN_OUTPUT" "E117" "vim output without vim-plug"
 [ -d "$HOME/.vim/undodir" ] || fail "vim didn't create ~/.vim/undodir"
+# The undo files hold what you typed, so only you can open the dir
+assert_eq 700 "$(file_mode "$HOME/.vim/undodir")" "the undo dir's mode"
+# Modelines are off, so a file can't set options
+run vim -Nes -u "$HOME/.vimrc" -c 'if &modeline | cquit | endif' -c 'qa!'
+assert_eq 0 "$RUN_STATUS" "vim's status checking modeline is off. Its output: $RUN_OUTPUT"
 
 # With vim-plug, the vimrc loads it
 cat > "$PLUG" << "EOF"

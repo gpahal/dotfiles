@@ -46,9 +46,9 @@ git-signing:
 touch-id:
     bash macos/setup-touch-id-sudo.sh
 
-# On Ubuntu, push the disk warnings, UPS events, daily health alert, and boot notice to a ntfy topic and send a test push (e.g. just alerts https://ntfy.sh/<topic>), or with test, run the disk warning and UPS hooks with test events
-alerts url:
-    @case {{quote(url)}} in test) bash ubuntu/setup-alerts.sh --test ;; *) bash ubuntu/setup-alerts.sh {{quote(url)}} ;; esac
+# On Ubuntu, ask for a ntfy topic, or its URL, and push the disk warnings, UPS events, daily health alert, and boot notice to it, with a test push, or with test, run the disk warning and UPS hooks with test events
+alerts mode="":
+    @case {{quote(mode)}} in "") bash ubuntu/setup-alerts.sh ;; test) bash ubuntu/setup-alerts.sh --test ;; *) echo "Usage: just alerts [test]" >&2; exit 2 ;; esac
 
 # Add a block for a host you SSH to, such as the Ubuntu machine, to ~/.ssh/config (e.g. just ssh-host box box.tail1234.ts.net)
 ssh-host alias hostname="":

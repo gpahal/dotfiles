@@ -315,6 +315,18 @@ load_script() {
     _stubs_first
 }
 
+# Copy a root ntfy hook (ubuntu/smartd-notify.sh or ubuntu/ups-notify.sh) to <dest>, with its
+# NTFY_URL_FILE and NTFY_LIB constants pointed at <url-file> and <lib>. The hooks hard-code the
+# installed paths, since root runs them, so no variable may redirect them.
+# e.g. ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/ntfy-url" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$SANDBOX/hook"
+ntfy_hook_copy() {
+    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
+        "$REPO_DIR/$1" > "$4"
+    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4"; then
+        fail "$1 has no NTFY_URL_FILE= or NTFY_LIB= line to point at the sandbox"
+    fi
+}
+
 # Run a command in a subshell with errexit on, as a step's own `set -e` would run it, and keep
 # its combined stdout and stderr in $RUN_OUTPUT and its exit status in $RUN_STATUS. It always
 # succeeds, so a test under set -e carries on.

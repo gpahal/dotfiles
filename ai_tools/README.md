@@ -69,7 +69,7 @@ Install **(script)** with the native installer, which auto-updates. Browser cont
 
 Claude Code notifies when it finishes or waits on a permission prompt while you're away from the terminal. It sends desktop notifications in Ghostty, iTerm2, and kitty, inside tmux too. In other terminals, such as Apple Terminal, set `"preferredNotifChannel": "terminal_bell"`.
 
-The script turns on push notifications to the Claude phone app, and Remote Control for all sessions, which pushes need **(script)**. If `/config` shows **No mobile registered**, open the Claude app once. Docs: [Mobile push notifications](https://code.claude.com/docs/en/remote-control#mobile-push-notifications).
+The script turns on push notifications to the Claude phone app, and leaves Remote Control off **(script)**. Pushes need Remote Control, so they come only from a session you connect with `/remote-control`. If `/config` shows **No mobile registered**, open the Claude app once. Docs: [Mobile push notifications](https://code.claude.com/docs/en/remote-control#mobile-push-notifications).
 
 ### Browser (Claude in Chrome)
 
@@ -199,6 +199,8 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. It runs `claude-code`, `codex`, `t3-code`, `skills`, and `manual-steps`. They set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
+Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file.
+
 ### Notifications over SSH
 
 Claude Code and Codex send notifications as escape sequences, which travel over SSH to Ghostty on the Mac. A tmux pane may not know it's in Ghostty, so the script sets Claude Code's channel to `ghostty` and Codex's to `osc9` **(script)**, unless you've set your own. Check it with `scripts/test-notification.sh` inside tmux over SSH.
@@ -207,7 +209,7 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
-- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773 with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
+- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
 - **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service failed in the meantime, run `systemctl --user reset-failed t3code` first, or systemd refuses to start it for 5 minutes.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.

@@ -87,7 +87,9 @@ case "$family" in
         ;;
     codex)
         # multi_agent is off because --ephemeral sessions can't start sub-agents. Auth still
-        # works without the user config: it lives in $CODEX_HOME/auth.json.
+        # works without the user config: it lives in $CODEX_HOME/auth.json. The read-only
+        # sandbox lets the reviewer read any file you can, so instructions planted in a reviewed
+        # diff could get a secret quoted into its answer.
         codex exec --model "$model" -c "model_reasoning_effort=\"$effort\"" \
             -c 'approval_policy="never"' --ignore-user-config --ignore-rules \
             --sandbox read-only --disable multi_agent --ephemeral --cd "$root" \

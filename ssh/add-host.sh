@@ -39,12 +39,14 @@ main() {
     fi
     mkdir -p "$HOME/.ssh"
     chmod 700 "$HOME/.ssh"
+    # While the shared connection is open, anything running as you can open sessions over it
+    # without authenticating, so it closes a minute after the last session
     block="Host $alias
   HostName $hostname
   ServerAliveInterval 30
   ControlMaster auto
   ControlPath ~/.ssh/cm-%C
-  ControlPersist 10m"
+  ControlPersist 1m"
     add_block "$block" || return 1
     chmod 600 "$SSH_CONFIG"
     echo "Added a block for $alias ($hostname) to $SSH_CONFIG. Connect with: ssh $alias"

@@ -79,6 +79,8 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
+**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs or trusts them without a pinned checksum or key fingerprint, as each vendor's instructions do, so a vendor's HTTPS server decides what runs.
+
 **XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
 
 The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md). It needs Node from the `runtimes` step.
@@ -92,7 +94,7 @@ just status [quick]       # bash setup.sh --status, then bash ai_tools/setup.sh 
 just git-signing          # bash git/setup-signing.sh, see "Commit signing"
 just touch-id             # bash macos/setup-touch-id-sudo.sh, see "Touch ID for sudo"
 just ssh-host <alias> [hostname]   # bash ssh/add-host.sh, see "SSH"
-just alerts <ntfy-url|test>   # bash ubuntu/setup-alerts.sh, see "Phone alerts" in Manual steps for Ubuntu
+just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in Manual steps for Ubuntu
 ```
 
 ## Ubuntu
@@ -120,8 +122,8 @@ The Ubuntu machine stays on so the Mac and the phone can reach its agents at any
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
 - **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.
-- **Tailscale.** Once you've logged in, Tailscale updates itself, and `tailscale serve` works without `sudo`. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
-- **Firewall.** ufw lets SSH in only from private addresses and the tailnet. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
+- **Tailscale.** Once you've logged in, Tailscale updates itself, and `tailscale serve` works without `sudo`. So can anything else running as you, and it can run `tailscale funnel` too, which opens a port to the internet, if the tailnet's policy grants funnel. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
+- **Firewall.** ufw lets SSH in only from private addresses, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
 - **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`. For containers to reach a port on the host, run `sudo ufw allow in on docker0`.
 - **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
 
@@ -167,7 +169,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 ### SSH
 
 - On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
-- `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open 10 minutes after the last session closes. `ssh -O exit <alias>` closes it
+- `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
 
 ### vim
 
@@ -212,7 +214,7 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 ### Zed
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
-- Settings and keymap copied to `~/.config/zed/`. AI features are off
+- Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
 
 ### tmux
 
@@ -403,7 +405,7 @@ Once, before or right after setup:
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the Ubuntu desktop, open Solaar and pair your devices.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need a desktop session, and a reboot ends it. Turn on GNOME's Remote Login in **Settings → System → Remote Desktop**, set its username and password, and connect over Tailscale with the Mac's Windows App. Or turn on automatic login in GDM, which starts a session at boot but leaves the login keyring locked.
-13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts https://ntfy.sh/<topic>`, then `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
+13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts`. Paste the topic name at its prompt, which hides it, or a full `https://` URL for a topic on another ntfy server. Then run `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
 14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Test it: unplug the UPS from the wall and wait for the low-battery push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` starts the shutdown at once). Plug it back in, and check that the machine starts and `just status` reports the UPS on mains. Separately, check the fallback for a UPS that keeps its power on, at the machine: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power.
 15. **Backups.** Back up `~`, including `~/.t3` and `~/.worktrees`, and `/var/lib/docker/volumes` off the machine, with restic or Borg on a schedule. Restore a few files once to check it.
 16. **Livepatch (optional).** With a free Ubuntu Pro token, run `sudo pro attach <token>` and `sudo pro enable livepatch` for kernel fixes without a reboot.

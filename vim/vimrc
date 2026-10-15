@@ -120,8 +120,12 @@ set noswapfile
 set nobackup
 set undofile
 set undodir=~/.vim/undodir
-" Vim doesn't create undodir, and without it saves no undo history
-silent! call mkdir(expand('~/.vim/undodir'), 'p')
+" Vim doesn't create undodir, and without it saves no undo history. 0o700, since undo files hold
+" what you typed.
+silent! call mkdir(expand('~/.vim/undodir'), 'p', 0o700)
+" EditorConfig sets per-file settings, and modelines, which let a file set options, have a history
+" of CVEs
+set nomodeline
 
 " ── Splits ──
 set splitbelow

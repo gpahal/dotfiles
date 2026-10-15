@@ -60,8 +60,11 @@ if orb list -q | grep -qx "$MACHINE"; then
     exit 1
 fi
 
-LOG="$(mktemp /tmp/dotfiles-test-ubuntu.XXXXXX)"
-VM_OUT_FILE="$LOG.step"
+# Both files in a dir only you can open, since another user could put a link at a name derived
+# from the log's in a shared /tmp
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-test-ubuntu.XXXXXX")"
+LOG="$LOG_DIR/log"
+VM_OUT_FILE="$LOG_DIR/step"
 KEY_DIR=""
 echo "Logging to $LOG"
 

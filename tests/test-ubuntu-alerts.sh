@@ -2,16 +2,20 @@
 set -euo pipefail
 
 # smartd's warning hook (ubuntu/smartd-notify.sh) pushes the warning to ntfy when a URL is set,
-# through the installed ntfy code it sources, logging what fails and always exiting 0. And ubuntu/setup-alerts.sh, which saves the URL, names
-# the four alerts that go there, and runs the hook with a test warning and the UPS notifier, when
-# installed, with a test event. curl, logger, sudo, and id are stubs.
+# through the installed ntfy code it sources, logging what fails and always exiting 0. It runs as
+# root, so it reads only the installed paths, and a copy points them into the sandbox. ntfy_push
+# sends the message as is, even one starting with @. And ubuntu/setup-alerts.sh, which reads a
+# topic or URL without showing it, saves the URL, names the four alerts that go there, and runs the
+# hook with a test warning and the UPS notifier, when installed, with a test event. curl, logger,
+# sudo, and id are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-HOOK="$REPO_DIR/ubuntu/smartd-notify.sh"
-export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_NTFY_LIB="$REPO_DIR/ubuntu/lib/ntfy.sh"
+URL_FILE="$SANDBOX/ntfy-url"
+HOOK="$SANDBOX/smartd-notify.sh"
+ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
 
 # curl logs the config it reads from stdin with -K -, one "curl config:" line each
 stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
@@ -32,9 +36,9 @@ assert_file_not_contains "$STUB_LOG" "logger"
 
 # A URL set: it pushes the warning, urgent. The URL goes to curl on stdin, since any user can read
 # a process's arguments, and the topic is its secret.
-echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
+echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-binary Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
@@ -50,14 +54,28 @@ fi
 rm "$SANDBOX/curl-fails"
 
 # Quotes and backslashes in the URL are escaped for curl's config
-printf '%s\n' 'https://ntfy.sh/a"b\c' > "$DOTFILES_NTFY_URL_FILE"
+printf '%s\n' 'https://ntfy.sh/a"b\c' > "$URL_FILE"
 run_hook
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/a\"b\\c"'
+echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
+
+# A message starting with @ goes as text, never as a file for curl to read
+: > "$STUB_LOG"
+assert_exit 0 env SMARTD_MESSAGE=@/etc/passwd "$BASH" "$HOOK"
+assert_file_contains "$STUB_LOG" "--data-raw @/etc/passwd -K -"
 
 # Without its ntfy code, it logs that and exits 0
-DOTFILES_NTFY_LIB="$SANDBOX/no-ntfy.sh" run_hook
+ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$SANDBOX/no-ntfy.sh" "$HOOK"
+run_hook
 assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: $SANDBOX/no-ntfy.sh is missing"
 assert_file_not_contains "$STUB_LOG" "curl"
+
+# The hook in the repo ignores the old test variables, so nothing can point root at another file
+: > "$STUB_LOG"
+assert_exit 0 env DOTFILES_NTFY_URL_FILE="$URL_FILE" DOTFILES_NTFY_LIB="$REPO_DIR/ubuntu/lib/ntfy.sh" \
+    SMARTD_MESSAGE=test "$BASH" "$REPO_DIR/ubuntu/smartd-notify.sh"
+assert_file_not_contains "$STUB_LOG" "curl"
+ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
 
 # --- setup-alerts.sh ---
 load_script ubuntu/setup-alerts.sh
@@ -70,30 +88,39 @@ stub sudo 'for a in "$@"; do case "$a" in /etc/*) echo "refused: $a" >&2; exit 1
 exec "$@"'
 URL=https://ntfy.sh/my-topic
 
-assert_exit 2 main
-assert_exit 2 main not-a-url
-assert_contains "$RUN_OUTPUT" "Not an https ntfy topic URL"
-assert_exit 2 main https://ntfy.sh/
+# The topic or URL comes on stdin, never as an argument, which any user could read
+assert_exit 2 main "$URL"
+assert_exit 2 main --test extra
+assert_exit 2 main <<< "not a topic"
+assert_contains "$RUN_OUTPUT" "Not a ntfy topic name or https topic URL."
+assert_not_contains "$RUN_OUTPUT" "not a topic"
+assert_exit 2 main <<< "https://ntfy.sh/"
+assert_exit 2 main <<< ""
+assert_exit 2 main <<< "$(printf 'x%.0s' $(seq 1 65))"
 # The topic is a secret, so it never goes out unencrypted
-assert_exit 2 main http://ntfy.sh/my-topic
+assert_exit 2 main <<< "http://ntfy.sh/my-topic"
+assert_not_contains "$RUN_OUTPUT" "my-topic"
+[ ! -e "$NTFY_URL_FILE" ] || fail "an invalid value was saved"
 assert_exit 0 main --help
-assert_contains "$RUN_OUTPUT" "Usage: bash ubuntu/setup-alerts.sh <ntfy-url> | --test (or: just alerts <ntfy-url> | test)"
-assert_contains "$RUN_OUTPUT" "smartd's disk warnings, the UPS's events, the daily health alert, and the boot notice"
+assert_contains "$RUN_OUTPUT" "Usage: bash ubuntu/setup-alerts.sh [--test] (or: just alerts [test])"
+assert_contains "$RUN_OUTPUT" "the UPS's events, the daily health alert, and the boot notice"
 
 # Declined: nothing saved, nothing sent
 : > "$STUB_LOG"
-assert_exit 0 main "$URL"
+assert_exit 0 main <<< my-topic
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
 [ ! -e "$NTFY_URL_FILE" ] || fail "the URL was saved without a yes"
 assert_file_not_contains "$STUB_LOG" "curl"
 
-# Approved: saved, readable by every user so the health alerts can read it, and a test push sent
+# Approved: a bare topic, with surrounding spaces, saved as ntfy.sh's URL, readable by every user
+# so the health alerts can read it, and a test push sent. The output never shows the topic.
 export DOTFILES_ASSUME_YES=1
-assert_exit 0 main "$URL"
+assert_exit 0 main <<< "  my-topic "
 assert_contains "$RUN_OUTPUT" "ntfy URL for the disk, UPS, health, and boot alerts ($NTFY_URL_FILE):"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
-assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-binary Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
+assert_not_contains "$RUN_OUTPUT" "my-topic"
+assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-raw Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 assert_eq 644 "$(file_mode "$NTFY_URL_FILE")" "the URL file's mode"
 assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10"
@@ -102,16 +129,22 @@ if grep '^curl -' "$STUB_LOG" | grep -q my-topic; then
     fail "the test push's curl arguments name the ntfy topic"
 fi
 
-# Again: already set, so nothing is written or sent
+# Again, as the full URL: already set, so nothing is written or sent
 : > "$STUB_LOG"
-assert_exit 0 main "$URL"
+assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "Already set"
+assert_not_contains "$RUN_OUTPUT" "my-topic"
 assert_file_not_contains "$STUB_LOG" "curl"
+
+# A full URL, for another ntfy server, saves as given
+assert_exit 0 main <<< "https://ntfy.example.com/my_topic-2"
+assert_eq https://ntfy.example.com/my_topic-2 "$(cat "$NTFY_URL_FILE")" "the saved URL"
+assert_not_contains "$RUN_OUTPUT" "my_topic-2"
 
 # A failed test push fails the script, with the URL saved
 touch "$SANDBOX/curl-fails"
-assert_exit 1 main https://ntfy.sh/other-topic
-assert_contains "$RUN_OUTPUT" "The test push failed. Check the URL, then run just alerts test."
+assert_exit 1 main <<< other-topic
+assert_contains "$RUN_OUTPUT" "The test push failed. Check the topic, then run just alerts test."
 assert_eq https://ntfy.sh/other-topic "$(cat "$NTFY_URL_FILE")" "the saved URL"
 rm "$SANDBOX/curl-fails"
 
@@ -149,6 +182,6 @@ assert_contains "$RUN_OUTPUT" "When one doesn't arrive, journalctl -t dotfiles-u
 # Not Ubuntu: nothing to do
 # shellcheck disable=SC2329 # main calls it
 is_ubuntu() { false; }
-assert_exit 0 main "$URL"
+assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "The alerts are Ubuntu only"
 test_done

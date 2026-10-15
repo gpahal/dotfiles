@@ -7,10 +7,11 @@ set -euo pipefail
 # updates daily and keep edited conffiles through them, start user services (the T3 Code server)
 # at boot without a login, start sshd at boot and take SSH logins only for you, and with keys only
 # once a session shows your key logs in, install Tailscale, turn on the firewall, letting SSH in
-# only from the private ranges and the tailnet, once no SSH session comes from elsewhere, and wake
-# on LAN. These need sudo, so the step lists what's missing and asks once. When one part fails,
-# the step still does the others, then fails. It also puts Homebrew on PATH for user services, and
-# turns on a daily health alert and a boot notice pushed to ntfy, which need no sudo.
+# only from the private ranges and anything in from the tailnet (tailscale0), which Tailscale's
+# ACLs limit, once no SSH session comes from elsewhere, and wake on LAN. These need sudo, so the
+# step lists what's missing and asks once. When one part fails, the step still does the others,
+# then fails. It also puts Homebrew on PATH for user services, and turns on a daily health alert
+# and a boot notice pushed to ntfy, which need no sudo.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo, systemctl, and
 # loginctl. Test it in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -214,7 +215,7 @@ lingering() {
 # Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
 # credentials are cached, and is otherwise unverified.
 status() {
-    local ufw=0 uuid name wired=false item packages todo problems=""
+    local ufw=0 uuid name wired=false item packages todo problems="" rule
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
     if ! is_ubuntu; then
         status_item skipped "Running around the clock: Ubuntu only"
@@ -328,6 +329,12 @@ status() {
                 1) status_item missing "$rules (re-run the ubuntu step)" ;;
                 *) status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)" ;;
             esac
+            if [ "$ufw" -ne 2 ]; then
+                while IFS= read -r rule; do
+                    [ -z "$rule" ] ||
+                        status_item missing "No ufw rule that lets SSH in from outside the private ranges and the tailnet: $rule (sudo ufw status numbered lists them; sudo ufw delete <number> removes one)"
+                done < <(ufw_broad_ssh_rules -n || true)
+            fi
         fi
     else
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"

@@ -56,12 +56,16 @@ T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # instead, and T3's unit (StartLimitIntervalSec=300, StartLimitBurst=5, RestartSec=5) stops
 # retrying after about 25 s, while status names the other server. The drop-in leaves
 # systemd-oomd's preference to T3: before 0.0.46 agents share the server's cgroup, and sparing it
-# would spare a runaway agent too, while Restart= brings the server back.
+# would spare a runaway agent too, while Restart= brings the server back. It also binds the server
+# to loopback, since `t3 serve` otherwise listens on every interface, and ufw lets the tailnet reach
+# every port: `tailscale serve`, which T3 points at 127.0.0.1, is the tailnet's way in, over HTTPS.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
 T3_CODE_PORT=3773
+T3_CODE_HOST=127.0.0.1
 T3_CODE_SERVICE_DROP_IN_CONTENT="[Service]
 Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=$T3_CODE_PORT"
+Environment=T3CODE_PORT=$T3_CODE_PORT
+Environment=T3CODE_HOST=$T3_CODE_HOST"
 
 # The default model and its effort, values you can change (replace_custom_value).
 # t3_code_choose_custom_values sets T3_CODE_REPLACE_MODEL and T3_CODE_REPLACE_EFFORT to whether to
@@ -437,7 +441,8 @@ t3_code_drop_in_loaded() {
     [ "$(systemctl --user show -p NeedDaemonReload --value t3code.service 2>/dev/null)" == no ] || return 1
     environment=" $(systemctl --user show -p Environment --value t3code.service 2>/dev/null) "
     [[ "$environment" == *" T3CODE_TELEMETRY_ENABLED=false "* ]] &&
-        [[ "$environment" == *" T3CODE_PORT=$T3_CODE_PORT "* ]]
+        [[ "$environment" == *" T3CODE_PORT=$T3_CODE_PORT "* ]] &&
+        [[ "$environment" == *" T3CODE_HOST=$T3_CODE_HOST "* ]]
 }
 
 # Have systemd load the drop-in when the unit exists and hasn't: a new drop-in, or a reload that
@@ -465,6 +470,7 @@ t3_code_running_env_current() {
     environment="$(t3_code_process_environ "$pid" 2>/dev/null)" || return 1
     grep -qxF 'T3CODE_TELEMETRY_ENABLED=false' <<< "$environment" &&
         grep -qxF "T3CODE_PORT=$T3_CODE_PORT" <<< "$environment" &&
+        grep -qxF "T3CODE_HOST=$T3_CODE_HOST" <<< "$environment" &&
         [ "$pid" == "$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" ]
 }
 
@@ -730,7 +736,7 @@ status() {
     local have_cli=false ready=0
     [ -x "$HOME/.local/bin/t3" ] && have_cli=true
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
-    status_check "Telemetry off and port $T3_CODE_PORT in the service drop-in" \
+    status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
     status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
     t3_code_status_custom_values

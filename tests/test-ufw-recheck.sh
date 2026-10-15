@@ -190,18 +190,27 @@ assert_contains "$RUN_OUTPUT" "first SSH connection"
 [ ! -e "$SSHD_RUN_DIR" ] || fail "main created $SSHD_RUN_DIR without asking"
 no_prompting_sudo
 
-# Rules you added by hand, even ones that let SSH in from anywhere, don't fail the check. The step
-# and status leave them to you, and the step deletes nothing.
+# Rules you added by hand, even ones that let SSH in from anywhere, don't fail the check, and the
+# step deletes nothing. Status reports each one that lets SSH in from elsewhere.
 mkdir -p "$SSHD_RUN_DIR"
 cached
 rules_present
-printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
-    "OpenSSH                    ALLOW       Anywhere" \
-    "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
-assert_exit 0 ufw_configured -n
+printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
-assert_not_contains "$RUN_OUTPUT" "from anywhere"
+assert_not_contains "$RUN_OUTPUT" "lets SSH in"
+printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
+    "OpenSSH                    ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+assert_exit 0 ufw_configured -n
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
+assert_contains "$RUN_OUTPUT" "missing    No ufw rule that lets SSH in from outside the private ranges and the tailnet: 22/tcp ALLOW Anywhere (sudo ufw status numbered lists them; sudo ufw delete <number> removes one)"
+assert_contains "$RUN_OUTPUT" "missing    No ufw rule that lets SSH in from outside the private ranges and the tailnet: OpenSSH ALLOW Anywhere"
+# Without cached sudo they can't be read, so they aren't reported
+not_cached
+assert_exit 0 status
+assert_not_contains "$RUN_OUTPUT" "lets SSH in"
+cached
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"

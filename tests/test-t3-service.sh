@@ -35,7 +35,7 @@ case "$2" in
     is-enabled) [ -f "$state/enabled" ] ;;
     start | restart)
         touch "$state/active"
-        rm -f "$state/old-env" "$state/old-env-port"
+        rm -f "$state/old-env" "$state/old-env-port" "$state/old-env-host"
         ;;
     daemon-reload)
         rm -f "$state/reload-needed"
@@ -94,11 +94,13 @@ chmod +x "$HOME/.local/bin/t3"
 # No process is in the service's cgroup unless a test says so, and linger is on
 t3_code_in_service_cgroup() { false; }
 t3_code_lingering() { true; }
-# The service's running environment: old-env predates the telemetry line, old-env-port the port
+# The service's running environment: old-env predates the telemetry line, old-env-port the port,
+# old-env-host the host
 t3_code_process_environ() {
     if [ -e "$STATE/old-env" ]; then echo T3CODE_TELEMETRY_ENABLED=true
     elif [ -e "$STATE/old-env-port" ]; then echo T3CODE_TELEMETRY_ENABLED=false
-    else printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773; fi
+    elif [ -e "$STATE/old-env-host" ]; then printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773
+    else printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773 T3CODE_HOST=127.0.0.1; fi
 }
 
 # A drop-in from an older version of this step, which systemd has loaded
@@ -251,7 +253,7 @@ case "$2" in
     is-active) false ;;
     show) case "$*" in
         *NeedDaemonReload*) echo no ;;
-        *Environment*) echo "T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773" ;;
+        *Environment*) echo "T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773 T3CODE_HOST=127.0.0.1" ;;
         *) echo 0 ;;
     esac ;;
 esac'
@@ -369,7 +371,7 @@ assert_eq '{}' "$(cat "$T3_CODE_SETTINGS")" "settings after a declined restart"
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Left the T3 Code service running"
 run status
-assert_contains "$RUN_OUTPUT" "missing    Telemetry off and port 3773 in the service drop-in"
+assert_contains "$RUN_OUTPUT" "missing    Telemetry off, port 3773, and host 127.0.0.1 in the service drop-in"
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in: systemctl --user restart t3code"
 # Accepted, the service stops, both change, and it starts again. Then nothing is pending.
 confirm() { echo "$1"; }
@@ -420,13 +422,16 @@ assert_file_contains "$STUB_LOG" 'systemctl --user daemon-reload'
 assert_exit 1 t3_code_restart_pending
 confirm() { echo "$1"; false; }
 
-# The drop-in sets only telemetry and the port, in [Service]. The start limit and oomd's preference
-# are left to T3's unit.
+# The drop-in sets only telemetry, the port, and the loopback host, in [Service]. The start limit
+# and oomd's preference are left to T3's unit.
 reset
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq "[Service]
 Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=3773" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in"
+Environment=T3CODE_PORT=3773
+Environment=T3CODE_HOST=127.0.0.1" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Telemetry off, port 3773, and host 127.0.0.1 in the service drop-in"
 # A unit systemd loaded without the drop-in's environment is reloaded
 installed_unit
 rm "$STATE/loaded-drop-in"
@@ -445,6 +450,9 @@ assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
 assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_exit 1 t3_code_restart_pending
+# Likewise a server started before the host line
+touch "$STATE/old-env-host"
+assert_exit 0 t3_code_restart_pending
 confirm() { echo "$1"; false; }
 
 # An enabled unit without linger doesn't start at boot until login.

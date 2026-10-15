@@ -122,8 +122,9 @@ install_claude_code() {
 claude_code_settings() {
     local register_hook="${1:-true}"
     # /config → Push when actions required, Push when Claude decides
-    #   (mobile push notifications through the Claude app while Remote Control is active), and
-    #   Enable Remote Control for all sessions, so every session can push
+    #   (mobile push notifications through the Claude app while Remote Control is active). Enable
+    #   Remote Control for all sessions stays off, since a connected session takes prompts from
+    #   claude.ai and the phone app, so only a session /remote-control connects can push
     # Start new sessions in auto mode. Only user or managed settings can make auto the default.
     # Turn off auto memory. Keep transcripts 90 days instead of 30, so /resume reaches further back.
     # Default to Opus 5.5 with medium effort, the fullscreen TUI, and normal key bindings.
@@ -170,7 +171,7 @@ claude_code_settings() {
 
         .inputNeededNotifEnabled = true
         | .agentPushNotifEnabled = true
-        | .remoteControlAtStartup = true
+        | .remoteControlAtStartup = false
         | .permissions.defaultMode = "auto"
         | .autoMemoryEnabled = false
         | .cleanupPeriodDays = 90
@@ -214,13 +215,13 @@ configure_claude_code() {
     done
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
-        echo "  Push notifications, Remote Control, auto mode, no auto memory, transcript retention,"
+        echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
         echo "  model, TUI, worktree, status line, and data-sharing settings are already set"
         return 0
     fi
     json_merge "$CLAUDE_CODE_SETTINGS" "$settings" || return 1
-    echo "  Turned on push notifications, Remote Control, and auto mode by default, turned off auto"
-    echo "  memory, kept transcripts 90 days, set the model, TUI, worktree, and status line settings,"
+    echo "  Turned on push notifications and auto mode by default, turned off Remote Control at startup"
+    echo "  and auto memory, kept transcripts 90 days, set the model, TUI, worktree, and status line settings,"
     echo "  and opted out of error reports, surveys, and feedback"
 }
 

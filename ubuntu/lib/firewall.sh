@@ -1,6 +1,7 @@
 # shellcheck shell=bash
-# ufw for the ubuntu step: SSH only from the private address ranges and the tailnet, on the ports
-# sshd and ssh.socket listen on, turned on only while no SSH session comes from elsewhere.
+# ufw for the ubuntu step: SSH only from the private address ranges, on the ports sshd and
+# ssh.socket listen on, and any port from the tailnet (tailscale0), which Tailscale's ACLs limit.
+# ufw goes on only while no SSH session comes from elsewhere.
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
 # Succeeds when ufw is on and denies incoming connections, which its config files show to anyone
@@ -73,6 +74,82 @@ ufw_missing_rules() {
     while IFS= read -r rule; do
         [ -z "$rule" ] || grep -qxF "$rule" <<< "$rules" || echo "$rule"
     done <<< "$wanted"
+}
+
+# Print each allow or limit rule ufw has that lets SSH in from beyond the private ranges, other
+# than on tailscale0, as ufw_rules prints it: one to an SSH port, or every port, from Anywhere, a
+# public address, or a range wider than $SSH_RANGES', such as the rule `ufw allow ssh` adds. The
+# step never adds or deletes such a rule, so status reports it. Takes sudo's flags. Fails when the
+# rules or the SSH ports can't be read.
+ufw_broad_ssh_rules() {
+    local rules ports rule
+    rules="$(ufw_rules "$@")" && ports="$(sshd_ports "$@")" && [ -n "$ports" ] || return 1
+    while IFS= read -r rule; do
+        # shellcheck disable=SC2086 # one port per word
+        ! ufw_rule_broad_ssh "$rule" $ports || echo "$rule"
+    done <<< "$rules"
+}
+
+# ufw_rule_broad_ssh <rule> <port>...: succeeds when the rule, as `ufw status` lists it with runs
+# of spaces squeezed, lets any of the ports in over TCP from beyond the private ranges, other than
+# on tailscale0. "To" is [address] [ports[/proto] | app] [(v6)] [on <interface>], and an address
+# alone, or Anywhere, means every port. Of the app profiles, only OpenSSH's port is known.
+ufw_rule_broad_ssh() {
+    local rule="${1%% # *}" to from spec port
+    shift
+    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
+    to="${BASH_REMATCH[1]}" from="${BASH_REMATCH[4]}"
+    to="${to/ (v6)/}"
+    case "$to" in *" on tailscale0") return 1 ;; esac
+    to="${to%% on *}"
+    ! private_source "$from" || return 1
+    spec="${to##* }"
+    case "$spec" in
+        OpenSSH) spec=22/tcp ;;
+        Anywhere) return 0 ;;
+    esac
+    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
+        # An address alone covers every port; another app profile, ufw can't say here
+        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
+        return
+    fi
+    [ "${spec#*/}" != udp ] || return 1
+    for port in "$@"; do
+        ufw_ports_include "${spec%/*}" "$port" && return 0
+    done
+    return 1
+}
+
+# ufw_ports_include <list> <port>: succeeds when ufw's port list, such as 22, 80,443, or 8000:8100,
+# includes the port
+ufw_ports_include() {
+    local item IFS=,
+    for item in $1; do
+        case "$item" in
+            *:*) [ "$2" -ge "${item%:*}" ] && [ "$2" -le "${item#*:}" ] && return 0 ;;
+            *) [ "$2" -eq "$item" ] && return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Succeeds for a rule's source inside the private ranges: one of $SSH_RANGES, or a private address
+# or a range of them no wider than those, /16 or narrower for IPv4 and /10 for IPv6
+private_source() {
+    local range bits
+    for range in "${SSH_RANGES[@]}"; do
+        [ "$1" != "$range" ] || return 0
+    done
+    case "$1" in
+        Anywhere) return 1 ;;
+        */*) bits="${1##*/}" ;;
+        *) bits=128 ;;
+    esac
+    [[ "$bits" =~ ^[0-9]+$ ]] && private_address "${1%/*}" || return 1
+    case "$1" in
+        *:*) [ "$bits" -ge 10 ] ;;
+        *) [ "$bits" -ge 16 ] ;;
+    esac
 }
 
 # Succeeds for an IPv4 or IPv6 address in one of the private ranges in $SSH_RANGES

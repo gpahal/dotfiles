@@ -72,7 +72,7 @@ Host box2
   ServerAliveInterval 30
   ControlMaster auto
   ControlPath ~/.ssh/cm-%C
-  ControlPersist 10m
+  ControlPersist 1m
 
 # Every host
 Host *

@@ -333,7 +333,7 @@ main() {
     docker_installed || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo")
+    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo. The group is root-equivalent: anything running as you, agents included, can get root with docker run -v /:/host")
     # Freshly installed packages enable and start both units
     if docker_installed && ! starts_at_boot; then
         pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")

@@ -204,7 +204,7 @@ assert_contains "$RUN_OUTPUT" "missing    Reboot 10 s after a kernel panic, and 
 assert_contains "$RUN_OUTPUT" "missing    smartmontools, with smartd enabled at boot"
 assert_contains "$RUN_OUTPUT" "missing    smartd running"
 assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK)"
-assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts not set; just alerts <ntfy-url> sets it"
+assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts not set; just alerts sets it"
 assert_contains "$RUN_OUTPUT" "missing    $KEEP_CONFFILES"
 assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user"

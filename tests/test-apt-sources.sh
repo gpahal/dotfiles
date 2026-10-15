@@ -3,8 +3,8 @@ set -euo pipefail
 
 # lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off
-# all count. add_apt_repo waits without changing anything while the repo's Release file for this
-# release is a 404, and keeps the old key and source when the key's download fails. The chrome
+# all count. apt_repo_published says to wait while the repo's Release file for this release is a
+# 404, and add_apt_repo keeps the old key and source when the key's download fails. The chrome
 # step's google_source_exists only checks that the .deb's source file is there and on.
 # test-docker-sources.sh and test-ubuntu-step.sh cover add_apt_repo's other failures through the
 # docker and ubuntu steps.
@@ -51,21 +51,22 @@ fetch() {
 stub apt-get
 keyring="$SANDBOX/keyrings/example.gpg"
 add() {
-    add_apt_repo Example "$file" "$content" https://example.com/key.gpg "$keyring" \
-        https://example.com/ubuntu/dists/resolute/Release
+    add_apt_repo Example "$file" "$content" https://example.com/key.gpg "$keyring"
 }
+release_url=https://example.com/ubuntu/dists/resolute/Release
 
-# No packages for this release yet: it says so, and changes nothing
+# No packages for this release yet: it says so. A 200, or a host that can't be reached, counts as
+# published, so add_apt_repo's own failure says what's wrong.
 echo 404 > "$SANDBOX/http-status"
-echo "${content/resolute/stale-suite}" > "$file"
-assert_exit "$APT_REPO_UNPUBLISHED" add
+assert_exit 1 apt_repo_published Example "$release_url"
 assert_contains "$RUN_OUTPUT" "Example hasn't published packages for Ubuntu resolute yet; re-run this step later."
-assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source while the repo has no packages for this release"
-assert_file_not_contains "$STUB_LOG" "fetch"
-assert_file_not_contains "$STUB_LOG" "apt-get"
+for http in 200 000; do
+    echo "$http" > "$SANDBOX/http-status"
+    assert_exit 0 apt_repo_published Example "$release_url"
+done
 
-# Published: the key and the source are written, and apt updates from that source alone
-echo 200 > "$SANDBOX/http-status"
+# The key and the source are written, and apt updates from that source alone
+echo "${content/resolute/stale-suite}" > "$file"
 assert_exit 0 add
 assert_eq "$content" "$(cat "$file")" "the source after adding the repo"
 assert_eq new-key "$(cat "$keyring")" "the key after adding the repo"
@@ -88,20 +89,16 @@ assert_contains "$seen" "Updating apt's lists for Example" "output before the up
 assert_contains "$seen" "apt's lists lock is held by another update" "output before the update"
 stub apt-get
 
-# The key's download fails, or its host can't be reached: the old key and source stay, and no
-# update runs
-for http in 200 000; do
-    echo "$http" > "$SANDBOX/http-status"
-    echo old-key > "$keyring"
-    echo "${content/resolute/stale-suite}" > "$file"
-    touch "$SANDBOX/fetch-fails"
-    : > "$STUB_LOG"
-    assert_exit 1 add
-    rm "$SANDBOX/fetch-fails"
-    assert_eq old-key "$(cat "$keyring")" "the key after its download failed ($http)"
-    assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after the key's download failed ($http)"
-    assert_file_not_contains "$STUB_LOG" "apt-get"
-done
+# The key's download fails: the old key and source stay, and no update runs
+echo old-key > "$keyring"
+echo "${content/resolute/stale-suite}" > "$file"
+touch "$SANDBOX/fetch-fails"
+: > "$STUB_LOG"
+assert_exit 1 add
+rm "$SANDBOX/fetch-fails"
+assert_eq old-key "$(cat "$keyring")" "the key after its download failed"
+assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after the key's download failed"
+assert_file_not_contains "$STUB_LOG" "apt-get"
 rm -rf "$APT_SOURCES_DIR" "$SANDBOX/keyrings"
 mkdir -p "$APT_SOURCES_DIR"
 

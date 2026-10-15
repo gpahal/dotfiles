@@ -217,7 +217,10 @@ cmp -s "$tmp/ubuntu-packages" "$tmp/ubuntu-packages-doc" ||
 # machine or use the network fails the check when sourcing or a *_files function runs it.
 copy_home="$tmp/home"
 mkdir -p "$copy_home" "$tmp/sentinels"
-for cmd in apt-get brew curl defaults gh git launchctl mise snap sudo systemctl; do
+# shellcheck source=../tests/sentinels.sh
+source "$REPO_DIR/tests/sentinels.sh"
+# git and sudo too, which tests/lib.sh leaves real or stubs on its own
+for cmd in $SENTINELS git sudo; do
     printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$cmd" "$tmp/sentinels.log" > "$tmp/sentinels/$cmd"
     chmod +x "$tmp/sentinels/$cmd"
 done

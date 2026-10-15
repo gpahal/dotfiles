@@ -120,4 +120,19 @@ rm "$T3_CODE_SETTINGS"
 assert_exit 0 configure_t3_code
 assert_contains "$RUN_OUTPUT" "T3 Code (Alpha) is running; skipping."
 [ ! -e "$T3_CODE_SETTINGS" ] || fail "the settings were written while T3 Code ran"
+
+# A status report asks brew about the cask once, though the version, the app path, and the cask's
+# state each need the app brew names
+load_script ai_tools/t3-code/install.sh
+is_macos() { true; }
+is_ubuntu() { false; }
+stub plutil 'echo 0.0.45'
+# shellcheck disable=SC2016 # expanded by the stub
+stub brew 'case "$1" in
+    info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
+esac'
+: > "$STUB_LOG"
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in one status report"
 test_done

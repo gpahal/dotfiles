@@ -182,14 +182,35 @@ for arg in "$@"; do
 done
 unset arg
 
+# has_arg <flag> [arg...]: succeeds when <flag> is among the arguments
+# e.g. has_arg --quick "$@"
+has_arg() {
+    local flag="$1" arg
+    shift
+    for arg in "$@"; do
+        [ "$arg" != "$flag" ] || return 0
+    done
+    return 1
+}
+
 # Succeeds when --status is among the arguments. A step's main gets them all, so it reports
 # wherever the flag is.
 # e.g. if status_requested "$@"; then status; return $?; fi
-status_requested() {
-    local arg
-    for arg in "$@"; do
-        [ "$arg" != --status ] || return 0
-    done
+status_requested() { has_arg --status "$@"; }
+
+# Succeeds when --quick is among the arguments
+quick_requested() { has_arg --quick "$@"; }
+
+# The flags every step and runner takes, besides -h and --help
+SHARED_FLAGS="--status --quick --backup --no-backup"
+
+# Succeeds, saying why, when the arguments have --quick without --status, which would otherwise
+# run the steps instead of reporting. The caller then prints its usage and exits 2.
+quick_without_status() {
+    if ! status_requested "$@" && quick_requested "$@"; then
+        echo "--quick only works with --status" >&2
+        return 0
+    fi
     return 1
 }
 
@@ -213,8 +234,9 @@ step_args() {
         esac
     done
     for arg in "$@"; do
+        # shellcheck disable=SC2086 # split into the flags
+        has_arg "$arg" $SHARED_FLAGS && continue
         case "$arg" in
-            --status | --quick | --backup | --no-backup) ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 echo "$usage" >&2
@@ -227,20 +249,10 @@ step_args() {
                 ;;
         esac
     done
-    if ! status_requested "$@" && quick_requested "$@"; then
-        echo "--quick only works with --status" >&2
+    if quick_without_status "$@"; then
         echo "$usage" >&2
         exit 2
     fi
-}
-
-# Succeeds when --quick is among the arguments
-quick_requested() {
-    local arg
-    for arg in "$@"; do
-        [ "$arg" != --quick ] || return 0
-    done
-    return 1
 }
 
 # Succeeds when stdin is a terminal, so a question can be answered. stdout may be piped, as in
@@ -501,6 +513,25 @@ backup_file() {
     echo "  Backed up $file to $bak"
 }
 
+# user_instructions_to <dest> <action> [arg...]
+# Pass ai_tools/user-instructions.md and <dest>, where an AI tool reads its user-level
+# instructions, to <action>, followed by any further arguments: copy_file_ask to copy them, or
+# status_file to report them. They may hold instructions added by hand, so copy_file_ask only
+# replaces them when asked. A step wraps it in a *_files function, which scripts/check-docs.sh
+# finds.
+# e.g. user_instructions_to "$HOME/.codex/AGENTS.md" status_file "merge by hand"
+user_instructions_to() {
+    local dest="$1" action="$2"
+    shift 2
+    "$action" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$dest" "$@"
+}
+
+# Copy the user-level instructions to <dest>, asking before replacing an edited copy
+install_user_instructions() {
+    echo "  User-level instructions:"
+    user_instructions_to "$1" copy_file_ask
+}
+
 # Like copy_file, but for files that may hold changes made by hand, such as settings an app also
 # edits. One that differs and isn't what setup last installed is replaced only when the user
 # agrees, and left alone without a terminal. Agreeing backs it up too, without a second question,
@@ -663,9 +694,22 @@ install_cask() {
 # with no app, such as a font or one that runs an installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app
+# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app. Callers run
+# it in $(...), where nothing it caches would last, so a report that asks about one cask several
+# times runs cache_cask_app_path first.
 cask_app_path() {
+    if [ -n "${CASK_APP_CACHE:-}" ] && [ "${CASK_APP_CACHE%%$'\t'*}" == "$1" ]; then
+        printf '%s\n' "${CASK_APP_CACHE#*$'\t'}"
+        return 0
+    fi
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
+}
+
+# Ask brew once for the app cask $1 installs, and have cask_app_path answer from that for the
+# rest of the caller, which declares CASK_APP_CACHE local so the answer ends with it
+# e.g. local CASK_APP_CACHE; cache_cask_app_path t3-code
+cache_cask_app_path() {
+    CASK_APP_CACHE="$1"$'\t'"$(cask_app_path "$1")"
 }
 
 # Print the app path installed_cask_apps's output gives for a cask, failing when it isn't listed
@@ -790,21 +834,16 @@ restore_apt_key() {
     fi
 }
 
-# What add_apt_repo returns when the repo has no packages for this release yet
-APT_REPO_UNPUBLISHED=3
-
 # Add a third-party apt repo whose source file a step owns: install its key, write the source when
 # its content differs, and update from that file alone, so a failure is the repo's. A source apt
 # can't use fails every later apt-get update, so on failure the previous source and key come
-# back, or the new ones go. Returns APT_REPO_UNPUBLISHED, changing nothing, when the repo hasn't
-# published packages for this release (apt_repo_published), so its caller waits rather than fails.
-# Callers check that first too, to ask for nothing they can't do. Run it as
-# `add_apt_repo ... || ...`, where set -e is off, so each command checks its own failure.
-# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$(docker_release_url)"
+# back, or the new ones go. Callers first check apt_repo_published, before asking for sudo, so
+# they ask for nothing they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so
+# each command checks its own failure.
+# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
 add_apt_repo() {
-    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5" release_url="$6"
+    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5"
     local key old_key="" output="" previous="" reason=""
-    apt_repo_published "$name" "$release_url" || return "$APT_REPO_UNPUBLISHED"
     # Read the source to restore before the key changes, so failing to read it changes nothing
     if [ -e "$file" ]; then
         previous="$(sudo cat "$file")" || return 1
@@ -1257,9 +1296,9 @@ runner_args() {
         esac
     done
     for arg in "$@"; do
+        # shellcheck disable=SC2086 # split into the flags
+        has_arg "$arg" $SHARED_FLAGS && continue
         case "$arg" in
-            --status) RUNNER_MODE=--status ;;
-            --quick | --backup | --no-backup) ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 usage >&2
@@ -1268,8 +1307,8 @@ runner_args() {
             *) RUNNER_STEPS+=("$arg") ;;
         esac
     done
-    if [ -z "$RUNNER_MODE" ] && quick_requested "$@"; then
-        echo "--quick only works with --status" >&2
+    ! status_requested "$@" || RUNNER_MODE=--status
+    if quick_without_status "$@"; then
         usage >&2
         exit 2
     fi
@@ -1328,6 +1367,14 @@ unknown_step() {
     fi
 }
 
+# Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so
+# the caller stops too. brew catches SIGINT and exits 130, so bash doesn't see the signal itself
+# and would carry on. Other codes above 128, such as 141 from SIGPIPE or 255 from ssh, are
+# failures like any other.
+interrupted_status() {
+    [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
+}
+
 # run_steps <mode> [step...]
 # Run named steps in order, each in its own process, with the script step_script prints. With no
 # names, run every step in $STEPS. A failing step doesn't stop the rest; the failures are listed
@@ -1354,16 +1401,14 @@ run_steps() {
         status=0
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
-            # as manual-steps) prints nothing. fflush streams each line as it comes.
+            # as manual-steps) prints nothing. fflush streams each line as it comes. The runners'
+            # set -o pipefail keeps the step's status, such as 3, rather than awk's 0.
             "$BASH" "$script" --status | awk -v header="$step:" 'NR == 1 { print header } { print; fflush() }' ||
                 status=$?
         else
             "$BASH" "$script" || status=$?
         fi
-        # SIGHUP, SIGINT (Ctrl-C), or SIGTERM: stop. brew catches SIGINT and exits 130, so bash
-        # doesn't see the signal itself and would carry on to the next step. Other codes above
-        # 128, such as 141 from SIGPIPE or 255 from ssh, are failures like any other.
-        if [ "$status" -eq 129 ] || [ "$status" -eq 130 ] || [ "$status" -eq 143 ]; then
+        if interrupted_status "$status"; then
             echo "  The $step step was interrupted; stopping." >&2
             return "$status"
         elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then

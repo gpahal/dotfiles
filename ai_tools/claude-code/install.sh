@@ -11,6 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
+CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
 # The paths above and the docs all assume ~/.claude, so another CLAUDE_CONFIG_DIR fails the step
 # rather than leaving Claude Code reading files setup never wrote
 CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); unset CLAUDE_CONFIG_DIR or move it"
@@ -234,13 +235,9 @@ script_files() {
     return "$status"
 }
 
-# Pass the user-level instructions, as source and destination, to a function, followed by any
-# further arguments: copy_file_ask to copy them, or status_file to report them. They may hold
-# instructions added by hand, so copy_file_ask only replaces them when asked.
+# See user_instructions_to
 user_instructions_files() {
-    local action="$1"
-    shift
-    "$action" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$HOME/.claude/CLAUDE.md" "$@"
+    user_instructions_to "$CLAUDE_CODE_INSTRUCTIONS" "$@"
 }
 
 install_scripts() {
@@ -249,11 +246,6 @@ install_scripts() {
     script_files copy_file || status=1
     chmod 755 "$CLAUDE_CODE_STATUSLINE" "$CLAUDE_CODE_WORKTREE_HOOK" || status=1
     return "$status"
-}
-
-install_user_instructions() {
-    echo "  User-level instructions:"
-    user_instructions_files copy_file_ask
 }
 
 status() {
@@ -322,7 +314,7 @@ main() {
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false
     configure_claude_code "$register_hook" || status=1
-    install_user_instructions || status=1
+    install_user_instructions "$CLAUDE_CODE_INSTRUCTIONS" || status=1
     if ! claude_code_have_git_wt; then
         echo "  $CLAUDE_CODE_NO_GIT_WT" >&2
         return 1

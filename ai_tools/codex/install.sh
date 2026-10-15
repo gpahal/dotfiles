@@ -14,6 +14,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 
 CODEX_CONFIG="$HOME/.codex/config.toml"
+CODEX_INSTRUCTIONS="$HOME/.codex/AGENTS.md"
 # The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
 # the step rather than leaving Codex reading files setup never wrote
 CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
@@ -267,18 +268,9 @@ configure_codex() {
     echo "  Set the $settings in $CODEX_CONFIG"
 }
 
-# Pass the user-level instructions, as source and destination, to a function, followed by any
-# further arguments: copy_file_ask to copy them, or status_file to report them. They may hold
-# instructions added by hand, so copy_file_ask only replaces them when asked.
+# See user_instructions_to
 user_instructions_files() {
-    local action="$1"
-    shift
-    "$action" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$HOME/.codex/AGENTS.md" "$@"
-}
-
-install_user_instructions() {
-    echo "  User-level instructions:"
-    user_instructions_files copy_file_ask
+    user_instructions_to "$CODEX_INSTRUCTIONS" "$@"
 }
 
 install_codex_cli() {
@@ -438,7 +430,7 @@ main() {
     fi
     install_codex_cli || result=1
     configure_codex || result=1
-    install_user_instructions || result=1
+    install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
     if is_ubuntu; then
         setup_codex_sandbox || result=1
     fi

@@ -368,7 +368,7 @@ main() {
         return 0
     fi
     local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false repo_status=0
+    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
     # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
@@ -484,10 +484,9 @@ main() {
         fi
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
-            add_tailscale_repo || repo_status=$?
-            if [ "$repo_status" -eq 0 ]; then
+            if add_tailscale_repo; then
                 command -v tailscale &>/dev/null || apt_get install -y tailscale || result=1
-            elif [ "$repo_status" -ne "$APT_REPO_UNPUBLISHED" ]; then
+            else
                 result=1
             fi
         fi

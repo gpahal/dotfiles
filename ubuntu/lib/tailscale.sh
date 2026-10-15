@@ -37,9 +37,9 @@ tailscale_release_url() {
     echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
 }
 
-# See add_apt_repo, whose return status this passes on. The key's URL names the release, as in
-# Tailscale's install script.
+# Run it once apt_repo_published says Tailscale has packages for this release. The key's URL names
+# the release, as in Tailscale's install script.
 add_tailscale_repo() {
     add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
-        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$(tailscale_release_url)"
+        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING"
 }

@@ -72,15 +72,14 @@ docker_source_ok() {
     file_is "$DOCKER_SOURCES" "$(docker_sources)"
 }
 
-# See add_apt_repo, whose return status this passes on
+# Run it once apt_repo_published says Docker has packages for this release
 add_docker_repo() {
-    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" \
-        "$(docker_release_url)"
+    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
 }
 
 # main runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
 install_docker() {
-    add_docker_repo || return $?
+    add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
     if ! apt_get_update; then
         echo "  apt-get update failed; it may not be Docker's source. Fix the error above and re-run." >&2
@@ -325,20 +324,17 @@ main() {
     fi
     docker_auto_updates_configured || pending+=("Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF")
 
-    local result=0 repo_status=0
+    local result=0
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Docker is already installed and set up."
         return 0
     fi
     confirm_sudo_changes "${pending[@]}" || return 0
     if ! docker_installed; then
-        install_docker || repo_status=$?
         # The rest needs Docker's packages, and the docker group they add
-        [ "$repo_status" -ne "$APT_REPO_UNPUBLISHED" ] || return 0
-        [ "$repo_status" -eq 0 ] || return 1
+        install_docker || return 1
     elif "$repair_source"; then
-        add_docker_repo || repo_status=$?
-        [ "$repo_status" -eq 0 ] || [ "$repo_status" -eq "$APT_REPO_UNPUBLISHED" ] || result=1
+        add_docker_repo || result=1
     fi
     # Each part from here on runs whether or not the one before it failed
     if ! in_docker_group; then

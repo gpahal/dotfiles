@@ -721,6 +721,9 @@ status() {
         status_result
         return
     fi
+    # The version, the app's path, and the cask's state each ask brew which app it installs
+    local CASK_APP_CACHE=""
+    ! is_macos || ! command -v brew &>/dev/null || cache_cask_app_path t3-code
     t3_code_use_version "$(t3_code_version)"
     if is_macos; then
         status_cask t3-code "$(t3_code_app_path || true)"

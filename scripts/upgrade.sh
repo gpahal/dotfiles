@@ -20,7 +20,7 @@ _brew_cask_outdated() {
     local cask="$1" output rc=0
     shift
     output="$(brew outdated --cask "$@" --quiet "$cask" 2>/dev/null)" || rc=$?
-    ! _interrupted "$rc" || return "$rc"
+    ! interrupted_status "$rc" || return "$rc"
     if [ "$rc" -le 1 ] && [ -n "$output" ]; then
         return 0
     elif [ "$rc" -eq 0 ]; then
@@ -49,11 +49,11 @@ _upgrade_self_updating_casks() {
         [ "$cask" == "$entry" ] || process="${entry#*:}"
         rc=0
         brew list --cask "$cask" &>/dev/null || rc=$?
-        ! _interrupted "$rc" || return "$rc"
+        ! interrupted_status "$rc" || return "$rc"
         [ "$rc" -eq 0 ] || continue
         outdated=0
         _brew_cask_outdated "$cask" --greedy || outdated=$?
-        ! _interrupted "$outdated" || return "$outdated"
+        ! interrupted_status "$outdated" || return "$outdated"
         [ "$outdated" -ne 2 ] || exit_status=1
         [ "$outdated" -eq 0 ] || continue
         running=false
@@ -65,7 +65,7 @@ _upgrade_self_updating_casks() {
             # whose path is empty. -e also fails on empty output.
             rc=0
             info="$(brew info --json=v2 --cask "$cask")" || rc=$?
-            ! _interrupted "$rc" || return "$rc"
+            ! interrupted_status "$rc" || return "$rc"
             if [ "$rc" -ne 0 ] || ! path="$(jq -er ".casks[0] | $CASK_APP_JQ" <<< "$info")"; then
                 echo "Couldn't read $cask's metadata; leaving it alone." >&2
                 exit_status=1
@@ -86,7 +86,7 @@ _upgrade_self_updating_casks() {
         else
             status=0
             brew upgrade --cask --greedy "$cask" || status=$?
-            ! _interrupted "$status" || return "$status"
+            ! interrupted_status "$status" || return "$status"
             [ "$status" -eq 0 ] || exit_status=1
         fi
     done
@@ -101,16 +101,10 @@ _install_new_casks() (
     source "$DOTFILES_DIR/homebrew/install.sh" && install_casks
 )
 
-# Whether exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command. brew catches
-# SIGINT and exits 130, so bash itself doesn't stop. run_steps in lib/common.sh checks the same.
-_interrupted() {
-    [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
-}
-
 # Add stage $1, which exited $2, to the caller's failed array, or stop the script when it was
 # interrupted
 _stage_failed() {
-    if _interrupted "$2"; then
+    if interrupted_status "$2"; then
         echo "Interrupted; stopping." >&2
         exit "$2"
     fi

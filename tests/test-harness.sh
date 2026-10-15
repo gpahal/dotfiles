@@ -175,7 +175,7 @@ assert_contains "$RUN_OUTPUT" "Syntax error in $SANDBOX/bad/broken.sh"
 # test sources
 fake="$SANDBOX/repo"
 mkdir -p "$fake/tests" "$fake/lib"
-cp "$TESTS_DIR/run.sh" "$TESTS_DIR/lib.sh" "$fake/tests/"
+cp "$TESTS_DIR/run.sh" "$TESTS_DIR/lib.sh" "$TESTS_DIR/sentinels.sh" "$fake/tests/"
 printf '%s\n' '#!/bin/bash' 'echo "$SECONDS"' > "$fake/tests/test-ok.sh"
 printf '%s\n' '#!/bin/bash' 'source "$(dirname "$0")/lib.sh"' 'setup_sandbox' 'if then' > "$fake/tests/test-syntax.sh"
 printf '%s\n' '#!/bin/bash' 'sleep 30 & wait' > "$fake/tests/test-hangs.sh"

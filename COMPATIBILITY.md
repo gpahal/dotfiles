@@ -2,6 +2,13 @@
 
 What each full verification round tested, on what, and what it left to check by hand. Add a section for each new round at the top, and keep the older ones.
 
+## 2026-10-15 Codex review verification
+
+- On macOS 27.0.1 (arm64), under `/bin/bash` 3.2.57, `just check` and `scripts/check-tool-versions.sh` passed.
+- The initial sandboxed `just test` run passed 74 scripts and failed 10 because the OS sandbox blocked tmux sockets, process inspection, and Atuin's `nice` call. All 10 passed in targeted reruns outside that OS sandbox, with temporary HOME and test command stubs retained. Across the runs, all 84 test scripts passed, with zero skips.
+- The review also used isolated failure and concurrency reproductions. The findings went into an implementation plan; setup code was not changed.
+- Ubuntu container/VM tests, `just test-ubuntu`, real setup, reboots, and hardware checks were not run.
+
 ## 2026-10-14 CI and zsh completion fixes
 
 Ubuntu 26.04 is the only Linux CI target. Both CI jobs now download yq 4.54.1 on macOS and Ubuntu. Zsh skips insecure completion paths, rebuilds empty completion caches, and only refreshes a cache after initialization succeeds.

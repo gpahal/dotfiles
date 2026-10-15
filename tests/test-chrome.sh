@@ -19,8 +19,7 @@ is_macos() { false; }
 is_ubuntu() { true; }
 stub sudo 'exec env "$@"'
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
-APT_SOURCES_DIR="$SANDBOX/sources.list.d"
-mkdir -p "$APT_SOURCES_DIR"
+GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
 URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
@@ -36,7 +35,7 @@ echo "$deb" > "'"$SANDBOX"'/deb-path"
     [ "$(cut -c8 <<< "$(/bin/ls -l "$deb")")" == r ] || { echo "the .deb isn'"'"'t world-readable" >&2; exit 1; }
 defaults="'"$CHROME_DEFAULTS"'"
 if [ ! -e "'"$SANDBOX"'/installed" ] || grep -qx "repo_add_once=\"true\"" "$defaults" 2>/dev/null; then
-    printf "deb https://dl.google.com/linux/chrome/deb stable main\n" > "'"$APT_SOURCES_DIR"'/google-chrome.list"
+    printf "Types: deb\nURIs: https://dl.google.com/linux/chrome-stable/deb/\nSuites: stable\nComponents: main\n" > "'"$GOOGLE_SOURCES"'"
 fi
 if [ -e "$defaults" ]; then
     { grep -v "^repo_add_once=" "$defaults" || true; echo "repo_add_once=\"false\""; } > "$defaults.new"
@@ -108,31 +107,31 @@ assert_file_not_contains "$STUB_LOG" "fetch"
 
 # Google's apt source was removed: a yes sets repo_add_once in Chrome's defaults file, keeping its
 # other settings, and reinstalls the .deb, which adds the source back
-rm "$APT_SOURCES_DIR/google-chrome.list"
+rm "$GOOGLE_SOURCES"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Re-add Google's apt repo"
 assert_file_contains "$STUB_LOG" "fetch $URL"
 assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y --reinstall"
-[ -e "$APT_SOURCES_DIR/google-chrome.list" ] || fail "Google's apt source wasn't re-added"
+[ -e "$GOOGLE_SOURCES" ] || fail "Google's apt source wasn't re-added"
 assert_file_contains "$CHROME_DEFAULTS" 'repo_reenable_on_distupgrade="true"'
 assert_eq 1 "$(grep -c '^repo_add_once=' "$CHROME_DEFAULTS")" "repo_add_once lines"
 
 # Without the defaults file, the source is still re-added
-rm "$APT_SOURCES_DIR/google-chrome.list" "$CHROME_DEFAULTS"
+rm "$GOOGLE_SOURCES" "$CHROME_DEFAULTS"
 assert_exit 0 main
-[ -e "$APT_SOURCES_DIR/google-chrome.list" ] || fail "Google's apt source wasn't re-added without the defaults file"
+[ -e "$GOOGLE_SOURCES" ] || fail "Google's apt source wasn't re-added without the defaults file"
 
 # The .deb doesn't add it: the step fails, saying to add it by hand
 stub apt-get
-rm "$APT_SOURCES_DIR/google-chrome.list"
+rm "$GOOGLE_SOURCES"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Add it by hand"
-printf "deb https://dl.google.com/linux/chrome/deb stable main\n" > "$APT_SOURCES_DIR/google-chrome.list"
+touch "$GOOGLE_SOURCES"
 
 # Without curl, re-adding Google's apt source, which downloads the .deb, fails before it writes
 # Chrome's defaults file
-rm -f "$APT_SOURCES_DIR/google-chrome.list" "$CHROME_DEFAULTS"
+rm -f "$GOOGLE_SOURCES" "$CHROME_DEFAULTS"
 hide curl
 : > "$STUB_LOG"
 assert_exit 1 main

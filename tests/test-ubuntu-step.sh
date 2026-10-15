@@ -48,11 +48,10 @@ assert_eq "$HOME/.config/environment.d/99-homebrew.conf" \
 stub sudo 'for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refused: $a" >&2; exit 1 ;; esac; done
 exec env "$@"'
 stub dpkg-query 'echo "install ok installed"'
-# systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled and ssh.service
-# disabled, as on 26.04, unless $SANDBOX/units/<unit> holds another state, which enable
-# of ssh.socket or ssh.service sets to enabled. A unit is active unless
-# $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables and starts them,
-# unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
+# systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
+# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled.
+# A unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers
+# enables and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
 # ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is enabled
 # once systemctl --user enable ran, and active once enable --now did. A user unit needs a
 # daemon-reload while $SANDBOX/reload-needed exists, which daemon-reload removes, unless
@@ -76,11 +75,10 @@ case "$1" in
     is-enabled) case "$2" in
         smartmontools.service) cat "'"$SANDBOX"'/smartd" 2> /dev/null || echo disabled ;;
         apt-daily.timer | apt-daily-upgrade.timer | ssh.socket) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo enabled ;;
-        ssh.service) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo disabled ;;
         *) echo masked ;;
     esac ;;
     enable)
-        case "$3" in ssh.socket | ssh.service) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
+        case "$3" in ssh.socket) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
         if [ "$3" == apt-daily.timer ]; then
             [ ! -e "'"$SANDBOX"'/timers-fail" ] || exit 1
             for unit in "${@:3}"; do rm -f "'"$SANDBOX"'/units/$unit" "'"$SANDBOX"'/units/$unit.inactive"; done
@@ -362,18 +360,11 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running"
 rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 
-# sshd starts at boot through the unit the system uses: ssh.socket when it's enabled, else
-# ssh.service when it is. With neither, Ubuntu's default, ssh.socket.
+# sshd starts at boot through ssh.socket, 26.04's default
 echo disabled > "$SANDBOX/units/ssh.socket"
-echo disabled > "$SANDBOX/units/ssh.service"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot (run sudo systemctl enable --now ssh.socket)"
-echo enabled > "$SANDBOX/units/ssh.service"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
-rm "$SANDBOX/units/"*
-# The step enables the unit status names, after asking
-echo disabled > "$SANDBOX/units/ssh.socket"
+# The step enables it, after asking
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=0 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.socket"

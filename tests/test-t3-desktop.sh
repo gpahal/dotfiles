@@ -32,17 +32,14 @@ esac'
 }
 stub_launchd
 stub pgrep 'exit 1'
-OLD_AGENT='<?xml version="1.0" encoding="UTF-8"?>
+DIFFERENT_AGENT='<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>dotfiles.t3code-telemetry-off</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/launchctl</string>
-        <string>setenv</string>
-        <string>T3CODE_TELEMETRY_ENABLED</string>
-        <string>false</string>
+        <string>/usr/bin/true</string>
     </array>
 </dict>
 </plist>'
@@ -79,9 +76,9 @@ assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
 assert_exit 0 configure_t3_code
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 
-# The agent from an earlier version, which only set the variable, counts as missing, and a re-run
+# A LaunchAgent whose content differs from what the step writes counts as missing, and a re-run
 # replaces it
-printf '%s\n' "$OLD_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
+printf '%s\n' "$DIFFERENT_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
 run status
 assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
 assert_exit 0 configure_t3_code

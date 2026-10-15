@@ -53,11 +53,9 @@ Steps marked **(script)** below are done for you. The script adds no MCP servers
 The `upgrade` shell function updates the AI tools with everything else, through `upgrade-ai-tools`, which you can also run on its own. It updates only what's installed, and lists the failed stages at the end:
 
 - **Claude Code native install:** `claude update`.
-- **Codex CLI or Claude Code installed with npm:** `npm install -g <package>@latest`. `upgrade` skips it when it couldn't put mise's new Node on PATH. mise later removes the Node version that holds them, so prefer brew or `mise use -g npm:<package>`, which the main [`upgrade`](../README.md#updating) updates.
 - **t3 CLI and the T3 Code service:** `t3 update`. It asks before restarting a running service.
 - **Desktop apps installed with brew:** `brew upgrade --cask --greedy`, skipping running apps.
 - **Codex CLI installed with brew:** `brew upgrade --cask --greedy codex`, even while it runs.
-- **Codex CLI from its standalone installer:** `codex update`.
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. A running session keeps the old version until `/reload-plugins`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
@@ -107,7 +105,7 @@ The Claude desktop app **(script)** stays out of the menu bar, bounces its Dock 
 
 ## Codex
 
-The Codex desktop app is part of the **ChatGPT desktop app**, which alone has the browser, Chrome control, and computer use. The script installs the app and the CLI with brew **(script)**, and leaves alone a Codex from its standalone installer.
+The Codex desktop app is part of the **ChatGPT desktop app**, which alone has the browser, Chrome control, and computer use. The script installs the app and the CLI with brew **(script)**.
 
 ### Notifications
 

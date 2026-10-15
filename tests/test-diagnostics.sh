@@ -602,7 +602,6 @@ assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
 # The docker step's report includes it once Docker is installed
 docker_installed() { true; }
-conflicting_packages() { :; }
 status_apt_source() { :; }
 docker_df 'Images\t1\t1GB\t0B\n'
 run status

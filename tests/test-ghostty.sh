@@ -5,8 +5,7 @@ set -euo pipefail
 
 # On macOS, the ghostty step copies the config and reloads running Ghostty windows with SIGUSR2
 # only when the config changed, and carries on when Ghostty isn't running. It installs nothing
-# there. test-step-failures.sh covers the Ubuntu snap install; this covers skipping it when
-# another Ghostty is installed.
+# there. On Ubuntu, it installs the snap when missing; test-step-failures.sh covers its failures.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -38,30 +37,12 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Ghostty is not running; skipping reload."
 assert_eq "pkill -USR2 -x ghostty" "$(cat "$STUB_LOG")" "commands run with Ghostty not running"
 
-# --- Ubuntu with Ghostty from apt: the snap would be a second one, so it's skipped ---
+# --- Ubuntu: the snap is installed when missing ---
 is_macos() { false; }
 is_ubuntu() { true; }
 stub pkill 'exit 1'
 stub snap 'exit 1'
-stub dpkg-query 'echo "install ok installed"'
 export DOTFILES_ASSUME_YES=1
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Ghostty is installed from apt"
-assert_file_not_contains "$STUB_LOG" "snap install"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Ghostty installed from apt"
-# Or one on PATH from elsewhere, such as a build from source
-stub dpkg-query 'exit 1'
-stub ghostty
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Ghostty is installed at $STUB_DIR/ghostty"
-assert_file_not_contains "$STUB_LOG" "snap install"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Ghostty installed at $STUB_DIR/ghostty"
-# Neither: the snap is installed
-rm "$STUB_DIR/ghostty"
 stub sudo
 : > "$STUB_LOG"
 assert_exit 0 main

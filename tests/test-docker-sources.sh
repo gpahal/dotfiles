@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# The docker step skips when any package Docker's install docs say conflicts is installed, writes
-# Docker's own source, rolling it back when apt can't use it, and lets unattended-upgrades install
+# The docker step writes Docker's own source, rolling it back when apt can't use it, and lets unattended-upgrades install
 # Docker's updates. With Docker installed, it rewrites a source that's deleted, turned off, or for
 # an older release. Until Docker publishes packages for this release, it waits without failing.
 
@@ -63,17 +62,6 @@ reset() {
     : > "$STUB_LOG"
     unset DOTFILES_ASSUME_YES
 }
-
-# Each conflicting package skips the step, naming it
-for package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do
-    reset
-    echo "$package" > "$SANDBOX/installed"
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "$package"
-    assert_contains "$RUN_OUTPUT" "skipping"
-    assert_exit 0 status
-    assert_contains "$RUN_OUTPUT" "skipped    Docker: $package"
-done
 
 # Declined: nothing written
 reset

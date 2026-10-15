@@ -90,12 +90,12 @@ T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cl
 # starts in ~/Dev; threads continue after an app update; inactive threads settle after 5 days; old
 # worktrees, browser artifacts, and logs are cleaned up; pull requests start with squash merge;
 # commit and PR text follows custom instructions. Existing worktree setup actions wait for
-# completion: T3 has no global async default, so both the current and legacy action lists get it.
+# completion: T3 has no global async default, so each action list gets it.
 # A model of your own keeps its instance and options, a custom Claude instance's included, and its
 # effort is left to you too. Replacing it switches to Claude's instance, which drops another
 # provider's options. Model options are set in place, so any others and their order survive a
-# re-run. The global worktreeCleanup holds the worktree rules, which it takes over from
-# storageCleanup's older worktree fields. Project overrides are left alone, but for their setup actions.
+# re-run. The global worktreeCleanup holds the worktree rules. Project overrides are left alone,
+# but for their setup actions.
 # T3 Code 0.0.46 and later write only values that differ from a key's default, so a value equal to
 # it never settles. Checked against T3 Code 0.0.45; scripts/check-t3-settings.sh checks every key,
 # and warns about such values, against the latest release in CI.
@@ -116,8 +116,7 @@ t3_code_server_filter() {
         end;
     (
         .defaultProjectScripts[]?,
-        .projectSettingsOverrides[]?.defaultProjectScripts[]?,
-        .projectScriptOverrides[]?[]?
+        .projectSettingsOverrides[]?.defaultProjectScripts[]?
     ) |= if .runOnWorktreeCreate == true then .async = false else . end
     | if (.defaultModelSelection.model // "") as $model
         | $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')

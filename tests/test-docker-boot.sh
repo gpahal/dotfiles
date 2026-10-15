@@ -13,10 +13,10 @@ load_script docker/install.sh
 is_macos() { false; }
 is_ubuntu() { true; }
 
-# Docker's packages are installed, and none that conflict with them, you're in the docker group, and
-# the daemon config is set. docker.service is enabled when $SANDBOX/service says "on", and
-# docker.socket is enabled and active when $SANDBOX/socket does; enabling either turns it on. The
-# daemon isn't running, so status doesn't run docker.
+# Docker's packages are installed, you're in the docker group, and the daemon config is set.
+# docker.service is enabled when $SANDBOX/service says "on", and docker.socket is enabled and
+# active when $SANDBOX/socket does; enabling either turns it on. The daemon isn't running, so
+# status doesn't run docker.
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in

@@ -113,7 +113,6 @@ filetype plugin indent on
 
 " ── Performance ──
 set lazyredraw
-set ttyfast
 
 " ── File handling ──
 set noswapfile
@@ -133,9 +132,6 @@ set splitright
 
 " ── Sound ──
 set noerrorbells visualbell t_vb=
-if has('autocmd')
-  autocmd GUIEnter * set visualbell t_vb=
-endif
 
 " ── Plugin config ──
 let g:airline_theme='papercolor'

@@ -13,10 +13,6 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
-# The packages Docker's install docs say to remove first: Ubuntu's own Docker packages, and the
-# containerd and runc that containerd.io bundles
-# https://docs.docker.com/engine/install/ubuntu/#uninstall-old-versions
-DOCKER_CONFLICTS=(docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
@@ -50,15 +46,6 @@ docker_installed() {
     for package in "${DOCKER_PACKAGES[@]}"; do
         apt_installed "$package" || return 1
     done
-}
-
-# Print the installed packages that conflict with Docker's, space-separated
-conflicting_packages() {
-    local package found=()
-    for package in "${DOCKER_CONFLICTS[@]}"; do
-        apt_installed "$package" && found+=("$package")
-    done
-    echo "${found[*]:-}"
 }
 
 docker_auto_updates_configured() {
@@ -202,12 +189,7 @@ status() {
         status_item skipped "Docker: OrbStack, from the homebrew step, provides it on macOS"
         return 0
     fi
-    local installed=false conflicts
-    conflicts="$(conflicting_packages)"
-    if [ -n "$conflicts" ]; then
-        status_item skipped "Docker: $conflicts, which conflict with Docker's packages, installed instead"
-        return 0
-    fi
+    local installed=false
     docker_installed && installed=true
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
@@ -311,13 +293,6 @@ main() {
     require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
-    local conflicts
-    conflicts="$(conflicting_packages)"
-    if [ -n "$conflicts" ]; then
-        echo "  $conflicts conflict with Docker's packages; skipping. To use Docker's packages instead,"
-        echo "  remove them (sudo apt-get remove $conflicts) and re-run this step."
-        return 0
-    fi
 
     # Installed Docker updates only while its source is the one this step writes. A release upgrade
     # turns third-party sources off, and a re-run rewrites this one for the new release once Docker

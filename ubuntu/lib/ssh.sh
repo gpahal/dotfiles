@@ -8,18 +8,8 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
-# Print the unit that starts sshd at boot: the one enabled, ssh.socket first, or else
-# ssh.socket, the default on every supported release
-ssh_unit() {
-    local unit
-    for unit in ssh.socket ssh.service; do
-        [ "$(systemctl is-enabled "$unit" 2>/dev/null)" != enabled ] || { echo "$unit"; return 0; }
-    done
-    echo ssh.socket
-}
-
 sshd_enabled() {
-    [ "$(systemctl is-enabled "$(ssh_unit)" 2>/dev/null)" == enabled ]
+    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ]
 }
 
 # Print the SHA256 fingerprint of each public key in ~/.ssh/authorized_keys, one per line

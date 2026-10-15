@@ -104,9 +104,9 @@ t3_code_process_environ() {
     else printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773 T3CODE_HOST=127.0.0.1; fi
 }
 
-# A drop-in from an older version of this step, which systemd has loaded
-old_drop_in() {
-    echo "# old" > "$T3_CODE_SERVICE_DROP_IN"
+# A drop-in whose content differs from what the step writes, which systemd has loaded
+different_drop_in() {
+    echo "# different" > "$T3_CODE_SERVICE_DROP_IN"
     cp "$T3_CODE_SERVICE_DROP_IN" "$STATE/loaded-drop-in"
 }
 
@@ -141,7 +141,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user start"
 # still gets restarted for it once that server stops
 reset
 installed_unit
-old_drop_in
+different_drop_in
 touch "$STATE/old-env"
 touch "$STATE/active" "$STATE/enabled"
 echo "$MANUAL_SERVER" > "$SANDBOX/procs"
@@ -361,7 +361,7 @@ confirm() { echo "$1"; false; }
 # the question comes again on the next run, and status reports the drop-in and the pending restart.
 reset
 installed_unit
-old_drop_in
+different_drop_in
 echo '{}' > "$T3_CODE_SETTINGS"
 touch "$STATE/old-env" "$STATE/active" "$STATE/enabled"
 assert_exit 0 configure_t3_code_ubuntu
@@ -411,7 +411,7 @@ assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_exit 1 t3_code_restart_pending
 
 # A failed reload is retried even though the drop-in now matches the desired file.
-old_drop_in
+different_drop_in
 touch "$STATE/reload-needed" "$STATE/old-env"
 stub systemctl '[ "$2" != daemon-reload ] || exit 1
 '"$SYSTEMCTL_STUB"

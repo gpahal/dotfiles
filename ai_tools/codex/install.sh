@@ -17,9 +17,7 @@ CODEX_CONFIG="$HOME/.codex/config.toml"
 # The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
 # the step rather than leaving Codex reading files setup never wrote
 CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
-# Ubuntu 26.04's apparmor package installs this profile in /etc/apparmor.d, which loads it at
-# boot. The extra-profiles path is a fallback when that copy is missing.
-BWRAP_PROFILE_SOURCE=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+# Ubuntu's apparmor package installs this profile, which loads at boot
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
@@ -283,35 +281,8 @@ install_user_instructions() {
     user_instructions_files copy_file_ask
 }
 
-# Codex's standalone installer puts codex in ~/.local/bin, which comes before Homebrew on PATH (see
-# zsh/basic-settings.zsh), so a cask installed beside it would never run. Print the path of a codex
-# that isn't Homebrew's, which may not be on this shell's PATH yet.
-codex_outside_homebrew() {
-    local prefix codex
-    prefix="$(brew --prefix 2>/dev/null || true)"
-    for codex in "$(command -v codex || true)" "$HOME/.local/bin/codex"; do
-        [ -n "$codex" ] && [ -x "$codex" ] || continue
-        [ -n "$prefix" ] && [[ "$codex" == "$prefix/"* ]] && continue
-        echo "$codex"
-        return 0
-    done
-    return 1
-}
-
 install_codex_cli() {
-    local codex standalone
-    if ! codex="$(codex_outside_homebrew)"; then
-        install_cask codex "$(codex_cask_path)"
-        return $?
-    fi
-    # upgrade-ai-tools runs `codex update` only for the standalone install, which links into here
-    standalone="$(cd "${CODEX_HOME:-$HOME/.codex}" 2>/dev/null && pwd -P)/packages/standalone/"
-    echo "  Codex is already installed at $codex, not by Homebrew."
-    if [[ "$(readlink -f "$codex" 2>/dev/null)" == "$standalone"* ]]; then
-        echo "  upgrade-ai-tools updates it with \`codex update\`."
-    else
-        echo "  Update it the way you installed it."
-    fi
+    install_cask codex "$(codex_cask_path)"
 }
 
 # Print the path of a codex Homebrew's cask installs. Prints nothing without brew, rather than
@@ -326,12 +297,10 @@ codex_cask_path() {
 # "Not logged in" and exits 1 when it isn't.
 codex_status_signed_in() {
     local codex out
-    if ! codex="$(codex_outside_homebrew)"; then
-        codex="$(codex_cask_path)"
-        if [ -z "$codex" ] || [ ! -x "$codex" ]; then
-            status_item unknown "Signed in to Codex: Codex isn't installed"
-            return
-        fi
+    codex="$(codex_cask_path)"
+    if [ -z "$codex" ] || [ ! -x "$codex" ]; then
+        status_item unknown "Signed in to Codex: Codex isn't installed"
+        return
     fi
     if out="$("$codex" login status 2>&1)"; then
         status_item ok "Signed in to Codex"
@@ -348,7 +317,7 @@ bwrap_works() {
     bwrap --unshare-all --ro-bind / / /bin/true &>/dev/null
 }
 
-# Ubuntu 23.10 and later stop unprivileged processes from using the user namespaces bwrap needs,
+# Ubuntu stops unprivileged processes from using the user namespaces bwrap needs,
 # unless an AppArmor profile allows them
 userns_restricted() {
     [ "$(cat "$USERNS_RESTRICT_SYSCTL" 2>/dev/null)" == "1" ]
@@ -362,10 +331,9 @@ bwrap_profile_can_fix() {
         echo "  cause. Check: bwrap --unshare-all --ro-bind / / /bin/true" >&2
         return 1
     fi
-    if [ ! -f "$BWRAP_PROFILE" ] && [ ! -f "$BWRAP_PROFILE_SOURCE" ] &&
-        ! apt-cache show apparmor-profiles &>/dev/null; then
-        echo "  bwrap needs AppArmor's bwrap-userns-restrict profile, and apt doesn't offer" >&2
-        echo "  apparmor-profiles to provide it. See https://learn.chatgpt.com/docs/sandboxing." >&2
+    if [ ! -f "$BWRAP_PROFILE" ]; then
+        echo "  bwrap needs AppArmor's $BWRAP_PROFILE, which is missing. Reinstall the" >&2
+        echo "  apparmor package that provides it: sudo apt-get install --reinstall apparmor" >&2
         return 1
     fi
 }
@@ -378,7 +346,7 @@ setup_codex_sandbox() {
     if ! apt_installed bubblewrap; then
         install=true
         pending+=("Install bubblewrap, which Codex's sandbox runs commands in")
-        # From 25.04 the profile bwrap needs loads at boot, so it's loaded only if bwrap then fails
+        # The profile bwrap needs loads at boot, so it's loaded only if bwrap then fails
         if userns_restricted; then
             pending+=("Load the bwrap-userns-restrict AppArmor profile, if bwrap then can't create user namespaces")
         fi
@@ -398,16 +366,7 @@ setup_codex_sandbox() {
     fi
     if ! bwrap_works; then
         bwrap_profile_can_fix || return 1
-        # apparmor_parser comes with apparmor, so a profile already in apparmor.d needs no package
-        if [ ! -f "$BWRAP_PROFILE" ]; then
-            if ! "$install"; then
-                # shellcheck disable=SC2119 # as above
-                apt_get_update || return 1
-            fi
-            apt_get install -y apparmor-profiles apparmor-utils || return 1
-            sudo install -m 0644 "$BWRAP_PROFILE_SOURCE" "$BWRAP_PROFILE" || return 1
-        fi
-        # A profile already in apparmor.d may not be loaded; apparmor_parser -r is safe to repeat
+        # The profile may not be loaded; apparmor_parser -r is safe to repeat
         sudo apparmor_parser -r "$BWRAP_PROFILE" || return 1
     fi
     if ! bwrap_works; then
@@ -425,9 +384,7 @@ status() {
     else
         status_item skipped "ChatGPT desktop app: macOS only"
     fi
-    if codex="$(codex_outside_homebrew)"; then
-        status_item ok "Codex CLI at $codex"
-    elif status_require_cmd brew codex; then
+    if status_require_cmd brew codex; then
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
@@ -474,10 +431,7 @@ main() {
         return 1
     fi
     require_cmd yq || return 1
-    # brew installs the ChatGPT cask, and the codex cask unless another codex is installed
-    if is_macos || ! codex_outside_homebrew > /dev/null; then
-        require_cmd brew || return 1
-    fi
+    require_cmd brew || return 1
     local result=0
     if is_macos; then
         install_cask chatgpt /Applications/ChatGPT.app || result=1

@@ -107,21 +107,11 @@ mkdir -p "$APT_SOURCES_DIR"
 
 # --- the chrome step's google_source_exists: the .deb's file, there and on ---
 check=google_source_exists
-list="$APT_SOURCES_DIR/google-chrome.list"
-sources="$APT_SOURCES_DIR/google-chrome.sources"
-uri=https://dl.google.com/linux/chrome/deb/
+GOOGLE_SOURCES="$APT_SOURCES_DIR/google-chrome.sources"
+uri=https://dl.google.com/linux/chrome-stable/deb/
 assert_exit 1 "$check"
-: > "$list"
+printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\nEnabled: no\n' "$uri" > "$GOOGLE_SOURCES"
 assert_exit 1 "$check"
-printf '# deb %s stable main # disabled on upgrade to resolute\n' "$uri" > "$list"
-assert_exit 1 "$check"
-printf '### THIS FILE IS AUTOMATICALLY CONFIGURED ###\n\ndeb [arch=amd64] %s stable main\n' "$uri" > "$list"
-assert_exit 0 "$check"
-rm "$list"
-printf 'deb %s stable main\n' "$uri" > "$list.distUpgrade"
-assert_exit 1 "$check"
-printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\nEnabled: no\n' "$uri" > "$sources"
-assert_exit 1 "$check"
-printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\n' "$uri" > "$sources"
+printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\n' "$uri" > "$GOOGLE_SOURCES"
 assert_exit 0 "$check"
 test_done

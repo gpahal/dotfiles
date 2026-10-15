@@ -7,7 +7,7 @@ set -euo pipefail
 # bind to into /etc/docker/daemon.json, keeping the file's other keys and mode, restarts a running
 # daemon only when the file changed, and leaves invalid JSON alone. A failed write leaves the old
 # file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
-# the new file. test-docker-sources.sh covers the conflicting-package skip.
+# the new file.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

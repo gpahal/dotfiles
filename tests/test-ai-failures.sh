@@ -70,7 +70,6 @@ assert_not_contains "$RUN_OUTPUT" "Turned on push notifications"
 # nothing rather than /bin/codex
 load_script ai_tools/codex/install.sh
 hide brew
-codex_outside_homebrew() { return 1; }
 cask_state() { echo "cask_state $*" >> "$STUB_LOG"; }
 assert_exit 1 install_cask claude /Applications/Claude.app
 assert_eq "  $(missing_cmd_hint brew)" "$RUN_OUTPUT" "install_cask without brew"
@@ -87,7 +86,6 @@ if yq --version 2>/dev/null | grep -q mikefarah; then
         load_script ai_tools/codex/install.sh
         is_macos() { [ "$TEST_OS" == macos ]; }
         is_ubuntu() { [ "$TEST_OS" == ubuntu ]; }
-        codex_outside_homebrew() { return 1; }
         install_cask() { return 1; }
         setup_codex_sandbox() { echo sandbox >> "$STUB_LOG"; }
         main

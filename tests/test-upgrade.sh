@@ -4,9 +4,9 @@ set -euo pipefail
 # scripts/upgrade.sh, which zsh's upgrade and upgrade-ai-tools functions run, runs each tool's
 # update, in order, on each OS, with every tool stubbed: apt on Ubuntu only, the Brewfile's new
 # formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
-# ~/.cargo/bin when it isn't on PATH, the plugin managers, Claude Code's and Codex's own updaters
-# only for their native installs, even with HOME reached through a symlink, Claude Code's plugins
-# outside project, local, and managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
+# ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
+# even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
+# managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
 # alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
 
@@ -55,18 +55,19 @@ ln -s "$JQ" "$STUB_DIR/jq"
 for cmd in mas vim uv rustup t3 fc-cache; do
     stub "$cmd"
 done
+# rustup's installer puts it in ~/.cargo/bin, which isn't on PATH
+mkdir -p "$HOME/.cargo/bin"
+mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 # upgrade runs mise from ~, away from any project's mise.toml in the dir it was started in. After
 # mise upgrade, it applies mise's hook-env, so npm, and upgrade-ai-tools after it, run the new
 # Node. The hook-env stub puts $SANDBOX/new-node, whose npm logs as "new-node npm", first on PATH.
 # shellcheck disable=SC2016 # expanded by the stub
 stub mise '[ "$PWD" == "$HOME" ] || echo "mise ran in $PWD" >> "$STUB_LOG"
 [ "$*" != "hook-env --force -s bash" ] || echo "export PATH='"$SANDBOX/new-node"':\$PATH"'
-# npm lists Claude Code as a global package, not Codex
-stub npm '[ "$*" != "ls -g --depth=0 @openai/codex" ]'
+stub npm
 mkdir -p "$SANDBOX/new-node"
 # shellcheck disable=SC2016 # expanded by the script
-printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' \
-    '[ "$*" != "ls -g --depth=0 @openai/codex" ]' > "$SANDBOX/new-node/npm"
+printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' > "$SANDBOX/new-node/npm"
 chmod +x "$SANDBOX/new-node/npm"
 stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"a@m\", \"scope\": \"user\"},
@@ -103,12 +104,10 @@ upgrade_on() {
     sed -e "s|$HOME|~|g" -e "s|$REPO_DIR/|REPO/|g" -e "/^$(basename "$JQ") /d" "$STUB_LOG"
 }
 
-# macOS. Claude Code and Codex are native installs: claude updates itself, and codex too.
-mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions" "$HOME/.codex/packages/standalone/bin"
+# macOS. Claude Code is the native install, which updates itself.
+mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
 mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
 ln -s "$HOME/.local/share/claude/versions/2.0.0" "$HOME/.local/bin/claude"
-mv "$STUB_DIR/codex" "$HOME/.codex/packages/standalone/bin/codex"
-ln -s "$HOME/.codex/packages/standalone/bin/codex" "$HOME/.local/bin/codex"
 assert_eq "brew update
 brew upgrade
 (not auto_updates casks)
@@ -136,9 +135,6 @@ new-node npm update -g
 uv tool upgrade --all
 rustup update
 claude update
-new-node npm ls -g --depth=0 @openai/codex
-new-node npm ls -g --depth=0 @anthropic-ai/claude-code
-new-node npm install -g @anthropic-ai/claude-code@latest
 brew list --cask claude
 brew outdated --cask --greedy --quiet claude
 brew info --json=v2 --cask claude
@@ -146,7 +142,6 @@ pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
-codex update
 claude plugin marketplace update
 claude plugin list --json
 claude plugin update a@m --scope user
@@ -161,13 +156,11 @@ env HOME="$SANDBOX/home-link" PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR" \
     < /dev/null > "$SANDBOX/output" 2>&1 || true
 assert_file_contains "$STUB_LOG" "claude update"
-assert_file_contains "$STUB_LOG" "codex update"
 
-# rustup from its installer, in ~/.cargo/bin, which isn't on PATH
-mkdir -p "$HOME/.cargo/bin"
-mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
-assert_contains "$(upgrade_on darwin25.0)" "rustup update" "commands upgrade runs with rustup in ~/.cargo/bin"
+# A rustup elsewhere on PATH isn't the runtimes step's, so it's left alone
 mv "$HOME/.cargo/bin/rustup" "$STUB_DIR/rustup"
+assert_not_contains "$(upgrade_on darwin25.0)" "rustup" "commands upgrade runs with rustup only on PATH"
+mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 
 # brew bundle check fails on a missing App Store app, which brew bundle install can't fix without
 # an App Store sign-in, so upgrade has it skip the Brewfile's App Store apps by id. Here only those
@@ -203,11 +196,10 @@ assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
 assert_file_not_contains "$STUB_LOG" "pgrep"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
-# Ubuntu. Claude Code and Codex come from elsewhere, so neither updates itself. The Zed cask is outdated, and brew upgrade skips
-# it, as it does on macOS.
-rm "$HOME/.local/bin/claude" "$HOME/.local/bin/codex"
+# Ubuntu. Claude Code comes from elsewhere, so it doesn't update itself. The Zed cask is outdated,
+# and brew upgrade skips it, as it does on macOS.
+rm "$HOME/.local/bin/claude"
 mv "$HOME/.local/share/claude/versions/2.0.0" "$STUB_DIR/claude"
-mv "$HOME/.codex/packages/standalone/bin/codex" "$STUB_DIR/codex"
 stub brew 'case "$*" in
     upgrade) [ -z "${HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS:-}" ] || echo "(not auto_updates casks)" >> "$STUB_LOG" ;;
     "list --cask zed") ;;
@@ -236,9 +228,6 @@ mise hook-env --force -s bash
 new-node npm update -g
 uv tool upgrade --all
 rustup update
-new-node npm ls -g --depth=0 @openai/codex
-new-node npm ls -g --depth=0 @anthropic-ai/claude-code
-new-node npm install -g @anthropic-ai/claude-code@latest
 brew list --cask claude
 brew list --cask chatgpt
 brew list --cask t3-code
@@ -300,8 +289,7 @@ assert_file_not_contains "$STUB_LOG" "t3 "
 assert_file_not_contains "$STUB_LOG" "codex "
 
 # mise hook-env fails, or prints nothing: npm would run the Node from before mise upgrade, so
-# neither npm update -g nor upgrade-ai-tools' npm installs run, and upgrade names the stage and
-# fails
+# npm update -g doesn't run, and upgrade names the stage and fails
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
 for hook in 'exit 1' 'exit 0'; do
     stub mise '[ "$1" != hook-env ] || '"$hook"
@@ -407,21 +395,7 @@ assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
 assert_not_contains "$RUN_OUTPUT" "Interrupted"
 assert_file_contains "$STUB_LOG" "rustup update"
-# upgrade-ai-tools too, here when npm is interrupted, and when brew is, upgrading a cask
-stub brew
-stub npm '[ "$1" != install ] || exit 130'
-: > "$STUB_LOG"
-assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
-assert_file_not_contains "$STUB_LOG" "brew list"
-assert_file_not_contains "$STUB_LOG" "claude plugin"
-stub npm '[ "$1" != install ] || exit 1'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-assert_file_contains "$STUB_LOG" "claude plugin marketplace update"
-stub npm
+# upgrade-ai-tools too, here when brew is interrupted upgrading a cask
 stub brew 'case "$*" in
     "list --cask claude") ;;
     "list --cask"*) exit 1 ;;

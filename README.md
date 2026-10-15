@@ -2,7 +2,7 @@
 
 Configuration and setup scripts for my Mac, and for the Ubuntu desktop I use from it over SSH. See [Ubuntu](#ubuntu-1) for what differs there.
 
-The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On an older macOS or ARM Ubuntu, they warn and carry on, and a package with no build for the machine fails its step, except Chrome, which is skipped.
+The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On ARM Ubuntu, they warn and carry on. A package with no ARM build then fails its step, except Chrome, which the chrome step skips.
 
 ![zsh prompt](./resources/prompt.png)
 
@@ -448,7 +448,7 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `vim/vimrc` pins.
 - tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
-- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips the npm updates here and in `upgrade-ai-tools`, which would run the old Node.
+- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips `npm update -g`, which would run the old Node.
 - Global npm packages: `npm update -g`
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`

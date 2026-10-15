@@ -95,21 +95,19 @@ assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
-# macOS before 27 gets a warning, and the run carries on
+# ARM Ubuntu gets a warning, and the run carries on
+is_macos() { false; }
+is_ubuntu() { true; }
+stub uname '[ "$1" != -m ] || echo aarch64'
+assert_exit 0 run_steps "" first
+assert_contains "$RUN_OUTPUT" "Warning: setup is tested on x86_64 Ubuntu, not aarch64."
+assert_contains "$RUN_OUTPUT" "first ran"
+
 is_macos() { true; }
 is_ubuntu() { false; }
-stub uname '[ "$1" != -m ] || echo arm64'
-stub sw_vers '[ "$1" != -productVersion ] || echo 14.7.2'
-assert_exit 0 run_steps "" first
-assert_contains "$RUN_OUTPUT" "Warning: setup is tested on macOS 27, not 14.7.2."
-assert_contains "$RUN_OUTPUT" "first ran"
-stub sw_vers '[ "$1" != -productVersion ] || echo 27.0.1'
-assert_exit 0 run_steps "" first
-assert_not_contains "$RUN_OUTPUT" "Warning" "the run on macOS 27.0.1"
 
 # An Intel Mac fails before any step runs, status included
 stub uname '[ "$1" != -m ] || echo x86_64'
-stub sw_vers '[ "$1" != -productVersion ] || echo 15.7'
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first
 assert_contains "$RUN_OUTPUT" "Intel Macs aren't supported"

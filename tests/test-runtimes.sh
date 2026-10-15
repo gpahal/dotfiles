@@ -4,9 +4,9 @@
 set -euo pipefail
 
 # The runtimes step sets mise's globals when they're unset, asks before replacing ones you set,
-# installs rustup only when it isn't there, sets or repairs Rust's default toolchain, and still sets
-# up Rust when mise fails, then fails. Without mise it fails before installing anything. mise, and
-# curl, which fetches the rustup installer, are stubbed.
+# installs rustup only when ~/.cargo/bin/rustup isn't there, sets or repairs Rust's default
+# toolchain, and still sets up Rust when mise fails, then fails. Without mise it fails before
+# installing anything. mise, and curl, which fetches the rustup installer, are stubbed.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -256,8 +256,14 @@ assert_contains "$RUN_OUTPUT" "missing    The tools mise's configs in ~ list ins
 assert_file_contains "$STUB_LOG" "mise ls --missing"
 assert_file_not_contains "$STUB_LOG" "mise ls --missing --global"
 
+# Only rustup's installer's copy in ~/.cargo/bin counts, not one elsewhere on PATH
+rm "$HOME/.cargo/bin/rustup"
+cp "$RUST_STUB" "$STUB_DIR/rustup"
+assert_exit 1 rustup_installed
+rm "$STUB_DIR/rustup"
+
 # A missing mise fails the step before it installs anything
-rm "$STUB_DIR/mise" "$HOME/.cargo/bin/rustup"
+rm "$STUB_DIR/mise"
 : > "$STUB_LOG"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "mise"

@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # Copy the Ghostty config and, when it changed, reload it in running Ghostty windows. On Ubuntu,
-# also install Ghostty from its snap, which snapd keeps updated, unless another Ghostty is
-# installed; the homebrew step installs it on macOS. Without snapd, the step still copies the
-# config, then fails.
+# also install Ghostty from its snap, which snapd keeps updated; the homebrew step installs it on
+# macOS. Without snapd, the step still copies the config, then fails.
 #
 # A temp HOME doesn't isolate this step, which signals the running Ghostty to reload, and on Ubuntu
 # runs sudo snap install. Test its Ubuntu side in an Ubuntu VM, such as an OrbStack machine. On
@@ -27,31 +26,9 @@ ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }
 
-# Print how Ghostty is installed, when not from the snap: "from apt", or "at <path>" for another
-# ghostty on PATH, such as a build from source. Prints nothing otherwise.
-ghostty_other_install() {
-    local path
-    if apt_installed ghostty; then
-        echo "from apt"
-        return 0
-    fi
-    path="$(command -v ghostty 2>/dev/null || true)"
-    case "$path" in
-        "" | /snap/*) ;;
-        *) echo "at $path" ;;
-    esac
-}
-
 install_ghostty() {
-    local other
     if ghostty_snap_installed; then
         echo "  Ghostty already installed."
-        return 0
-    fi
-    # The snap would add a second Ghostty, and which one runs would depend on PATH order
-    other="$(ghostty_other_install)"
-    if [ -n "$other" ]; then
-        echo "  Ghostty is installed $other, so skipping its snap, which would be a second copy."
         return 0
     fi
     if ! command -v snap &>/dev/null; then
@@ -113,15 +90,8 @@ ghostty_overrides_status() {
 }
 
 status() {
-    local other
     if is_ubuntu; then
-        other=""
-        ghostty_snap_installed || other="$(ghostty_other_install)"
-        if [ -n "$other" ]; then
-            status_item ok "Ghostty installed $other, so the step leaves out its snap"
-        else
-            status_check "Ghostty snap installed" ghostty_snap_installed
-        fi
+        status_check "Ghostty snap installed" ghostty_snap_installed
     else
         status_item skipped "Ghostty snap: the homebrew step installs Ghostty on macOS"
     fi

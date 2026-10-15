@@ -45,6 +45,9 @@ SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
 SSHD_RUN_DIR=/run/sshd
 # openssh-server's daemon, outside the PATH of a user who isn't root
 SSHD_BIN=/usr/sbin/sshd
+# The unit that starts sshd at boot, 26.04's default. ssh.service, which it starts on the first
+# connection, is the one that reloads sshd's config.
+SSH_UNIT=ssh.socket
 # The only dirs sbin_cmd looks in for a command such as ufw or smartctl: system dirs, since the
 # result can run under sudo
 SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -265,7 +268,7 @@ status() {
     elif sshd_enabled; then
         status_item ok "sshd starts at boot"
     else
-        status_item missing "sshd starts at boot (run sudo systemctl enable --now $(ssh_unit))"
+        status_item missing "sshd starts at boot (run sudo systemctl enable --now $SSH_UNIT)"
     fi
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_cached; then
         status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
@@ -406,7 +409,7 @@ main() {
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
-        pending+=("Start sshd at boot: systemctl enable --now $(ssh_unit)")
+        pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
     fi
     sshd_configured || pending+=("Write $SSHD_DROP_IN: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')")
     # Unreadable, the drop-in may already turn them off, which configure_sshd keeps
@@ -477,7 +480,7 @@ main() {
         fi
         # Installing the package enables sshd, so this catches one turned off since
         if apt_installed openssh-server && ! sshd_enabled; then
-            sudo systemctl enable --now "$(ssh_unit)" || result=1
+            sudo systemctl enable --now "$SSH_UNIT" || result=1
         fi
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then

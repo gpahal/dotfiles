@@ -51,16 +51,13 @@ mise_tools_installed() {
     ! "$missing"
 }
 
+# rustup's installer puts it here, which may not be on PATH yet
 rustup_installed() {
-    [ -x "$HOME/.cargo/bin/rustup" ] || command -v rustup &>/dev/null
+    [ -x "$HOME/.cargo/bin/rustup" ]
 }
 
 run_rustup() {
-    if [ -x "$HOME/.cargo/bin/rustup" ]; then
-        "$HOME/.cargo/bin/rustup" "$@"
-    else
-        rustup "$@"
-    fi
+    "$HOME/.cargo/bin/rustup" "$@"
 }
 
 # Query the default directly: a project's override must not conceal an incomplete global setup.

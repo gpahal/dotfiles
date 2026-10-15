@@ -129,17 +129,11 @@ require_supported_os() {
     return 1
 }
 
-# Warn when macOS is older than the tested release, 27, or Ubuntu's CPU isn't x86_64, the one
-# setup is tested on. Setup carries on, and a package with no build for the CPU fails its step.
+# Warn when Ubuntu's CPU isn't x86_64, the one setup is tested on. Setup carries on, and a package
+# with no build for the CPU fails its step.
 warn_untested_platform() {
-    local arch version
-    if is_macos; then
-        version="$(sw_vers -productVersion 2>/dev/null)" || version=""
-        case "${version%%.*}" in
-            [0-9] | 1[0-9] | 2[0-6]) echo "Warning: setup is tested on macOS 27, not $version. Carrying on. A package that needs a newer macOS fails its step." >&2 ;;
-        esac
-        return 0
-    fi
+    local arch
+    is_macos && return 0
     arch="$(uname -m)"
     [ "$arch" == x86_64 ] && return 0
     echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2

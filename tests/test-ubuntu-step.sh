@@ -726,6 +726,18 @@ stub_systemctl
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
 
+# A failed write leaves the old drop-in whole, its settings and all, and sshd isn't reloaded
+printf '%s\n' "PermitRootLogin no" "PasswordAuthentication no" "# old" > "$SSHD_DROP_IN"
+cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
+stub mv 'case "$*" in *10-dotfiles.conf*) exit 1 ;; esac
+exec /bin/mv "$@"'
+: > "$STUB_LOG"
+assert_exit 1 configure_sshd
+rm "$STUB_DIR/mv"
+assert_exit 0 cmp -s "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
+assert_eq 10-dotfiles.conf "$(/bin/ls -A "$SANDBOX/sshd_config.d")" "files beside the drop-in after a failed write"
+assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
+
 # A broken file elsewhere: the working drop-in stays, sshd isn't reloaded, the step names the
 # file, and still does the rest
 echo "# old, working" > "$SSHD_DROP_IN"

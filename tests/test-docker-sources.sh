@@ -123,32 +123,34 @@ touch "$SANDBOX/docker-update-fails"
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
 [ ! -e "$DOCKER_KEYRING" ] || fail "Docker's new key was kept after its source's update failed"
-# Writing the key fails partway: the old key comes back, and no source is written
+# Writing the key fails partway: the old key stays whole, with no temp file beside it, and no
+# source is written
 reset
 echo "old key" > "$DOCKER_KEYRING"
-stub install 'if [ -e "'"$SANDBOX"'/install-key-fails" ] && [ "${!#}" = "'"$DOCKER_KEYRING"'" ]; then
-    echo "ne" > "${!#}"
+stub install 'dest="${!#}"
+if [ -e "'"$SANDBOX"'/install-key-fails" ] && [[ "${dest##*/}" == .docker.asc.* ]]; then
+    echo "ne" > "$dest"
     exit 1
 fi
 exec /usr/bin/install "$@"'
 touch "$SANDBOX/install-key-fails"
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
-rm "$SANDBOX/install-key-fails"
+rm "$SANDBOX/install-key-fails" "$STUB_DIR/install"
 assert_eq "old key" "$(cat "$DOCKER_KEYRING")" "Docker's key after writing it failed partway"
+assert_eq docker.asc "$(/bin/ls -A "$(dirname "$DOCKER_KEYRING")")" "files beside Docker's key after writing it failed"
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written after the key failed"
-# Writing the source fails partway: the old source and key come back, or the new source goes
-# when there was none, and the step fails
-stub tee 'if rm "'"$SANDBOX"'/tee-fails-once" 2> /dev/null; then
-    printf "Types: deb\nURIs" > "$1"
+# Writing the source fails: the old key comes back, the old source stays, or none is left when
+# there was none, and the step fails
+stub mv 'if [ "${!#}" = "'"$DOCKER_SOURCES"'" ] && rm "'"$SANDBOX"'/mv-fails-once" 2> /dev/null; then
     exit 1
 fi
-exec /usr/bin/tee "$@"'
+exec /bin/mv "$@"'
 for before in source none; do
     reset
     echo "old key" > "$DOCKER_KEYRING"
     [ "$before" != source ] || echo "old source" > "$DOCKER_SOURCES"
-    touch "$SANDBOX/tee-fails-once"
+    touch "$SANDBOX/mv-fails-once"
     export DOTFILES_ASSUME_YES=1
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "Writing $DOCKER_SOURCES failed"
@@ -156,13 +158,16 @@ for before in source none; do
     if [ "$before" = source ]; then
         assert_eq "old source" "$(cat "$DOCKER_SOURCES")" "docker.sources after writing it failed"
     else
-        [ ! -e "$DOCKER_SOURCES" ] || fail "a partly written docker.sources was kept"
+        [ ! -e "$DOCKER_SOURCES" ] || fail "a docker.sources was kept after writing it failed"
     fi
+    assert_eq "$([ "$before" != source ] || echo docker.sources)" "$(/bin/ls -A "$(dirname "$DOCKER_SOURCES")")" \
+        "files beside docker.sources after writing it failed ($before before)"
     assert_file_not_contains "$STUB_LOG" "apt-get"
 done
 
 # Writing the source fails every time, so putting the old one back fails too: the step says so
-stub tee 'printf "Types: deb\nURIs" > "$1"; exit 1'
+stub mv '[ "${!#}" != "'"$DOCKER_SOURCES"'" ] || exit 1
+exec /bin/mv "$@"'
 reset
 echo "old key" > "$DOCKER_KEYRING"
 echo "old source" > "$DOCKER_SOURCES"
@@ -170,7 +175,7 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Writing $DOCKER_SOURCES failed, and putting the old one back failed too"
 assert_not_contains "$RUN_OUTPUT" "so the old one is back"
-rm "$STUB_DIR/tee"
+rm "$STUB_DIR/mv"
 
 # A docker.sources that can't be read fails the step before it touches the key
 reset

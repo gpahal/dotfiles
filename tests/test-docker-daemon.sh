@@ -4,9 +4,10 @@
 set -euo pipefail
 
 # The docker step merges log-driver, live-restore, and 127.0.0.1 as the address published ports
-# bind to into /etc/docker/daemon.json, keeping the
-# file's other keys, mode, and inode, restarts a running daemon only when the file changed, and
-# leaves invalid JSON alone. test-docker-sources.sh covers the conflicting-package skip.
+# bind to into /etc/docker/daemon.json, keeping the file's other keys and mode, restarts a running
+# daemon only when the file changed, and leaves invalid JSON alone. A failed write leaves the old
+# file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
+# the new file. test-docker-sources.sh covers the conflicting-package skip.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -43,18 +44,25 @@ assert_eq "$before" "$(/bin/ls -li "$DOCKER_DAEMON_CONFIG")" "daemon.json after 
 assert_file_not_contains "$STUB_LOG" "systemctl"
 
 # Driver-specific options don't survive the switch to local; compatible limits and other
-# daemon settings do. Keep a recoverable copy before replacing a working configuration.
+# daemon settings do. Once Docker restarts with the new file, no backup or temp file is left.
 printf '%s\n' '{"log-driver":"syslog","log-opts":{"syslog-address":"udp://127.0.0.1:514","max-size":"10m"},"dns":["1.1.1.1"]}' > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-logging"
 assert_exit 0 configure_daemon
 assert_eq null "$(jq -r '.["log-opts"]["syslog-address"]' "$DOCKER_DAEMON_CONFIG")" "incompatible option removed"
 assert_eq 10m "$(jq -r '.["log-opts"]["max-size"]' "$DOCKER_DAEMON_CONFIG")" "compatible limit kept"
 assert_file_contains "$STUB_LOG" 'dockerd --validate --config-file'
-found=false
-for backup in "$DOCKER_DAEMON_CONFIG".bak.*; do
-    if cmp -s "$backup" "$SANDBOX/before-logging"; then found=true; fi
-done
-"$found" || fail "no backup of the previous Docker config"
+assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a change"
+
+# A failed write leaves the original whole, with no backup or temp file, and Docker isn't restarted
+printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
+cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-write"
+stub mv '[ "${!#}" != "'"$DOCKER_DAEMON_CONFIG"'" ] || exit 1
+exec /bin/mv "$@"'
+: > "$STUB_LOG"
+assert_exit 1 configure_daemon
+rm "$STUB_DIR/mv"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-write"
+assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed write"
+assert_file_not_contains "$STUB_LOG" 'try-restart'
 
 # Invalid proposed settings leave the original untouched and never restart Docker.
 printf '{"log-driver":"json-file","unknown-option":true}\n' > "$DOCKER_DAEMON_CONFIG"
@@ -66,26 +74,29 @@ assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-validation"
 assert_file_not_contains "$STUB_LOG" 'try-restart'
 stub dockerd
 
-# Failed activation restores the original, so the next run retries rather than claiming done.
+# Failed activation restores the original and keeps the backup, so the next run retries rather
+# than claiming done.
 printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
 cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
 stub systemctl '[ "$1" != try-restart ] || exit 1'
 assert_exit 1 configure_daemon
+assert_contains "$RUN_OUTPUT" "$DOCKER_DAEMON_CONFIG.dotfiles-bak"
 assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG.dotfiles-bak" "$SANDBOX/before-restart"
 stub systemctl
 : > "$STUB_LOG"
 assert_exit 0 configure_daemon
 assert_file_contains "$STUB_LOG" 'systemctl try-restart docker.service'
+# The retry's restart worked, so the backup is gone
+assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a retry"
 
 # Other keys are kept, a setting with another value is replaced, and the file keeps its mode
 echo '{"dns": ["1.1.1.1"], "log-driver": "json-file", "ip": "0.0.0.0"}' > "$DOCKER_DAEMON_CONFIG"
 chmod 640 "$DOCKER_DAEMON_CONFIG"
-inode="$(/bin/ls -i "$DOCKER_DAEMON_CONFIG" | awk '{print $1}')"
 assert_exit 1 daemon_configured
 assert_exit 0 configure_daemon
 assert_eq "$(sorted <<< "{\"dns\": [\"1.1.1.1\"], $SETTINGS}")" "$(sorted)" "a merged daemon.json"
 assert_eq "-rw-r-----" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a merged daemon.json"
-assert_eq "$inode" "$(/bin/ls -i "$DOCKER_DAEMON_CONFIG" | awk '{print $1}')" "inode of a merged daemon.json"
 
 # An empty file counts as {}
 : > "$DOCKER_DAEMON_CONFIG"

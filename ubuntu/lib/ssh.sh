@@ -217,12 +217,13 @@ configure_sshd() {
         old="$(sudo cat "$SSHD_DROP_IN")" || return 1
     fi
     new="$(sshd_drop_in "$old")"
-    printf '%s\n' "$new" | sudo tee "$SSHD_DROP_IN" > /dev/null || return 1
+    # A failed write leaves the old drop-in whole, so there is nothing to put back
+    write_root_file "$SSHD_DROP_IN" "$new" || return 1
     if ! output="$(sudo sshd -t 2>&1)"; then
         printf '%s\n' "$output" >&2
         bad="$(sshd_error_file "$output")"
         if "$existed"; then
-            printf '%s\n' "$old" | sudo tee "$SSHD_DROP_IN" > /dev/null
+            write_root_file "$SSHD_DROP_IN" "$old"
             echo "  sshd -t failed with the new $SSHD_DROP_IN${bad:+ (the error is in $bad)}, so the old one is back." >&2
         else
             sudo rm -f "$SSHD_DROP_IN"
@@ -234,7 +235,7 @@ configure_sshd() {
     # Ubuntu starts sshd on the first connection (ssh.socket), so it may not be running yet
     if ! sudo systemctl try-reload-or-restart ssh.service; then
         if "$existed"; then
-            printf '%s\n' "$old" | sudo tee "$SSHD_DROP_IN" > /dev/null || return 1
+            write_root_file "$SSHD_DROP_IN" "$old" || return 1
         else
             sudo rm -f "$SSHD_DROP_IN" || return 1
         fi

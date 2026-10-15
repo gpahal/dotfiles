@@ -50,7 +50,8 @@ apt_lists_locked() {
 
 # apt_get update with the arguments given, tried again while another update, such as
 # apt-daily's after boot, holds the lists lock. Any other failure returns at once. The output
-# shows as it comes, and a copy is kept to check for the lock.
+# shows as it comes, and a copy is kept to check for the lock. The notice of each wait goes to
+# stderr, so a caller that captures apt-get's output, as add_apt_repo does, still shows it.
 apt_get_update() {
     local try=1 dir status
     dir="$(mktemp -d)" || return 1
@@ -62,7 +63,7 @@ apt_get_update() {
             rm -rf "$dir"
             return "$status"
         fi
-        echo "  apt's lists lock is held by another update; trying again in $APT_UPDATE_RETRY_DELAY s ($try of $APT_UPDATE_TRIES)."
+        echo "  apt's lists lock is held by another update; trying again in $APT_UPDATE_RETRY_DELAY s ($try of $APT_UPDATE_TRIES)." >&2
         sleep "$APT_UPDATE_RETRY_DELAY"
         try=$((try + 1))
     done
@@ -74,9 +75,36 @@ file_is() {
     [ "$(cat "$1" 2>/dev/null)" == "$2" ]
 }
 
-# Write content to a root-owned file with sudo, creating its directory
+# Replace a root-owned file with a copy of a local file, with sudo, creating its directory. The
+# copy goes to a temp file in the same directory, which is then renamed into place, so a failed
+# write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
+# setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
+# *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
+# Usage: install_root_file <src> <dest> [mode]
+install_root_file() {
+    local src="$1" dest="$2" mode="${3:-}" dir tmp
+    dir="$(dirname "$dest")"
+    sudo mkdir -p "$dir" || return 1
+    # Through sudo, since the file or its directory may be root-only
+    if [ -z "$mode" ]; then
+        mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
+            return 1
+    fi
+    tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
+    if sudo install -m "${mode:-644}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
+        return 0
+    fi
+    sudo rm -f "$tmp"
+    return 1
+}
+
+# Write content, plus a newline, to a root-owned file, as install_root_file does
 write_root_file() {
-    sudo mkdir -p "$(dirname "$1")" && printf '%s\n' "$2" | sudo tee "$1" > /dev/null
+    local src status=0
+    src="$(mktemp)" || return 1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" || status=1
+    rm -f "$src"
+    return "$status"
 }
 
 # List the system changes a step still needs, and ask once before making them with sudo.
@@ -762,7 +790,7 @@ apt_repo_published() {
 # was none before
 restore_apt_key() {
     if [ -n "$1" ]; then
-        sudo cp "$1" "$2"
+        install_root_file "$1" "$2" 0644
     else
         sudo rm -f "$2"
     fi
@@ -797,33 +825,35 @@ add_apt_repo() {
         rm -f "$key" "$old_key"
         return 1
     fi
-    # A write that fails partway leaves a key apt can't use
-    if ! sudo install -m 0644 "$key" "$keyring"; then
-        restore_apt_key "$old_key" "$keyring"
+    # A failed write leaves the old key
+    if ! install_root_file "$key" "$keyring" 0644; then
         rm -f "$key" "$old_key"
         return 1
     fi
     rm -f "$key"
-    # A write that fails partway leaves a source apt can't use, so it gets the same rollback as a
-    # failed update. --error-on=any fails on a key apt can't verify, which apt-get update otherwise
-    # only warns about. A lists lock another update still holds after apt_get_update's tries says
-    # nothing about this source.
+    # A failed write leaves the old source, but the key has changed, so it gets the same rollback
+    # as a failed update. --error-on=any fails on a key apt can't verify, which apt-get update
+    # otherwise only warns about. A lists lock another update still holds after apt_get_update's
+    # tries says nothing about this source.
     if ! file_is "$file" "$content" && ! write_root_file "$file" "$content"; then
         reason="Writing $file failed"
-    elif ! output="$(apt_get_update --error-on=any -o Dir::Etc::sourcelist="$file" \
-        -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 2>&1)"; then
-        printf '%s\n' "$output" >&2
-        reason="apt-get update failed with the new $file alone"
-        # The new file and the key it names stay then
-        if apt_lists_locked <<< "$output"; then
-            echo "  Another apt-get update holds apt's lock, so $file was kept. Re-run once it finishes." >&2
-            rm -f "$old_key"
-            return 1
+    else
+        echo "  Updating apt's lists for $name (this waits while another apt update holds the lock)..."
+        if ! output="$(apt_get_update --error-on=any -o Dir::Etc::sourcelist="$file" \
+            -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0)"; then
+            printf '%s\n' "$output" >&2
+            reason="apt-get update failed with the new $file alone"
+            # The new file and the key it names stay then
+            if apt_lists_locked <<< "$output"; then
+                echo "  Another apt-get update holds apt's lock, so $file was kept. Re-run once it finishes." >&2
+                rm -f "$old_key"
+                return 1
+            fi
         fi
     fi
     if [ -n "$reason" ]; then
         if [ -n "$previous" ]; then
-            if printf '%s\n' "$previous" | sudo tee "$file" > /dev/null; then
+            if write_root_file "$file" "$previous"; then
                 echo "  $reason, so the old one is back. Fix the error above and re-run." >&2
             else
                 echo "  $reason, and putting the old one back failed too. Fix $file by hand, or delete it, then re-run." >&2
@@ -893,17 +923,17 @@ file_mode() {
 
 # Replace a file's contents with a temp file's, then remove the temp file. The contents go to a new
 # file in the same directory, given the old one's mode, which is then moved into place, so a full
-# disk can't leave the file cut short. A symlink is written through instead, so it stays a link.
-# Fails, keeping the temp file and saying where it is, when the write does.
+# disk can't leave the file cut short. A symlink's target is replaced the same way, so the link
+# stays. Fails, keeping the temp file and saying where it is, when the write does.
 write_back() {
-    local new="$1" dest="$2" tmp mode=""
+    local new="$1" dest="$2" tmp mode="" target
     if [ -L "$dest" ]; then
-        if ! cat "$new" > "$dest"; then
+        # macOS's readlink and GNU's both take -f, and follow every link in the chain
+        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ]; then
             echo "  Couldn't write $dest. The new contents are in $new." >&2
             return 1
         fi
-        rm -f "$new"
-        return 0
+        dest="$target"
     fi
     if [ -e "$dest" ]; then
         mode="$(file_mode "$dest")" || mode=""
@@ -923,14 +953,21 @@ write_back() {
 
 # Merge a jq expression into a JSON file, creating the file if needed
 json_merge() {
-    local file="$1" filter="$2" tmp
+    local file="$1" filter="$2" tmp input=""
     require_cmd jq || return 1
+    # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
+    # dangling symlink, fails rather than start from {} and lose what it holds. Back up and write
+    # nothing until jq succeeds with one JSON value, so a filter that fails, or yields no value or
+    # several, leaves the file as it was and asks nothing.
+    if [ -e "$file" ] || [ -L "$file" ]; then
+        if ! input="$(cat -- "$file")"; then
+            echo "  Couldn't read $file, so it was left as it is." >&2
+            return 1
+        fi
+    fi
+    [[ "$input" =~ [^[:space:]] ]] || input='{}'
     tmp="$(mktemp)"
-    # A missing, empty, or whitespace-only file starts as {}. Back up and write nothing until jq
-    # succeeds with one JSON value, so a filter that fails, or yields no value or several, leaves
-    # the file as it was and asks nothing.
-    if ! { if grep -q '[^[:space:]]' "$file" 2>/dev/null; then cat "$file"; else echo '{}'; fi; } |
-        jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
+    if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         echo "  Couldn't update $file with jq." >&2
         rm -f "$tmp"
         return 1

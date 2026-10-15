@@ -233,7 +233,7 @@ status() {
 
 # Merge the settings into the file, keeping its other keys. Nothing is written until jq succeeds.
 configure_daemon() {
-    local current='{}' exists=false tmp backup="" running=false
+    local current='{}' exists=false tmp backup="$DOCKER_DAEMON_CONFIG.dotfiles-bak" running=false
     if sudo test -e "$DOCKER_DAEMON_CONFIG"; then
         exists=true
         if ! current="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
@@ -259,40 +259,41 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    if "$exists"; then
-        backup="$(sudo mktemp "$DOCKER_DAEMON_CONFIG.bak.XXXXXX")" || { rm -f "$tmp"; return 1; }
-        if ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
-            rm -f "$tmp"
-            return 1
-        fi
-        echo "  Backed up $DOCKER_DAEMON_CONFIG to $backup"
+    # A backup to put back if Docker won't restart with the new file. It goes once Docker does.
+    if "$exists" && ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
+        rm -f "$tmp"
+        return 1
     fi
-    # cp onto the existing file keeps its mode and owner. main runs this as
-    # `configure_daemon || ...`, where set -e is off, so the writes check their own failure.
-    if "$exists"; then
-        sudo cp "$tmp" "$DOCKER_DAEMON_CONFIG" || { rm -f "$tmp"; return 1; }
-    else
-        if ! sudo mkdir -p "$(dirname "$DOCKER_DAEMON_CONFIG")" ||
-            ! sudo install -m 0644 "$tmp" "$DOCKER_DAEMON_CONFIG"; then
-            rm -f "$tmp"
-            return 1
-        fi
+    # A failed write leaves the old file whole. main runs this as `configure_daemon || ...`, where
+    # set -e is off, so each command checks its own failure.
+    if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
+        rm -f "$tmp"
+        "$exists" && sudo rm -f "$backup"
+        return 1
     fi
     rm -f "$tmp"
     # Only a running daemon needs the restart; a stopped one reads the file when it starts
     systemctl is-active --quiet docker.service && running=true
     if ! sudo systemctl try-restart docker.service; then
         if "$exists"; then
-            sudo cp "$backup" "$DOCKER_DAEMON_CONFIG" || return 1
+            if ! install_root_file "$backup" "$DOCKER_DAEMON_CONFIG"; then
+                echo "  Docker activation failed, and putting the previous configuration back failed too. Copy $backup to $DOCKER_DAEMON_CONFIG by hand." >&2
+                return 1
+            fi
+            echo "  Docker activation failed; restored the previous configuration, which is also in $backup. Fix the error and re-run." >&2
         else
             sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
+            echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
         fi
-        echo "  Docker activation failed; restored the previous configuration. Fix the error and re-run." >&2
         if "$running"; then
             sudo systemctl start docker.service ||
                 echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
         fi
         return 1
+    fi
+    # Docker took the new file
+    if "$exists"; then
+        sudo rm -f "$backup"
     fi
 }
 

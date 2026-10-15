@@ -71,6 +71,23 @@ assert_eq "$content" "$(cat "$file")" "the source after adding the repo"
 assert_eq new-key "$(cat "$keyring")" "the key after adding the repo"
 assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$file -o Dir::Etc::sourceparts=-"
 
+# While another update holds apt's lock, the wait shows as it happens, not once the update is
+# done: apt-get reports the lock once, then copies what the step has printed so far
+# shellcheck disable=SC2034 # apt_get_update reads it
+APT_UPDATE_RETRY_DELAY=0
+rm "$file"
+stub apt-get 'if [ ! -e "'"$SANDBOX"'/locked-once" ]; then
+    touch "'"$SANDBOX"'/locked-once"
+    echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)"
+    exit 100
+fi
+cat "'"$SANDBOX"'/add-output" > "'"$SANDBOX"'/seen-during-update"'
+add > "$SANDBOX/add-output" 2>&1 || fail "add_apt_repo failed after the lock was freed"
+seen="$(cat "$SANDBOX/seen-during-update")"
+assert_contains "$seen" "Updating apt's lists for Example" "output before the update"
+assert_contains "$seen" "apt's lists lock is held by another update" "output before the update"
+stub apt-get
+
 # The key's download fails, or its host can't be reached: the old key and source stay, and no
 # update runs
 for http in 200 000; do

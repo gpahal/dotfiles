@@ -5,16 +5,14 @@ set -euo pipefail
 
 # The T3 Code server filter sets the global worktreeCleanup to custom rules, which take precedence
 # over storageCleanup. It sets the writing style without resetting the style's other fields, and
-# keeps a default model and effort of your own, a custom Claude instance's included. It writes
-# continueThreadsAfterServerUpdate only for T3 Code before 0.0.46. A second run changes nothing.
+# keeps a default model and effort of your own, a custom Claude instance's included. Keys a newer
+# T3 Code adds to an object the filter sets survive. A second run changes nothing.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script ai_tools/t3-code/install.sh
-# The installed version is unknown, as with no T3 Code, unless a test sets it
-t3_code_version() { echo "${T3_VERSION:-}"; }
 
 settings="$HOME/settings.json"
 
@@ -42,6 +40,11 @@ assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -c '.worktreeCleanup' "
 assert_eq '{"mode":"off"}' "$(jq -c '.projectSettingsOverrides.p1.worktreeCleanup' "$settings")" "project override"
 assert_eq '{"browserArtifactsAfterDays":30,"logsAfterDays":30}' \
     "$(jq -cS '.storageCleanup' "$settings")" "storageCleanup"
+
+# Rules T3 Code 0.1.0 added, which it writes out in full, keep their values and settle
+apply '{"worktreeCleanup": {"mode": "custom", "rules": {"worktreeKeepWhen": "tracked-changes", "worktreeAfterDays": 7, "worktreeSettledAfterDays": null}}}'
+assert_eq '{"mode":"custom","rules":{"worktreeAfterDays":30,"worktreeKeepWhen":"tracked-changes","worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":null,"worktreeUnchanged":true}}' \
+    "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup with rules from a newer T3 Code"
 
 # Writing style: mode and custom instructions are set, and a field the app adds, such as the
 # "Follow change request templates" toggle, keeps your value
@@ -113,7 +116,6 @@ assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
 json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
 load_script ai_tools/t3-code/install.sh
-t3_code_version() { echo "${T3_VERSION:-}"; }
 # shellcheck disable=SC2034 # the step's functions read it
 T3_CODE_SETTINGS="$settings"
 printf '%s\n' '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}]}}' > "$settings"
@@ -136,42 +138,4 @@ choose '{"defaultModelSelection": {"instanceId": "claude_work", "model": "claude
 assert_eq '{"instanceId":"claude_work","model":"claude-opus-5-5","options":[{"id":"effort","value":"medium"},{"id":"contextWindow","value":"1m"}]}' \
     "$(selection)" "a custom Claude instance's model selection without an effort"
 
-# continueThreadsAfterServerUpdate is written for T3 Code before 0.0.46, which defaults it to false.
-# 0.0.46 defaults it to true and drops a key equal to its default, so it isn't written there, nor
-# when the version is unknown. A file without it is then already set.
-for version in 0.0.45 0.0.9; do
-    T3_VERSION="$version" choose '{}'
-    assert_eq true "$(jq '.continueThreadsAfterServerUpdate' "$settings")" "continueThreadsAfterServerUpdate on $version"
-done
-for version in 0.0.46 0.0.46-nightly.20261013.3066 0.1 1.0.0 ""; do
-    T3_VERSION="$version" choose '{}'
-    assert_eq false "$(jq 'has("continueThreadsAfterServerUpdate")' "$settings")" "continueThreadsAfterServerUpdate on '$version'"
-done
-assert_exit 0 t3_code_version_older 0.0.45 0.0.46
-assert_exit 1 t3_code_version_older 0.0.46 0.0.46
-assert_exit 1 t3_code_version_older 0.1 0.0.46
-assert_exit 0 t3_code_version_older 0.0.9 0.0.46
-
-# The step reads the version from the t3 CLI on Ubuntu, and from the app's Info.plist on macOS
-unset -f t3_code_version
-load_script ai_tools/t3-code/install.sh
-# shellcheck disable=SC2034 # the step's functions read it
-T3_CODE_SETTINGS="$settings"
-is_interactive() { false; }
-confirm() { false; }
-is_macos() { false; }
-mkdir -p "$HOME/.local/bin"
-printf '#!/bin/bash\n[ "$1" = --version ] && echo "t3 $T3_CLI_VERSION"\n' > "$HOME/.local/bin/t3"
-chmod +x "$HOME/.local/bin/t3"
-T3_CLI_VERSION=0.0.45 choose '{}'
-assert_eq true "$(jq '.continueThreadsAfterServerUpdate' "$settings")" "continueThreadsAfterServerUpdate with t3 0.0.45"
-T3_CLI_VERSION=0.0.46 choose '{}'
-assert_eq false "$(jq 'has("continueThreadsAfterServerUpdate")' "$settings")" "continueThreadsAfterServerUpdate with t3 0.0.46"
-is_macos() { true; }
-t3_code_app_path() { echo "$SANDBOX/T3 Code.app"; }
-stub plutil '[ "$*" = "-extract CFBundleShortVersionString raw -o - '"$SANDBOX"'/T3 Code.app/Contents/Info.plist" ] && echo "$APP_VERSION"'
-APP_VERSION=0.0.45 choose '{}'
-assert_eq true "$(jq '.continueThreadsAfterServerUpdate' "$settings")" "continueThreadsAfterServerUpdate with app 0.0.45"
-APP_VERSION=0.0.46 choose '{}'
-assert_eq false "$(jq 'has("continueThreadsAfterServerUpdate")' "$settings")" "continueThreadsAfterServerUpdate with app 0.0.46"
 test_done

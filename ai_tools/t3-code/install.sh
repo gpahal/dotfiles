@@ -27,8 +27,9 @@ T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # "Reopen windows when logging back in" can still start T3 Code first, and open then only brings
 # that copy forward, so the README says to quit and reopen it then. It opens T3 Code
 # because T3 Connect, which the phone app goes through, runs only while the app is open. The
-# desktop app reads the shell profile from 0.0.46 on; once 0.0.46 is stable, the
-# agent only needs to open the app.
+# app also reads the variable from the login shell, but gives that read 5 s, so a slow shell
+# startup would leave telemetry on without launchd's copy. The app's name carries its release
+# stage, so the agent opens it by bundle ID.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 T3_CODE_TELEMETRY_AGENT_CONTENT='<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,8 +56,8 @@ T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # pairing links always point at 3773 too. With the port pinned, the service fails its bind
 # instead, and T3's unit (StartLimitIntervalSec=300, StartLimitBurst=5, RestartSec=5) stops
 # retrying after about 25 s, while status names the other server. The drop-in leaves
-# systemd-oomd's preference to T3: before 0.0.46 agents share the server's cgroup, and sparing it
-# would spare a runaway agent too, while Restart= brings the server back. It also binds the server
+# systemd-oomd's preference to T3, since sparing the server would spare a runaway agent in its
+# cgroup too, while Restart= brings the server back. It also binds the server
 # to loopback, since `t3 serve` otherwise listens on every interface, and ufw lets the tailnet reach
 # every port: `tailscale serve`, which T3 points at 127.0.0.1, is the tailnet's way in, over HTTPS.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
@@ -76,10 +77,6 @@ T3_CODE_REPLACE_MODEL=false
 T3_CODE_EFFORT="medium"
 T3_CODE_EFFORT_NAME="T3 Code's default effort (defaultModelSelection.options effort)"
 T3_CODE_REPLACE_EFFORT=false
-# Whether to write continueThreadsAfterServerUpdate, which T3 Code before 0.0.46 defaults to false.
-# 0.0.46 defaults it to true and drops a key equal to its default, so writing it there would never
-# settle. t3_code_use_version sets it. Remove the key and this gate once 0.0.46 is the minimum.
-T3_CODE_CONTINUE_THREADS=false
 
 # What the server settings cover, for the step's messages
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
@@ -87,25 +84,22 @@ T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cl
 # Server settings, used by T3 Code on the Mac and by the server it starts on Ubuntu (Settings →
 # General, Threads, Storage): new threads use Claude Opus 5.5 at medium effort with the 1M context
 # window, in auto mode, each in its own worktree started from the local base branch; Add project
-# starts in ~/Dev; threads continue after an app update; inactive threads settle after 5 days; old
+# starts in ~/Dev; inactive threads settle after 5 days; old
 # worktrees, browser artifacts, and logs are cleaned up; pull requests start with squash merge;
 # commit and PR text follows custom instructions. Existing worktree setup actions wait for
 # completion: T3 has no global async default, so each action list gets it.
 # A model of your own keeps its instance and options, a custom Claude instance's included, and its
 # effort is left to you too. Replacing it switches to Claude's instance, which drops another
 # provider's options. Model options are set in place, so any others and their order survive a
-# re-run. The global worktreeCleanup holds the worktree rules. Project overrides are left alone,
-# but for their setup actions.
-# T3 Code 0.0.46 and later write only values that differ from a key's default, so a value equal to
-# it never settles. Checked against T3 Code 0.0.45; scripts/check-t3-settings.sh checks every key,
-# and warns about such values, against the latest release in CI.
+# re-run. The global worktreeCleanup holds the worktree rules. Objects are set key by key, never
+# replaced whole, so keys a newer T3 Code adds to them survive and a re-run settles. Project
+# overrides are left alone, but for their setup actions.
+# T3 Code writes only values that differ from a key's default, so a value equal to it never
+# settles. Checked against T3 Code 0.1.0; scripts/check-t3-settings.sh checks every key, and warns
+# about such values, against the latest release in CI.
 # Print the server filter, keeping a model and effort of your own unless T3_CODE_REPLACE_MODEL and
 # T3_CODE_REPLACE_EFFORT say to replace them
 t3_code_server_filter() {
-    local continue_threads=""
-    if "$T3_CODE_CONTINUE_THREADS"; then
-        continue_threads='| .continueThreadsAfterServerUpdate = true'
-    fi
     # shellcheck disable=SC2016 # jq variables, not shell ones
     printf '%s\n' '
     # Set an option in the list of a model selection, in place
@@ -145,17 +139,12 @@ t3_code_server_filter() {
     | .defaultThreadEnvMode = "worktree"
     | .newWorktreesStartFromOrigin = false
     | .addProjectBaseDirectory = "~/Dev"
-    '"$continue_threads"'
     | .sidebarAutoSettleAfterDays = 5
-    | .worktreeCleanup = {
-        "mode": "custom",
-        "rules": {
-          "worktreeAfterDays": 30,
-          "worktreeOnMerge": true,
-          "worktreeOnDelete": true,
-          "worktreeUnchanged": true
-        }
-      }
+    | .worktreeCleanup.mode = "custom"
+    | .worktreeCleanup.rules.worktreeAfterDays = 30
+    | .worktreeCleanup.rules.worktreeOnMerge = true
+    | .worktreeCleanup.rules.worktreeOnDelete = true
+    | .worktreeCleanup.rules.worktreeUnchanged = true
     | .storageCleanup.browserArtifactsAfterDays = 30
     | .storageCleanup.logsAfterDays = 30
     | .pullRequestMergeMethod = "squash"
@@ -164,47 +153,6 @@ t3_code_server_filter() {
 '
 }
 T3_CODE_SERVER_FILTER="$(t3_code_server_filter)"
-
-# Succeeds when T3 Code version $1 is older than $2, both dotted numbers, e.g. 0.0.45
-t3_code_version_older() {
-    local IFS=. i
-    local -a a b
-    read -r -a a <<< "$1"
-    read -r -a b <<< "$2"
-    for i in 0 1 2 3; do
-        if [ "${a[i]:-0}" -ne "${b[i]:-0}" ]; then
-            [ "${a[i]:-0}" -lt "${b[i]:-0}" ]
-            return
-        fi
-    done
-    return 1
-}
-
-# Print the installed T3 Code's version, e.g. 0.0.45, or nothing when it can't tell: on macOS the
-# app's, and on Ubuntu the t3 CLI's, which runs the service's server
-t3_code_version() {
-    local app out=""
-    if is_macos; then
-        app="$(t3_code_app_path)" || return 0
-        out="$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist" 2>/dev/null)" ||
-            true
-    elif [ -x "$HOME/.local/bin/t3" ]; then
-        out="$("$HOME/.local/bin/t3" --version 2>/dev/null)" || true
-    fi
-    if [[ "$out" =~ [0-9]+(\.[0-9]+)+ ]]; then
-        echo "${BASH_REMATCH[0]}"
-    fi
-}
-
-# Set the settings that depend on T3 Code's version to suit version $1, such as 0.0.45 or
-# v0.0.46-nightly.20261013, and rebuild the server filter. An unknown version counts as the latest.
-t3_code_use_version() {
-    T3_CODE_CONTINUE_THREADS=false
-    if [[ "$1" =~ [0-9]+(\.[0-9]+)+ ]] && t3_code_version_older "${BASH_REMATCH[0]}" 0.0.46; then
-        T3_CODE_CONTINUE_THREADS=true
-    fi
-    T3_CODE_SERVER_FILTER="$(t3_code_server_filter)"
-}
 
 # Print the default model in the server settings, or nothing when it's unset or the file can't be
 # read
@@ -221,8 +169,7 @@ t3_code_effort() {
 }
 
 # Decide whether to replace a model or effort of your own, asking with a terminal, and rebuild
-# the server filter to match, and to suit the installed T3 Code. A model of your own that stays
-# leaves its effort alone.
+# the server filter to match. A model of your own that stays leaves its effort alone.
 t3_code_choose_custom_values() {
     T3_CODE_REPLACE_MODEL=false
     T3_CODE_REPLACE_EFFORT=false
@@ -232,7 +179,7 @@ t3_code_choose_custom_values() {
             T3_CODE_REPLACE_EFFORT=true
         fi
     fi
-    t3_code_use_version "$(t3_code_version)"
+    T3_CODE_SERVER_FILTER="$(t3_code_server_filter)"
 }
 
 # Status items naming a model or effort of your own. The effort counts only with the repo's model.
@@ -255,23 +202,36 @@ T3_CODE_CLIENT_FILTER='
     | .sidebarWorkingShelfEnabled = true
 '
 
-# The app's name carries its release stage, and changes with it. Ask brew which app the t3-code
-# cask installs, and otherwise take any /Applications/T3 Code*.app except the separate nightly
-# build.
+# The app's name can change between releases. Ask brew which app the t3-code
+# cask installs, and otherwise take any T3 Code*.app beside where brew puts it, or in
+# /Applications, except the separate nightly build.
 t3_code_app_path() {
-    local app
+    local app dir=/Applications
     app="$(cask_app_path t3-code)"
     if [ -n "$app" ] && [ -d "$app" ]; then
         echo "$app"
         return 0
     fi
-    for app in "/Applications/T3 Code"*.app; do
+    [ -z "$app" ] || dir="${app%/*}"
+    for app in "$dir/T3 Code"*.app; do
         if [ -d "$app" ] && [[ "$app" != *"(Nightly).app" ]]; then
             echo "$app"
             return 0
         fi
     done
     return 1
+}
+
+# Print the app when brew lists the t3-code cask but the app has a name other than the one the
+# cask now gives, and fail otherwise. T3 Code can rename itself in an update, which can get there
+# before the cask does. The app is then installed, not gone, and
+# brew's record catches up at the next upgrade-ai-tools once the cask does.
+t3_code_renamed_app() {
+    local app
+    app="$(t3_code_app_path)" || return 1
+    brew list --cask t3-code &>/dev/null || return 1
+    [ "$app" != "$(cask_app_path t3-code)" ] || return 1
+    echo "$app"
 }
 
 # Succeeds when the LaunchAgent is current and launchd's environment has the variable now
@@ -319,7 +279,7 @@ configure_t3_code() {
     return "$result"
 }
 
-# A T3 Code server started by hand or over SSH. The Mac's SSH connection (as of T3 Code 0.0.45)
+# A T3 Code server started by hand or over SSH. The Mac's SSH connection (as of T3 Code 0.1.0)
 # runs ~/.t3/ssh-launch/<key>/run-t3.sh serve, which downloads t3 to ~/.t3/runtime and execs it.
 T3_CODE_CLI_SERVER_PATTERN="$HOME/\.t3/(runtime|ssh-launch)/.* serve( |\$)|(^|/)t3 (serve|start)( |\$)"
 T3_CODE_SSH_SERVER_PATTERN="$HOME/\.t3/(runtime|ssh-launch)/"
@@ -331,7 +291,7 @@ t3_code_in_service_cgroup() {
 }
 
 # Print each T3 Code server running outside the service, one "<pid> <kind> <command line>" per
-# line. Any of them shares ~/.t3/userdata/state.sqlite with the service's server.
+# line. Any of them shares ~/.t3/userdata's database with the service's server.
 # - ssh: one the Mac started over SSH, from a t3 under ~/.t3
 # - manual: `t3 serve` or `t3 start` run by hand
 t3_code_other_servers() {
@@ -733,12 +693,16 @@ status() {
         status_result
         return
     fi
-    # The version, the app's path, and the cask's state each ask brew which app it installs
+    # The app's path and the cask's state each ask brew which app it installs
     local CASK_APP_CACHE=""
     ! is_macos || ! command -v brew &>/dev/null || cache_cask_app_path t3-code
-    t3_code_use_version "$(t3_code_version)"
     if is_macos; then
-        status_cask t3-code "$(t3_code_app_path || true)"
+        local renamed
+        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app)"; then
+            status_item ok "t3-code (cask), as ${renamed##*/}"
+        else
+            status_cask t3-code "$(t3_code_app_path || true)"
+        fi
         status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
         t3_code_status_custom_values
         status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
@@ -804,8 +768,12 @@ main() {
     fi
     if is_macos; then
         # Telemetry and the settings don't need the app
-        local cask_failed=0
-        install_cask t3-code "$(t3_code_app_path || true)" || cask_failed=1
+        local cask_failed=0 renamed
+        if renamed="$(t3_code_renamed_app)"; then
+            echo "  t3-code already installed, as ${renamed##*/}."
+        else
+            install_cask t3-code "$(t3_code_app_path || true)" || cask_failed=1
+        fi
         configure_t3_code || return 1
         return "$cask_failed"
     else

@@ -19,7 +19,7 @@ load_script ai_tools/t3-code/install.sh
 # macOS
 is_macos() { true; }
 is_ubuntu() { false; }
-APP="$SANDBOX/Applications/T3 Code (Alpha).app"
+APP="$SANDBOX/Applications/T3 Code (Beta).app"
 mkdir -p "$APP"
 t3_code_app_path() { echo "$APP"; }
 # launchd's environment is in $SANDBOX/launchd-env: setenv writes the value, and getenv prints it
@@ -118,15 +118,14 @@ running_inside() { return 1; }
 stub pgrep
 rm "$T3_CODE_SETTINGS"
 assert_exit 0 configure_t3_code
-assert_contains "$RUN_OUTPUT" "T3 Code (Alpha) is running; skipping."
+assert_contains "$RUN_OUTPUT" "T3 Code (Beta) is running; skipping."
 [ ! -e "$T3_CODE_SETTINGS" ] || fail "the settings were written while T3 Code ran"
 
-# A status report asks brew about the cask once, though the version, the app path, and the cask's
-# state each need the app brew names
+# A status report asks brew about the cask once, though the app path and the cask's state each
+# need the app brew names
 load_script ai_tools/t3-code/install.sh
 is_macos() { true; }
 is_ubuntu() { false; }
-stub plutil 'echo 0.0.45'
 # shellcheck disable=SC2016 # expanded by the stub
 stub brew 'case "$1" in
     info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
@@ -140,4 +139,26 @@ stub brew '[ "$1" != info ] || exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "t3-code (cask)"
 assert_contains "$RUN_OUTPUT" "Server settings in ~/.t3/userdata/settings.json"
+
+# The app renamed itself as it updated, before the cask caught up, as when T3 Code drops its
+# release stage: it counts as installed, not gone, so setup doesn't reinstall the cask's app beside
+# it. The nightly build doesn't count.
+# shellcheck disable=SC2016 # expanded by the stub
+stub brew 'case "$1" in
+    info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
+esac'
+mv "$APP" "$SANDBOX/Applications/T3 Code.app"
+mkdir -p "$SANDBOX/Applications/T3 Code (Nightly).app"
+assert_eq "$SANDBOX/Applications/T3 Code.app" "$(t3_code_app_path)" "the renamed app's path"
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), as T3 Code.app"
+: > "$STUB_LOG"
+run main
+assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
+assert_file_not_contains "$STUB_LOG" "brew reinstall"
+assert_file_not_contains "$STUB_LOG" "brew install"
+# Without it, the cask's app is gone, and setup reinstalls it
+rm -r "$SANDBOX/Applications/T3 Code.app"
+run status
+assert_contains "$RUN_OUTPUT" "missing    t3-code (cask): brew lists it, but its app is gone"
 test_done

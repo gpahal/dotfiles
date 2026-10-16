@@ -34,11 +34,14 @@ _brew_cask_outdated() {
 # apps that update themselves, but only while they run, so this catches up the rest. `brew upgrade`
 # would quit and replace them when the app bundle is behind, so `upgrade` sets
 # HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave them to this. A cask given as <cask>:<process>
-# counts as running when a process has that exact name. For the others, app names can carry a
-# release stage that changes, so match any running app whose name starts with the cask's app name
-# up to " (". -a counts the app this shell runs in. A failed `brew outdated` or `brew info` leaves
+# counts as running when a process has that exact name. For the others, an app's name can gain or
+# lose a suffix in parentheses between releases, so match any running app whose name starts with
+# the cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or `brew info` leaves
 # the cask alone and fails, since its output can't say the cask is up to date or what app it has.
 # An interrupted brew command returns its status, so the caller stops.
+# An app that renamed itself as it updated, as T3 Code can, would
+# fail brew upgrade, which first removes the app under the name brew recorded and stops when
+# that's gone. Such a cask is re-recorded instead, keeping the app on disk (_readopt_renamed_cask).
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
     local rerun="$1" entry cask process info path app running outdated status rc exit_status=0
@@ -73,6 +76,13 @@ _upgrade_self_updating_casks() {
             fi
             app="${path##*/}"
             app="${app%.app}"
+            if [ -n "$app" ] && _cask_app_renamed "$cask" "$path"; then
+                status=0
+                _readopt_renamed_cask "$cask" "$path" || status=$?
+                ! interrupted_status "$status" || return "$status"
+                [ "$status" -eq 0 ] || exit_status=1
+                continue
+            fi
             app="${app%% (*}"
             # A cask with no app artifact has no name to check. Logi Options+, which keeps an
             # agent running, quits the app and agents in its uninstall steps before the upgrade,
@@ -91,6 +101,45 @@ _upgrade_self_updating_casks() {
         fi
     done
     return "$exit_status"
+}
+
+# Print the app path brew recorded when it installed cask $1, in the dir of the app path $2 the
+# cask now gives. Fails when brew's install receipt names no app, or the cask's uninstall does
+# more than remove its app, which _readopt_renamed_cask's uninstall would then run.
+_recorded_cask_app() {
+    local receipt name
+    receipt="$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
+    name="$(jq -er '.uninstall_artifacts
+        | if all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))
+          then [.[] | select(has("app")) | .target // (.app[1].target? // .app[0])][0]
+          else empty end
+        | strings' "$receipt" 2>/dev/null)" || return 1
+    case "$name" in
+        /*) echo "$name" ;;
+        *) echo "${2%/*}/$name" ;;
+    esac
+}
+
+# Succeeds when the app brew recorded for cask $1 is gone but the app at $2, which the cask now
+# gives, is there: the app renamed itself as it updated
+_cask_app_renamed() {
+    local recorded
+    recorded="$(_recorded_cask_app "$1" "$2")" || return 1
+    [ "$recorded" != "$2" ] && [ ! -e "$recorded" ] && [ -d "$2" ]
+}
+
+# Re-record cask $1, whose app renamed itself to $2 as it updated: uninstall the stale record,
+# which has no app left to remove, then install the cask adopting the app in place, so a running
+# app is left alone. A self-updating cask's adopt takes the app whatever its version.
+_readopt_renamed_cask() {
+    local status=0
+    echo "${2##*/} renamed itself as it updated, so Homebrew's record of $1 is stale; re-recording it."
+    brew uninstall --cask --force "$1" || return
+    brew install --cask --adopt "$1" || status=$?
+    if [ "$status" -ne 0 ] && ! interrupted_status "$status"; then
+        echo "Couldn't re-record $1. Run: brew install --cask --adopt $1" >&2
+    fi
+    return "$status"
 }
 
 # Install the casks added to the homebrew step since setup last ran. Sourcing the step only defines
@@ -159,9 +208,11 @@ upgrade_ai_tools() {
         fi
     fi
 
-    # The t3 CLI, and the T3 Code service when one runs it
-    if command -v t3 &>/dev/null; then
-        t3 update || _stage_failed "t3 update" "$?"
+    # The t3 CLI the t3-code step installs, and the T3 Code service when one runs it. Not any t3 on
+    # PATH: the macOS app writes ~/.t3/bin/t3, which runs the app's own server, and the app updates
+    # itself.
+    if [ -x "$HOME/.local/bin/t3" ]; then
+        "$HOME/.local/bin/t3" update || _stage_failed "t3 update" "$?"
     fi
 
     # Codex's bundled marketplaces ship with the CLI and update with it. With no name,

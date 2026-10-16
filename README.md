@@ -228,7 +228,7 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 | **Editor** | Opens the tab's folder in Zed | Shows the open file | Opens the selection, or the window's folder, in Zed |
 | **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, or the selected file's folder |
 
-Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to `~/Library/Logs/dotfiles-stream-deck.log`.
+Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
 Stream Deck runs the plugin's `bin/open-in`, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title, and Automation lets it control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup.
 

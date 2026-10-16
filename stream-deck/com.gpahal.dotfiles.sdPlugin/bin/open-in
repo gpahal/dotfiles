@@ -8,13 +8,12 @@ set -uo pipefail
 # plugin runs it for each key press, so macOS asks Stream Deck for its permissions: Automation
 # for Ghostty, Finder, and System Events, and Accessibility to read Zed's window title.
 #
-# Each run appends a line to the log. It exits 1 when it couldn't open anything, or when a missing
+# Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1 when it couldn't open anything, or when a missing
 # permission kept it from reading the path, though it still opens a new window then. Either way
 # it shows a notification saying why, and the plugin shows a warning on the key.
 
 # Stream Deck starts plugins with a minimal environment
 PATH="${PATH:+$PATH:}/usr/bin:/bin"
-LOG="$HOME/Library/Logs/dotfiles-stream-deck.log"
 GHOSTTY=com.mitchellh.ghostty
 ZED=dev.zed.Zed
 ZED_CLI="${DOTFILES_ZED_CLI:-/Applications/Zed.app/Contents/MacOS/cli}"
@@ -24,8 +23,9 @@ SCRIPT_RESULT=""
 PERMISSION_ERROR=""
 CONTEXT_PATH=""
 
+# Stream Deck adds the time to each line it logs
 log() {
-    mkdir -p "$(dirname "$LOG")" && printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"
+    printf '%s\n' "$*" >&2
 }
 
 notify() {
@@ -183,7 +183,7 @@ main() {
         notify "Stream Deck lacks a permission: $PERMISSION_ERROR"
     elif [ "$status" -ne 0 ]; then
         log "ERROR couldn't open ${CONTEXT_PATH:-a new window} for $target"
-        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See ~/Library/Logs/dotfiles-stream-deck.log"
+        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
     fi
     return "$status"
 }

@@ -13,7 +13,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
-LOG="$HOME/Library/Logs/dotfiles-stream-deck.log"
 dir="$SANDBOX/project"
 file="$dir/main.go"
 mkdir -p "$dir" "$HOME/notes"
@@ -60,7 +59,7 @@ export GHOSTTY_CWD="$dir"
 check finder com.mitchellh.ghostty 0 "open $dir"
 check editor com.mitchellh.ghostty 0 "open -b dev.zed.Zed $dir"
 check terminal com.mitchellh.ghostty 0 "  new Ghostty tab at $dir"
-assert_file_contains "$LOG" "finder from com.mitchellh.ghostty: $dir"
+assert_contains "$RUN_OUTPUT" "terminal from com.mitchellh.ghostty: $dir"
 # A folder that isn't here, such as one over SSH: a new window
 export GHOSTTY_CWD=/nonexistent
 check finder com.mitchellh.ghostty 0 "  new Finder window"
@@ -98,13 +97,13 @@ GHOSTTY_RUNNING="" check terminal com.google.Chrome 0 \
 export ZED_ERROR="execution error: System Events got an error: osascript is not allowed assistive access. (-25211)"
 check editor dev.zed.Zed 1 "zed-cli --new
   notification: Stream Deck lacks a permission: $ZED_ERROR"
-assert_file_contains "$LOG" "ERROR $ZED_ERROR"
+assert_contains "$RUN_OUTPUT" "ERROR $ZED_ERROR"
 export ZED_ERROR=""
 
 # A failed open fails, with a notification
 stub zed-cli 'exit 1'
 check editor com.google.Chrome 1 "zed-cli --new
-  notification: Couldn't open a new window. See ~/Library/Logs/dotfiles-stream-deck.log"
+  notification: Couldn't open a new window. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
 
 # An unknown target
 FRONT=com.apple.finder assert_exit 2 bash "$OPEN_IN" files

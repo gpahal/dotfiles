@@ -25,6 +25,8 @@ esac'
 stub killall
 # test-diagnostics.sh covers what status reports about FileVault and the firewall
 stub fdesetup 'echo "FileVault is On."'
+# test-macos-hostname.sh covers the hostname
+stub scutil 'echo Garvits-MacBook-Pro'
 stub socketfilterfw 'echo "Firewall is enabled. (State = 1)"'
 stub pgrep '[ -e "'"$SANDBOX"'/running" ]'
 # Quitting it through AppleScript

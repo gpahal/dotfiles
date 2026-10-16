@@ -64,6 +64,10 @@ assert_contains "$RUN_OUTPUT" "terminal from com.mitchellh.ghostty: $dir"
 export GHOSTTY_CWD=/nonexistent
 check finder com.mitchellh.ghostty 0 "  new Finder window"
 check terminal com.mitchellh.ghostty 0 "  new Ghostty tab at $HOME"
+# Ghostty reports no folder, as when the hostname breaks its OSC 7 report: the log says where to look
+export GHOSTTY_CWD=""
+check finder com.mitchellh.ghostty 0 "  new Finder window"
+assert_contains "$RUN_OUTPUT" "Ghostty doesn't know the tab's folder. Run: bash setup.sh --status macos"
 
 # --- Zed in front ---
 export ZED_TITLE="project — $file"
@@ -98,6 +102,9 @@ export ZED_ERROR="execution error: System Events got an error: osascript is not 
 check editor dev.zed.Zed 1 "zed-cli --new
   notification: Stream Deck lacks a permission: $ZED_ERROR"
 assert_contains "$RUN_OUTPUT" "ERROR $ZED_ERROR"
+# Zed with no window open fails with -1719 too, which isn't a missing permission
+export ZED_ERROR="execution error: System Events got an error: Can't get window 1 of process 1. Invalid index. (-1719)"
+check editor dev.zed.Zed 0 "zed-cli --new"
 export ZED_ERROR=""
 
 # A failed open fails, with a notification

@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, and turn off Spotlight's
-# Cmd+Space shortcut, so Raycast can take it. Only writes values that differ, and only restarts
-# Finder, Dock, or SystemUIServer when one of theirs changed.
+# Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, turn off Spotlight's
+# Cmd+Space shortcut, so Raycast can take it, and set the hostname when it's unset or invalid.
+# Only writes values that differ, and only restarts Finder, Dock, or SystemUIServer when one of
+# theirs changed.
 #
-# A temp HOME doesn't isolate this step. defaults writes the real preferences whatever HOME is, and
-# the step restarts the real Finder, Dock, and SystemUIServer. Test it in a macOS VM or on a spare
-# Mac.
+# A temp HOME doesn't isolate this step. defaults writes the real preferences whatever HOME is, the
+# step restarts the real Finder, Dock, and SystemUIServer, and sudo scutil sets the real hostname.
+# Test it in a macOS VM or on a spare Mac.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -225,6 +226,37 @@ status_app_firewall() {
     esac
 }
 
+# Ghostty's shell integration reports the shell's folder with OSC 7, as a URL whose host is the
+# hostname, and Ghostty drops a URL it can't parse. A Mac with no HostName takes one from the
+# network, which can be a name such as Unknown_d6:96:0e:05:c6:0a, whose colons break the URL.
+# Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys find no folder. So
+# HostName is set to LocalHostName, the name in System Settings → General → Sharing, which macOS
+# keeps to letters, digits, and hyphens.
+hostname_valid() {
+    local name
+    name="$(scutil --get HostName 2>/dev/null)" || return 1
+    [[ "$name" =~ ^[A-Za-z0-9.-]+$ ]]
+}
+
+set_hostname() {
+    local name
+    if hostname_valid; then
+        echo "  The hostname is already $(scutil --get HostName)."
+        return 0
+    fi
+    if ! name="$(scutil --get LocalHostName)"; then
+        echo "  Couldn't read the local hostname, so the hostname is left unset." >&2
+        return 1
+    fi
+    confirm_sudo_changes "Set the hostname to $name, so Ghostty's shell can report its folder" ||
+        return 0
+    if ! sudo scutil --set HostName "$name"; then
+        echo "  Couldn't set the hostname." >&2
+        return 1
+    fi
+    echo "  Set the hostname to $name. Shells started from now on use it."
+}
+
 status() {
     if ! is_macos; then
         status_item skipped "macOS defaults: macOS only"
@@ -234,6 +266,7 @@ status() {
     # The screenshot location key points here, and main creates it
     status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
     status_check "Spotlight's Cmd+Space shortcut off, so Raycast can take it" spotlight_shortcut_off
+    status_check "Hostname set, so Ghostty's shell can report its folder" hostname_valid
     # Touch ID for sudo is optional (just touch-id), so off is skipped
     status_touch_id skipped
     status_filevault
@@ -253,13 +286,15 @@ main() {
         echo "  Not macOS; skipping."
         return 0
     fi
+    local status=0
+    set_hostname || status=1
     mkdir -p "$HOME/Screenshots"
     each_default set_default
     disable_spotlight_shortcut
 
     if [ -z "$CHANGED_KEYS$FAILED_KEYS$SANDBOXED_KEYS$RUNNING_KEYS" ]; then
         echo "  macOS defaults are already set."
-        return 0
+        return "$status"
     fi
     # Finder is what writes .DS_Store files, so it also picks up the desktopservices keys. It
     # reads AppleShowAllExtensions from the global domain.
@@ -287,6 +322,7 @@ main() {
         echo "  Failed to set${FAILED_KEYS%,}." >&2
         return 1
     fi
+    return "$status"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

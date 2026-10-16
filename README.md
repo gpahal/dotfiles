@@ -65,7 +65,7 @@ bash setup.sh
 | `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and restarts Stream Deck to load it. macOS only |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets macOS defaults. macOS only |
+| `macos` | Sets macOS defaults and, when needed, the hostname. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine, started at boot. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only; the `homebrew` step installs it on macOS |
@@ -230,7 +230,7 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 
 Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
-Stream Deck runs the plugin's `bin/open-in`, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title, and Automation lets it control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup.
+Stream Deck runs the plugin's `bin/open-in`, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title, and Automation lets it control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
 
 ### tmux
 
@@ -349,6 +349,7 @@ The `macos` step sets these:
 - **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
 - **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
 - **Screenshots:** PNG in `~/Screenshots`, without window shadows
+- **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
 - **Misc:** no `.DS_Store` on network or USB volumes, expanded save and print dialogs, new documents saved to disk rather than iCloud, plain-text TextEdit, all processes in Activity Monitor
 
 The TextEdit setting needs [Full Disk Access](#macos-1) for the terminal.

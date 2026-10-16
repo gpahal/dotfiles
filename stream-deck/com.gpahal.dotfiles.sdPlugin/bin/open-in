@@ -38,7 +38,9 @@ EOF
 
 # Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. A
 # failure is logged, and one for a missing permission sets PERMISSION_ERROR: -1743 is a denied
-# Automation prompt, and -1719 and -25211 are missing Accessibility.
+# Automation prompt, and -25211 or "assistive access" is missing Accessibility. Missing
+# Accessibility can also come as -1719, but so does Zed with no window open, so the code alone
+# isn't enough.
 applescript() {
     local err status=0
     SCRIPT_RESULT=""
@@ -46,7 +48,7 @@ applescript() {
     SCRIPT_RESULT="$(osascript - "$@" 2> "$err")" || status=$?
     if [ "$status" -ne 0 ]; then
         log "ERROR $(tr '\n' ' ' < "$err")"
-        if grep -qE -- '-1743|-1719|-25211|assistive access' "$err"; then
+        if grep -qE -- '-1743|-25211|assistive access' "$err"; then
             PERMISSION_ERROR="$(head -n 1 "$err")"
         fi
     fi
@@ -68,6 +70,10 @@ ghostty_folder() {
 tell application id "$GHOSTTY" to get working directory of focused terminal of selected tab of front window
 EOF
     CONTEXT_PATH="$SCRIPT_RESULT"
+    # Ghostty learns the folder from its shell integration's OSC 7 report, which it drops when
+    # the hostname doesn't fit in a URL. The macos step sets one that does.
+    [ -n "$CONTEXT_PATH" ] ||
+        log "Ghostty doesn't know the tab's folder. Run: bash setup.sh --status macos"
 }
 
 # zed/settings.json sets window_title_format to "${projectName}${separator}${filePath}", and the

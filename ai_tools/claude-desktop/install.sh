@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Claude desktop app and set its preferences. Claude must be quit first; when run
-# interactively the script offers to quit it, otherwise it skips the settings.
+# Install the Claude desktop app, open it at login, and set its preferences. Claude must be quit
+# first; when run interactively the script offers to quit it, otherwise it skips the settings.
 #
 # A temp HOME doesn't isolate this step, which installs the claude cask into /Applications. Test it
 # in a macOS VM or on a spare Mac.
@@ -11,6 +11,29 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 
 CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+# A LaunchAgent that opens Claude at login, so its Option+Space quick entry works from the start.
+# Claude's own "open at login" setting registers it through SMAppService, which no command can turn
+# on for another app.
+CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
+CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
+
+# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
+# or status_file to report it
+claude_desktop_files() {
+    "$1" "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"
+}
+
+# The agent isn't loaded now, since it would open Claude, which must be quit for the settings
+# below. launchd loads it from ~/Library/LaunchAgents at the next login.
+install_claude_desktop_login_agent() {
+    if cmp -s "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"; then
+        echo "  Claude already opens at login"
+        return 0
+    fi
+    mkdir -p "$(dirname "$CLAUDE_DESKTOP_LOGIN_AGENT")" || return 1
+    claude_desktop_files copy_file || return 1
+    echo "  Set Claude to open at login"
+}
 
 # Settings → Claude Code:
 #   Draw attention on notifications → On
@@ -59,6 +82,7 @@ status() {
         return
     fi
     status_cask claude /Applications/Claude.app
+    claude_desktop_files status_file
     status_check "Claude desktop app settings" json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
     status_result
 }
@@ -78,6 +102,7 @@ main() {
     require_cmd brew || return 1
     local result=0
     install_cask claude /Applications/Claude.app || result=1
+    install_claude_desktop_login_agent || result=1
     configure_claude_desktop || result=1
     return "$result"
 }

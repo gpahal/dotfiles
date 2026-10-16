@@ -15,7 +15,6 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
   - new keys the `claude-code` step writes → `scripts/claude-settings-keys.txt`, once checked against Claude Code
   - `ai_tools/setup.sh` steps → `ai_tools/README.md`, marked **(script)**
   - `upgrade` → README "Updating"; `upgrade-ai-tools` → `ai_tools/README.md` "Updating"; a new stage of either → `stage_doc` in `scripts/check-docs.sh`
-  - a full verification round → a new section at the top of `COMPATIBILITY.md`
   - steps done by hand → the "Manual steps" section of README or `ai_tools/README.md`. The `manual-steps` steps print it at run time, so it's the only copy.
 
   `README.md` and `ai_tools/README.md` each start with a first-run checklist per OS, and keep to what a user does and sees. How a step handles a case goes in a comment beside the code that handles it, or in a test. Run prose through `unslop`.

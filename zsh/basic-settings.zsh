@@ -13,7 +13,7 @@ path=("$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" $path)
 export LANG="en_US.UTF-8"
 
 # Turns off T3 Code's telemetry in the t3 CLI and in servers started from a shell. The macOS app
-# reads the shell profile only from 0.0.46, so the t3-code step also sets it with a LaunchAgent:
+# reads it from the login shell too, and the t3-code step also sets it with a LaunchAgent:
 # https://github.com/pingdotgg/t3code/blob/main/docs/user/telemetry.md
 export T3CODE_TELEMETRY_ENABLED=false
 

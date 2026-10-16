@@ -110,7 +110,7 @@ jobs:
           "$RUNNER_TEMP/ci-bin/yq" --version
 
       # The 26.04 runner has classic sudo and Rust coreutils, where a 26.04 install has sudo-rs. The
-      # tests stub sudo, and COMPATIBILITY.md's container runs cover sudo-rs. The log shows which ran.
+      # tests stub sudo; an `ubuntu:26.04` container run (AGENTS.md) covers sudo-rs. The log shows which ran.
       - name: Show the sudo and coreutils versions (Ubuntu)
         if: runner.os == 'Linux'
         run: |

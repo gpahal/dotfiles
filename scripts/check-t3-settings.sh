@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Check that every key the t3-code step writes exists in T3 Code's settings schemas, at the
-# release the step installs: the latest, or the tag given as the only argument (e.g. v0.0.45).
+# release the step installs: the latest, or the tag given as the only argument (e.g. v0.1.0).
 # T3 Code ignores a key it doesn't know, so a renamed or dropped setting would otherwise go
-# unnoticed. The keys come from the step's jq filters, as the step writes them for that release:
-# each field after a "." and each object key. They're checked as properties in these files:
+# unnoticed. The keys come from the step's jq filters: each field after a "." and each object
+# key. They're checked as properties in these files:
 # - server settings (settings.json): packages/contracts/src/settings.ts, and for the project script
 #   actions project.ts, or orchestration.ts, which held them up to 0.0.45. Either may be missing.
 # - client settings (client-settings.json): packages/contracts/src/settings.ts
@@ -63,8 +63,6 @@ fi
 
 # shellcheck source=../ai_tools/t3-code/install.sh
 source "$REPO_DIR/ai_tools/t3-code/install.sh"
-# The filter as the step writes it for this release
-t3_code_use_version "$tag"
 
 errors=0
 fail() {

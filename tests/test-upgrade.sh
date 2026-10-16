@@ -6,7 +6,8 @@ set -euo pipefail
 # formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
 # ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
 # even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
-# managed scopes. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
+# managed scopes, and the t3 CLI only from ~/.local/bin. A self-updating app that renamed itself is
+# re-recorded in Homebrew. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
 # alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
 
@@ -108,6 +109,8 @@ upgrade_on() {
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
 mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
 ln -s "$HOME/.local/share/claude/versions/2.0.0" "$HOME/.local/bin/claude"
+# The t3 CLI the t3-code step installs
+ln -s "$STUB_DIR/t3" "$HOME/.local/bin/t3"
 assert_eq "brew update
 brew upgrade
 (not auto_updates casks)
@@ -122,6 +125,7 @@ brew cleanup
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed
 brew info --json=v2 --cask zed
+brew --caskroom
 pgrep -af ^/Applications/Zed[^/]*\\.app/Contents/MacOS/
 brew upgrade --cask --greedy zed
 brew list --cask appcleaner
@@ -138,6 +142,7 @@ claude update
 brew list --cask claude
 brew outdated --cask --greedy --quiet claude
 brew info --json=v2 --cask claude
+brew --caskroom
 pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
 brew list --cask chatgpt
 brew list --cask t3-code
@@ -288,6 +293,16 @@ assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "t3 "
 assert_file_not_contains "$STUB_LOG" "codex "
 
+# A t3 elsewhere on PATH, such as the ~/.t3/bin/t3 the macOS app writes to run its own server,
+# isn't updated: the app updates itself
+stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
+mv "$HOME/.local/bin/t3" "$SANDBOX/t3-link"
+: > "$STUB_LOG"
+assert_exit 0 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
+assert_file_not_contains "$STUB_LOG" "t3 update"
+mv "$SANDBOX/t3-link" "$HOME/.local/bin/t3"
+
 # mise hook-env fails, or prints nothing: npm would run the Node from before mise upgrade, so
 # npm update -g doesn't run, and upgrade names the stage and fails
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
@@ -379,6 +394,54 @@ assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_file_contains "$STUB_LOG" 'pgrep -af ^/Elsewhere/Zed Preview[^/]*\.app/Contents/MacOS/'
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
+
+# An app that renamed itself as it updated, as T3 Code (Alpha) did to T3 Code (Beta), is re-recorded
+# in place, even while it runs, since brew upgrade would stop on the app it recorded being gone.
+# brew's install receipt names the old app. A receipt whose uninstall does more than remove the
+# app, or names an app that's still there, gets the usual upgrade.
+mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/Applications/T3 Code (Beta).app"
+receipt() {
+    printf '{"uninstall_artifacts": %s}\n' "$1" > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+}
+stub brew 'case "$*" in
+    "list --cask t3-code") ;;
+    "outdated "*) echo "${!#}"; exit 1 ;;
+    "info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
+    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;
+esac'
+stub pgrep
+upgrade_t3_cask() {
+    : > "$STUB_LOG"
+    assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
+}
+receipt '[{"app": ["T3 Code (Alpha).app"]}, {"zap": [{"trash": ["~/.t3/userdata"]}]}]'
+upgrade_t3_cask
+assert_contains "$RUN_OUTPUT" "T3 Code (Beta).app renamed itself as it updated"
+assert_file_contains "$STUB_LOG" "brew uninstall --cask --force t3-code"
+assert_file_contains "$STUB_LOG" "brew install --cask --adopt t3-code"
+assert_file_not_contains "$STUB_LOG" "brew upgrade"
+assert_file_not_contains "$STUB_LOG" "pgrep"
+for artifacts in '[{"app": ["T3 Code (Alpha).app"]}, {"quit": ["com.t3tools.t3code"]}]' \
+    '[{"app": ["T3 Code (Beta).app"]}]' '[]'; do
+    receipt "$artifacts"
+    upgrade_t3_cask
+    assert_file_not_contains "$STUB_LOG" "brew uninstall"
+    assert_contains "$RUN_OUTPUT" "T3 Code is running"
+done
+stub pgrep 'exit 1'
+receipt '[{"app": ["T3 Code (Alpha).app"]}]'
+stub brew 'case "$*" in
+    "list --cask t3-code") ;;
+    "outdated "*) echo "${!#}"; exit 1 ;;
+    "info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
+    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;
+    "install "*) exit 1 ;;
+esac'
+: > "$STUB_LOG"
+assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Couldn't re-record t3-code. Run: brew install --cask --adopt t3-code"
 
 # A stage that exits 129, 130, or 143, as brew does when it catches Ctrl-C, stops upgrade with that
 # status, running no later stage. Any other failure doesn't.

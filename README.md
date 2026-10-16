@@ -99,7 +99,7 @@ just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in M
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64. [COMPATIBILITY.md](./COMPATIBILITY.md) records what has been checked where. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
 
 What differs from macOS:
 
@@ -496,7 +496,7 @@ Packages installed by hand don't go back automatically. Add formulae and App Sto
 
 Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
 
-After a full verification round, add its results to the top of [`COMPATIBILITY.md`](./COMPATIBILITY.md). [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
+[AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 
 ```sh
 just check                # shellcheck every script, syntax-check the zsh files, and check the docs, skills, and Claude settings keys against the code

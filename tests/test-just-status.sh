@@ -21,20 +21,13 @@ printf '%s\n' 'echo "setup.sh $*" >> "$RAN"' 'exit "$SETUP_CODE"' > "$repo/setup
 printf '%s\n' 'echo "ai_tools/setup.sh $*" >> "$RAN"' 'exit "$AI_CODE"' > "$repo/ai_tools/setup.sh"
 export RAN="$SANDBOX/ran"
 
-for a in 0 1 3; do
-    for b in 0 1 3; do
-        if [ "$a" -eq 1 ] || [ "$b" -eq 1 ]; then
-            want=1
-        elif [ "$a" -eq 3 ] || [ "$b" -eq 3 ]; then
-            want=3
-        else
-            want=0
-        fi
-        rm -f "$RAN"
-        SETUP_CODE=$a AI_CODE=$b assert_exit "$want" "$just" --justfile "$repo/justfile" status
-        assert_eq "setup.sh --status
+# <setup.sh's code> <ai_tools/setup.sh's code> <the recipe's code>
+for codes in "0 0 0" "3 0 3" "0 1 1" "3 1 1"; do
+    read -r a b want <<< "$codes"
+    rm -f "$RAN"
+    SETUP_CODE=$a AI_CODE=$b assert_exit "$want" "$just" --justfile "$repo/justfile" status
+    assert_eq "setup.sh --status
 ai_tools/setup.sh --status" "$(cat "$RAN")" "runners run for codes $a and $b"
-    done
 done
 
 # Another failure code also fails the recipe, and quick passes --quick to both

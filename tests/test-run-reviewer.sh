@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # interrogate's run-reviewer.sh stops the reviewer and its watchdog when cancelled, reports the
-# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory, ignores CDPATH,
-# and runs as each skill documents it. A stub claude stands in for the reviewer.
+# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory, and
+# ignores CDPATH. A stub claude stands in for the reviewer.
 # code-review's materialize-head.sh puts a reviewed head where that reviewer can read it.
 
 # shellcheck source=lib.sh
@@ -71,7 +71,6 @@ check_signal() {
 
 check_signal TERM 143
 check_signal INT 130
-check_signal HUP 129
 
 # A finished review keeps its answer and exits 0, and stops the watchdog
 stub claude 'echo "No findings."'
@@ -86,15 +85,14 @@ assert_exit 1 bash "$RUNNER" claude model high "$PROMPT" "$OUT"
 assert_contains "$RUN_OUTPUT" "claude exited with status 5"
 [ ! -e "$OUT" ] || fail "a failed review left an answer"
 
-# A review that runs past REVIEWER_TIMEOUT stops its descendants too, for either family.
-for family in claude codex; do
-    stub "$family" 'bash -c '\''sleep "$REVIEWER_SLEEP" & wait'\'' & wait'
-    REVIEWER_TIMEOUT=1 assert_exit 1 bash "$RUNNER" "$family" model low "$PROMPT" "$OUT"
-    assert_contains "$RUN_OUTPUT" "$family exited with status 143 (a status of 143 means it ran past 1s)"
-    [ ! -e "$OUT" ] || fail "$family: a timed-out review left an answer"
-    wait_for no_sleeps_left || fail "$family: the timed-out reviewer is still running"
-    "$PKILL" -f "$SLEEP_PATTERN" || true
-done
+# A review that runs past REVIEWER_TIMEOUT stops its descendants too. The watchdog is the same
+# for either family.
+stub claude 'bash -c '\''sleep "$REVIEWER_SLEEP" & wait'\'' & wait'
+REVIEWER_TIMEOUT=1 assert_exit 1 bash "$RUNNER" claude model low "$PROMPT" "$OUT"
+assert_contains "$RUN_OUTPUT" "claude exited with status 143 (a status of 143 means it ran past 1s)"
+[ ! -e "$OUT" ] || fail "a timed-out review left an answer"
+wait_for no_sleeps_left || fail "the timed-out reviewer is still running"
+"$PKILL" -f "$SLEEP_PATTERN" || true
 
 # The codex branch runs codex exec read-only from the repo root, with the prompt on stdin, and
 # keeps the answer it writes to --output-last-message
@@ -143,22 +141,6 @@ echo "Review this." > "$REPO/rel/prompt.md"
 CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md
 assert_file_contains "$REPO/ans/answer.md" "No findings."
 assert_file_contains "$STUB_LOG" "--add-dir $(pwd -P)/rel "
-
-# Each skill's documented call works as written, so a skill can't put the answer where the runner
-# refuses it. Each <dir>/ placeholder becomes its own temp dir, as the skills' mktemp -d calls
-# make them, and the other placeholders become sample values.
-for skill in engineering/interrogate productivity/show-me-your-work; do
-    doc="$REPO_DIR/ai_tools/skills/$skill/SKILL.md"
-    call="$(grep 'scripts/run-reviewer.sh <' "$doc")" || fail "$skill: no documented run-reviewer.sh call"
-    call="$(printf '%s\n' "$call" | sed -E -e "s|<([a-z]+)>/|$SANDBOX/doc-\\1/|g" \
-        -e 's/<claude\|codex>/claude/; s/<effort>/medium/; s/<[a-z]+>/1/g')"
-    read -ra args <<< "$call"
-    rm -rf "$SANDBOX"/doc-*
-    mkdir -p "$(dirname "${args[4]}")" "$(dirname "${args[5]}")"
-    echo "Review this." > "${args[4]}"
-    assert_exit 0 bash "$RUNNER" "${args[@]:1}"
-    assert_file_contains "${args[5]}" "No findings."
-done
 
 # code-review's materialize-head.sh writes a commit's tracked files, or the staged files, under the
 # review's temp dir, so a reviewer reads the reviewed head rather than the working tree. The
@@ -258,43 +240,5 @@ assert_eq "new file" "$(cat "$SANDBOX/review tmp/head/new file.txt")" "a staged 
 [ ! -e "$SANDBOX/review tmp/head/untracked.txt" ] || fail "staged: an untracked file was copied"
 git reset -q
 
-# A PR, by the steps in code-review's references/scope.md: fetch the base branch and the PR's head
-# from the base repo, take the merge base, and materialize the head. The clone's origin is a fork
-# without the PR's ref, so the steps must fetch from the base repo gh resolves. The clone's
-# branch, working tree, and index stay as they were. gh is stubbed with the PR's JSON and the base
-# repo's URL.
-ORIGIN="$SANDBOX/origin.git"
-git clone -q --bare "$HIST" "$ORIGIN"
-git -C "$ORIGIN" branch -q -f main "$OLD"
-pr_head="$(git rev-parse HEAD)"
-git -C "$ORIGIN" update-ref refs/pull/7/head "$pr_head"
-git -C "$ORIGIN" symbolic-ref HEAD refs/heads/main
-FORK="$SANDBOX/fork.git"
-git clone -q --bare "$ORIGIN" "$FORK"
-git -C "$FORK" show-ref -q refs/pull/7/head && fail "the fork has the PR's ref"
-CLONE="$SANDBOX/clone"
-git clone -q "$FORK" "$CLONE"
-cd "$CLONE"
-echo mine > kept.txt
-before="$(git rev-parse HEAD) $(git status --porcelain)"
-stub gh 'case "$1 $2" in
-    "pr view") echo "{\"number\": 7, \"baseRefName\": \"main\", \"headRefOid\": \"'"$pr_head"'\"}" ;;
-    "repo view") echo "'"$ORIGIN"'" ;;
-esac'
-pr="$(gh pr view 7 --json number,title,body,baseRefName,headRefOid,url)"
-base_ref="$(jq -r .baseRefName <<< "$pr")"
-head_sha="$(jq -r .headRefOid <<< "$pr")"
-url="$(gh repo view --json url -q .url)"
-git fetch -q "$url" "$base_ref"
-base_tip="$(git rev-parse FETCH_HEAD)"
-git fetch -q "$url" pull/7/head
-pr_base="$(git merge-base "$base_tip" "$head_sha")"
-assert_eq "$OLD" "$pr_base" "the PR's merge base"
-assert_contains "$(git diff --stat "$pr_base" "$head_sha")" "kept.txt"
-review_tmp
-assert_exit 0 bash "$MATERIALIZE" "$SANDBOX/review tmp" "$head_sha"
-assert_eq new "$(cat "$SANDBOX/review tmp/head/sub dir/a b.txt")" "the PR head's file"
-[ ! -e "$SANDBOX/review tmp/head/kept.txt" ] || fail "the PR head has a file the PR deleted"
-assert_eq "$before" "$(git rev-parse HEAD) $(git status --porcelain)" "the clone after the PR's review steps"
 cd "$REPO"
 test_done

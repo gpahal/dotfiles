@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # The docker step merges log-driver, live-restore, and 127.0.0.1 as the address published ports
 # bind to into /etc/docker/daemon.json, keeping the file's other keys and mode, restarts a running

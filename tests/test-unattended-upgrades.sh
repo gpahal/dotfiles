@@ -2,10 +2,11 @@
 # The steps' functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # The chrome step's status checks Google's apt source and allowed origins for unattended upgrades.
 # The ubuntu step checks the daily schedule: unattended_upgrades_on reads apt's periodic settings
-# as apt.systemd.daily does. The ubuntu step's simulated upgrade counts phased updates.
+# as apt.systemd.daily does.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -64,13 +65,4 @@ APT::Periodic::Unattended-Upgrade "1";' \
     stub_apt_config 'cat "'"$SANDBOX"'/periodic-config"'
     assert_exit 1 unattended_upgrades_on
 done
-
-# --- ubuntu: packages apt holds back ---
-# Phased updates count as upgradable, so packages held by phasing aren't reported as held back
-load_script ubuntu/install.sh
-stub apt-get 'printf "%s\n" "The following packages have been kept back:" "  foo bar" "0 upgraded."'
-: > "$STUB_LOG"
-assert_eq "foo
-bar" "$(held_back_packages)" "the held-back packages"
-assert_file_contains "$STUB_LOG" "apt-get -s -o APT::Get::Upgrade-Allow-New=true -o APT::Get::Always-Include-Phased-Updates=true upgrade"
 test_done

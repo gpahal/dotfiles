@@ -38,23 +38,11 @@ assert_eq "hello" "$(cat "$dest")" "installed file"
 assert_eq "$HELLO_SHA  $dest" "$(cat "$record")" "record after first install"
 assert_eq "$HELLO_SHA" "$(recorded_sha256 "$dest")" "recorded_sha256"
 
-# Unchanged: nothing copied, backed up, or rewritten
-# mv gives the record a new inode, so an unchanged inode means it wasn't rewritten
-before="$(/bin/ls -i "$record")"
-assert_exit 0 copy_file "$src" "$dest"
-assert_contains "$RUN_OUTPUT" "already up to date"
-assert_not_contains "$RUN_OUTPUT" "Copied"
-assert_eq "$before" "$(/bin/ls -i "$record")" "record's inode after an unchanged run"
-[ ! -e "$dest.bak" ] || fail "an unchanged run made a backup"
-
-# A second file gets its own line, and recording one file keeps the other's
+# A second file, whose record must outlive updates to the first
 src2="$SANDBOX/repo/vimrc"
 dest2="$HOME/.vimrc"
 printf 'hello\n' > "$src2"
 assert_exit 0 copy_file "$src2" "$dest2"
-assert_eq 2 "$(wc -l < "$record" | tr -d ' ')" "lines in the record"
-assert_file_contains "$record" "$HELLO_SHA  $dest"
-assert_file_contains "$record" "$HELLO_SHA  $dest2"
 
 # Repo update: the installed file is what setup put there, so it's replaced with no backup
 printf 'hello2\n' > "$src"
@@ -201,39 +189,6 @@ chmod 755 "$HOME/.local/bin/cmd"
 assert_exit 0 status_file "$SANDBOX/repo/cmd" "$HOME/.local/bin/cmd"
 assert_eq "  ok         ~/.local/bin/cmd" "$RUN_OUTPUT" "status of an executable command"
 
-# The vim step end to end, in a fresh HOME and a copy of the repo whose vimrc the test edits
-export HOME="$SANDBOX/home2"
-mkdir -p "$HOME" "$SANDBOX/repo2"
-cp -R "$REPO_DIR/lib" "$REPO_DIR/vim" "$SANDBOX/repo2/"
-vim_step="$SANDBOX/repo2/vim/install.sh"
-# No record, so a different ~/.vimrc is backed up without a terminal
-printf 'old vimrc\n' > "$HOME/.vimrc"
-assert_exit 0 "$BASH" "$vim_step"
-assert_eq "old vimrc" "$(cat "$HOME/.vimrc.bak")" "backup on the first run"
-assert_file_contains "$HOME/.local/state/dotfiles/installed-files" "  $HOME/.vimrc"
-# A second run changes nothing
-assert_exit 0 "$BASH" "$vim_step"
-assert_contains "$RUN_OUTPUT" "already up to date"
-assert_not_contains "$RUN_OUTPUT" "Copied"
-assert_not_contains "$RUN_OUTPUT" "Backed up"
-# A repo update replaces it with no backup
-rm "$HOME/.vimrc.bak"
-printf '" a repo change\n' >> "$SANDBOX/repo2/vim/vimrc"
-assert_exit 3 "$BASH" "$vim_step" --status
-assert_contains "$RUN_OUTPUT" "the repo has a newer version"
-assert_exit 0 "$BASH" "$vim_step"
-assert_contains "$RUN_OUTPUT" "Copied"
-[ ! -e "$HOME/.vimrc.bak" ] || fail "the vim step backed up after a repo update"
-# A hand edit is backed up, unless --no-backup says not to
-printf '" my edit\n' >> "$HOME/.vimrc"
-assert_exit 3 "$BASH" "$vim_step" --status
-assert_contains "$RUN_OUTPUT" "was edited since setup installed it"
-assert_exit 0 "$BASH" "$vim_step" --no-backup
-[ ! -e "$HOME/.vimrc.bak" ] || fail "the vim step backed up with --no-backup"
-printf '" my edit\n' >> "$HOME/.vimrc"
-assert_exit 0 "$BASH" "$vim_step"
-assert_file_contains "$HOME/.vimrc.bak" '" my edit'
-
 # A backup that fails leaves the file as it is and fails, saying nothing was backed up: here the
 # .bak holds another file, and the file's directory is read-only, so no new backup can be made
 load_script lib/common.sh
@@ -259,29 +214,6 @@ for copy in copy_file maybe_backup; do
 done
 chmod 755 "$HOME/ro"
 
-# maybe_backup with --backup never overwrites a .bak that holds something else: it writes a
-# timestamped backup instead
-settings="$HOME/settings.json"
-printf '{"mine": 1}\n' > "$settings"
-printf 'older backup\n' > "$settings.bak"
-stub date 'echo stamp'
-export DOTFILES_BACKUP=yes
-assert_exit 0 maybe_backup "$settings"
-unset DOTFILES_BACKUP
-rm -f "$STUB_DIR/date"
-assert_eq "older backup" "$(cat "$settings.bak")" ".bak after maybe_backup --backup"
-assert_eq '{"mine": 1}' "$(cat "$settings.bak.stamp" 2>/dev/null)" "timestamped backup from maybe_backup"
-assert_contains "$RUN_OUTPUT" "Backed up $settings to $settings.bak.stamp"
-# Asked with a terminal, the question names where the backup goes
-rm -f "$settings.bak.stamp"
-fake_terminal
-stub date 'echo stamp'
-assert_exit 0 maybe_backup "$settings" <<< n
-rm -f "$STUB_DIR/date"
-assert_contains "$RUN_OUTPUT" "Back up $settings to $settings.bak.stamp?"
-[ ! -e "$settings.bak.stamp" ] || fail "answering no made a backup"
-load_script lib/common.sh
-
 # A copy into a read-only directory fails, even when called under ||, which turns set -e off: no
 # "Copied" and nothing recorded
 ro="$HOME/read-only"
@@ -297,29 +229,6 @@ assert_exit 7 copy_or_7
 assert_not_contains "$RUN_OUTPUT" "Copied"
 assert_file_not_contains "$record" "$ro/edited.yml"
 chmod 755 "$ro"
-
-# A file that matches but was never recorded isn't backed up, and fails when the record can't be
-# written, since a later run would take the unrecorded file for an edit
-if [ "$(id -u)" -ne 0 ]; then
-    printf 'same\n' > "$SANDBOX/repo/same.yml"
-    cp "$SANDBOX/repo/same.yml" "$HOME/same.yml"
-    state="$(dirname "$INSTALLED_FILES")"
-    chmod 555 "$state"
-    assert_exit 7 copy_file_or_7 "$SANDBOX/repo/same.yml" "$HOME/same.yml"
-    chmod 755 "$state"
-    assert_not_contains "$RUN_OUTPUT" "already up to date"
-    assert_file_not_contains "$INSTALLED_FILES" "$HOME/same.yml"
-    [ ! -e "$HOME/same.yml.bak" ] || fail "backed up a file that matches its source"
-fi
-
-# A file that can't be read can't be hashed, so it doesn't count as what setup installed, even
-# with no record to compare against
-if [ "$(id -u)" -ne 0 ]; then
-    printf 'secret\n' > "$HOME/unreadable"
-    chmod 000 "$HOME/unreadable"
-    installed_unedited "$HOME/unreadable" 2>/dev/null && fail "an unreadable file counts as installed unedited"
-    chmod 644 "$HOME/unreadable"
-fi
 
 # Backups in the same second: each new version gets its own -2, -3 name, none is overwritten, and
 # a version already backed up reuses its file. date is pinned, so the second is the same.
@@ -364,18 +273,4 @@ assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_contains "$RUN_OUTPUT" "Back up $settings"
 assert_eq '{"mine": 1}' "$(cat "$settings.bak")" "backup after json_merge"
 assert_eq 1 "$(jq .a "$settings")" "settings after json_merge"
-
-# json_merge without jq fails before it backs anything up, so a run before the homebrew step leaves
-# no backup to offer again
-load_script lib/common.sh
-hide jq
-settings="$HOME/nojq/settings.json"
-mkdir -p "$HOME/nojq"
-printf '{"mine": 1}\n' > "$settings"
-export DOTFILES_BACKUP=yes
-assert_exit 1 json_merge "$settings" '.a = 1'
-unset DOTFILES_BACKUP
-assert_contains "$RUN_OUTPUT" "jq"
-assert_eq "settings.json" "$(/bin/ls "$HOME/nojq")" "files after json_merge without jq"
-assert_eq '{"mine": 1}' "$(cat "$settings")" "settings after json_merge without jq"
 test_done

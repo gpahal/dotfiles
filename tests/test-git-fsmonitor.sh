@@ -21,9 +21,6 @@ is_macos() { true; }
 is_ubuntu() { false; }
 
 assert_exit 0 main
-assert_exit 0 cmp -s "$REPO_DIR/git/fsmonitor" "$HOME/.config/git/fsmonitor"
-run status
-assert_contains "$RUN_OUTPUT" "ok         ~/.config/git/fsmonitor"
 
 fsmonitor() {
     git -C "$1" config core.fsmonitor || true

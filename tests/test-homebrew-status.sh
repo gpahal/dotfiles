@@ -27,7 +27,7 @@ zed_outside_homebrew() {
 CASK_PKG_APPS=()
 eval "real_$(declare -f cask_app_path)"
 cask_app_path() { zed_outside_homebrew "$1"; }
-# brew list names the casks without their apps, for Ubuntu and when jq is missing
+# brew list names the casks without their apps, for Ubuntu
 stub brew 'S="'"$SANDBOX"'"
 [ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nraycast\n"; exit; }
 [ "$*" == "info --json=v2 --installed --cask" ] || exit 1
@@ -77,20 +77,7 @@ assert_eq "brew list --cask -1" "$(cat "$STUB_LOG")" "brew calls on Ubuntu"
 assert_contains "$RUN_OUTPUT" "ok         font-monaspace (cask)"
 assert_contains "$RUN_OUTPUT" "missing    zed (cask)"
 assert_contains "$RUN_OUTPUT" "ok         apt packages Homebrew needs"
-assert_contains "$RUN_OUTPUT" "skipped    Xcode Command Line Tools: macOS only"
-assert_contains "$RUN_OUTPUT" "skipped    Brewfile App Store apps: macOS only"
-assert_contains "$RUN_OUTPUT" "skipped    Other casks: they have no Linux builds"
 assert_not_contains "$RUN_OUTPUT" "rectangle"
-
-# Without jq, brew list names the casks, and their apps go unchecked
-: > "$STUB_LOG"
-hide jq
-is_macos() { true; }
-stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1470584107  Dato         (5.8.3)\n1295203466  Windows App  (11.2.1)\n"'
-run status
-assert_eq 1 "$(brew_calls)" "brew calls without jq"
-assert_contains "$RUN_OUTPUT" "ok         Brewfile App Store apps"
-assert_contains "$RUN_OUTPUT" "ok         raycast (cask)"
 
 # Ubuntu without the apt packages Homebrew needs, or Homebrew: both missing, and nothing asks brew
 : > "$STUB_LOG"

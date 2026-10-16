@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # DOTFILES_ASSUME_YES=1 makes confirm say yes without a terminal, for throwaway test machines, and
-# the AI tools' manual-steps then opens nothing.
+# confirm asks whenever stdin is a terminal, even with stdout piped. test-ai-manual-steps.sh covers
+# manual-steps opening nothing with DOTFILES_ASSUME_YES=1.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,16 +17,6 @@ assert_exit 0 confirm "Proceed?"
 assert_eq "Proceed? yes (DOTFILES_ASSUME_YES)" "$RUN_OUTPUT" "confirm's output"
 DOTFILES_ASSUME_YES=0
 assert_exit 1 confirm "Proceed?"
-
-# manual-steps on macOS: nothing set up yet, so it would offer to open the settings
-load_script ai_tools/manual-steps.sh
-is_macos() { true; }
-stub plutil 'exit 1'
-stub open
-DOTFILES_ASSUME_YES=1
-assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "Open the notification settings"
-assert_file_not_contains "$STUB_LOG" "open "
 
 # confirm asks whenever stdin is a terminal, even with stdout piped, as in bash setup.sh | tee log.
 # script gives the command a terminal; is_interactive then runs with stdout sent to a file.

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
 # sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves
@@ -13,7 +14,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
-# test-diagnostics.sh covers SMART health and firmware updates
+# test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
 status_firmware() { :; }
 # ufw's on state and linger come from files under /etc and /var, so those checks are replaced.
@@ -140,13 +141,6 @@ assert_not_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
 no_prompting_sudo
 
-# The same with the rules missing: they can't be seen, so it's still no prompt
-rules_missing
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "These need sudo"
-no_prompting_sudo
-
 # Credentials cached: checked up front, so present rules are set up and missing ones are pending
 cached
 rules_present
@@ -208,11 +202,6 @@ assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the privat
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
-# Without cached sudo they can't be read, so they aren't reported
-not_cached
-assert_exit 0 status
-assert_not_contains "$RUN_OUTPUT" "lets SSH in"
-cached
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"

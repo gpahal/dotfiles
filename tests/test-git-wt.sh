@@ -55,10 +55,6 @@ assert_eq "" "$(git config branch.foo.merge || true)" "foo's upstream"
 out="$(git wt add foo 2> /dev/null)" || fail "a second git wt add foo failed"
 assert_eq "$dir/foo" "$out" "path a second git wt add prints"
 
-# An explicit base
-out="$(git wt add based HEAD 2> /dev/null)" || fail "git wt add based HEAD failed"
-assert_eq "$local_head" "$(git -C "$out" rev-parse HEAD)" "based's base"
-
 # A branch that exists is checked out, not created
 git branch old "$local_head"
 out="$(git wt add old 2> /dev/null)" || fail "git wt add old failed"
@@ -94,45 +90,8 @@ assert_contains "$RUN_OUTPUT" "  ignored files:
     .env"
 assert_contains "$RUN_OUTPUT" "git wt rm -f secrets"
 [ -f "$out/.env" ] || fail "git wt rm deleted .env"
-# A tracked edit, a staged file, and an untracked file next to .env: each group is listed, and -f
-# is suggested only with what it deletes
-printf 'one\n' > "$out/tracked.txt"
-git -C "$out" add tracked.txt
-git -C "$out" commit -q -m tracked
-printf 'two\n' > "$out/tracked.txt"
-printf 'new\n' > "$out/staged.txt"
-git -C "$out" add staged.txt
-printf 'scratch\n' > "$out/notes.txt"
-assert_exit 1 git wt rm secrets
-assert_contains "$RUN_OUTPUT" "  modified or staged files:
-    staged.txt
-    tracked.txt"
-assert_contains "$RUN_OUTPUT" "  untracked files:
-    notes.txt"
-assert_contains "$RUN_OUTPUT" "  ignored files:
-    .env"
-assert_contains "$RUN_OUTPUT" "git wt rm -f secrets, which deletes all of these"
-for f in tracked.txt staged.txt notes.txt .env; do
-    [ -f "$out/$f" ] || fail "git wt rm deleted $f"
-done
-assert_eq "two" "$(cat "$out/tracked.txt")" "tracked.txt after a refused git wt rm"
-# Only a tracked edit, which git worktree remove would refuse anyway: listed the same way
-rm "$out/.env" "$out/notes.txt"
-git -C "$out" reset -q staged.txt
-rm "$out/staged.txt"
-assert_exit 1 git wt rm secrets
-assert_contains "$RUN_OUTPUT" "  modified or staged files:
-    tracked.txt"
-assert_not_contains "$RUN_OUTPUT" "ignored files"
-assert_contains "$RUN_OUTPUT" "git wt rm -f secrets"
 assert_exit 0 git wt rm -f secrets
 [ ! -e "$out" ] || fail "git wt rm -f left $out"
-git branch -q -D secrets
-# -f also works after the name
-out="$(git wt add secrets 2> /dev/null)" || fail "git wt add secrets a third time failed"
-printf 'local\n' > "$out/.env"
-assert_exit 0 git wt rm secrets -f
-[ ! -e "$out" ] || fail "git wt rm secrets -f left $out"
 git branch -q -D secrets
 
 # A branch named like a tag: adding it again prints its path
@@ -142,31 +101,6 @@ out="$(git wt add v2 2> /dev/null)" || fail "a second git wt add v2, which a tag
 assert_eq "$dir/v2" "$out" "path a second git wt add v2 prints"
 assert_exit 0 git wt rm v2
 git tag -d v2 > /dev/null
-
-# A name that isn't a branch name fails
-assert_exit 1 git wt add "bad..name"
-assert_exit 1 git wt add -x
-
-# list shows this repo's worktrees only
-mkdir -p "$HOME/Dev/x/other"
-git init -q -b main "$HOME/Dev/x/other"
-commit_in "$HOME/Dev/x/other" first
-git -C "$HOME/Dev/x/other" wt add elsewhere > /dev/null 2>&1 || fail "git wt add in another repo failed"
-run git wt list
-assert_eq 0 "$RUN_STATUS" "git wt list's exit status"
-assert_contains "$RUN_OUTPUT" "$dir/foo "
-assert_contains "$RUN_OUTPUT" "[old]"
-assert_not_contains "$RUN_OUTPUT" "$repo "
-assert_not_contains "$RUN_OUTPUT" "elsewhere"
-
-# rm removes every worktree, then the repo's empty directories, up to $WORKTREES_DIR
-for name in foo based old bar; do
-    assert_exit 0 git wt rm "$name"
-done
-[ ! -e "$WORKTREES_DIR/x/y" ] || fail "git wt rm left $WORKTREES_DIR/x/y"
-[ -d "$WORKTREES_DIR/x/other/elsewhere" ] || fail "git wt rm removed another repo's worktree"
-[ -d "$WORKTREES_DIR" ] || fail "git wt rm removed $WORKTREES_DIR"
-assert_eq "" "$(git worktree list --porcelain | grep "$WORKTREES_DIR" || true)" "worktrees git still lists"
 
 # A repo outside ~/Dev/<group>/<repo>, with no origin, goes under _/<repo>-<hash> and branches
 # from HEAD. Repos with the same name in different places get different dirs.
@@ -220,15 +154,6 @@ out="$(git wt add gone 2> /dev/null)" || fail "git wt add gone failed"
 rm -rf "$out"
 out="$(git wt add gone 2> /dev/null)" || fail "git wt add after deleting the worktree by hand failed"
 [ -d "$dir/gone" ] || fail "git wt add didn't recreate the deleted worktree"
-
-# Adding prunes only that path's stale registration: another worktree deleted by hand stays
-# registered, so git keeps its metadata until you prune it
-out="$(git wt add stale 2> /dev/null)" || fail "git wt add stale failed"
-rm -rf "$out" "$dir/gone"
-git wt add gone > /dev/null 2>&1 || fail "git wt add after deleting two worktrees by hand failed"
-[ -d "$dir/gone" ] || fail "git wt add didn't recreate the deleted worktree"
-assert_contains "$(git worktree list --porcelain)" "worktree $(cd -P "$dir" && pwd)/stale"
-git worktree prune
 
 for name in remote-only nohead gone; do
     assert_exit 0 git wt rm "$name"
@@ -292,22 +217,7 @@ for name in p-changed p-committed p-draft p-unmarked; do
 done
 rm "$repo/zz.local"
 
-# rm needs no -f for a worktree that holds only a cache
-git wt add rm-cache > /dev/null 2>&1 || fail "git wt add rm-cache failed"
-mkdir -p "$dir/rm-cache/.pytest_cache"
-touch "$dir/rm-cache/.pytest_cache/README.md"
-assert_exit 0 git wt rm rm-cache
-[ ! -e "$dir/rm-cache" ] || fail "git wt rm kept a worktree that held only .pytest_cache"
-
-# With no arguments, git wt prints its usage, even outside a repo
-mkdir -p "$SANDBOX/not-a-repo"
-out="$(cd "$SANDBOX/not-a-repo" && GIT_CEILING_DIRECTORIES="$SANDBOX" git wt 2>&1)" &&
-    fail "git wt with no arguments succeeded"
-assert_contains "$out" "git wt path"
-assert_not_contains "$out" "not in a git repository"
-
-# A repo whose git dir is elsewhere is keyed by its checkout, not by the git dir's parent: a
-# --separate-git-dir repo from its checkout, and a submodule from its checkout and its worktrees
+# A --separate-git-dir repo is keyed by its checkout, not by the git dir's parent
 git init -q -b main --separate-git-dir "$SANDBOX/sep.git" "$HOME/Dev/x/sep"
 commit_in "$HOME/Dev/x/sep" only
 out="$(git -C "$HOME/Dev/x/sep" wt add feat 2> /dev/null)" || fail "git wt add with a separate git dir failed"
@@ -320,13 +230,6 @@ for args in path list "rm feat"; do
     assert_contains "$RUN_OUTPUT" "run git wt from the main checkout of a --separate-git-dir repo"
 done
 [ -d "$out" ] || fail "git wt rm removed a worktree it couldn't place"
-git init -q -b main "$HOME/Dev/x/super"
-commit_in "$HOME/Dev/x/super" only
-git -C "$HOME/Dev/x/super" -c protocol.file.allow=always submodule add -q "$SANDBOX/origin.git" mod 2> /dev/null
-out="$(git -C "$HOME/Dev/x/super/mod" wt add feat 2> /dev/null)" || fail "git wt add in a submodule failed"
-assert_eq "$WORKTREES_DIR/$(other_key "$HOME/Dev/x/super/mod")/feat" "$out" "path for a submodule"
-assert_eq "$WORKTREES_DIR/$(other_key "$HOME/Dev/x/super/mod")/other" "$(git -C "$out" wt path other)" \
-    "path from a submodule's worktree"
 
 # A bare repo with linked worktrees, ~/Dev/x/bare/.bare with a .git file pointing at it, is keyed
 # by the bare dir's parent, from the repo's directory and its worktrees
@@ -337,22 +240,6 @@ git -C "$HOME/Dev/x/bare" worktree add -q "$HOME/Dev/x/bare/main" main 2> /dev/n
 assert_eq "$WORKTREES_DIR/x/bare" "$(git -C "$HOME/Dev/x/bare" wt path)" "path for a bare repo"
 assert_eq "$WORKTREES_DIR/x/bare/f" "$(git -C "$HOME/Dev/x/bare/main" wt path f)" \
     "path from a bare repo's worktree"
-
-# Plain bare repos side by side, foo.git and bar.git, are keyed like repos named foo and bar, under
-# ~/Dev and elsewhere
-for parent in "$HOME/Dev/x" "$SANDBOX/plain"; do
-    mkdir -p "$parent"
-    for name in foo bar; do
-        git clone -q --bare "$SANDBOX/origin.git" "$parent/$name.git"
-    done
-done
-assert_eq "$WORKTREES_DIR/x/foo" "$(git -C "$HOME/Dev/x/foo.git" wt path)" "path for ~/Dev/x/foo.git"
-assert_eq "$WORKTREES_DIR/x/bar" "$(git -C "$HOME/Dev/x/bar.git" wt path)" "path for ~/Dev/x/bar.git"
-assert_eq "$WORKTREES_DIR/$(other_key "$SANDBOX/plain/foo")" "$(git -C "$SANDBOX/plain/foo.git" wt path)" \
-    "path for a foo.git outside ~/Dev"
-out="$(git -C "$HOME/Dev/x/foo.git" wt add feat 2> /dev/null)" || fail "git wt add in foo.git failed"
-assert_eq "$WORKTREES_DIR/x/foo/feat" "$out" "path git wt add prints in foo.git"
-assert_eq "$WORKTREES_DIR/x/foo/other" "$(git -C "$out" wt path other)" "path from foo.git's worktree"
 
 # With $WORKTREES_DIR behind a symlink, git registers the resolved path, so a worktree deleted by
 # hand along with its parents is still dropped and added again

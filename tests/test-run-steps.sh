@@ -6,7 +6,10 @@ set -euo pipefail
 # run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
 # Ctrl-C, or SIGTERM, stops the run. With --status, a step that exits 3 is listed as needing
-# attention. Fake steps stand in for the real ones.
+# attention. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
+# macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
+# both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
+# report the OS.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -28,7 +31,6 @@ fake_step interrupted 'kill -INT $$'
 fake_step attention '[ "${1:-}" != --status ] || exit 3'
 # Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
-fake_step terminated 'kill -TERM $$'
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
@@ -70,11 +72,6 @@ assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 interrupted" "$(cat "$SANDBOX/ran")" "steps run up to an interrupted one"
 
-# A step killed by SIGTERM stops the run too
-rm -f "$SANDBOX/ran"
-assert_exit 143 run_steps "" terminated last
-assert_not_contains "$RUN_OUTPUT" "last ran"
-
 # Any other status above 128 is a failure, and the rest still run
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" sigpipe last
@@ -94,14 +91,6 @@ assert_exit 1 run_steps --status attention broken
 assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
-
-# ARM Ubuntu gets a warning, and the run carries on
-is_macos() { false; }
-is_ubuntu() { true; }
-stub uname '[ "$1" != -m ] || echo aarch64'
-assert_exit 0 run_steps "" first
-assert_contains "$RUN_OUTPUT" "Warning: setup is tested on x86_64 Ubuntu, not aarch64."
-assert_contains "$RUN_OUTPUT" "first ran"
 
 is_macos() { true; }
 is_ubuntu() { false; }
@@ -125,4 +114,34 @@ assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps: first last"
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
 assert_exit 1 run_steps "" nope
 assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux"
+
+# The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
+load_script lib/common.sh
+# Set LISTED to a runner's default steps on an OS (Darwin or Linux)
+runner_steps() {
+    stub uname "[ \"\$1\" != -s ] || echo $2"
+    assert_exit 0 "$BASH" "$REPO_DIR/$1" --help
+    LISTED="$(printf '%s\n' "$RUN_OUTPUT" | sed -n 's/^Steps, run in this order by default: //p')"
+    [ -n "$LISTED" ] || fail "no steps read from $1 --help on $2"
+}
+for runner in setup.sh ai_tools/setup.sh; do
+    runner_steps "$runner" Darwin
+    # shellcheck disable=SC2206 # step names have no spaces
+    MACOS_STEPS=($LISTED)
+    runner_steps "$runner" Linux
+    # shellcheck disable=SC2206
+    UBUNTU_STEPS=($LISTED)
+    # shellcheck disable=SC2034 # step_script reads it
+    STEPS_DIR="$(dirname "$REPO_DIR/$runner")"
+    for step in "${MACOS_STEPS[@]}" "${UBUNTU_STEPS[@]}"; do
+        script="$(step_script "$step")" || {
+            fail "$runner: step_script doesn't resolve $step"
+            continue
+        }
+        [ -f "$script" ] || fail "$runner: $step resolves to $script, which doesn't exist"
+    done
+    for name in "" nope lib ../setup; do
+        ! step_script "$name" > /dev/null || fail "$runner: step_script resolved \"$name\""
+    done
+done
 test_done

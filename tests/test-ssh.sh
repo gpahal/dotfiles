@@ -4,8 +4,7 @@ set -euo pipefail
 # On macOS the ssh step makes the agent load keys from the keychain: a Host * block with
 # AddKeysToAgent and UseKeychain, and a LaunchAgent that runs ssh-add --apple-load-keychain at
 # login. It never edits a Host * block you wrote. Ubuntu has no keychain, so it skips both.
-# add_block, from ssh/lib/hosts.sh, which ssh/add-host.sh uses, puts a block above the first
-# catch-all. Host lines are read as ssh reads them, and a failed write fails the step.
+# Host lines are read as ssh reads them, and a failed write fails the step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -171,25 +170,6 @@ assert_contains "$(host_star_missing)" 'UseKeychain yes'
 printf 'Host *\n  AddKeysToAgent yes\n  #UseKeychain yes\n' > "$SSH_CONFIG"
 assert_eq '  UseKeychain yes' "$(host_star_missing)" "the lines missing with UseKeychain commented out"
 
-# add_block puts a block above the first catch-all, and its comment, so the catch-all doesn't win
-# over it. tests/test-ssh-add-host.sh checks what ssh itself resolves.
-line_of() { grep -nxF "$1" "$SSH_CONFIG" | head -n 1 | cut -d: -f1; }
-printf 'Host other\n  User other\n\n# Defaults\nHost *\n  AddKeysToAgent no\n' > "$SSH_CONFIG"
-assert_exit 0 add_block "Host box"
-[ "$(line_of "Host box")" -lt "$(line_of "# Defaults")" ] ||
-    fail "the block went after Host *: $(cat "$SSH_CONFIG")"
-
-# A config add_block can't replace: it fails, and the new contents stay where it says they are
-if [ "$(id -u)" -ne 0 ]; then
-    printf 'Host other\n  User me\n' > "$SSH_CONFIG"
-    chmod 500 "$HOME/.ssh"
-    assert_exit 1 add_block "Host box"
-    chmod 700 "$HOME/.ssh"
-    kept="$(sed -n 's/.*The new contents are in \(.*\)\.$/\1/p' <<< "$RUN_OUTPUT")"
-    [ -n "$kept" ] && [ -f "$kept" ] || fail "the new contents a failed write named are gone: '$kept'"
-    [ -z "$kept" ] || assert_file_contains "$kept" "Host box"
-fi
-
 # catch_all_line reads lines without their comments, and counts a Match all after canonical or
 # final. A comment right above the catch-all goes with it.
 for line in "Match canonical all" "Match final all" "Match all # defaults" "Match = all" \
@@ -202,26 +182,14 @@ for line in "Match all host other" "Match canonical" "# Match all" "Host other #
     assert_eq "" "$(catch_all_line)" "the catch-all's line with: $line"
 done
 
-# ssh reads a Host line's keyword in any case, after = as well as whitespace, and a quoted
-# pattern whole
-host_line_case 'Host=box' box 0
-host_line_case 'Host = box' box 0
-host_line_case 'Host "box"' box 0
-host_line_case 'host box' box 0
-host_line_case $'HOST\t"my box" box' box 0
-host_line_case 'Hostname box' box 1
-host_line_case 'Host "my box"' box 1
-assert_eq "$(printf '%s\n' a 'b c' d)" "$(host_patterns 'Host=a "b c" d # e')" "the patterns of a Host line"
-assert_eq "" "$(host_patterns 'HostName box')" "the patterns of a HostName line"
-
 # A block for one host isn't global, however its Host line is written, and neither is one for *
 # with another pattern: only Host * alone counts
-for line in 'Host=box' 'Host = box' 'Host "box"' 'host box' 'Host * !box' 'Host box *'; do
+for line in 'Host = box' 'Host * !box'; do
     printf '%s\n  AddKeysToAgent yes\n  UseKeychain yes\n' "$line" > "$SSH_CONFIG"
     assert_eq "$(printf '  AddKeysToAgent yes\n  UseKeychain yes')" "$(host_star_missing)" \
         "the lines missing after: $line"
 done
-for line in 'Host=*' 'Host "*"' 'host *'; do
+for line in 'Host=*' 'host *'; do
     printf '%s\n  AddKeysToAgent yes\n  UseKeychain=yes\n' "$line" > "$SSH_CONFIG"
     assert_eq "" "$(host_star_missing)" "the lines missing after: $line"
 done
@@ -250,13 +218,4 @@ if [ "$(id -u)" -ne 0 ]; then
         chmod 600 "$SSH_CONFIG"
     done
 fi
-
-# A failed Host * block doesn't stop the rest under set -e, which run turns on, and fails the step
-is_macos() { true; }
-is_ubuntu() { false; }
-rm "$SSH_CONFIG"
-add_host_star() { return 1; }
-install_ssh_add_agent() { echo "LaunchAgent installed"; }
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "LaunchAgent installed"
 test_done

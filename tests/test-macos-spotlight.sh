@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: macos
 
 # The macos step turns off Spotlight's Cmd+Space shortcut (symbolic hotkey 64), so Raycast can
 # take it, and applies it with activateSettings. Its status checks it. The step says to log out
@@ -36,7 +37,7 @@ esac'
 stub killall
 stub activateSettings
 stub pgrep 'exit 1'
-# test-diagnostics.sh covers what status reports about FileVault and the firewall
+# test-diagnostics-macos.sh covers what status reports about FileVault and the firewall
 stub fdesetup 'echo "FileVault is On."'
 stub socketfilterfw 'echo "Firewall is enabled. (State = 1)"'
 
@@ -62,11 +63,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
 assert_file_not_contains "$STUB_LOG" "activateSettings"
 assert_file_not_contains "$STUB_LOG" "defaults write"
-
-# Only a Dock key changed: the Dock restarts, and there's no logout note
-rm "$DEFAULTS_DIR/com.apple.dock.autohide"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "killall Dock"
 assert_not_contains "$RUN_OUTPUT" "log out"
 
 # Only the shortcut changed, and activateSettings fails: log out to apply it

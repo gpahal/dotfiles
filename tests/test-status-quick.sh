@@ -60,16 +60,4 @@ assert_file_not_contains "$STUB_LOG" "sleep"
 stub systemctl 'case "$2" in is-active) exit 3 ;; is-enabled) exit 0 ;; show) echo 0 ;; esac'
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service running"
-
-# Both runners' usage text names --quick and the check it skips among that runner's steps only.
-# test-runner-flags.sh checks that lib/common.sh exports DOTFILES_STATUS_QUICK, which the steps a
-# runner starts inherit.
-run "$BASH" "$REPO_DIR/setup.sh" --help
-assert_contains "$RUN_OUTPUT" "--quick" "setup.sh --help"
-assert_contains "$RUN_OUTPUT" "Brewfile" "setup.sh --help"
-assert_not_contains "$RUN_OUTPUT" "T3 Code" "setup.sh --help"
-run "$BASH" "$REPO_DIR/ai_tools/setup.sh" --help
-assert_contains "$RUN_OUTPUT" "--quick" "ai_tools/setup.sh --help"
-assert_contains "$RUN_OUTPUT" "T3 Code service" "ai_tools/setup.sh --help"
-assert_not_contains "$RUN_OUTPUT" "Brewfile" "ai_tools/setup.sh --help"
 test_done

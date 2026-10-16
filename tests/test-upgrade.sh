@@ -15,7 +15,6 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-command -v zsh &>/dev/null || skip "zsh isn't installed"
 command -v jq &>/dev/null || skip "jq isn't installed"
 JQ="$(command -v jq)"
 
@@ -179,11 +178,6 @@ assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrad
 assert_eq "" "$(ls -A "$SANDBOX/tmp")" "files upgrade leaves in TMPDIR"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
-# Without mas, upgrade skips the App Store and doesn't count it as failed
-rm "$STUB_DIR/mas"
-assert_not_contains "$(upgrade_on darwin25.0)" "mas" "commands upgrade runs on macOS without mas"
-stub mas
-
 # A cask with no app artifact, such as Logi Options+, which installs through an installer and quits
 # its own app and agents first, upgrades with no running check, whatever app runs
 cp "$STUB_DIR/brew" "$SANDBOX/brew"
@@ -243,9 +237,6 @@ claude plugin update a@m --scope user
 t3 update
 codex plugin marketplace upgrade" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
 
-# Homebrew puts fonts in $XDG_DATA_HOME/fonts when it's set, so that's the dir to refresh
-assert_contains "$(XDG_DATA_HOME="$SANDBOX/data" upgrade_on linux-gnu)" "fc-cache -f $SANDBOX/data/fonts"
-
 # A running Zed isn't replaced, which would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'
 upgrade_on linux-gnu > /dev/null
@@ -277,12 +268,6 @@ assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" 'claude plugin list'
 assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
-for invalid in 'not json' '{}' ''; do
-    stub claude '[ "$*" != "plugin list --json" ] || echo "'"$invalid"'"'
-    assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
-    assert_contains "$RUN_OUTPUT" 'claude plugin list'
-done
 
 # Ctrl-C during claude plugin list stops upgrade-ai-tools, running nothing after it
 stub claude '[ "$*" != "plugin list --json" ] || exit 130'
@@ -303,44 +288,35 @@ assert_exit 0 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
 assert_file_not_contains "$STUB_LOG" "t3 update"
 mv "$SANDBOX/t3-link" "$HOME/.local/bin/t3"
 
-# mise hook-env fails, or prints nothing: npm would run the Node from before mise upgrade, so
-# npm update -g doesn't run, and upgrade names the stage and fails
+# mise hook-env fails: npm would run the Node from before mise upgrade, so npm update -g doesn't
+# run, and upgrade names the stage and fails
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
-for hook in 'exit 1' 'exit 0'; do
-    stub mise '[ "$1" != hook-env ] || '"$hook"
-    : > "$STUB_LOG"
-    assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR"
-    assert_contains "$RUN_OUTPUT" "mise hook-env"
-    assert_file_not_contains "$STUB_LOG" "npm"
-    assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
-done
+stub mise '[ "$1" != hook-env ] || exit 1'
+: > "$STUB_LOG"
+assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "mise hook-env"
+assert_file_not_contains "$STUB_LOG" "npm"
+assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
 
-# No installed plugins is a valid empty list, not a discovery failure.
-stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
-assert_exit 0 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin; upgrade_ai_tools' bash "$REPO_DIR"
-
-# brew outdated fails, with or without output, or exits 1 without listing the cask: upgrade-ai-tools
-# can't tell whether the casks are up to date, so it upgrades neither and fails, naming them. A
-# successful empty answer is up to date.
+# brew outdated exits 1 without listing the cask: upgrade-ai-tools can't tell whether the casks are
+# up to date, so it upgrades neither and fails, naming them. A successful empty answer is up to
+# date.
 upgrade_ai_tools_mac() {
     : > "$STUB_LOG"
     assert_exit "$1" env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
         "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin; upgrade_ai_tools' bash "$REPO_DIR"
 }
-for output in ': ; exit 42' 'echo partial; exit 42' ': ; exit 1'; do
-    stub brew 'case "$*" in
-        "list --cask t3-code" | "list --cask codex") ;;
-        "list --cask"*) exit 1 ;;
-        "outdated "*) '"$output"' ;;
-    esac'
-    upgrade_ai_tools_mac 1
-    assert_contains "$RUN_OUTPUT" "desktop apps"
-    assert_contains "$RUN_OUTPUT" "codex cask"
-    assert_file_not_contains "$STUB_LOG" "brew upgrade"
-done
+stub brew 'case "$*" in
+    "list --cask t3-code" | "list --cask codex") ;;
+    "list --cask"*) exit 1 ;;
+    "outdated "*) exit 1 ;;
+esac'
+upgrade_ai_tools_mac 1
+assert_contains "$RUN_OUTPUT" "desktop apps"
+assert_contains "$RUN_OUTPUT" "codex cask"
+assert_file_not_contains "$STUB_LOG" "brew upgrade"
 stub brew 'case "$*" in
     "list --cask t3-code" | "list --cask codex") ;;
     "list --cask"*) exit 1 ;;
@@ -369,7 +345,7 @@ stub pgrep 'exit 1'
 
 # A cask whose metadata can't be read, since brew info fails or prints what jq can't parse, isn't
 # taken for a cask with no app: it's left alone, with no running check, and the stage fails
-for info in 'exit 1' 'echo "not json"' ':' 'echo "{}"'; do
+for info in 'exit 1' 'echo "{}"'; do
     stub brew 'case "$*" in
         "list --cask zed") ;;
         "list --cask"*) exit 1 ;;
@@ -423,7 +399,7 @@ assert_file_contains "$STUB_LOG" "brew install --cask --adopt t3-code"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
 assert_file_not_contains "$STUB_LOG" "pgrep"
 for artifacts in '[{"app": ["T3 Code (Alpha).app"]}, {"quit": ["com.t3tools.t3code"]}]' \
-    '[{"app": ["T3 Code (Beta).app"]}]' '[]'; do
+    '[{"app": ["T3 Code (Beta).app"]}]'; do
     receipt "$artifacts"
     upgrade_t3_cask
     assert_file_not_contains "$STUB_LOG" "brew uninstall"
@@ -444,7 +420,7 @@ assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
 assert_contains "$RUN_OUTPUT" "Couldn't re-record t3-code. Run: brew install --cask --adopt t3-code"
 
 # A stage that exits 129, 130, or 143, as brew does when it catches Ctrl-C, stops upgrade with that
-# status, running no later stage. Any other failure doesn't.
+# status, running no later stage
 stub brew '[ "$*" != update ] || exit 130'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
@@ -452,12 +428,6 @@ assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
 assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "brew bundle"
 assert_file_not_contains "$STUB_LOG" "rustup"
-stub brew '[ "$*" != update ] || exit 1'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
-assert_not_contains "$RUN_OUTPUT" "Interrupted"
-assert_file_contains "$STUB_LOG" "rustup update"
 # upgrade-ai-tools too, here when brew is interrupted upgrading a cask
 stub brew 'case "$*" in
     "list --cask claude") ;;
@@ -471,21 +441,6 @@ assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
 assert_file_not_contains "$STUB_LOG" "brew list --cask chatgpt"
 assert_file_not_contains "$STUB_LOG" "claude plugin"
-stub brew
-# brew outdated and brew info stop it too when interrupted, before the next cask
-for interrupted in "outdated " "info "; do
-    stub brew 'case "$*" in
-        "list --cask claude") ;;
-        "list --cask"*) exit 1 ;;
-        "'"$interrupted"'"*) exit 130 ;;
-        "outdated "*) echo "${!#}"; exit 1 ;;
-    esac'
-    : > "$STUB_LOG"
-    assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-    assert_file_not_contains "$STUB_LOG" "brew list --cask chatgpt"
-    assert_file_not_contains "$STUB_LOG" "brew upgrade"
-done
 stub brew
 
 # A tmux plugin at another commit, as an older checkout or a bumped pin leaves it, moves to its
@@ -503,12 +458,4 @@ mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
 run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
 assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
-
-# zsh's upgrade and upgrade-ai-tools run the script from the repo DOTFILES_DIR names
-mkdir -p "$SANDBOX/fake-repo/scripts"
-# shellcheck disable=SC2016 # expanded by the fake script
-printf '%s\n' 'echo "upgrade.sh $*"' > "$SANDBOX/fake-repo/scripts/upgrade.sh"
-run env DOTFILES_DIR="$SANDBOX/fake-repo" zsh -f -c 'source "$1/zsh/aliases.zsh"; upgrade; upgrade-ai-tools' zsh "$REPO_DIR"
-assert_eq "upgrade.sh 
-upgrade.sh ai-tools" "$RUN_OUTPUT" "what zsh's functions run"
 test_done

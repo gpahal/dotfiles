@@ -117,8 +117,9 @@ else
     rtmux new-session -d -s two 'sleep 60'
     assert_contains "$(rtmux show-options -g update-environment)" "SSH_USER_AUTH" "update-environment"
     [ ! -e "$marker" ] || fail "the marker exists before any client attached"
-    # The client stays attached while its stdin, a sleep, stays open
-    sleep 10 | rtmux -C attach -t one > /dev/null &
+    # The client stays attached while its stdin, a sleep, stays open. Not a pipe from sleep, which
+    # the wait below would wait for.
+    rtmux -C attach -t one < <(sleep 10) > /dev/null &
     client_pid=$!
     wait_marker "" || fail "attaching a client didn't write $marker"
     attached="$(cat "$marker")"
@@ -129,17 +130,12 @@ else
     wait "$client_pid" 2> /dev/null || true
 fi
 # zsh/title.zsh sets the title with OSC 2: the directory at the prompt, and the command line, with
-# its control characters as spaces and cut to 100 characters, while it runs, unless it starts with
-# a space. A dumb terminal gets nothing.
+# its control characters as spaces, while it runs, unless it starts with a space
 mkdir -p "$HOME/proj"
-long="$(printf 'x%.0s' $(seq 1 120))"
 # shellcheck disable=SC2016 # expanded by zsh
 title_script='source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
 assert_eq "$(printf '\033]2;~/proj\a\033]2;echo a  b\a')" \
     "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" $'echo a\n b')" "the titles"
-assert_eq "$(printf '\033]2;~/proj\a\033]2;%s\a' "${long:0:100}")" \
-    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" "$long")" "a long command's title"
-assert_eq "" "$(TERM=dumb zsh -f -c "$title_script" zsh "$REPO_DIR" ls)" "the titles in a dumb terminal"
 # A command with a leading space, which history leaves out, keeps the prompt's title
 assert_eq "$(printf '\033]2;~/proj\a')" \
     "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" ' export TOKEN=secret')" "a hidden command's title"

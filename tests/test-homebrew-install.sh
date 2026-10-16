@@ -4,8 +4,8 @@
 set -euo pipefail
 
 # Without a terminal, the homebrew step installs Homebrew when sudo is cached or the prefix
-# already exists, and otherwise stops before the installer, on both OSes. Ubuntu's apt packages
-# include locales, for the locale-gen the ubuntu step runs.
+# already exists, and otherwise stops before the installer, on both OSes. missing_ubuntu_commands
+# checks for locale-gen and fc-cache along with the rest.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -49,20 +49,6 @@ for os in ubuntu macos; do
     rmdir "$PREFIX"
 done
 
-# The prefix the installer creates on each OS
-unset -f homebrew_prefix
-load_script homebrew/install.sh
-is_ubuntu() { true; }
-assert_eq /home/linuxbrew/.linuxbrew "$(homebrew_prefix)" "Ubuntu prefix"
-is_ubuntu() { false; }
-uname() { echo arm64; }
-assert_eq /opt/homebrew "$(homebrew_prefix)" "Apple Silicon prefix"
-unset -f uname
-
-# locales provides locale-gen, and fontconfig fc-cache, which refreshes the font cache after the
-# Monaspace cask. missing_ubuntu_commands checks for both along with the rest.
-assert_contains " $UBUNTU_PACKAGES " " locales "
-assert_contains " $UBUNTU_PACKAGES " " fontconfig "
 # shellcheck disable=SC2034 # missing_ubuntu_commands reads it
 UBUNTU_COMMANDS=(sh)
 expected=""

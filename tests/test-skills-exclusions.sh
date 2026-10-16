@@ -2,14 +2,13 @@
 set -euo pipefail
 
 # The skills step's checks leave out what the skills CLI doesn't copy (metadata.json, .git,
-# __pycache__, __pypackages__), and still see a real content or mode change. Split from
-# test-skills.sh to keep each under the test timeout. A stub npx stands in for the skills CLI.
+# __pycache__, __pypackages__), and still see a real content change. test-skills.sh covers a mode
+# change. A stub npx stands in for the skills CLI.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 
-STEP="$REPO_DIR/ai_tools/skills/install.sh"
 AGENTS_DIR="$HOME/.agents/skills"
 
 # Found on PATH, so lib/common.sh doesn't put the real Homebrew, and its npx, first
@@ -64,24 +63,29 @@ backups() {
 }
 
 # The CLI leaves metadata.json, .git, __pycache__, and __pypackages__ out of its copies, so the
-# step leaves them out of its checks too. A fixture copy of the repo gets them, so the real
-# skills stay untouched.
+# step leaves them out of its checks too. A fixture copy of the repo, with only the interrogate
+# skill, gets them, so the real skills stay untouched.
 FIXTURE="$SANDBOX/dot files"
 mkdir -p "$FIXTURE/ai_tools"
 cp -R "$REPO_DIR/lib" "$FIXTURE/lib"
-cp -R "$REPO_DIR/ai_tools/skills" "$FIXTURE/ai_tools/skills"
+mkdir -p "$FIXTURE/ai_tools/skills/engineering"
+cp -R "$REPO_DIR/ai_tools/skills/install.sh" "$REPO_DIR/ai_tools/skills/lib" "$FIXTURE/ai_tools/skills/"
+cp -R "$REPO_DIR/ai_tools/skills/engineering/interrogate" "$FIXTURE/ai_tools/skills/engineering/"
 STEP="$FIXTURE/ai_tools/skills/install.sh"
 SRC="$FIXTURE/ai_tools/skills/engineering/interrogate"
 step
 assert_eq 0 "$RUN_STATUS" "the fixture's first run"
-# Each left-out entry, one at a time, in the source and at depth, with an executable file inside
-for entry in metadata.json scripts/metadata.json .git scripts/__pycache__ __pycache__ __pypackages__; do
+# Each left-out entry in the source, at the top and at depth, with an executable file inside
+entries="metadata.json scripts/metadata.json .git scripts/__pycache__ __pycache__ __pypackages__"
+for entry in $entries; do
     case "$entry" in
         *metadata.json) echo '{}' > "$SRC/$entry"; chmod +x "$SRC/$entry" ;;
         *) mkdir -p "$SRC/$entry" && echo x > "$SRC/$entry/run.sh" && chmod +x "$SRC/$entry/run.sh" ;;
     esac
-    assert_exit 0 "$BASH" "$STEP" --status
-    assert_not_contains "$RUN_OUTPUT" "interrogate skill" "status with $entry in the source"
+done
+assert_exit 0 "$BASH" "$STEP" --status
+assert_not_contains "$RUN_OUTPUT" "interrogate skill" "status with left-out entries in the source"
+for entry in $entries; do
     rm -rf "${SRC:?}/$entry"
 done
 # A cache a skill's script wrote into the installed copy isn't an edit
@@ -103,10 +107,6 @@ assert_eq "" "$(backups interrogate)" "backups of a copy whose only extra is a c
 assert_file_contains "$AGENTS_DIR/interrogate/SKILL.md" "drift"
 [ ! -e "$AGENTS_DIR/interrogate/metadata.json" ] || fail "the stub copied metadata.json"
 assert_exit 0 "$BASH" "$STEP" --status
-chmod -x "$SRC/scripts/run-reviewer.sh"
-assert_exit 3 "$BASH" "$STEP" --status
-assert_contains "$RUN_OUTPUT" "interrogate skill"
-chmod +x "$SRC/scripts/run-reviewer.sh"
 # Any other untracked file is part of the skill, and gets installed
 echo "notes" > "$SRC/notes.md"
 assert_exit 3 "$BASH" "$STEP" --status

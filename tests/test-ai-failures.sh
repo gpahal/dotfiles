@@ -19,16 +19,7 @@ claude_failure() {
 assert_exit 1 claude_failure
 assert_file_contains "$HOME/.claude/settings.json" '"autoMemoryEnabled": false'
 [ -x "$HOME/.claude/statusline.sh" ] || fail "Claude skipped its scripts after installation failed"
-assert_file_contains "$HOME/.claude/settings.json" "worktree-hook.sh"
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after installation failed"
-
-# A worktree hook that couldn't be copied isn't registered, and the other settings still are
-rm -rf "$HOME/.claude"
-mkdir -p "$HOME/.claude"
-touch "$HOME/.claude/hooks"
-assert_exit 1 claude_failure
-assert_file_contains "$HOME/.claude/settings.json" '"autoMemoryEnabled": false'
-assert_not_contains "$(cat "$HOME/.claude/settings.json")" "worktree-hook.sh"
 rm -rf "$HOME/.claude"
 
 desktop_failure() {

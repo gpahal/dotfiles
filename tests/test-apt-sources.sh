@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off
 # all count. apt_repo_published says to wait while the repo's Release file for this release is a
 # 404, and add_apt_repo keeps the old key and source when the key's download fails. The chrome
 # step's google_source_exists only checks that the .deb's source file is there and on.
-# test-docker-sources.sh and test-ubuntu-step.sh cover add_apt_repo's other failures through the
-# docker and ubuntu steps.
+# test-docker-sources.sh covers add_apt_repo's other failures through the docker step.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox

@@ -4,12 +4,11 @@
 set -euo pipefail
 
 # A step missing a command it needs fails before it changes anything: claude-code and claude-desktop
-# without jq, claude-code without curl when Claude Code is missing, claude-desktop and codex without
-# brew, which installs their casks, codex without yq, tmux without tmux or git, git without gh,
-# ubuntu and docker without jq, ubuntu without curl when Tailscale is missing, t3-code without brew
-# on macOS and without curl on Ubuntu when it would download the app or the CLI, runtimes without
-# curl when rustup is missing, and zsh without its login zsh. The runtimes step without mise is in
-# test-runtimes.sh, and chrome without curl in test-chrome.sh.
+# without jq, claude-code without curl when Claude Code is missing, codex without yq, tmux without
+# tmux or git, git without gh, ubuntu and docker without jq, ubuntu without curl when Tailscale is
+# missing, t3-code without brew on macOS and without curl on Ubuntu when it would download the app
+# or the CLI, runtimes without mise, and without curl when rustup is missing, and zsh without its
+# login zsh. chrome without curl is in test-chrome.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -17,27 +16,31 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 
 # without <cmd> <command...>: run a command with a PATH that lacks <cmd>, unlike hide, which drops
-# it for the rest of the test. load_script puts $STUB_DIR first again, so its stub or sentinel
-# moves aside meanwhile. Without brew, DOTFILES_NO_LOAD_BREW stops lib/common.sh from putting
-# Homebrew's dirs back on PATH.
+# it for the rest of the test. Each PATH dir that has <cmd> is swapped for a dir of links to its
+# other commands, so only the dirs with it cost links. load_script puts $STUB_DIR first again, so
+# its stub or sentinel moves aside meanwhile. Without brew, DOTFILES_NO_LOAD_BREW stops
+# lib/common.sh from putting Homebrew's dirs back on PATH.
 without() {
-    local name="$1" dir="$SANDBOX/without-$1" entry dirs status=0
+    local name="$1" entry dirs path="" links status=0
     shift
-    if [ ! -d "$dir" ]; then
-        mkdir -p "$dir"
-        IFS=: read -ra dirs <<< "$PATH"
-        for entry in ${dirs[@]+"${dirs[@]}"}; do
-            [ -d "$entry" ] || continue
-            # ln skips a name an earlier dir already linked, as PATH would, and carries on
-            ln -s "$entry"/* "$dir"/ 2> /dev/null || true
-        done
-        rm -f "$dir/$name"
-    fi
     [ ! -e "$STUB_DIR/$name" ] || mv "$STUB_DIR/$name" "$SANDBOX/aside-$name"
+    IFS=: read -ra dirs <<< "$PATH"
+    for entry in ${dirs[@]+"${dirs[@]}"}; do
+        if [ -e "$entry/$name" ]; then
+            links="$SANDBOX/without-$name${entry//\//_}"
+            if [ ! -d "$links" ]; then
+                mkdir -p "$links"
+                ln -s "$entry"/* "$links"/ 2> /dev/null || true
+                rm -f "$links/$name"
+            fi
+            entry="$links"
+        fi
+        path="${path:+$path:}$entry"
+    done
     if [ "$name" == brew ]; then
-        PATH="$dir" DOTFILES_NO_LOAD_BREW=1 "$@" || status=$?
+        PATH="$path" DOTFILES_NO_LOAD_BREW=1 "$@" || status=$?
     else
-        PATH="$dir" "$@" || status=$?
+        PATH="$path" "$@" || status=$?
     fi
     [ ! -e "$SANDBOX/aside-$name" ] || mv "$SANDBOX/aside-$name" "$STUB_DIR/$name"
     return "$status"
@@ -122,12 +125,17 @@ runtimes_step() {
     rustup_installed() { false; }
     main
 }
+runtimes_no_mise() {
+    load_script runtimes/install.sh
+    rustup_installed() { false; }
+    main
+}
 
 # The codex step checks for yq first, so a stub stands in for it where it isn't installed
 command -v yq &>/dev/null || stub yq
-for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "brew claude_desktop" "yq codex" "brew codex" \
-    "tmux tmux_step" "git tmux_step" "gh git_step" "jq ubuntu_step" "curl ubuntu_no_tailscale" \
-    "jq docker_step" "brew t3_code_macos" "curl t3_code_ubuntu" "curl runtimes_step"; do
+for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq codex" "tmux tmux_step" \
+    "git tmux_step" "gh git_step" "jq ubuntu_step" "curl ubuntu_no_tailscale" "jq docker_step" \
+    "brew t3_code_macos" "curl t3_code_ubuntu" "mise runtimes_no_mise" "curl runtimes_step"; do
     cmd="${check% *}"
     step="${check#* }"
     rm -rf "$HOME"

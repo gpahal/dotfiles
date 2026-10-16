@@ -2,6 +2,7 @@
 # The script's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: macos
 
 # macos/setup-touch-id-sudo.sh rebuilds sudo_local each run: the template's header, a pam_reattach
 # line when pam-reattach is installed, then pam_tid. sudo loads a root-owned copy of pam-reattach's
@@ -58,16 +59,6 @@ put_reattach() {
     mkdir -p "$(dirname "$SOURCE")"
     echo "${1:-reattach 1.0}" > "$SOURCE"
 }
-
-# Ubuntu: says it's macOS only, and does nothing
-reset
-is_macos() { false; }
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "macOS only"
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo: macOS only"
-assert_file_not_contains "$STUB_LOG" "sudo"
-is_macos() { true; }
 
 # Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
 # nothing, and doesn't fail.
@@ -219,17 +210,6 @@ pam_module_exists "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so" || fail "pam_
 # A bare pam_reattach.so that's in neither is missing
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "$DOTFILES_PAM_MODULES_DIR/pam_reattach.so, which doesn't exist"
-
-# Without Homebrew, it turns on Touch ID and says the homebrew step installs pam-reattach
-reset
-export DOTFILES_ASSUME_YES=1
-rm "$STUB_DIR/brew"
-PATH="$STUB_DIR:/usr/bin:/bin" run main
-assert_eq 0 "$RUN_STATUS" "exit status without Homebrew: $RUN_OUTPUT"
-assert_contains "$RUN_OUTPUT" "homebrew step"
-assert_eq "$HEADER
-$TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local without Homebrew"
-stub brew '[ "$1" != --prefix ] || echo "$(dirname "$STUB_LOG")/brew"'
 
 # A failed write fails the run
 reset

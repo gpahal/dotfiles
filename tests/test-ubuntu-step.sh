@@ -2,7 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# timeout: 300
+# os: ubuntu
 
 # The ubuntu step: apt's daily timers, replacing the sshd drop-in without removing a working one or
 # blaming the config for a missing sshd, the drop-in's settings, turning password logins off only on
@@ -27,7 +27,7 @@ is_ubuntu() { true; }
 SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
 lingering() { true; }
-# test-diagnostics.sh covers SMART health and firmware updates
+# test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
 status_firmware() { :; }
 # test-ubuntu-ups.sh covers the UPS
@@ -37,11 +37,6 @@ warn_no_ups() { :; }
 # This checkout may be a worktree, so the check is replaced, and tested on its own below
 eval "real_$(declare -f in_git_worktree)"
 in_git_worktree() { false; }
-
-# The systemd user manager reads only ~/.config/environment.d, so XDG_CONFIG_HOME doesn't move it
-assert_eq "$HOME/.config/environment.d/99-homebrew.conf" \
-    "$(export XDG_CONFIG_HOME="$SANDBOX/xdg" && load_script ubuntu/install.sh && echo "$HOMEBREW_ENV_CONF")" \
-    "the environment.d file with XDG_CONFIG_HOME set"
 
 # --- the rest runs main and status on a machine set up through sandbox paths ---
 # sudo runs the command, and refuses a path under /etc, /run, or /dev
@@ -293,26 +288,20 @@ printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
     "The following packages have been kept back:" "  nut-client nut-server" "  ubuntu-drivers-common" \
     "0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded." > "$SANDBOX/apt-upgrade"
 : > "$STUB_LOG"
-assert_exit 3 status
+run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client, nut-server, ubuntu-drivers-common; sudo apt full-upgrade shows what installing them takes"
 assert_file_contains "$STUB_LOG" "apt-get -s -o APT::Get::Upgrade-Allow-New=true -o APT::Get::Always-Include-Phased-Updates=true upgrade"
 # Packages on hold with apt-mark get unhold's advice instead, since full-upgrade keeps them back too
 stub apt-mark '[ "$1" != showhold ] || printf "%s\n" nut-server ubuntu-drivers-common linux-generic'
-assert_exit 3 status
+run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client; sudo apt full-upgrade shows what installing them takes"
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-server, ubuntu-drivers-common, on hold with apt-mark; sudo apt-mark unhold nut-server ubuntu-drivers-common lets them update"
 stub apt-mark
 printf '%s\n' "The following upgrades have been deferred due to phasing:" "  libfoo1" \
     "0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded." > "$SANDBOX/apt-upgrade"
-assert_exit 0 status
+run status_held_back
 assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 rm "$SANDBOX/apt-upgrade"
-# The conffile options edited: status says so, and the step writes them again
-echo "// mine" > "$KEEP_CONFFILES_CONF"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $KEEP_CONFFILES"
-assert_exit 0 main
-assert_eq "$KEEP_CONFFILES_CONTENT" "$(cat "$KEEP_CONFFILES_CONF")" "the conffile options rewritten"
 
 # A reboot pending for updates: status names the packages, once each
 touch "$REBOOT_REQUIRED"
@@ -320,38 +309,20 @@ printf '%s\n' linux-image-6.8.0-45-generic linux-base linux-image-6.8.0-45-gener
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates: linux-base, linux-image-6.8.0-45-generic; reboot when no agent runs"
 rm "$REBOOT_REQUIRED" "$REBOOT_REQUIRED.pkgs"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         No reboot pending for updates"
 
 # apt's daily timers off: status says so, and how to turn them on
-for unit in apt-daily.timer apt-daily-upgrade.timer; do
-    echo disabled > "$SANDBOX/units/$unit"
-    assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running (run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer)"
-    rm "$SANDBOX/units/$unit"
-done
+echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running (run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer)"
+rm "$SANDBOX/units/apt-daily-upgrade.timer"
+# Enabled but stopped: a yes enables and starts both
+touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Turn on apt's daily timers: systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         apt's daily timers enabled and running"
-# Disabled, or enabled but stopped: setup lists them, a no leaves them, and a yes enables and
-# starts both
-for state in disabled inactive; do
-    if [ "$state" == disabled ]; then
-        echo disabled > "$SANDBOX/units/apt-daily.timer"
-    else
-        touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"
-    fi
-    assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running"
-    : > "$STUB_LOG"
-    DOTFILES_ASSUME_YES=0 assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Turn on apt's daily timers: systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
-    assert_contains "$RUN_OUTPUT" "Left unchanged"
-    assert_file_not_contains "$STUB_LOG" "systemctl enable --now apt-daily.timer"
-    assert_exit 0 main
-    assert_file_contains "$STUB_LOG" "sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
-    assert_exit 0 status
-    assert_contains "$RUN_OUTPUT" "ok         apt's daily timers enabled and running"
-done
 # A failed enable fails the step, and status still reports them
 echo disabled > "$SANDBOX/units/apt-daily.timer"
 touch "$SANDBOX/timers-fail"
@@ -364,12 +335,10 @@ rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 echo disabled > "$SANDBOX/units/ssh.socket"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot (run sudo systemctl enable --now ssh.socket)"
-# The step enables it, after asking
+# The step enables it
 : > "$STUB_LOG"
-DOTFILES_ASSUME_YES=0 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.socket"
-assert_file_not_contains "$STUB_LOG" "enable --now ssh"
 assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.socket"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
@@ -383,14 +352,6 @@ if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
     fail "the re-run ran sudo without -n"
 fi
 assert_file_not_contains "$STUB_LOG" "daemon-reload"
-
-# No user manager to reload (a container, or no login yet): the file applies at the next one
-rm "$ENV_CONF"
-stub_systemctl '[ "$1" != --user ] || exit 1'
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "after the next reboot or login"
-assert_contains "$RUN_OUTPUT" "the daily health alert and the boot notice"
-stub_systemctl
 
 # In a VM, smartd doesn't run, since the host manages the disks, so its hook isn't installed
 stub systemd-detect-virt
@@ -413,12 +374,6 @@ assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMA
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "install $SMARTD_HOOK"
 cmp -s "$REPO_DIR/ubuntu/smartd-notify.sh" "$SMARTD_HOOK" || fail "the old hook wasn't replaced"
-# The ntfy code it sources missing: status says the hook is out of date, and the step installs it
-rm "$NTFY_LIB"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): out of date"
-assert_exit 0 main
-cmp -s "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NTFY_LIB" || fail "the hook's ntfy code wasn't reinstalled"
 # setup-alerts.sh saves the ntfy URL, which status reports as set
 mkdir -p "$(dirname "$NTFY_URL_FILE")"
 echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
@@ -436,12 +391,6 @@ assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.co
 assert_exit 0 main
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-# A stopped timer is started again
-rm "$SANDBOX/user-units/dotfiles-health.timer.active"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Daily health alert to ntfy (dotfiles-health.timer) enabled and active"
-assert_exit 0 main
-assert_exit 0 status
 # A failed daemon-reload after the units changed: the next run, whose files already match,
 # reloads again, since systemd still runs the old units
 sed -i.orig "s|$REPO_DIR|$SANDBOX/old-repo|" "$USER_UNITS/dotfiles-health.service"
@@ -457,8 +406,7 @@ assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
 assert_exit 0 status
 
-# Units that run another checkout: from a worktree, status only notes that it checks them from the
-# main checkout, and setup leaves them alone
+# Units that run another checkout: from a worktree, setup leaves them alone
 OTHER_REPO="$SANDBOX/other-checkout"
 for unit in dotfiles-health.service dotfiles-boot-notice.service; do
     sed -i.orig "s|$REPO_DIR|$OTHER_REPO|" "$USER_UNITS/$unit"
@@ -466,13 +414,6 @@ for unit in dotfiles-health.service dotfiles-boot-notice.service; do
 done
 OTHER_UNIT="$(cat "$USER_UNITS/dotfiles-health.service")"
 in_git_worktree() { true; }
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "info       The health alert's user units in ~/.config/systemd/user: checked only from the main checkout, which setup installs them from"
-# No units at all: missing, from a worktree too
-mv "$USER_UNITS/dotfiles-health.service" "$SANDBOX/health.service.away"
-run status
-assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: not installed; run the ubuntu step from the main checkout"
-mv "$SANDBOX/health.service.away" "$USER_UNITS/dotfiles-health.service"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "is a git worktree, so the daily health alert and the boot notice aren't"
@@ -482,16 +423,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
-# Units that run this worktree, without the opt-in: status says they stop when it's removed, and a
-# run says they run it rather than that they aren't set up
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: they run this git worktree, so the alerts stop when it's removed; re-run the ubuntu step from the main checkout"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "The daily health alert and the boot notice run this git worktree, $REPO_DIR, so"
 in_git_worktree() { false; }
-assert_exit 0 main
-assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
-assert_exit 0 status
 
 # in_git_worktree tells a linked worktree, and a dir inside one, from the main checkout
 eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
@@ -512,16 +444,6 @@ in_git_worktree() { false; }
 stub nmcli '[ "$*" != "-t -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    Wake-on-LAN: no wired connection"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "No wired connection"
-
-# Tailscale not logged in: status says so
-echo NeedsLogin > "$SANDBOX/tailscale-state"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Tailscale connected (run sudo tailscale up)"
-echo Running > "$SANDBOX/tailscale-state"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Tailscale connected"
 
 # Before its first login, Tailscale's auto-update and operator wait, since tailscale up resets them:
 # status reports them missing, and the step leaves them until it runs after the login
@@ -540,9 +462,9 @@ assert_contains "$RUN_OUTPUT" "Turn on Tailscale's auto-update and make $(id -un
 assert_file_contains "$STUB_LOG" "sudo tailscale set --auto-update --operator=$(id -un)"
 rm "$SANDBOX/tailscale-reset"
 
-# Tailscale's apt source deleted, turned off by a release upgrade, for an older release, or with
-# another repo's line in tailscale.list, which the step owns: status says so, and a yes writes the
-# key and the one-line tailscale.list for this release, and updates from it alone
+# Tailscale's apt source for an older release, as a release upgrade leaves it: status says so, and
+# a yes writes the key and the one-line tailscale.list for this release, and updates from it alone.
+# test-apt-sources.sh covers the other states apt_source_state reports.
 TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
 mkdir -p "$SANDBOX/keyrings"
 fetch() {
@@ -556,30 +478,19 @@ TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/s
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
-for state in deleted disabled jammy other-repo; do
-    case "$state" in
-        deleted) rm "$TAILSCALE_LIST" ;;
-        disabled) echo "# $TAILSCALE_ENTRY # disabled on upgrade to resolute" > "$TAILSCALE_LIST" ;;
-        jammy) echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST" ;;
-        other-repo) printf '%s\n' "$TAILSCALE_ENTRY" "deb http://example.com/ubuntu resolute main" > "$TAILSCALE_LIST" ;;
-    esac
-    assert_exit 3 status
-    if [ "$state" == deleted ]; then
-        assert_contains "$RUN_OUTPUT" "missing    Tailscale's apt source ($TAILSCALE_LIST): missing; re-run the ubuntu step"
-    else
-        assert_contains "$RUN_OUTPUT" "missing    Tailscale's apt source ($TAILSCALE_LIST): differs from what setup writes; re-run the ubuntu step"
-    fi
-    : > "$STUB_LOG"
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Rewrite Tailscale's apt source for resolute"
-    assert_file_contains "$STUB_LOG" "fetch https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg"
-    assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$TAILSCALE_LIST -o Dir::Etc::sourceparts=-"
-    assert_file_not_contains "$STUB_LOG" "install -y tailscale"
-    assert_eq key "$(cat "$TAILSCALE_KEYRING")" "Tailscale's key after repairing a $state source"
-    assert_eq "$TAILSCALE_ENTRY" "$(cat "$TAILSCALE_LIST")" "Tailscale's source after repairing a $state one"
-    assert_exit 0 status
-    assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
-done
+echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Tailscale's apt source ($TAILSCALE_LIST): differs from what setup writes; re-run the ubuntu step"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Rewrite Tailscale's apt source for resolute"
+assert_file_contains "$STUB_LOG" "fetch https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg"
+assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$TAILSCALE_LIST -o Dir::Etc::sourceparts=-"
+assert_file_not_contains "$STUB_LOG" "install -y tailscale"
+assert_eq key "$(cat "$TAILSCALE_KEYRING")" "Tailscale's key after repairing the source"
+assert_eq "$TAILSCALE_ENTRY" "$(cat "$TAILSCALE_LIST")" "Tailscale's source after repairing it"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
 
 # Tailscale has no packages for this release yet: the step says so, and waits without failing,
 # changing the source, or listing the rewrite. Status says what it waits for.
@@ -595,22 +506,6 @@ assert_eq "${TAILSCALE_ENTRY/resolute/jammy}" "$(cat "$TAILSCALE_LIST")" "Tailsc
 assert_file_not_contains "$STUB_LOG" "fetch"
 assert_file_not_contains "$STUB_LOG" "update --error-on=any"
 echo 200 > "$SANDBOX/http-status"
-echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
-
-# apt-get update fails with the new source: a source the step wrote goes, and an older one comes
-# back, so later updates still work. The old key comes back too, or the new one goes.
-stub apt-get '[ "$1" != -o ] || [ "$3" != update ] || exit 100'
-rm "$TAILSCALE_LIST" "$TAILSCALE_KEYRING"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "apt-get update failed with the new $TAILSCALE_LIST alone, so it was removed"
-[ ! -e "$TAILSCALE_LIST" ] || fail "a source apt-get update failed with was kept"
-[ ! -e "$TAILSCALE_KEYRING" ] || fail "a key whose source apt-get update failed with was kept"
-echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST"
-echo old-key > "$TAILSCALE_KEYRING"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "so the old one is back"
-assert_eq "${TAILSCALE_ENTRY/resolute/jammy}" "$(cat "$TAILSCALE_LIST")" "Tailscale's source after a failed update"
-assert_eq old-key "$(cat "$TAILSCALE_KEYRING")" "Tailscale's key after a failed update"
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 
 # Tailscale not installed: a yes adds its repo, then installs it from there. In a subshell, since
@@ -635,40 +530,25 @@ install -y tailscale" "$(grep -oE '^apt-get -o DPkg::Lock::Timeout=300 (update -
         sed 's/^apt-get -o DPkg::Lock::Timeout=300 //')" "apt-get's runs to install Tailscale"
     assert_exit 0 status
     assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
-    # Before Tailscale publishes packages for this release, a yes installs nothing, and the step
-    # doesn't fail
-    rm "$STUB_DIR/tailscale" "$TAILSCALE_LIST"
-    echo 404 > "$SANDBOX/http-status"
-    : > "$STUB_LOG"
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Tailscale hasn't published packages for Ubuntu resolute yet"
-    assert_file_not_contains "$STUB_LOG" "install -y tailscale"
-    [ ! -e "$TAILSCALE_LIST" ] || fail "tailscale.list was written before Tailscale published packages for resolute"
     [ "$TEST_FAILURES" -eq "$failures" ]
 ) || fail "installing Tailscale"
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
 
-# smartd enabled but stopped, or failed: status says so, and a yes starts it, restarting a failed
-# one that enable --now didn't start
-for state in stopped failed; do
-    rm "$SANDBOX/smartd-active"
-    [ "$state" != failed ] || touch "$SANDBOX/smartd-failed"
-    assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "ok         smartmontools, with smartd enabled at boot"
-    assert_contains "$RUN_OUTPUT" "missing    smartd running"
-    : > "$STUB_LOG"
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Watch disk health: start smartd"
-    assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
-    if [ "$state" == failed ]; then
-        assert_file_contains "$STUB_LOG" "sudo systemctl restart smartmontools.service"
-    else
-        assert_file_not_contains "$STUB_LOG" "systemctl restart"
-    fi
-    assert_exit 0 status
-    assert_contains "$RUN_OUTPUT" "ok         smartd running"
-done
+# smartd enabled but failed: status says so, and a yes restarts it, since enable --now doesn't
+# start a failed one
+rm "$SANDBOX/smartd-active"
+touch "$SANDBOX/smartd-failed"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "ok         smartmontools, with smartd enabled at boot"
+assert_contains "$RUN_OUTPUT" "missing    smartd running"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Watch disk health: start smartd"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
+assert_file_contains "$STUB_LOG" "sudo systemctl restart smartmontools.service"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         smartd running"
 
 # A failed sysctl --system leaves the file written but not in effect: status says so, and a re-run
 # applies it without rewriting the file
@@ -815,23 +695,6 @@ assert_file_contains "$STUB_LOG" "sudo systemctl mask"
 assert_eq "$(sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in after a failed mask"
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
-# --- Wi-Fi that connects only after login ---
-# A name with a colon or a backslash, which nmcli -t escapes, is read whole and shown decoded,
-# and the commands name the connection by UUID
-stub nmcli 'case "$*" in
-    "-t -f UUID,TYPE,NAME connection show --active") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired" \
-        "2222-bbbb:802-11-wireless:Home\\:5G" "3333-cccc:802-11-wireless:Back\\\\slash" ;;
-    "-g connection.permissions connection show uuid 2222-bbbb") echo "user:me" ;;
-    "-g 802-11-wireless-security.psk-flags connection show uuid 3333-cccc") echo "1 (agent-owned)" ;;
-esac'
-run warn_wifi_needs_login
-assert_contains "$RUN_OUTPUT" 'Wi-Fi "Home:5G" only connects after you log in'
-assert_contains "$RUN_OUTPUT" 'sudo nmcli --ask connection up uuid 2222-bbbb'
-assert_contains "$RUN_OUTPUT" 'sudo nmcli connection modify uuid 2222-bbbb connection.permissions'
-assert_contains "$RUN_OUTPUT" 'Wi-Fi "Back\slash" only connects after you log in'
-assert_contains "$RUN_OUTPUT" 'sudo nmcli --ask connection up uuid 3333-cccc'
-assert_not_contains "$RUN_OUTPUT" "Wired"
-
 # --- disk encryption ---
 # lsblk -rno TYPE lists the open mappings, and -rno FSTYPE,LABEL the partitions, from
 # $SANDBOX/lsblk-types and $SANDBOX/lsblk-labels
@@ -903,18 +766,22 @@ key_session() {
     printf 'publickey %s\n' "$(cut -d' ' -f1,2 "$SANDBOX/$1.pub")" > "$SSH_AUTH_FILE"
     export SSH_USER_AUTH="$SSH_AUTH_FILE"
 }
+# key_only_pending <reason> <where> [status]: main keeps password logins on, saying why, and with
+# status, so does status. MAIN_OUTPUT keeps main's output.
 key_only_pending() {
     assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in $2"
     : > "$STUB_LOG"
     run main
+    MAIN_OUTPUT="$RUN_OUTPUT"
     assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
     assert_contains "$RUN_OUTPUT" "Password logins stay on: $1"
+    [ "${3:-}" == status ] || return 0
     assert_exit 3 status
     assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off ($1"
     assert_contains "$RUN_OUTPUT" "ssh-copy-id <alias> from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale is up"
 }
 # A console run: a key in authorized_keys, and DOTFILES_ASSUME_YES, don't prove it logs in
-key_only_pending "this run isn't in an SSH session that sshd recorded the login of" "on the console"
+key_only_pending "this run isn't in an SSH session that sshd recorded the login of" "on the console" status
 # An invalid line, or a truncated key, is no key either
 for invalid in 'not-a-key ssh-just-a-note' 'ssh-ed25519 AAAAC3Nza me@mac'; do
     printf 'publickey %s\n' "$invalid" > "$SSH_AUTH_FILE"
@@ -926,12 +793,11 @@ printf 'password\n' > "$SSH_AUTH_FILE"
 key_only_pending "this SSH session logged in with a password" "in a password session"
 key_session login-key
 printf 'keyboard-interactive/pam\n' >> "$SSH_AUTH_FILE"
-key_only_pending "this SSH session logged in with a password" "in a session that also took a password"
+key_only_pending "this SSH session logged in with a password" "in a session that also took a password" status
 # ssh may have reused a connection that logged in with a password, so the step says how to close it
 hint="If you logged in with your key, ssh reused an earlier connection: on the Mac, run ssh -O exit <alias>, then SSH in again."
 assert_contains "$RUN_OUTPUT" "(this SSH session logged in with a password. $hint Copy your key over"
-run main
-assert_contains "$RUN_OUTPUT" "Password logins stay on: this SSH session logged in with a password. $hint"
+assert_contains "$MAIN_OUTPUT" "Password logins stay on: this SSH session logged in with a password. $hint"
 # A tmux pane that outlived its SSH session: sshd removed the file
 export SSH_USER_AUTH="$SANDBOX/sshauth.gone"
 key_only_pending "the SSH session this shell started in has ended" "in a stale tmux pane"

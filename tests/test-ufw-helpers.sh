@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # The ubuntu step's firewall helpers: sshd_ports adds the ports ssh.socket listens on to sshd's,
 # outside_address tells the addresses the firewall would cut off, and ufw_broad_ssh_rules finds

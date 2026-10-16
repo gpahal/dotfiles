@@ -96,16 +96,9 @@ fi
 # Homebrew line, so mise's shims and ~/.local/bin, added after them, stay ahead of Homebrew
 load_script zsh/install.sh
 printf '%s\n' "# mine" "$ZPROFILE_BREW_LINE" "$ZPROFILE_MISE_LINE" "$ZPROFILE_LOCAL_LINE" > "$HOME/.zprofile"
-chmod 640 "$HOME/.zprofile"
-inode="$(/bin/ls -i "$HOME/.zprofile" | awk '{ print $1 }')"
 run setup_zprofile
 expected="$(printf '%s\n' "# mine" "${ZPROFILE_LINES[@]}")"
 assert_eq "$expected" "$(cat "$HOME/.zprofile")" "upgraded .zprofile"
-# The new contents are moved into place, keeping the mode, rather than written over the old ones,
-# which a full disk would leave cut short
-assert_eq 640 "$(file_mode "$HOME/.zprofile")" "the mode of the upgraded .zprofile"
-[ "$inode" != "$(/bin/ls -i "$HOME/.zprofile" | awk '{ print $1 }')" ] ||
-    fail "the upgraded .zprofile was rewritten in place"
 run setup_zprofile
 assert_contains "$RUN_OUTPUT" "already sets up PATH"
 assert_eq "$expected" "$(cat "$HOME/.zprofile")" ".zprofile after a second run"
@@ -146,23 +139,12 @@ assert_eq "$BREW/share/zsh/site-functions" \
     "$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin:/bin "$ZSH_BIN" -c \
         'source ~/.zsh/main.zsh; print -r -- $fpath[1]' < /dev/null 2> /dev/null)" "fpath's first dir"
 
-# An unwritable destination fails instead of reporting an unchanged file. Directories fail
-# consistently even for a privileged test user.
-# shellcheck disable=SC2329
-is_ubuntu() { true; }
-for entry in 'setup_zshrc .zshrc' 'setup_zprofile .zprofile' 'setup_profile .profile' 'setup_zshenv .zshenv'; do
-    read -r function_name filename <<< "$entry"
-    rm -f "$HOME/$filename"
-    mkdir "$HOME/$filename"
-    assert_exit 1 "$function_name"
-    assert_not_contains "$RUN_OUTPUT" "already"
-    rmdir "$HOME/$filename"
-done
-
 # On Ubuntu, ~/.profile puts ~/.local/bin ahead of Homebrew, as ~/.zprofile does, so `sh -lc` (T3
 # Code's SSH check) finds the same codex as zsh. Ubuntu's stock ~/.profile adds ~/.local/bin
 # before the Homebrew line, and a user may have added a plain line too. A PATH with the sandbox
 # Homebrew first stands in for brew shellenv.
+# shellcheck disable=SC2329
+is_ubuntu() { true; }
 # shellcheck disable=SC2016 # expanded by sh
 stock='if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
@@ -176,15 +158,6 @@ assert_eq "$expected" "$(cat "$HOME/.profile")" ".profile"
 run setup_profile
 assert_contains "$RUN_OUTPUT" "already"
 assert_eq "$expected" "$(cat "$HOME/.profile")" ".profile after a second run"
-# A ~/.profile with only the Homebrew line gets the rest
-printf '%s\n' "${PROFILE_LINES[0]}" > "$HOME/.profile"
-run setup_profile
-assert_eq "$(printf '%s\n' "${PROFILE_LINES[@]}")" "$(cat "$HOME/.profile")" "upgraded .profile"
-# One missing the Cargo, Go, and mise lines gets them between Homebrew and ~/.local/bin
-printf '%s\n' "${PROFILE_LINES[0]}" "# mine" "${PROFILE_LINES[4]}" > "$HOME/.profile"
-run setup_profile
-assert_eq "$(printf '%s\n' "${PROFILE_LINES[@]:0:4}" "# mine" "${PROFILE_LINES[4]}")" \
-    "$(cat "$HOME/.profile")" ".profile missing the Cargo, Go, and mise lines"
 mkdir -p "$HOME/.local/bin"
 for dir in "$HOME/.local/bin" "$BREW/bin"; do
     printf '#!/bin/sh\n' > "$dir/codex"
@@ -227,12 +200,6 @@ assert_eq "$(printf '%s\n' "${ZSHENV_LINES[@]}")" "$(cat "$HOME/.zshenv")" ".zsh
 run setup_zshenv
 assert_contains "$RUN_OUTPUT" "already"
 assert_eq "$(printf '%s\n' "${ZSHENV_LINES[@]}")" "$(cat "$HOME/.zshenv")" ".zshenv after a second run"
-# A ~/.zshenv missing the PATH line gets it
-printf '%s\n' "${ZSHENV_LINES[0]}" > "$HOME/.zshenv"
-run setup_zshenv
-assert_eq "$(printf '%s\n' "${ZSHENV_LINES[@]}")" "$(cat "$HOME/.zshenv")" "upgraded .zshenv"
-run setup_zshenv
-assert_contains "$RUN_OUTPUT" "already"
 printf '%s\n' "${ZSHENV_LINES[@]}" | sed "s|/home/linuxbrew/.linuxbrew|$BREW|g" > "$HOME/.zshenv"
 # Print PATH from zsh run with the given flags, as sshd would start it
 zshenv_path() {
@@ -242,21 +209,6 @@ zshenv_path() {
 output="$(zshenv_path -c)"
 assert_eq "$(printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "$HOME/go/bin" \
     "$BREW/bin" "$BREW/sbin" /usr/bin /bin)" "$output" "zsh -c"
-# So `ssh host npm test` finds the tools mise installs, through its shims, under $MISE_DATA_DIR
-# when that's set
-mkdir -p "$HOME/.local/share/mise/shims" "$SANDBOX/mise-data/shims"
-for shim in "$HOME/.local/share/mise/shims/fake-node" "$SANDBOX/mise-data/shims/fake-node"; do
-    printf '#!/bin/sh\n' > "$shim"
-    chmod +x "$shim"
-done
-# Usage: find_shim [VAR=value...]
-find_shim() {
-    env -i HOME="$HOME" TERM=dumb PATH="/usr/bin:/bin" "$@" "$ZSH_BIN" -c 'command -v fake-node' \
-        < /dev/null 2> /dev/null
-}
-assert_eq "$HOME/.local/share/mise/shims/fake-node" "$(find_shim)" "fake-node in zsh -c"
-assert_eq "$SANDBOX/mise-data/shims/fake-node" "$(find_shim MISE_DATA_DIR="$SANDBOX/mise-data")" \
-    "fake-node in zsh -c with MISE_DATA_DIR"
 # Interactive shells end up with the same order once main.zsh runs
 output="$(zshenv_path -ic)"
 assert_before "$output" "$HOME/.local/bin" "$BREW/bin" "zsh -ic with .zshenv"

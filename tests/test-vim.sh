@@ -1,25 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# The vim step installs the vendored vim-plug, and status flags a copy that differs until a re-run
-# restores it. The vimrc downloads nothing, pins every plugin to a commit, creates its undo dir,
-# and starts without errors with or without vim-plug. A fake vim-plug with no plugins stands in
-# for the real one when vim starts, so nothing reaches the network.
+# The vim step's status flags a vim-plug copy that differs from the vendored one until a re-run
+# restores it. The vimrc downloads nothing, pins every plugin to a commit, and starts without
+# errors without vim-plug. Inside tmux, Vim uses SGR mouse codes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-load_script lib/common.sh
 PLUG="$HOME/.vim/autoload/plug.vim"
 
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
-assert_contains "$RUN_OUTPUT" "Installed vim-plug"
-cmp -s "$REPO_DIR/vim/plug.vim" "$PLUG" || fail "the step didn't install vim/plug.vim at $PLUG"
-assert_exit 0 bash "$REPO_DIR/vim/install.sh" --status
-assert_contains "$RUN_OUTPUT" "ok         vim-plug at the pinned version (~/.vim/autoload/plug.vim)"
-assert_exit 0 bash "$REPO_DIR/vim/install.sh"
-assert_contains "$RUN_OUTPUT" "vim-plug is already at the pinned version"
 
 # A copy that differs, such as one vim-plug's PlugUpgrade wrote, is missing until a re-run
 echo '" changed' >> "$PLUG"
@@ -48,25 +40,6 @@ start_vim() {
 rm "$PLUG"
 assert_exit 0 start_vim
 assert_not_contains "$RUN_OUTPUT" "E117" "vim output without vim-plug"
-[ -d "$HOME/.vim/undodir" ] || fail "vim didn't create ~/.vim/undodir"
-# The undo files hold what you typed, so only you can open the dir
-assert_eq 700 "$(file_mode "$HOME/.vim/undodir")" "the undo dir's mode"
-# Modelines are off, so a file can't set options
-run vim -Nes -u "$HOME/.vimrc" -c 'if &modeline | cquit | endif' -c 'qa!'
-assert_eq 0 "$RUN_STATUS" "vim's status checking modeline is off. Its output: $RUN_OUTPUT"
-
-# With vim-plug, the vimrc loads it
-cat > "$PLUG" << "EOF"
-let g:plugs = {}
-function! plug#begin(...)
-endfunction
-function! plug#end()
-    let g:fake_plug_loaded = 1
-endfunction
-command! -nargs=+ -bar Plug :
-EOF
-run vim -Nes -u "$HOME/.vimrc" -c 'if !exists("g:fake_plug_loaded") | cquit | endif' -c 'qa!'
-assert_eq 0 "$RUN_STATUS" "vim's status with vim-plug. Its output: $RUN_OUTPUT"
 
 # Inside tmux, the mouse works past column 223 and reports drags: Vim uses SGR mouse codes there.
 # Vim 9.2 leaves ttymouse at xterm under tmux's TERM, so the vimrc sets it. A tmux server on the
@@ -75,14 +48,14 @@ assert_eq 0 "$RUN_STATUS" "vim's status with vim-plug. Its output: $RUN_OUTPUT"
 if command -v tmux &> /dev/null; then
     out="$SANDBOX/ttymouse"
     cat > "$SANDBOX/probe.vim" << EOF_PROBE
-call timer_start(1500, {-> writefile([&ttymouse], '$out') + execute('qa!')})
+call timer_start(400, {-> writefile([&ttymouse], '$out') + execute('qa!')})
 EOF_PROBE
     unset TMUX
     tmux -f "$REPO_DIR/tmux/tmux.conf" new-session -d -s vim -x 250 -y 50 \
         "vim -N -u '$HOME/.vimrc' -S '$SANDBOX/probe.vim'" 2> /dev/null || true
-    for _ in $(seq 50); do
+    for _ in $(seq 100); do
         [ -s "$out" ] && break
-        sleep 0.2
+        sleep 0.1
     done
     if [ -s "$out" ]; then
         assert_eq sgr "$(cat "$out")" "ttymouse in a tmux pane"

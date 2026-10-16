@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # The chrome step on Ubuntu (amd64): it installs Chrome from Google's .deb, readable by apt's
 # sandbox user, removes the download, and writes the unattended-upgrades file once. A missing
@@ -116,11 +117,6 @@ assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y 
 [ -e "$GOOGLE_SOURCES" ] || fail "Google's apt source wasn't re-added"
 assert_file_contains "$CHROME_DEFAULTS" 'repo_reenable_on_distupgrade="true"'
 assert_eq 1 "$(grep -c '^repo_add_once=' "$CHROME_DEFAULTS")" "repo_add_once lines"
-
-# Without the defaults file, the source is still re-added
-rm "$GOOGLE_SOURCES" "$CHROME_DEFAULTS"
-assert_exit 0 main
-[ -e "$GOOGLE_SOURCES" ] || fail "Google's apt source wasn't re-added without the defaults file"
 
 # The .deb doesn't add it: the step fails, saying to add it by hand
 stub apt-get

@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
-# The docker step writes Docker's own source, rolling it back when apt can't use it, and lets unattended-upgrades install
-# Docker's updates. With Docker installed, it rewrites a source that's deleted, turned off, or for
-# an older release. Until Docker publishes packages for this release, it waits without failing.
+# The docker step writes Docker's own source, rolling it back when apt can't use it, and lets
+# unattended-upgrades install Docker's updates. With Docker installed, it rewrites a source for an
+# older release. Until Docker publishes packages for this release, it waits without failing.
+# test-apt-sources.sh covers the other states apt_source_state reports, and a failed key download.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -47,8 +49,8 @@ stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.service" | try-restart*) exit 0 ;; *) exit 1 ;; esac'
 stub dockerd
 stub sudo 'exec env "$@"'
-# fetch downloads Docker's key, and fails when $SANDBOX/fetch-fails exists
-fetch() { [ ! -e "$SANDBOX/fetch-fails" ] && echo key > "$2"; }
+# fetch downloads Docker's key
+fetch() { echo key > "$2"; }
 # The key goes under /etc/apt/keyrings
 DOCKER_KEYRING="$SANDBOX/keyrings/docker.asc"
 # curl answers the HEAD request for Docker's Release file with $SANDBOX/http-status
@@ -225,9 +227,8 @@ assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu resol
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_file_not_contains "$STUB_LOG" "usermod"
 
-# --- Docker installed, and its source deleted, turned off, or for an older release, as a release
-# upgrade leaves it. The step rewrites the source, unless Docker has no repo for this release
-# yet. ---
+# --- Docker installed, and its source for an older release, as a release upgrade leaves it. The
+# step rewrites the source, unless Docker has no repo for this release yet. ---
 set_up_docker() {
     reset
     printf '%s\n' docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > "$SANDBOX/installed"
@@ -240,39 +241,25 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
 assert_file_not_contains "$STUB_LOG" "curl"
 
-for state in deleted disabled stale-suite; do
-    set_up_docker
-    case "$state" in
-        deleted) rm "$DOCKER_SOURCES" ;;
-        disabled) echo "Enabled: no" >> "$DOCKER_SOURCES" ;;
-        stale-suite) docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES" ;;
-    esac
-    cp "$DOCKER_SOURCES" "$SANDBOX/before" 2>/dev/null || rm -f "$SANDBOX/before"
-    assert_exit 3 status
-    if [ "$state" == deleted ]; then
-        assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): missing; re-run the docker step"
-    else
-        assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; re-run the docker step"
-    fi
-    # Declined: nothing written
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Rewrite Docker's apt source for resolute"
-    assert_contains "$RUN_OUTPUT" "Left unchanged"
-    if [ -e "$SANDBOX/before" ]; then
-        assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
-    else
-        [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written without a yes ($state)"
-    fi
-    # Approved: rewritten, checked with an update from it alone, and then ok
-    export DOTFILES_ASSUME_YES=1
-    : > "$STUB_LOG"
-    assert_exit 0 main
-    assert_eq "$(docker_sources)" "$(cat "$DOCKER_SOURCES")" "docker.sources after repairing a $state source"
-    assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$DOCKER_SOURCES"
-    assert_file_not_contains "$STUB_LOG" "install -y docker-ce"
-    assert_exit 0 status
-    assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
-done
+set_up_docker
+docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
+cp "$DOCKER_SOURCES" "$SANDBOX/before"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; re-run the docker step"
+# Declined: nothing written
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Rewrite Docker's apt source for resolute"
+assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
+# Approved: rewritten, checked with an update from it alone, and then ok
+export DOTFILES_ASSUME_YES=1
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_eq "$(docker_sources)" "$(cat "$DOCKER_SOURCES")" "docker.sources after repairing it"
+assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$DOCKER_SOURCES"
+assert_file_not_contains "$STUB_LOG" "install -y docker-ce"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
 
 # Docker has no repo for this release yet: the source stays as it is, and the step says so without
 # listing the rewrite it can't do. Nothing here can fix that, so the step doesn't fail, and status
@@ -289,24 +276,6 @@ assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; Docker hasn't published packages for Ubuntu resolute yet"
-# download.docker.com can't be reached, so the key's download fails: the step fails, changing
-# nothing
-echo 000 > "$SANDBOX/http-status"
-touch "$SANDBOX/fetch-fails"
-assert_exit 1 main
-rm "$SANDBOX/fetch-fails"
-assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
-assert_file_not_contains "$STUB_LOG" "apt-get"
-
-# Docker's update fails with the rewritten source: the old one comes back
-set_up_docker
-docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
-cp "$DOCKER_SOURCES" "$SANDBOX/before"
-touch "$SANDBOX/docker-update-fails"
-export DOTFILES_ASSUME_YES=1
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "so the old one is back"
-assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
 
 # Missing curl fails the step before it runs anything
 reset

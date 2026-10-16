@@ -1,0 +1,191 @@
+#!/bin/bash
+set -uo pipefail
+
+# Usage: open-in finder|editor|terminal
+# Open what's in front in Finder, Zed, or Ghostty: a Ghostty tab's folder, the file open in Zed,
+# or Finder's selection (or its front window's folder). With no path to use, such as with another
+# app in front, open a new window instead: Finder and Ghostty at home, Zed empty. The Stream Deck
+# plugin runs it for each key press, so macOS asks Stream Deck for its permissions: Automation
+# for Ghostty, Finder, and System Events, and Accessibility to read Zed's window title.
+#
+# Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1 when it couldn't open anything, or when a missing
+# permission kept it from reading the path, though it still opens a new window then. Either way
+# it shows a notification saying why, and the plugin shows a warning on the key.
+
+# Stream Deck starts plugins with a minimal environment
+PATH="${PATH:+$PATH:}/usr/bin:/bin"
+GHOSTTY=com.mitchellh.ghostty
+ZED=dev.zed.Zed
+ZED_CLI="${DOTFILES_ZED_CLI:-/Applications/Zed.app/Contents/MacOS/cli}"
+# The functions set these rather than print them, since a command substitution's subshell would
+# lose PERMISSION_ERROR
+SCRIPT_RESULT=""
+PERMISSION_ERROR=""
+CONTEXT_PATH=""
+
+# Stream Deck adds the time to each line it logs
+log() {
+    printf '%s\n' "$*" >&2
+}
+
+notify() {
+    osascript - "$1" <<'EOF' > /dev/null 2>&1
+on run argv
+    display notification (item 1 of argv) with title "Stream Deck"
+end run
+EOF
+}
+
+# Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. A
+# failure is logged, and one for a missing permission sets PERMISSION_ERROR: -1743 is a denied
+# Automation prompt, and -1719 and -25211 are missing Accessibility.
+applescript() {
+    local err status=0
+    SCRIPT_RESULT=""
+    err="$(mktemp)" || return 1
+    SCRIPT_RESULT="$(osascript - "$@" 2> "$err")" || status=$?
+    if [ "$status" -ne 0 ]; then
+        log "ERROR $(tr '\n' ' ' < "$err")"
+        if grep -qE -- '-1743|-1719|-25211|assistive access' "$err"; then
+            PERMISSION_ERROR="$(head -n 1 "$err")"
+        fi
+    fi
+    rm -f "$err"
+    return "$status"
+}
+
+# Print the bundle ID of an app given lsappinfo's ID for it
+bundle_id() {
+    lsappinfo info -only bundleID "$1" 2> /dev/null | sed -n 's/.*bundleID="\([^"]*\)".*/\1/p'
+}
+
+app_running() {
+    [ -n "$(lsappinfo find "bundleid=$1" 2> /dev/null)" ]
+}
+
+ghostty_folder() {
+    applescript <<EOF || return 1
+tell application id "$GHOSTTY" to get working directory of focused terminal of selected tab of front window
+EOF
+    CONTEXT_PATH="$SCRIPT_RESULT"
+}
+
+# zed/settings.json sets window_title_format to "${projectName}${separator}${filePath}", and the
+# separator is Zed's default " — ". A project name has no slash, so the path starts after the
+# first separator followed by / or ~/. With no file open, the title is only the project name.
+zed_file() {
+    local title
+    applescript <<EOF || return 1
+tell application "System Events" to get name of window 1 of (first process whose bundle identifier is "$ZED")
+EOF
+    title="$SCRIPT_RESULT"
+    case "$title" in
+        *" — /"*) CONTEXT_PATH="/${title#*" — /"}" ;;
+        *" — ~/"*) CONTEXT_PATH="$HOME/${title#*" — ~/"}" ;;
+    esac
+}
+
+# The first selected item, or the front window's folder, or the Desktop with no window open
+finder_selection() {
+    applescript <<'EOF' || return 1
+tell application "Finder"
+    set selected to selection
+    if selected is not {} then return POSIX path of (item 1 of selected as alias)
+    return POSIX path of (insertion location as alias)
+end tell
+EOF
+    CONTEXT_PATH="$SCRIPT_RESULT"
+}
+
+# Set CONTEXT_PATH to the path the front app is showing, if it's one that exists here. A remote
+# one, such as a Zed project over SSH, doesn't.
+read_context_path() {
+    CONTEXT_PATH=""
+    case "$1" in
+        "$GHOSTTY") ghostty_folder ;;
+        "$ZED") zed_file ;;
+        com.apple.finder) finder_selection ;;
+    esac
+    # Finder ends a folder's path with a slash
+    [ "$CONTEXT_PATH" == / ] || CONTEXT_PATH="${CONTEXT_PATH%/}"
+    [ -n "$CONTEXT_PATH" ] && [ -e "$CONTEXT_PATH" ] || CONTEXT_PATH=""
+}
+
+open_finder() {
+    if [ -d "$1" ]; then
+        open "$1"
+    elif [ -n "$1" ]; then
+        open -R "$1"
+    else
+        applescript <<'EOF'
+tell application "Finder"
+    make new Finder window to home
+    activate
+end tell
+EOF
+    fi
+}
+
+open_editor() {
+    if [ -n "$1" ]; then
+        open -b "$ZED" "$1"
+    else
+        "$ZED_CLI" --new
+    fi
+}
+
+# Open Ghostty at a folder, or a file's folder: in a new tab when Ghostty is in front, otherwise
+# in a new window
+open_terminal() {
+    local dir="$1" mode=window
+    [ -d "$dir" ] || dir="$(dirname "$dir")"
+    [ "$2" == "$GHOSTTY" ] && mode=tab
+    # Telling Ghostty to start would open its first window as well as this one
+    if ! app_running "$GHOSTTY"; then
+        open -b "$GHOSTTY" --args "--working-directory=$dir"
+        return
+    fi
+    applescript "$dir" "$mode" <<EOF
+on run argv
+    tell application id "$GHOSTTY"
+        set cfg to new surface configuration
+        set initial working directory of cfg to item 1 of argv
+        if item 2 of argv is "tab" and (count of windows) > 0 then
+            new tab in front window with configuration cfg
+        else
+            new window with configuration cfg
+        end if
+        activate
+    end tell
+end run
+EOF
+}
+
+main() {
+    local target="${1:-}" front status=0
+    case "$target" in
+        finder | editor | terminal) ;;
+        *)
+            echo "Usage: open-in finder|editor|terminal" >&2
+            return 2
+            ;;
+    esac
+    front="$(bundle_id "$(lsappinfo front 2> /dev/null)")"
+    read_context_path "$front"
+    log "$target from ${front:-an unknown app}: ${CONTEXT_PATH:-no path, so a new window}"
+    case "$target" in
+        finder) open_finder "$CONTEXT_PATH" || status=1 ;;
+        editor) open_editor "$CONTEXT_PATH" || status=1 ;;
+        terminal) open_terminal "${CONTEXT_PATH:-$HOME}" "$front" || status=1 ;;
+    esac
+    if [ -n "$PERMISSION_ERROR" ]; then
+        status=1
+        notify "Stream Deck lacks a permission: $PERMISSION_ERROR"
+    elif [ "$status" -ne 0 ]; then
+        log "ERROR couldn't open ${CONTEXT_PATH:-a new window} for $target"
+        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+    fi
+    return "$status"
+}
+
+main "$@"

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "Dotfiles",
+  "UUID": "com.gpahal.dotfiles",
+  "Version": "1.0.0.0",
+  "Author": "Garvit Pahal",
+  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty",
+  "Icon": "images/plugin",
+  "Category": "Dotfiles",
+  "CategoryIcon": "images/category",
+  "SDKVersion": 2,
+  "CodePath": "plugin.js",
+  "Nodejs": { "Version": "24" },
+  "OS": [{ "Platform": "mac", "MinimumVersion": "13" }],
+  "Software": { "MinimumVersion": "7.1" },
+  "Actions": [
+    {
+      "Name": "Finder",
+      "UUID": "com.gpahal.dotfiles.finder",
+      "Tooltip": "Show the folder or file in front in Finder",
+      "Icon": "images/finder",
+      "States": [{ "Image": "images/key-finder" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Editor",
+      "UUID": "com.gpahal.dotfiles.editor",
+      "Tooltip": "Open the folder or file in front in Zed",
+      "Icon": "images/editor",
+      "States": [{ "Image": "images/key-editor" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Terminal",
+      "UUID": "com.gpahal.dotfiles.terminal",
+      "Tooltip": "Open Ghostty at the folder in front",
+      "Icon": "images/terminal",
+      "States": [{ "Image": "images/key-terminal" }],
+      "Controllers": ["Keypad"]
+    }
+  ]
+}

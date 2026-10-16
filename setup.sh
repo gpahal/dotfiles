@@ -12,7 +12,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh
 # Ubuntu also gets Docker, Chrome, Solaar, and the settings that keep it running around the clock.
 # On the Mac, OrbStack provides Docker, and the homebrew step installs Chrome and Logi Options+.
 # manual-steps prints what's left to do by hand.
-MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig macos manual-steps)
+MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck editorconfig macos
+    manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker
     chrome logitech manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it

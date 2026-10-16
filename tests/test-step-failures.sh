@@ -29,6 +29,8 @@ case "$1" in
         ;;
 esac'
 stub killall
+# test-macos-hostname.sh covers the hostname
+stub scutil 'echo Garvits-MacBook-Pro'
 # Activity Monitor isn't running, so the step writes its setting
 stub pgrep 'exit 1'
 fail_defaults() {

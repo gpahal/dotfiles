@@ -153,6 +153,8 @@ read_only
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/install.sh
 is_macos() { true; }
+# test-macos-hostname.sh covers the hostname
+stub scutil 'echo Garvits-MacBook-Pro'
 # Only the macos step's own functions: none of the Touch ID script's, such as usage and
 # write_sudo_local
 assert_eq "" "$(declare -F usage write_sudo_local || true)" "the Touch ID script's functions"

@@ -101,7 +101,7 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 
 ### Desktop app settings
 
-The Claude desktop app **(script)** stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, archives inactive sessions after 30 days, and opens quick entry with Option+Space. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop).
+The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The app stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, archives inactive sessions after 30 days, and opens quick entry with Option+Space. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Raycast opens the app itself with Option+Shift+Space, a [manual step](#macos-1).
 
 ## Codex
 
@@ -221,14 +221,15 @@ Scripts can't do these. `bash ai_tools/setup.sh manual-steps` prints the list fo
 
 1. **Logins.** Run `claude auth login`. Sign in to the Claude and ChatGPT apps, and open T3 Code once. The ChatGPT app's Codex login also serves the Codex CLI. If `bash ai_tools/setup.sh --status` says Codex isn't signed in, run `codex login`.
 2. **Notifications.** In **System Settings → Notifications**, turn on **Allow notifications** and set the alert style to **Persistent**, for Claude, ChatGPT, T3 Code, **Codex Computer Use** if it's listed, and any terminal other than Ghostty you run the CLIs in. Ghostty's are in the main README's [Ghostty notifications](../README.md#ghostty-notifications). `manual-steps` opens the ones it can tell aren't set.
-3. **Claude in Chrome.** Set it up as [Browser (Claude in Chrome)](#browser-claude-in-chrome) says.
-4. **Claude Code computer use.** Turn it on in each project you want it in, as Claude Code's [Computer use](#computer-use) says.
-5. **ChatGPT app.** Set up Codex's [Browser](#browser) and [Computer use](#computer-use-1).
-6. **T3 Code phone app.** Do the steps in [Mobile](#mobile).
-7. **Codex Remote.** In the ChatGPT app, set up **Settings → Connections → Control this Mac or PC**, and scan the QR code with the ChatGPT phone app.
-8. **Claude phone app.** Install it, sign in with Claude Code's account, and allow its notifications. See Claude Code's [Notifications](#notifications).
-9. **Training opt-outs.** Turn them off in claude.ai, ChatGPT, and chatgpt.com/codex, as [Privacy](#privacy) says.
-10. **GitHub repositories.** Under **Repository settings → General → Pull Requests**, enable **Allow squash merging**, and **Allow auto-merge** if you use Claude's auto-merge.
+3. **Claude app hotkey.** In Raycast's **Settings → Extensions**, find **Claude** under **Applications**, and set its **Hotkey** to `Option+Shift+Space`, which opens Claude and brings it to the front. Claude's own `Option+Space` opens quick entry. Claude has no setting for a hotkey that shows the app, and Raycast keeps its hotkeys where no script can write them.
+4. **Claude in Chrome.** Set it up as [Browser (Claude in Chrome)](#browser-claude-in-chrome) says.
+5. **Claude Code computer use.** Turn it on in each project you want it in, as Claude Code's [Computer use](#computer-use) says.
+6. **ChatGPT app.** Set up Codex's [Browser](#browser) and [Computer use](#computer-use-1).
+7. **T3 Code phone app.** Do the steps in [Mobile](#mobile).
+8. **Codex Remote.** In the ChatGPT app, set up **Settings → Connections → Control this Mac or PC**, and scan the QR code with the ChatGPT phone app.
+9. **Claude phone app.** Install it, sign in with Claude Code's account, and allow its notifications. See Claude Code's [Notifications](#notifications).
+10. **Training opt-outs.** Turn them off in claude.ai, ChatGPT, and chatgpt.com/codex, as [Privacy](#privacy) says.
+11. **GitHub repositories.** Under **Repository settings → General → Pull Requests**, enable **Allow squash merging**, and **Allow auto-merge** if you use Claude's auto-merge.
 
 ### Ubuntu
 

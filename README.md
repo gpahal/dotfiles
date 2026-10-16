@@ -503,6 +503,7 @@ cp ~/.claude/statusline.sh ai_tools/claude-code/statusline.sh
 cp ~/.config/zed/settings.json ~/.config/zed/keymap.json zed/
 cp ~/.editorconfig editorconfig/editorconfig
 cp ~/Library/LaunchAgents/dotfiles.ssh-add.plist ssh/dotfiles.ssh-add.plist   # macOS
+cp ~/Library/LaunchAgents/dotfiles.claude-desktop.plist ai_tools/claude-desktop/dotfiles.claude-desktop.plist   # macOS
 cp ~/.config/environment.d/99-homebrew.conf ubuntu/environment.d/99-homebrew.conf   # Ubuntu
 cp ~/.claude/CLAUDE.md ai_tools/user-instructions.md   # or ~/.codex/AGENTS.md
 cp /etc/smartmontools/run.d/50dotfiles-notify ubuntu/smartd-notify.sh   # Ubuntu

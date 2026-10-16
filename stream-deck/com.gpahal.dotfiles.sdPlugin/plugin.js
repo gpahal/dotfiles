@@ -1,4 +1,4 @@
-// Runs bin/open-in for each key press of the plugin's actions, shows on the key whether it
+// Runs bin/open-in or bin/open-app for each key press of the plugin's actions, shows on the key whether it
 // worked, and passes what it printed to Stream Deck's log, which Stream Deck writes to
 // ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with -port, -pluginUUID, and -registerEvent, and Node 24's
 // built-in WebSocket talks to it, so the plugin needs no packages.
@@ -6,7 +6,15 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
-const openIn = path.join(__dirname, "bin", "open-in");
+// Each action's script, by the last part of its UUID
+const scripts = {
+  finder: "open-in",
+  editor: "open-in",
+  terminal: "open-in",
+  claude: "open-app",
+  chrome: "open-app",
+  "chrome-tab": "open-app",
+};
 const socket = new WebSocket(`ws://127.0.0.1:${arg("-port")}`);
 const send = (message) => socket.send(JSON.stringify(message));
 
@@ -17,7 +25,8 @@ socket.onmessage = ({ data }) => {
   if (event !== "keyDown") return;
   // com.gpahal.dotfiles.finder runs open-in finder
   const target = action.slice(action.lastIndexOf(".") + 1);
-  execFile("/bin/bash", [openIn, target], (error, stdout, stderr) => {
+  const script = path.join(__dirname, "bin", scripts[target]);
+  execFile("/bin/bash", [script, target], (error, stdout, stderr) => {
     for (const line of `${stdout}${stderr}`.split("\n").filter(Boolean)) {
       send({ event: "logMessage", payload: { message: line } });
     }

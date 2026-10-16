@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Its Finder, Editor,
 # and Terminal actions open the folder or file in front in Finder, Zed, or Ghostty. Its
-# bin/open-in says how it finds them. Stream Deck loads plugins when it starts, so a run that
+# bin/open-in says how it finds them. Its Claude, Chrome, and New Tab actions run bin/open-app,
+# which does what the Hammerspoon hotkeys do. Stream Deck loads plugins when it starts, so a run that
 # changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no Linux
 # app. The homebrew step installs Stream Deck.
 #
@@ -16,9 +17,11 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 # Listed rather than found, so a stray file in the repo, such as a .DS_Store, isn't installed
-PLUGIN_FILES="manifest.json plugin.js bin/open-in images/plugin.png images/plugin@2x.png
-images/category.svg images/finder.svg images/editor.svg images/terminal.svg images/key-finder.svg
-images/key-editor.svg images/key-terminal.svg"
+PLUGIN_FILES="manifest.json plugin.js bin/open-in bin/open-app images/plugin.png
+images/plugin@2x.png images/category.svg images/finder.svg images/editor.svg images/terminal.svg
+images/claude.svg images/chrome.svg images/chrome-tab.svg images/key-finder.svg
+images/key-editor.svg images/key-terminal.svg images/key-claude.svg images/key-chrome.svg
+images/key-chrome-tab.svg"
 
 # Pass each plugin file, as source and destination, to a function: copy_plugin_file to copy it,
 # or status_file to report it

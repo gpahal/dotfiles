@@ -16,8 +16,7 @@ load_script macos/install.sh
 is_macos() { true; }
 # Only the hostname: the rest of the step is covered elsewhere
 each_default() { true; }
-disable_spotlight_shortcut() { true; }
-spotlight_shortcut_off() { true; }
+hotkey_off() { true; }
 status_filevault() { true; }
 status_app_firewall() { true; }
 

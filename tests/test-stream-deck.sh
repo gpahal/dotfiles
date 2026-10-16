@@ -5,7 +5,8 @@ set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin and restarts a running Stream Deck only when
 # the plugin changed, and carries on when Stream Deck isn't running. The step lists every file in
-# the plugin, and the manifest's actions match open-in's targets.
+# the plugin, and the manifest's actions match open-in's and open-app's targets, which plugin.js
+# maps to them.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -61,11 +62,17 @@ stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
 
-# The manifest's actions are open-in's targets, and their images are in the plugin
+# The manifest's actions are open-in's and open-app's targets, plugin.js maps each to its script,
+# and their images are in the plugin
 if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
-    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal " \
+    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.claude com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab " \
         "$actions" "the manifest's actions"
+    for action in $actions; do
+        target="${action##*.}"
+        grep -qE "^  \"?$target\"?: \"open-(in|app)\",$" "$src/plugin.js" ||
+            fail "plugin.js doesn't map $target to a script"
+    done
     for image in $(jq -r '.Icon, .CategoryIcon, (.Actions[] | .Icon, .States[].Image)' "$src/manifest.json"); do
         [ -f "$src/$image.svg" ] || [ -f "$src/$image.png" ] || fail "the manifest names $image, which isn't in the plugin"
     done

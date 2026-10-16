@@ -69,7 +69,7 @@ jobs:
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install just jq tmux mise git fd
+          brew install just jq tmux mise git fd lua
           f="$RUNNER_TEMP/shellcheck.tar.xz"
           curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz"
           echo "$SHELLCHECK_SHA256_DARWIN_AARCH64  $f" | shasum -a 256 -c -
@@ -84,7 +84,7 @@ jobs:
           MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
         run: |
           sudo apt-get update
-          sudo apt-get install -y just jq zsh tmux vim fd-find
+          sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4
           sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
           f="$RUNNER_TEMP/shellcheck.tar.xz"
           curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"

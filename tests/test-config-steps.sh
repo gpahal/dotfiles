@@ -12,12 +12,12 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 
-STEPS=(git lazygit ssh zsh vim tmux zed editorconfig)
+STEPS=(git lazygit ssh zsh vim tmux zed hammerspoon editorconfig)
 command -v git &>/dev/null || skip "git isn't installed"
 # The tmux step needs tmux installed, though nothing here runs it
 if ! command -v tmux &>/dev/null; then
     skip_rest "the tmux step: tmux isn't installed"
-    STEPS=(git lazygit ssh zsh vim zed editorconfig)
+    STEPS=(git lazygit ssh zsh vim zed hammerspoon editorconfig)
 fi
 
 # A brew on PATH stops lib/common.sh from putting Homebrew's directories before the stubs

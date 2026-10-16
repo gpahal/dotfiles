@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, turn off Spotlight's
-# Cmd+Space shortcut, so Raycast can take it, and set the hostname when it's unset or invalid.
+# Cmd+Space shortcut, so Raycast can take it, and the next input source's Ctrl+Opt+Space, so
+# Hammerspoon can, and set the hostname when it's unset or invalid.
 # Only writes values that differ, and only restarts Finder, Dock, or SystemUIServer when one of
 # theirs changed.
 #
@@ -22,9 +23,19 @@ APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 # activateSettings applies changed keyboard shortcuts without a logout, and isn't on PATH
 SYSTEM_ADMIN_DIR=/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources
 
-# Spotlight's "Show Spotlight search" shortcut, symbolic hotkey 64, as Cmd+Space (space is key code
-# 49, Cmd is 1048576) and turned off. Raycast's own setting binds Cmd+Space once it's free.
-SPOTLIGHT_HOTKEY_OFF="<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>1048576</integer></array><key>type</key><string>standard</string></dict></dict>"
+# Print a symbolic hotkey's entry for the space bar (key code 49) with modifiers $1, turned off
+hotkey_off_plist() {
+    echo "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>$1</integer></array><key>type</key><string>standard</string></dict></dict>"
+}
+
+# The shortcuts the step turns off, as symbolic hotkey, modifiers, and description. Spotlight's
+# "Show Spotlight search" is Cmd+Space (Cmd is 1048576); Raycast's own setting binds it once it's
+# free. "Select next source in Input menu" is Ctrl+Opt+Space (Ctrl 262144 plus Opt 524288), which
+# hammerspoon/init.lua binds.
+symbolic_hotkeys() {
+    "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Raycast"
+    "$@" 61 786432 "the next input source's Ctrl+Opt+Space shortcut" "Hammerspoon"
+}
 
 # Each changed setting as " domain:key", and each one whose write failed as " domain key": in
 # SANDBOXED_KEYS for a sandboxed app, which needs Full Disk Access (a manual step), and in
@@ -80,22 +91,31 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Succeeds when symbolic hotkey 64 is turned off. defaults prints AppleSymbolicHotKeys in the
-# old-style plist format, where each hotkey's entry starts at a four-space indent.
-spotlight_shortcut_off() {
+# Succeeds when symbolic hotkey $1 is turned off. An unset one is on. defaults prints
+# AppleSymbolicHotKeys in the old-style plist format, where each hotkey's entry starts at a
+# four-space indent.
+hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
-        awk '/^    64 = / { in64 = 1 } in64 && /^ +enabled = / { off = $3 == "0;"; in64 = 0 } END { exit !off }'
+        awk -v id="$1" '$0 ~ "^    " id " = " { on_id = 1 } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
-disable_spotlight_shortcut() {
-    spotlight_shortcut_off && return 0
-    if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 "$SPOTLIGHT_HOTKEY_OFF" 2>/dev/null; then
-        echo "  Couldn't turn off Spotlight's Cmd+Space shortcut."
-        FAILED_KEYS+=" com.apple.symbolichotkeys AppleSymbolicHotKeys,"
+# disable_hotkey <hotkey> <modifiers> <description> <app>
+disable_hotkey() {
+    hotkey_off "$1" && return 0
+    if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" "$(hotkey_off_plist "$2")" 2>/dev/null; then
+        echo "  Couldn't turn off $3."
+        FAILED_KEYS+=" com.apple.symbolichotkeys AppleSymbolicHotKeys $1,"
         return 0
     fi
-    echo "  Turned off Spotlight's Cmd+Space shortcut"
-    CHANGED_KEYS+=" com.apple.symbolichotkeys:64"
+    echo "  Turned off $3"
+    CHANGED_KEYS+=" com.apple.symbolichotkeys:$1"
+}
+
+# status_hotkey <hotkey> <modifiers> <description> <app>
+status_hotkey() {
+    local item
+    item="$(printf '%s' "${3:0:1}" | tr '[:lower:]' '[:upper:]')${3:1}"
+    status_check "$item off, so $4 can take it" hotkey_off "$1"
 }
 
 # Print activateSettings's path
@@ -265,7 +285,7 @@ status() {
     each_default status_default
     # The screenshot location key points here, and main creates it
     status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
-    status_check "Spotlight's Cmd+Space shortcut off, so Raycast can take it" spotlight_shortcut_off
+    symbolic_hotkeys status_hotkey
     status_check "Hostname set, so Ghostty's shell can report its folder" hostname_valid
     # Touch ID for sudo is optional (just touch-id), so off is skipped
     status_touch_id skipped
@@ -290,7 +310,7 @@ main() {
     set_hostname || status=1
     mkdir -p "$HOME/Screenshots"
     each_default set_default
-    disable_spotlight_shortcut
+    symbolic_hotkeys disable_hotkey
 
     if [ -z "$CHANGED_KEYS$FAILED_KEYS$SANDBOXED_KEYS$RUNNING_KEYS" ]; then
         echo "  macOS defaults are already set."

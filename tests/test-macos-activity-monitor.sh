@@ -36,8 +36,8 @@ stub osascript 'rm -f "'"$SANDBOX"'/running"'
 load_script macos/install.sh
 # shellcheck disable=SC2329 # main calls it
 is_macos() { true; }
-# test-macos-spotlight.sh covers Spotlight's shortcut
-spotlight_shortcut_off() { true; }
+# test-macos-shortcuts.sh covers the shortcuts the step turns off
+hotkey_off() { true; }
 SHOW_CATEGORY="$DEFAULTS_DIR/com.apple.ActivityMonitor.ShowCategory"
 
 # Running, and confirm says no without a terminal: the other settings are written, ShowCategory

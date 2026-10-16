@@ -70,7 +70,7 @@ is_ubuntu() { true; }
 lingering() { true; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check, and
-# test-diagnostics.sh SMART health and firmware updates
+# test-diagnostics-ubuntu.sh SMART health and firmware updates
 smartd_enabled() { true; }
 smartd_hook_installed() { true; }
 keep_conffiles_written() { true; }

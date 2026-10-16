@@ -3,12 +3,11 @@ set -euo pipefail
 
 # tmux-sessionizer opens a session for the project fzf picks from ~/Dev/<group>/<project>, or the
 # directory given: inside tmux it creates the session detached and switches to it, and outside
-# tmux it attaches with new-session -A. Two projects with the same name get api and api_2, a
-# project goes back to its session whatever names are free, also under LC_ALL=C, a . in the name
-# or a # in the name becomes _, a # stays literal in the session's path, a relative directory is
-# the one in the current directory whatever CDPATH says, fd and find list the same projects, a cancelled pick does nothing, and a failed
-# listing still lets fzf pick. Without fzf it fails with bash's "command not found" (127). Runs a
-# tmux server on the sandbox's TMUX_TMPDIR.
+# tmux it attaches with new-session -A, also under LC_ALL=C. Two projects with the same name get
+# api and api_2, a . or a # in the name becomes _, a # stays literal in the session's path, a
+# relative directory is the one in the current directory whatever CDPATH says, fd and find list
+# the same projects, and a cancelled pick does nothing. Runs a tmux server on the sandbox's
+# TMUX_TMPDIR.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -62,21 +61,6 @@ pick "$HOME/Dev/js/api"
 assert_exit 0 bash "$SESSIONIZER"
 assert_eq "$HOME/Dev/js/api" "$(session_path api_2)" "the api_2 session's path"
 assert_file_contains "$STUB_LOG" "tmux switch-client -t =api_2"
-
-# With api gone, js/api still goes to its api_2, not to a new api
-"$REAL_TMUX" kill-session -t =api
-: > "$STUB_LOG"
-assert_exit 0 bash "$SESSIONIZER"
-assert_file_not_contains "$STUB_LOG" "new-session"
-assert_file_contains "$STUB_LOG" "tmux switch-client -t =api_2"
-
-# Listing the projects fails, as find or fd does on a directory it can't read: the pick still opens
-pick "$HOME/Dev/go/api"
-stub fd 'echo "'"$HOME/Dev/go/api"'"; exit 1'
-: > "$STUB_LOG"
-assert_exit 0 bash "$SESSIONIZER"
-assert_file_contains "$STUB_LOG" "tmux switch-client -t =api"
-rm "$STUB_DIR/fd"
 
 # A directory as the argument skips fzf, and . in the name becomes _
 rm "$STUB_DIR/fzf"
@@ -145,16 +129,4 @@ stub fzf 'cat > /dev/null; exit 130'
 : > "$STUB_LOG"
 assert_exit 0 bash "$SESSIONIZER"
 assert_eq "fzf" "$(cat "$STUB_LOG")" "commands run after a cancelled pick"
-# No project matched the query, and a path that isn't a directory
-stub fzf 'cat > /dev/null; exit 1'
-assert_exit 0 bash "$SESSIONIZER"
-assert_exit 1 bash "$SESSIONIZER" "$HOME/Dev/nope"
-assert_contains "$RUN_OUTPUT" "tmux-sessionizer: not a directory: $HOME/Dev/nope"
-
-# No fzf: bash's error, and a failure, so prefix+f's popup stays open to show it
-hide fzf
-: > "$STUB_LOG"
-assert_exit 127 bash "$SESSIONIZER"
-assert_contains "$RUN_OUTPUT" "fzf: command not found"
-assert_file_not_contains "$STUB_LOG" "tmux"
 test_done

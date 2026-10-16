@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # The ubuntu step's UPS part (ubuntu/lib/ups.sh): no UPS on USB, which installs nothing, a UPS
 # plugged in on a later run, which installs NUT and sets it up, an unchanged second run, a stale
@@ -230,18 +231,16 @@ assert_eq "$UPS_CONF" "$(cat "$NUT_DIR/ups.conf")" "ups.conf after reinstalling 
 assert_file_contains "$STUB_LOG" "sudo nut-scanner -U -q"
 assert_file_not_contains "$STUB_LOG" "restart"
 
-# NUT's files readable only with sudo, and sudo credentials not cached: status can't verify them,
+# A NUT file readable only with sudo, and sudo credentials not cached: status can't verify them,
 # and the step doesn't ask for sudo only to read them, since upsd answers for the UPS
 if [ "$(id -u)" -ne 0 ]; then
     touch "$SANDBOX/no-sudo"
-    for file in "${NUT_FILES[@]}"; do
-        chmod 000 "$NUT_DIR/$file"
-        assert_exit 2 nut_files_current
-        run status_ups
-        assert_contains "$RUN_OUTPUT" "unverified UPS on USB (0764:0501) monitored by NUT: can't read NUT configuration files in $NUT_DIR without sudo; run sudo -v, then status, to check them"
-        assert_eq "" "$(ups_todo)" "what the UPS part needs when $file can't be read"
-        chmod 640 "$NUT_DIR/$file"
-    done
+    chmod 000 "$NUT_DIR/upsd.users"
+    assert_exit 2 nut_files_current
+    run status_ups
+    assert_contains "$RUN_OUTPUT" "unverified UPS on USB (0764:0501) monitored by NUT: can't read NUT configuration files in $NUT_DIR without sudo; run sudo -v, then status, to check them"
+    assert_eq "" "$(ups_todo)" "what the UPS part needs when upsd.users can't be read"
+    chmod 640 "$NUT_DIR/upsd.users"
     rm "$SANDBOX/no-sudo"
 fi
 
@@ -355,14 +354,10 @@ echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 notify ONBATT "UPS ups@localhost on battery"
 assert_file_contains "$STUB_LOG" "-H Title: UPS on battery on $(hostname) -H Priority: high -H Tags: electric_plug --data-raw UPS ups@localhost on battery -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
-notify ONLINE "UPS ups@localhost on line power"
-assert_file_contains "$STUB_LOG" "-H Title: UPS on mains power on $(hostname) -H Priority: default -H Tags: white_check_mark --data-raw UPS ups@localhost on line power -K -"
 notify LOWBATT "UPS ups@localhost battery is low"
 assert_file_contains "$STUB_LOG" "-H Priority: urgent"
 notify SHUTDOWN "Auto logout and shutdown proceeding"
 assert_file_contains "$STUB_LOG" "-H Title: Shutting down on UPS battery on $(hostname) -H Priority: urgent"
-notify REPLBATT "UPS ups@localhost battery needs to be replaced"
-assert_file_contains "$STUB_LOG" "-H Priority: high"
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
 fi

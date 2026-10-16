@@ -10,13 +10,13 @@ default:
 
 # Lint shell scripts (including */bin/*), syntax-check zsh files, check the docs against the code they describe, check the skills' metadata, links, and paths, and check the keys the claude-code step writes against the known Claude Code settings
 check:
-    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | xargs -0 shellcheck
+    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck
     for f in zsh/*.zsh; do zsh -n "$f"; done
     bash scripts/check-docs.sh
     bash scripts/check-skills.sh
     bash scripts/check-claude-keys.sh > /dev/null
 
-# Run the tests in tests/: every one, or only the named ones (e.g. just test harness). The scripts target /bin/bash 3.2 on macOS, so the tests run under it.
+# Run the tests in tests/: every one, or only the named ones (e.g. just test vim), in parallel. The scripts target /bin/bash 3.2 on macOS, so the tests run under it.
 [positional-arguments]
 test *tests:
     /bin/bash tests/run.sh "$@"

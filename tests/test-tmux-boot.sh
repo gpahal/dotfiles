@@ -6,10 +6,9 @@ set -euo pipefail
 # On Ubuntu, the tmux step has tmux-continuum enable its systemd user unit, tmux.service, which
 # starts tmux at boot. continuum does that when a tmux server loads tmux.conf, so the step starts
 # one on a new socket, and fails when the unit still isn't enabled. Without a user manager to
-# reach, as in a container, it says so and carries on. A failed plugin install still enables it,
-# then fails the step. macOS skips it. Stubs stand in for tmux and systemctl, and local repos for
-# the plugins' GitHub repos, then a real tmux server loads the real tmux.conf, with a fake tpm in
-# place of continuum.
+# reach, as in a container, it says so and carries on. Stubs stand in for tmux, systemctl, and the
+# plugin install, which test-tmux-plugins.sh covers, then a real tmux server loads the real
+# tmux.conf, with a fake tpm in place of continuum.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -17,10 +16,10 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 REAL_TMUX="$(command -v tmux || true)"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
-fake_tmux_plugins
 load_script tmux/install.sh
 is_ubuntu() { true; }
 is_macos() { false; }
+sync_tmux_plugins() { :; }
 
 # The unit is enabled once the enabled file exists. No user manager without the manager file.
 touch "$SANDBOX/manager"
@@ -33,8 +32,6 @@ esac'
 # start-server stands in for continuum enabling the unit, unless the broken file exists
 stub tmux 'echo "TMUX_TMPDIR=$TMUX_TMPDIR TMUX=${TMUX-unset}" >> "'"$SANDBOX"'/tmux-env"
 [ "$1" != start-server ] || [ -e "'"$SANDBOX"'/broken" ] || touch "'"$SANDBOX"'/enabled"'
-# Every plugin is installed, so main goes straight to the unit
-sync_tmux_plugins > /dev/null
 
 run status
 assert_contains "$RUN_OUTPUT" "missing    tmux starts at boot (continuum's systemd user unit, tmux.service)"
@@ -73,26 +70,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Couldn't reach your systemd user manager"
 assert_file_not_contains "$STUB_LOG" "tmux start-server"
 
-# A failed plugin install fails the step, but the unit still gets enabled
-touch "$SANDBOX/manager"
-rm "$SANDBOX/broken"
-rm -rf "$HOME/.tmux/plugins/tmux-open"
-mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/open"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-open"
-assert_contains "$RUN_OUTPUT" "Enabled tmux.service"
-mv "$SANDBOX/open" "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open"
-sync_tmux_plugins > /dev/null
-
-# macOS leaves systemd alone
-is_ubuntu() { false; }
-is_macos() { true; }
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_file_not_contains "$STUB_LOG" "systemctl"
-run status
-assert_contains "$RUN_OUTPUT" "skipped    tmux starts at boot: Ubuntu only"
-
 # A real tmux server loads the real tmux.conf, which turns @continuum-boot on outside macOS, and
 # start-server returns once tpm has run continuum. The fake tpm enables the unit as continuum does.
 if [ -z "$REAL_TMUX" ]; then
@@ -100,13 +77,12 @@ if [ -z "$REAL_TMUX" ]; then
     test_done
     exit 0
 fi
-is_ubuntu() { true; }
-is_macos() { false; }
-rm -f "$STUB_DIR/tmux" "$SANDBOX/enabled"
+rm -f "$STUB_DIR/tmux" "$SANDBOX/enabled" "$SANDBOX/broken"
 touch "$SANDBOX/manager"
 stub uname 'echo Linux'
+mkdir -p "$HOME/.tmux/plugins/tpm"
 # shellcheck disable=SC2016 # expanded by the fake tpm
-printf '#!/bin/sh\nsleep 1\n[ "$(tmux show-option -gqv @continuum-boot)" != on ] || systemctl --user enable tmux.service\n' \
+printf '#!/bin/sh\nsleep 0.3\n[ "$(tmux show-option -gqv @continuum-boot)" != on ] || systemctl --user enable tmux.service\n' \
     > "$HOME/.tmux/plugins/tpm/tpm"
 chmod +x "$HOME/.tmux/plugins/tpm/tpm"
 assert_exit 0 main

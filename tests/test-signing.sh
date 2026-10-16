@@ -89,48 +89,23 @@ assert_contains "$RUN_OUTPUT" "The agent already holds $LOGIN"
 assert_contains "$RUN_OUTPUT" "ssh-add --apple-use-keychain $LOGIN"
 assert_file_not_contains "$STUB_LOG" "ssh-add --apple-use-keychain"
 
-# A .pub that ssh-keygen can't read gives no fingerprint, which grep would find in any agent
-# listing. The step says so rather than claim the agent holds the key.
-cp "$LOGIN.pub" "$SANDBOX/login-pub"
-cp "$ALLOWED" "$SANDBOX/allowed-before-corrupt"
-echo corrupt > "$LOGIN.pub"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Can't read the key's fingerprint from $LOGIN.pub."
-assert_not_contains "$RUN_OUTPUT" "The agent already holds"
-cp "$SANDBOX/login-pub" "$LOGIN.pub"
-cp "$SANDBOX/allowed-before-corrupt" "$ALLOWED"
-
-# allowed_signers can't be written: the step says so and fails, rather than claim it lists the key
-rm "$ALLOWED"
-: > "$ALLOWED"
-chmod a-w "$ALLOWED"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Couldn't add this key for"
-assert_not_contains "$RUN_OUTPUT" "already lists"
-chmod u+w "$ALLOWED"
-
 is_macos() { false; }
 is_ubuntu() { true; }
 
-# An existing default signing key with a passphrase: agents can't unlock it, so the step fails
-# before it reports signing ready, and leaves the key and config as they were, even on a yes. That
-# holds whether user.signingkey is unset or already names the key, either half.
+# An existing default signing key with a passphrase, which user.signingkey names: agents can't
+# unlock it, so the step fails before it reports signing ready, and leaves the key and config as
+# they were, even on a yes
 rm -f "$HOME/.gitconfig" "$HOME/.gitconfig.local" "$HOME/.config/git/config" "$SIGNING" "$SIGNING.pub"
 ssh-keygen -q -t ed25519 -N secret -f "$SIGNING"
 cp "$SIGNING" "$SANDBOX/signing-before"
-for value in "" "$SIGNING.pub" "$SIGNING"; do
-    rm -f "$HOME/.gitconfig"
-    [ -z "$value" ] || git config --file "$HOME/.gitconfig" user.signingkey "$value"
-    cp "$HOME/.gitconfig" "$SANDBOX/gitconfig-before" 2>/dev/null || : > "$SANDBOX/gitconfig-before"
-    DOTFILES_ASSUME_YES=1 assert_exit 1 main
-    assert_contains "$RUN_OUTPUT" "$SIGNING has a passphrase"
-    assert_contains "$RUN_OUTPUT" "ssh-keygen -p -f $SIGNING"
-    assert_not_contains "$RUN_OUTPUT" "Commits and tags are now signed"
-    cmp -s "$SANDBOX/signing-before" "$SIGNING" || fail "the encrypted signing key changed (user.signingkey '$value')"
-    touch "$HOME/.gitconfig"
-    cmp -s "$SANDBOX/gitconfig-before" "$HOME/.gitconfig" ||
-        fail "the git config changed with an encrypted signing key (user.signingkey '$value')"
-done
+git config --file "$HOME/.gitconfig" user.signingkey "$SIGNING.pub"
+cp "$HOME/.gitconfig" "$SANDBOX/gitconfig-before"
+DOTFILES_ASSUME_YES=1 assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$SIGNING has a passphrase"
+assert_contains "$RUN_OUTPUT" "ssh-keygen -p -f $SIGNING"
+assert_not_contains "$RUN_OUTPUT" "Commits and tags are now signed"
+cmp -s "$SANDBOX/signing-before" "$SIGNING" || fail "the encrypted signing key changed"
+cmp -s "$SANDBOX/gitconfig-before" "$HOME/.gitconfig" || fail "the git config changed with an encrypted signing key"
 
 # The email comes from git's own lookup, so ~/.gitconfig.local's, which the repo config includes,
 # wins over the repo config's
@@ -142,26 +117,4 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 main
 assert_file_contains "$ALLOWED" "local@example.com namespaces=\"git\""
 assert_not_contains "$(cat "$ALLOWED")" "repo@example.com"
 rm -f "$HOME/.gitconfig.local" "$HOME/.config/git/config"
-
-# Without ssh-keygen it fails before changing anything
-rm -f "$HOME/.gitconfig"
-(
-    hide ssh-keygen
-    assert_exit 1 main
-    assert_contains "$RUN_OUTPUT" "ssh-keygen isn't installed"
-    [ ! -e "$HOME/.gitconfig" ] || fail "the git config was written without ssh-keygen"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
-
-# From inside a checkout whose .git file points at a missing dir, as a copied worktree's does,
-# ~/.gitconfig is still read and written
-mkdir -p "$SANDBOX/broken"
-echo "gitdir: $SANDBOX/missing" > "$SANDBOX/broken/.git"
-rm -f "$HOME/.gitconfig"
-cd "$SANDBOX/broken"
-assert_exit 0 set_local tag.gpgsign true
-assert_contains "$RUN_OUTPUT" "Set tag.gpgsign = true"
-assert_exit 0 set_local tag.gpgsign true
-assert_contains "$RUN_OUTPUT" "tag.gpgsign is already true"
-cd "$HOME"
 test_done

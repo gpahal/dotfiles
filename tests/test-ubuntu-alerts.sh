@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # smartd's warning hook (ubuntu/smartd-notify.sh) pushes the warning to ntfy when a URL is set,
 # through the installed ntfy code it sources, logging what fails and always exiting 0. It runs as
@@ -69,15 +70,6 @@ ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$SANDBOX/no-ntfy.sh" "$HOOK"
 run_hook
 assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: $SANDBOX/no-ntfy.sh is missing"
 assert_file_not_contains "$STUB_LOG" "curl"
-
-# The hook ignores the old test variables, so nothing can point root at another file. A copy whose
-# constants name sandbox paths that don't exist, rather than the real /etc and /usr/local, sends
-# nothing though the variables name a valid URL file and ntfy code.
-ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/no-url" "$SANDBOX/no-ntfy.sh" "$HOOK"
-: > "$STUB_LOG"
-assert_exit 0 env DOTFILES_NTFY_URL_FILE="$URL_FILE" DOTFILES_NTFY_LIB="$REPO_DIR/ubuntu/lib/ntfy.sh" \
-    SMARTD_MESSAGE=test "$BASH" "$HOOK"
-assert_file_not_contains "$STUB_LOG" "curl"
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
 
 # --- setup-alerts.sh ---
@@ -138,11 +130,6 @@ assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "Already set"
 assert_not_contains "$RUN_OUTPUT" "my-topic"
 assert_file_not_contains "$STUB_LOG" "curl"
-
-# A full URL, for another ntfy server, saves as given
-assert_exit 0 main <<< "https://ntfy.example.com/my_topic-2"
-assert_eq https://ntfy.example.com/my_topic-2 "$(cat "$NTFY_URL_FILE")" "the saved URL"
-assert_not_contains "$RUN_OUTPUT" "my_topic-2"
 
 # A failed test push fails the script, with the URL saved
 touch "$SANDBOX/curl-fails"

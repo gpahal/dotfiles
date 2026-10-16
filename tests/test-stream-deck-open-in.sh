@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: macos
 
 # The Stream Deck plugin's open-in finds the path the front app shows (a Ghostty tab's folder,
 # the file in Zed's window title, Finder's selection) and opens it in Finder, Zed, or Ghostty.
@@ -90,9 +91,6 @@ check editor com.apple.finder 0 "open -b dev.zed.Zed $file"
 check terminal com.apple.finder 0 "  new Ghostty window at $dir"
 
 # --- Another app in front: new windows ---
-check finder com.google.Chrome 0 "  new Finder window"
-check editor com.google.Chrome 0 "zed-cli --new"
-check terminal com.google.Chrome 0 "  new Ghostty window at $HOME"
 # Ghostty isn't running: open starts it at the folder, since telling it to would open a second window
 GHOSTTY_RUNNING="" check terminal com.google.Chrome 0 \
     "open -b com.mitchellh.ghostty --args --working-directory=$HOME"
@@ -111,8 +109,4 @@ export ZED_ERROR=""
 stub zed-cli 'exit 1'
 check editor com.google.Chrome 1 "zed-cli --new
   notification: Couldn't open a new window. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
-
-# An unknown target
-FRONT=com.apple.finder assert_exit 2 bash "$OPEN_IN" files
-assert_contains "$RUN_OUTPUT" "Usage: open-in finder|editor|terminal"
 test_done

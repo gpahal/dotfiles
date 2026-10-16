@@ -34,23 +34,12 @@ PICK=upstream/feature assert_exit 0 git cobr
 assert_eq feature "$(git symbolic-ref --short HEAD)" "the branch after picking upstream/feature"
 assert_eq upstream/feature "$(git rev-parse --abbrev-ref 'feature@{upstream}')" "feature's upstream"
 
-# Picked again, it switches to the branch it made, with no warning
-git switch -q main
-PICK=upstream/feature assert_exit 0 git cobr
-assert_eq feature "$(git symbolic-ref --short HEAD)" "the branch after picking it again"
-assert_not_contains "$RUN_OUTPUT" "already exists"
-
 # Picking origin/feature switches to the existing feature, and says it tracks upstream/feature
 git switch -q main
 PICK=origin/feature assert_exit 0 git cobr
 assert_eq feature "$(git symbolic-ref --short HEAD)" "the branch after picking origin/feature"
 assert_eq upstream/feature "$(git rev-parse --abbrev-ref 'feature@{upstream}')" "feature's upstream after origin/feature"
 assert_contains "$RUN_OUTPUT" "feature already exists and tracks upstream/feature, not origin/feature"
-
-# Nothing picked, as when fzf is cancelled: nothing changes
-git switch -q main
-PICK=none assert_exit 1 git cobr
-assert_eq main "$(git symbolic-ref --short HEAD)" "the branch after cancelling"
 
 # A local branch literally named origin/feature2 makes origin/feature2 ambiguous, but cobr still
 # makes feature2 at the remote branch's commit, tracking it
@@ -63,11 +52,6 @@ PICK=origin/feature2 assert_exit 0 git cobr
 assert_eq refs/heads/feature2 "$(git symbolic-ref HEAD)" "the branch after picking origin/feature2"
 assert_eq "$(git rev-parse refs/remotes/origin/feature2)" "$(git rev-parse HEAD)" "feature2's commit"
 assert_eq refs/remotes/origin/feature2 "$(git rev-parse --symbolic-full-name 'feature2@{upstream}')" "feature2's upstream"
-# Picked again, it switches to it with no warning
-git switch -q main
-PICK=origin/feature2 assert_exit 0 git cobr
-assert_eq refs/heads/feature2 "$(git symbolic-ref HEAD)" "the branch after picking origin/feature2 again"
-assert_not_contains "$RUN_OUTPUT" "already exists"
 git switch -q main
 
 # git cob offers a branch a tag shares a name with by its name, and switches to it

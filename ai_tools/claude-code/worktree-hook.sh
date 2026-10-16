@@ -72,9 +72,9 @@ fetched_recently() {
 
 # Bring the branch fresh_base picks up to date, so the worktree branches from what's on the
 # remote. Every `claude -w` and isolated subagent waits for this, so skip it after a recent fetch,
-# and stop the fetch 15 s after it starts. That's a deadline for the whole fetch, not a stall
-# timeout, so a slow fetch that's still downloading stops too. A failed fetch leaves the local
-# copy, as Claude Code does.
+# and stop the fetch 15 s after it starts (WORKTREE_HOOK_FETCH_DEADLINE, which the test shortens).
+# That's a deadline for the whole fetch, not a stall timeout, so a slow fetch that's still
+# downloading stops too. A failed fetch leaves the local copy, as Claude Code does.
 fetch_default_branch() {
     local base
     base="$(fresh_base)"
@@ -96,7 +96,7 @@ fetch_with_timeout() (
     fetch_pid=$!
     (
         set +m
-        sleep 15
+        sleep "${WORKTREE_HOOK_FETCH_DEADLINE:-15}"
         kill -TERM -- "-$fetch_pid" 2>/dev/null || true
         sleep 1
         kill -KILL -- "-$fetch_pid" 2>/dev/null || true

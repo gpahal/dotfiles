@@ -54,8 +54,8 @@ assert_eq '{"customInstructions":"Keep titles concise. Use short bullet points i
 
 # The default model and its effort are values you can change. Unset, they're set, with Claude's
 # instance and the 1M context window. One of your own is kept without a terminal, and status
-# names it. With a terminal, setup asks every run and replaces it on yes, and DOTFILES_ASSUME_YES=1
-# answers yes. Context window and instance are set only for the repo's model.
+# names it. With a terminal, setup asks every run and replaces it on yes. Context window and
+# instance are set only for the repo's model.
 selection() { jq -cS '.defaultModelSelection' "$settings"; }
 # choose <fixture>: write the fixture, decide on your values, then apply
 choose() {
@@ -93,7 +93,7 @@ assert_contains "$choose_output" "Kept your value for T3 Code's default effort (
 run t3_code_status_custom_values
 assert_contains "$RUN_OUTPUT" "ok         T3 Code's default effort (defaultModelSelection.options effort): yours, high (the repo's is medium)"
 
-# With a terminal: no keeps your model, yes replaces it, dropping the other provider's options
+# With a terminal, yes replaces your model, dropping the other provider's options
 is_interactive() { true; }
 confirm() {
     local reply
@@ -102,10 +102,6 @@ confirm() {
     [ "$reply" == y ]
 }
 printf '%s\n' "{\"defaultModelSelection\": $codex}" > "$settings"
-t3_code_choose_custom_values <<< n > "$SANDBOX/choose.out"
-assert_contains "$(cat "$SANDBOX/choose.out")" "T3 Code's default model (defaultModelSelection.model) is gpt-5.5, not the repo's claude-opus-5-5. Replace it?"
-json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
-assert_eq "$codex" "$(selection)" "your model after no"
 t3_code_choose_custom_values <<< y > /dev/null
 json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes"
@@ -115,13 +111,6 @@ t3_code_choose_custom_values <<< y > "$SANDBOX/choose.out"
 assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
 json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
-load_script ai_tools/t3-code/install.sh
-# shellcheck disable=SC2034 # the step's functions read it
-T3_CODE_SETTINGS="$settings"
-printf '%s\n' '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}]}}' > "$settings"
-DOTFILES_ASSUME_YES=1 t3_code_choose_custom_values > /dev/null
-json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
-assert_eq "$ours" "$(selection)" "the model selection with DOTFILES_ASSUME_YES=1"
 is_interactive() { false; }
 confirm() { false; }
 

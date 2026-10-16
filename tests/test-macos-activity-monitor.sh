@@ -1,9 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+# os: macos
 
 # The macos step sets Activity Monitor's View to All Processes, whose menu tag is 100. Activity
 # Monitor saves its own value when it quits, so the step offers to quit it first, and skips that
-# write when it keeps running. Its status also checks ~/Screenshots.
+# write when it keeps running.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -23,7 +24,7 @@ case "$1" in
         ;;
 esac'
 stub killall
-# test-diagnostics.sh covers what status reports about FileVault and the firewall
+# test-diagnostics-macos.sh covers what status reports about FileVault and the firewall
 stub fdesetup 'echo "FileVault is On."'
 # test-macos-hostname.sh covers the hostname
 stub scutil 'echo Garvits-MacBook-Pro'
@@ -58,20 +59,11 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
 assert_exit 0 status
 
-# Already 100 while it runs: nothing to say
-touch "$SANDBOX/running"
-assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "Activity Monitor is running"
-
 # Approved: it quits Activity Monitor, then writes ShowCategory
+touch "$SANDBOX/running"
 rm "$SHOW_CATEGORY"
 DOTFILES_ASSUME_YES=1 run main
 assert_eq 0 "$RUN_STATUS" "exit status after quitting Activity Monitor: $RUN_OUTPUT"
 assert_file_contains "$STUB_LOG" 'osascript -e quit app "Activity Monitor"'
 assert_eq 100 "$(cat "$SHOW_CATEGORY")" "ShowCategory after quitting Activity Monitor"
-
-# Status reports ~/Screenshots, which the location key points to, when it's gone
-rm -rf "$SANDBOX/running" "$HOME/Screenshots"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $HOME/Screenshots directory"
 test_done

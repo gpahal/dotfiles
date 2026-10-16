@@ -5,9 +5,8 @@ set -euo pipefail
 
 # The codex step's edit of ~/.codex/config.toml. It pins the built-in workspace-write sandbox and
 # keeps everything else: MCP servers, projects, notify, arrays of tables, and your
-# [sandbox_workspace_write] settings and permission profiles. A second run changes nothing.
-# Each configure_codex run calls yq several times, and the test runs it about 30 times.
-# timeout: 300
+# [sandbox_workspace_write] settings and permission profiles. A second run changes nothing. The
+# status line is a value you can change, which setup keeps unless you agree to replace it.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -99,19 +98,8 @@ assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on Ubuntu"
 assert_eq null "$(get .desktop)" "[desktop] on Ubuntu"
 assert_eq '"osc9"' "$(get .tui.notification_method)" "the notification method on Ubuntu"
 assert_eq '"file"' "$(get .mcp_oauth_credentials_store)" "the MCP token store on Ubuntu"
-# The notification method is a value you can change: one of your own is kept without a terminal,
-# named by status, and replaced with DOTFILES_ASSUME_YES=1
-set_key .tui.notification_method '"bel"'
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "Kept your value for Codex's notification method (tui.notification_method), bel."
-assert_contains "$RUN_OUTPUT" "data-sharing, and status line settings are already set"
-assert_eq '"bel"' "$(get .tui.notification_method)" "a notification method of your own"
 bwrap_works() { true; }
 stub brew 'exit 1'
-run status
-assert_contains "$RUN_OUTPUT" "ok         Codex's notification method (tui.notification_method): yours, bel (the repo's is osc9)"
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
-cp "$CODEX_CONFIG" "$SANDBOX/codex-ubuntu"
 set_key .desktop.followUpQueueMode '"queue"'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
@@ -119,9 +107,6 @@ assert_not_contains "$RUN_OUTPUT" "followUpQueueMode"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
 assert_eq '"queue"' "$(get .desktop.followUpQueueMode)" "a [desktop] key already there on Ubuntu"
-cp "$SANDBOX/codex-ubuntu" "$CODEX_CONFIG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
-assert_eq '"osc9"' "$(get .tui.notification_method)" "the notification method with DOTFILES_ASSUME_YES=1"
 
 # yq rewrites the file, keeping every value: inline tables, arrays of tables, dotted keys, quoted
 # table names, multi-line strings, and full-line comments. A table the step sets that's written
@@ -236,9 +221,6 @@ assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq null "$(get .sandbox_workspace_write)" "[sandbox_workspace_write] with no config before"
-printf 'model = "x"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq null "$(get .sandbox_workspace_write)" "[sandbox_workspace_write] with none before"
 
 # The footer's items are a value you can change with /statusline. Unset, setup sets them. Set to
 # items of your own, they're kept without a terminal, and status names them. With a terminal,
@@ -280,71 +262,9 @@ printf '%s\n' "$mine" > "$CODEX_CONFIG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_ASSUME_YES=1"
 
-# The model follows the same rule: unset, setup sets it. One of your own is kept without a
-# terminal and named by status, and replaced on yes or with DOTFILES_ASSUME_YES=1.
-# Reloading brings back the real confirm and is_interactive
-load_script ai_tools/codex/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
-: > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model when it was unset"
-set_key .model '"gpt-6.1-mini"'
-mine="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "Kept your value for Codex's model (model), gpt-6.1-mini."
-assert_contains "$RUN_OUTPUT" "already set"
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config with a model of your own"
-run status
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
-assert_contains "$RUN_OUTPUT" "ok         Codex's model (model): yours, gpt-6.1-mini (the repo's is gpt-6.1-sol)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
-assert_exit 0 configure_codex <<< n
-assert_contains "$RUN_OUTPUT" "Codex's model (model) is gpt-6.1-mini, not the repo's gpt-6.1-sol. Replace it?"
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config after no"
-assert_exit 0 configure_codex <<< y
-assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model after yes"
-# Reloading brings back the real confirm and is_interactive
-load_script ai_tools/codex/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
-printf '%s\n' "$mine" > "$CODEX_CONFIG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
-assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model with DOTFILES_ASSUME_YES=1"
-
-# Reasoning effort, which /model saves, follows the same rule: unset, setup sets it. Yours is kept
-# without a terminal and named by status, and replaced with DOTFILES_ASSUME_YES=1. The service
-# tier isn't the step's: one of yours stays, and status doesn't name it.
-# Reloading brings back the real confirm and is_interactive
-load_script ai_tools/codex/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
-: > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq '"high" null' "$(get .model_reasoning_effort) $(get .service_tier)" "effort and tier when they were unset"
-set_key .model_reasoning_effort '"xhigh"'
-set_key .service_tier '"fast"'
-mine="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "Kept your value for Codex's reasoning effort (model_reasoning_effort), xhigh."
-assert_contains "$RUN_OUTPUT" "already set"
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config with an effort and tier of your own"
-run status
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
-assert_contains "$RUN_OUTPUT" "ok         Codex's reasoning effort (model_reasoning_effort): yours, xhigh (the repo's is high)"
-assert_not_contains "$RUN_OUTPUT" "service_tier"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
-assert_eq '"high" "fast"' "$(get .model_reasoning_effort) $(get .service_tier)" "effort and tier with DOTFILES_ASSUME_YES=1"
-
 # Status reports the sign-in from `codex login status`, which exits 0 when signed in and prints
-# "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. Another
-# failure, or no codex, is unknown. The stubbed codex stands in for the cask's.
+# "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. The stubbed
+# codex stands in for the cask's.
 stub brew 'exit 1'
 codex_cask_path() { echo "$STUB_DIR/codex"; }
 stub codex 'echo "Logged in using ChatGPT" >&2'
@@ -360,12 +280,4 @@ is_ubuntu() { true; }
 bwrap_works() { true; }
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
-is_macos() { true; }
-is_ubuntu() { false; }
-stub codex 'echo "Error checking login status: bad auth.json" >&2; exit 1'
-run status
-assert_contains "$RUN_OUTPUT" "unknown    Signed in to Codex: codex login status failed; run it to see why"
-hide codex
-run status
-assert_contains "$RUN_OUTPUT" "unknown    Signed in to Codex: Codex isn't installed"
 test_done

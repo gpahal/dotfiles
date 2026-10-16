@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
 # setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy, only when one

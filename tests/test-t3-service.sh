@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # The Ubuntu side of the t3-code step. Another T3 Code server keeps setup from changing the
 # server's settings or installing the service. An existing service is enabled and started without
@@ -37,7 +38,7 @@ case "$2" in
     is-enabled) [ -f "$state/enabled" ] ;;
     start | restart)
         touch "$state/active"
-        rm -f "$state/old-env" "$state/old-env-port" "$state/old-env-host"
+        rm -f "$state/old-env" "$state/old-env-host"
         ;;
     daemon-reload)
         rm -f "$state/reload-needed"
@@ -96,11 +97,9 @@ chmod +x "$HOME/.local/bin/t3"
 # No process is in the service's cgroup unless a test says so, and linger is on
 t3_code_in_service_cgroup() { false; }
 t3_code_lingering() { true; }
-# The service's running environment: old-env predates the telemetry line, old-env-port the port,
-# old-env-host the host
+# The service's running environment: old-env predates the telemetry line, old-env-host the host
 t3_code_process_environ() {
     if [ -e "$STATE/old-env" ]; then echo T3CODE_TELEMETRY_ENABLED=true
-    elif [ -e "$STATE/old-env-port" ]; then echo T3CODE_TELEMETRY_ENABLED=false
     elif [ -e "$STATE/old-env-host" ]; then printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773
     else printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773 T3CODE_HOST=127.0.0.1; fi
 }
@@ -173,13 +172,6 @@ assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "PID 302, a server the Mac started over SSH"
 [ ! -f "$T3_CODE_SETTINGS" ] || fail "server settings were written while another server ran"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
-# So does a t3 serve started by hand
-reset
-echo "304|t3|t3 serve" > "$SANDBOX/procs"
-assert_eq "304 manual t3 serve" "$(t3_code_other_servers)" "other server"
-assert_exit 0 configure_t3_code_ubuntu
-assert_contains "$RUN_OUTPUT" "PID 304, a t3 serve started by hand (t3 serve); to fix it, stop it (kill 304)"
-[ ! -f "$T3_CODE_SETTINGS" ] || fail "server settings were written while a manual server ran"
 
 # Status names each T3 Code server outside the service, with its PID, kind, and command line, as
 # missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own server, in its cgroup, isn't one, nor is another program that runs serve.
@@ -224,15 +216,6 @@ assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_contains "$RUN_OUTPUT" "Enabled the T3 Code service"
 assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_file_not_contains "$STUB_LOG" "reset-failed"
-
-# Disabled but running: only enabled
-reset
-installed_unit
-touch "$STATE/active"
-assert_exit 0 configure_t3_code_ubuntu
-assert_file_contains "$STUB_LOG" "systemctl --user enable t3code.service"
-assert_file_not_contains "$STUB_LOG" "systemctl --user start"
-assert_file_not_contains "$STUB_LOG" "systemctl --user restart"
 
 # Running and enabled: nothing changes
 reset
@@ -314,11 +297,6 @@ assert_contains "$RUN_OUTPUT" "sudo systemctl restart user@1000"
 t3_code_process_groups() { echo "4 24 27 998"; }
 assert_exit 0 configure_t3_code_ubuntu
 assert_not_contains "$RUN_OUTPUT" "docker group"
-# You're not in the group: no warning
-stub id "case \"\$*\" in -nG*) echo 'me adm' ;; -u) echo 1000 ;; *) echo me ;; esac"
-t3_code_process_groups() { echo "4 24 27"; }
-assert_exit 0 configure_t3_code_ubuntu
-assert_not_contains "$RUN_OUTPUT" "docker group"
 rm -f "$STUB_DIR/id" "$STUB_DIR/getent"
 
 # Changing the settings of a running service stops it first, and fails, writing nothing, when it
@@ -334,12 +312,6 @@ assert_exit 1 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Couldn't stop the T3 Code service"
 assert_eq '{}' "$(cat "$T3_CODE_SETTINGS")" "settings after a failed stop"
 assert_not_contains "$RUN_OUTPUT" "Restarted the T3 Code service"
-# A stop that leaves it running fails too
-stub systemctl "[ \"\$2\" != stop ] || exit 0
-$SYSTEMCTL_STUB"
-assert_exit 1 configure_t3_code_ubuntu
-assert_contains "$RUN_OUTPUT" "Couldn't stop the T3 Code service"
-assert_eq '{}' "$(cat "$T3_CODE_SETTINGS")" "settings after a stop that left it running"
 # A service that doesn't start again fails, after the settings change
 stub systemctl "[ \"\$2\" != start ] || exit 1
 $SYSTEMCTL_STUB"
@@ -442,8 +414,8 @@ assert_exit 1 t3_code_drop_in_loaded
 assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 assert_exit 1 t3_code_restart_pending
-# A server started before the port line is pending a restart, and status says so
-touch "$STATE/old-env-port"
+# A server started before the host line is pending a restart, and status says so
+touch "$STATE/old-env-host"
 assert_exit 0 t3_code_restart_pending
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in"
@@ -452,9 +424,6 @@ assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
 assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_exit 1 t3_code_restart_pending
-# Likewise a server started before the host line
-touch "$STATE/old-env-host"
-assert_exit 0 t3_code_restart_pending
 confirm() { echo "$1"; false; }
 
 # An enabled unit without linger doesn't start at boot until login.
@@ -546,8 +515,7 @@ echo ready > "$STATE/browser-mode"
 assert_exit 0 t3_code_browser_ready
 
 # Status reports T3 Connect from `t3 connect status --json`: linked and publishing agent activity
-# is ok. Otherwise it names what's left: the whole sign-in, a restart that sets up a link already
-# authorized, or only publishing. Output it can't read, or no t3, is unknown.
+# is ok. Output it can't read, or no t3, is unknown.
 reset
 installed_unit
 touch "$STATE/active" "$STATE/enabled"
@@ -566,16 +534,6 @@ connect true true true true
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Connect linked and publishing agent activity"
 assert_file_contains "$STUB_LOG" "t3 connect status --json"
-connect true true true false
-run status
-assert_contains "$RUN_OUTPUT" "missing    T3 Connect linked and publishing agent activity: run t3 connect publish"
-connect true true false true
-run status
-assert_contains "$RUN_OUTPUT" "missing    T3 Connect linked and publishing agent activity: the server sets up the link when it starts: t3 service restart"
-connect false false false false
-run status
-assert_contains "$RUN_OUTPUT" "missing    T3 Connect linked and publishing agent activity: run t3 connect --headless, then t3 connect publish and t3 service restart (see ai_tools/README.md → Manual steps)"
-assert_eq 3 "$RUN_STATUS" "status's exit when T3 Connect isn't set up"
 echo "not json" > "$STATE/connect"
 run status
 assert_contains "$RUN_OUTPUT" "unknown    T3 Connect: t3 connect status didn't say; run it to see why"

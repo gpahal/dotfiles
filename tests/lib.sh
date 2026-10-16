@@ -32,11 +32,11 @@ source "$TESTS_DIR/sentinels.sh"
 # $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
 # sudo is stubbed to fail, as it does when not cached, so no test runs it for real, even on a CI
 # runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
-# failing sentinel (see _sentinel). Sets an EXIT trap that removes the
+# failing sentinel (see _sentinels). Sets an EXIT trap that removes the
 # temp dir and makes the test exit 1 when an assertion failed or a sentinel ran, so a test mustn't
 # set its own.
 setup_sandbox() {
-    local var cmd
+    local var
     # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
     # /tmp to /private/tmp there, so paths the steps print match $HOME.
     SANDBOX="$(cd -P "$(mktemp -d /tmp/dotfiles-test.XXXXXX)" && pwd)"
@@ -69,9 +69,8 @@ setup_sandbox() {
     mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$STUB_DIR"
     : > "$STUB_LOG"
     _stubs_first
-    for cmd in $SENTINELS; do
-        _sentinel "$cmd"
-    done
+    # shellcheck disable=SC2086 # a list of names
+    _sentinels $SENTINELS
     stub sudo 'exit 1'
     # The PAM config the macos step's status and the Touch ID script read, so none sees the host's
     export DOTFILES_PAM_DIR="$SANDBOX/pam.d" DOTFILES_PAM_MODULES_DIR="$SANDBOX/pam-modules" \
@@ -153,13 +152,8 @@ _stubs_first() {
 # e.g. stub systemctl '[ "$2" != is-active ] || echo active'
 stub() {
     local name="$1" body="${2:-}"
-    {
-        echo '#!/bin/bash'
-        cat << 'EOF'
-printf '%s\n' "${0##*/}${*:+ $*}" >> "$STUB_LOG"
-EOF
-        printf '%s\n' "$body"
-    } > "$STUB_DIR/$name"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
     chmod +x "$STUB_DIR/$name"
 }
 
@@ -186,21 +180,21 @@ EOF
     )"
 }
 
-# Write a sentinel for a command to $STUB_DIR: it logs "<cmd> <args>" to $SANDBOX/unstubbed.log,
+# Write a sentinel for each command to $STUB_DIR: it logs "<cmd> <args>" to $SANDBOX/unstubbed.log,
 # says so on stderr, and exits 127, as a missing command would. The log is outside $STUB_DIR, so
 # a step that runs a sentinel with HOME or the environment changed still logs it. stub replaces a
-# sentinel.
-_sentinel() {
-    {
-        echo '#!/bin/bash'
-        printf 'log=%q\n' "$SANDBOX/unstubbed.log"
-        cat << 'EOF'
-printf '%s\n' "${0##*/}${*:+ $*}" >> "$log"
+# sentinel. Every test writes about 60, so printf writes them and one chmod marks them all.
+_sentinels() {
+    local cmd body
+    # shellcheck disable=SC2016 # expanded by the sentinel
+    body="$(printf '#!/bin/bash\nlog=%q\n' "$SANDBOX/unstubbed.log")"'
+printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$log"
 echo "unstubbed command: ${0##*/}" >&2
-exit 127
-EOF
-    } > "$STUB_DIR/$1"
-    chmod +x "$STUB_DIR/$1"
+exit 127'
+    for cmd; do
+        printf '%s\n' "$body" > "$STUB_DIR/$cmd"
+    done
+    [ $# -eq 0 ] || (cd "$STUB_DIR" && chmod +x "$@")
 }
 
 # Make commands missing for the rest of the test, even where they're installed: PATH becomes

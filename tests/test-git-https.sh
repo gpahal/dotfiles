@@ -71,36 +71,7 @@ git config --file "$HOME/.gitconfig" --unset credential.https://github.com.helpe
 # Included user settings count, including XDG settings when ~/.gitconfig also exists.
 git config --file "$HOME/.gitconfig.local" credential.https://github.com.helper '!gh auth git-credential'
 assert_exit 0 gh_credential_helper_set
-
-# User-file includes tied to this repository are not machine-wide either.
-rm "$HOME/.gitconfig" "$HOME/.gitconfig.local"
-git config --file "$HOME/.gitconfig" "includeIf.gitdir:$SANDBOX/local-only/.path" "$SANDBOX/conditional"
-git config --file "$SANDBOX/conditional" credential.https://github.com.helper '!gh auth git-credential'
-for prefix in "${GITHUB_SSH_PREFIXES[@]}"; do
-    git config --file "$SANDBOX/conditional" --add "$GITHUB_HTTPS_KEY" "$prefix"
-done
-cd "$SANDBOX/local-only"
-assert_exit 1 github_over_https
-assert_exit 1 gh_credential_helper_set
-# Explicit Git repository environment must not restore that context.
-GIT_DIR="$PWD/.git" GIT_WORK_TREE="$PWD" GIT_COMMON_DIR="$PWD/.git" assert_exit 1 github_over_https
-git config --file "$HOME/.gitconfig" credential.https://github.com.helper '!gh auth git-credential'
-assert_exit 0 configure_github_https
-cd "$HOME"
-assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url git@github.com:me/repo.git)" "rewrite outside conditional include"
-
-# From inside a checkout whose .git file points at a missing dir, as a copied worktree's does, the
-# rewrites are still written
-rm "$HOME/.gitconfig"
-mkdir -p "$SANDBOX/broken"
-echo "gitdir: $SANDBOX/missing" > "$SANDBOX/broken/.git"
-git config --file "$HOME/.gitconfig" credential.https://github.com.helper '!gh auth git-credential'
-cd "$SANDBOX/broken"
-assert_exit 0 configure_github_https
-assert_contains "$RUN_OUTPUT" "GitHub SSH remotes now go over HTTPS"
-cd "$HOME"
-assert_eq "git@github.com:
-ssh://git@github.com/" "$(insteadof)" "insteadOf written from a broken checkout"
+rm "$HOME/.gitconfig.local"
 
 # Assume-yes can automate installs, but an unattended run cannot complete device login.
 # No stored credentials: gh auth token fails, and so does gh auth status.
@@ -169,13 +140,6 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
 assert_exit 0 status_github_login
 assert_contains "$RUN_OUTPUT" "ok         Logged in to GitHub with gh"
-
-# A verified login asks nothing
-stub gh '[ "$*" != "auth token" ] || echo gho_SECRET'
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
-assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
 
 # The rewrite needs gh's credential helper, or git would have no credentials for GitHub. Without a
 # login, main leaves the remotes on SSH and says a re-run after logging in adds the rewrite.

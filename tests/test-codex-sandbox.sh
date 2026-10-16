@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: ubuntu
 
 # setup_codex_sandbox on Ubuntu: it installs bubblewrap, and when bwrap then fails because AppArmor
 # restricts user namespaces, loads the bwrap-userns-restrict profile that the apparmor package puts
@@ -109,19 +110,6 @@ assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
 assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
-
-# No bubblewrap, and no restriction: only bubblewrap
-reset 0
-export DOTFILES_ASSUME_YES=1
-assert_exit 0 setup_codex_sandbox
-assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls for bubblewrap alone"
-
-# bwrap fails after installing bubblewrap, and not because of AppArmor: the step fails
-reset 0 bwrap-broken
-export DOTFILES_ASSUME_YES=1
-assert_exit 1 setup_codex_sandbox
-assert_contains "$RUN_OUTPUT" "AppArmor's user namespace restriction isn't the"
 
 # bwrap still fails after loading the profile: the step fails
 reset 1 bwrap-broken

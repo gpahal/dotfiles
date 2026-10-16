@@ -4,8 +4,9 @@
 set -euo pipefail
 
 # A step that didn't do its job fails, after doing what else it can; a declined confirm doesn't, and
-# neither does a run with nothing to do. Covers macos, zsh, ghostty, and git, with stubs for
-# defaults, chsh, snap, and gh.
+# neither does a run with nothing to do. Covers macos, zsh, and ghostty, with stubs for defaults,
+# chsh, and snap. test-macos-spotlight.sh and test-macos-activity-monitor.sh cover the macos step's
+# re-run.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -42,31 +43,15 @@ is_macos() { true; }
 # test-macos-spotlight.sh covers Spotlight's shortcut
 spotlight_shortcut_off() { true; }
 
-# First run sets everything and restarts Finder; the second has nothing to do
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Set com.apple.dock autohide to true"
-assert_file_contains "$STUB_LOG" "killall Dock"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
-assert_file_not_contains "$STUB_LOG" "killall"
-
 # A failed write fails the step, after the other writes and the restarts
-rm -f "$DEFAULTS_DIR"/*
 fail_defaults com.apple.finder
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't set com.apple.finder AppleShowAllFiles"
 assert_contains "$RUN_OUTPUT" "Set com.apple.dock autohide to true"
 assert_file_contains "$STUB_LOG" "killall Dock"
 
-# Nothing changed, but every write failed: not "already set"
-rm -f "$DEFAULTS_DIR"/*
-fail_defaults NSGlobalDomain com.apple.finder com.apple.desktopservices com.apple.dock \
-    com.apple.screencapture com.apple.TextEdit com.apple.ActivityMonitor
-assert_exit 1 main
-assert_not_contains "$RUN_OUTPUT" "already set"
-
 # A sandboxed app's default that can't be written is a manual step, not a failure
+rm -f "$DEFAULTS_DIR"/*
 fail_defaults com.apple.TextEdit
 mkdir -p "$HOME/Library/Containers/com.apple.TextEdit"
 assert_exit 0 main
@@ -114,17 +99,8 @@ stub chsh 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Run manually: chsh -s $SANDBOX/bin/zsh"
 unset SUDO_CACHED
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Run manually: chsh -s $SANDBOX/bin/zsh"
 stub chsh
 unset DOTFILES_ASSUME_YES
-
-# No zsh: the step fails before it sets up any file (test-step-prereqs.sh checks the rest)
-rm -rf "$HOME/.zshrc" "$HOME/.zsh"
-login_zsh_path() { return 1; }
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "zsh is missing"
-[ ! -e "$HOME/.zshrc" ] || fail "the zsh step wrote ~/.zshrc without zsh"
 
 # Already the system zsh: nothing to do
 current_login_shell() { echo /bin/zsh; }
@@ -144,17 +120,10 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "zsh is already the login shell."
 login_zsh_path() { echo /bin/zsh; }
 
-# Another zsh, such as Homebrew's, isn't the system one, so setup offers to switch
+# Another zsh, such as Homebrew's, isn't the system one, so status reports it
 current_login_shell() { echo /opt/homebrew/bin/zsh; }
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt/homebrew/bin/zsh"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Login shell left as /opt/homebrew/bin/zsh. To switch later, run: chsh -s /bin/zsh"
-: > "$STUB_LOG"
-export DOTFILES_ASSUME_YES=1
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "chsh -s /bin/zsh"
-unset DOTFILES_ASSUME_YES
 
 # --- ghostty ---
 # On Ubuntu. pkill is stubbed, so no running Ghostty gets a signal.
@@ -169,23 +138,14 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sudo apt-get install snapd"
 assert_eq "" "$(cmp "$REPO_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty" 2>&1)" "ghostty config copied"
 
-# Declined: succeeds
-stub snap 'exit 1'
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Left unchanged"
-
 # A failed install fails the step, after copying the config
+stub snap 'exit 1'
 rm -f "$GHOSTTY_DIR/config.ghostty"
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "sudo snap install ghostty --classic"
 assert_eq "" "$(cmp "$REPO_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty" 2>&1)" "ghostty config copied"
 unset DOTFILES_ASSUME_YES
-
-# Installed already: succeeds
-stub snap
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Ghostty already installed."
 
 # --- one file that can't be copied ---
 # The step carries on with the other files and the rest of its work, then fails. Here one
@@ -203,16 +163,5 @@ if [ "$(id -u)" -ne 0 ]; then
     [ -f "$HOME/.config/starship.toml" ] || fail "the zsh step stopped before starship.toml"
     assert_file_contains "$HOME/.zshrc" "source \$HOME/.zsh/main.zsh"
     chmod 644 "$HOME/.zsh/aliases.zsh"
-
-    stub gh 'exit 1'
-    load_script git/install.sh
-    mkdir -p "$HOME/.config/git"
-    printf 'mine\n' > "$HOME/.config/git/ignore"
-    chmod 444 "$HOME/.config/git/ignore"
-    assert_exit 1 main
-    [ -x "$HOME/.local/bin/git-wt" ] || fail "the git step stopped before git-wt"
-    [ -f "$HOME/.gitconfig" ] || fail "the git step stopped before ~/.gitconfig"
-    assert_eq "" "$(cmp "$REPO_DIR/git/gitconfig" "$HOME/.config/git/config" 2>&1)" "git config after a failed copy"
-    chmod 644 "$HOME/.config/git/ignore"
 fi
 test_done

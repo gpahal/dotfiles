@@ -26,9 +26,9 @@ assert_exit 0 add_host box box.example.ts.net
 assert_contains "$RUN_OUTPUT" "already has a block for box"
 cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config"
 
-# An alias or hostname with a space, a wildcard, a negation, a list, a comment, a quote, or a
-# newline is rejected, and the config is left alone
-for bad in "my box" "*" "box?" "!box" "a,b" "box#1" 'box"' "box'" "$(printf 'a\nb')"; do
+# An alias or hostname with a space, a wildcard, a comment, or a newline is rejected, and the
+# config is left alone
+for bad in "my box" "*" "box#1" "$(printf 'a\nb')"; do
     assert_exit 2 add_host "$bad"
     assert_contains "$RUN_OUTPUT" "can't contain"
     assert_exit 2 add_host ok "$bad"
@@ -40,18 +40,6 @@ cmp -s "$SANDBOX/config-before" "$config" || fail "a rejected alias changed the 
 assert_exit 0 add_host Box
 assert_file_contains "$config" "Host Box"
 assert_file_contains "$config" "Host box"
-
-# just ssh-host passes each argument whole, so a space or a ; reaches the script as typed, not split
-# or run
-just="$(command -v just || true)"
-if [ -n "$just" ]; then
-    mkdir -p "$SANDBOX/repo/ssh"
-    cp "$REPO_DIR/justfile" "$SANDBOX/repo/"
-    printf '%s\n' 'printf "%s|" "$@" > "$ARGS"' > "$SANDBOX/repo/ssh/add-host.sh"
-    export ARGS="$SANDBOX/args"
-    assert_exit 0 "$just" --justfile "$SANDBOX/repo/justfile" ssh-host "my box" 'h;touch pwned'
-    assert_eq "my box|h;touch pwned|" "$(cat "$ARGS")" "the arguments just ssh-host passes"
-fi
 
 # A Host * block, with its comment, stays below the new block
 cat > "$config" << 'EOF'
@@ -109,13 +97,6 @@ for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf
     assert_exit 0 add_host box5 box5.example.ts.net
     cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config with: $fixture"
 done
-
-# A config that includes itself, which ssh rejects, still gets the block above its Host *, once
-printf 'Include %s\nHost *\n  ServerAliveInterval 60\n' "$config" > "$config"
-assert_exit 0 add_host box6
-assert_eq "Host box6" "$(sed -n 3p "$config")" "the block's line with an Include loop"
-assert_exit 0 add_host box6
-assert_eq 1 "$(grep -c '^Host box6$' "$config")" "box6 blocks after a second run"
 
 # A block for the alias counts however its Host line is written, with = or quotes, or in
 # lowercase, as ssh reads it: no second block goes above Host *

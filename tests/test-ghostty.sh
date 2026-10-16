@@ -4,8 +4,10 @@
 set -euo pipefail
 
 # On macOS, the ghostty step copies the config and reloads running Ghostty windows with SIGUSR2
-# only when the config changed, and carries on when Ghostty isn't running. It installs nothing
-# there. On Ubuntu, it installs the snap when missing; test-step-failures.sh covers its failures.
+# only when the config changed, and carries on when Ghostty isn't running. Ghostty loads the files
+# in ~/Library/Application Support/com.mitchellh.ghostty after the repo's config.ghostty, so status
+# flags one that sets something the repo's config sets, and says nothing of one that only adds
+# settings. Ubuntu has no Application Support. test-step-failures.sh covers Ubuntu's snap install.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -37,15 +39,21 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Ghostty is not running; skipping reload."
 assert_eq "pkill -USR2 -x ghostty" "$(cat "$STUB_LOG")" "commands run with Ghostty not running"
 
-# --- Ubuntu: the snap is installed when missing ---
+# --- Application Support files ---
+support="$HOME/Library/Application Support/com.mitchellh.ghostty"
+mkdir -p "$support"
+run status
+assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty" "Ghostty status with no other config"
+
+# A setting the repo's config has overrides it. A keybind overrides only the same trigger.
+printf 'keybind = super+shift+equal=increase_font_size:1\nfont-size = 20\n' > "$support/config"
+printf 'keybind = super+k=clear_screen\nwindow-save-state = always\n' > "$support/config.ghostty"
+run status
+assert_contains "$RUN_OUTPUT" "missing    ~/Library/Application Support/com.mitchellh.ghostty/config: Ghostty loads it after config.ghostty, so it overrides the repo's font-size, keybind super+shift+equal; merge it into the repo's config or remove it"
+assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty/config.ghostty" "a file that only adds settings"
+stub snap 'exit 1'
 is_macos() { false; }
 is_ubuntu() { true; }
-stub pkill 'exit 1'
-stub snap 'exit 1'
-export DOTFILES_ASSUME_YES=1
-stub sudo
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo snap install ghostty --classic"
-unset DOTFILES_ASSUME_YES
+run status
+assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty"
 test_done

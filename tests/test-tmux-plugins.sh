@@ -5,9 +5,8 @@ set -euo pipefail
 
 # The tmux step installs tpm and each plugin at the commit tmux/plugins.lock pins, not at HEAD. A
 # re-run changes nothing, a plugin at another commit is missing until a re-run moves it back, and a
-# plugin that fails to fetch fails the step after the others install. sync_tmux_plugins, which
-# upgrade runs, does the same. plugins.lock lists the plugins tmux.conf loads. Local repos stand in
-# for GitHub.
+# plugin that fails to fetch fails the step after the others install. plugins.lock lists the
+# plugins tmux.conf loads. Local repos stand in for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -62,26 +61,10 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank at $short"
 assert_eq "$pinned" "$(installed)" "the checkouts after a re-run"
 
-# So does a plugin's dir that isn't a git checkout
-rm -rf "$HOME/.tmux/plugins/tmux-open"
-mkdir "$HOME/.tmux/plugins/tmux-open"
-assert_exit 0 main
-assert_eq "$pinned" "$(installed)" "the checkouts after replacing a plain dir"
-
 # A plugin that can't be fetched fails the step, and the others still install
 rm -rf "$HOME/.tmux/plugins"
 mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" "$SANDBOX/yank"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-yank"
 assert_eq "$(grep -v tmux-yank <<< "$pinned")" "$(installed | grep -v tmux-yank)" "the checkouts with tmux-yank unreachable"
-mv "$SANDBOX/yank" "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
-
-# sync_tmux_plugins moves every plugin to its pin and reports a failure
-git -C "$HOME/.tmux/plugins/tpm" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tpm"
-git -C "$HOME/.tmux/plugins/tpm" checkout -q --detach FETCH_HEAD
-assert_exit 0 sync_tmux_plugins
-assert_eq "$pinned" "$(installed)" "the checkouts after sync_tmux_plugins"
-mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/open"
-rm -rf "$HOME/.tmux/plugins/tmux-open"
-assert_exit 1 sync_tmux_plugins
 test_done

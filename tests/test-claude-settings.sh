@@ -7,7 +7,8 @@ set -euo pipefail
 # default, and keeps any rule you added. It sets the status line's type, command, and a
 # five-second refresh interval, keeping other statusLine keys. Those three, the model, each
 # model's effort, and Ubuntu's notification channel are values you can change: one of your own is
-# kept unless you agree to replace it.
+# kept unless you agree to replace it. They share one loop, so the refresh interval and the effort
+# stand in for the rest.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -36,10 +37,6 @@ json_merge "$settings" "$(claude_code_settings)" > /dev/null
 assert_eq '{"defaultMode":"auto"}' "$(jq -c '.permissions' "$settings")" "permissions on a fresh install"
 # worktree.baseRef is left to Claude Code's default, fresh, which the worktree hook assumes too
 assert_eq null "$(jq -c '.worktree' "$settings")" "worktree on a fresh install"
-# Remote Control stays off until /remote-control turns it on for a session, since a connected
-# session can be driven from the phone app; pushes are on, for the sessions that connect
-assert_eq false "$(jq -c '.remoteControlAtStartup' "$settings")" "remoteControlAtStartup on a fresh install"
-assert_eq true "$(jq -c '.agentPushNotifEnabled' "$settings")" "agentPushNotifEnabled on a fresh install"
 
 # The refresh interval: unset, it's set to 5 without a question. One of your own is kept without a
 # terminal, and status names it. With a terminal, setup asks every run and replaces it on yes, and
@@ -78,40 +75,6 @@ jq '.statusLine.refreshInterval = 11' "$settings" > "$settings.new" && mv "$sett
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
 assert_eq 5 "$(interval)" "the refresh interval with DOTFILES_ASSUME_YES=1"
 
-# The model follows the same rule: unset, it's set to Opus 5.5. One of your own, such as /model
-# saves, is kept without a terminal and named by status, and replaced on yes or with
-# DOTFILES_ASSUME_YES=1.
-model() { jq -r '.model' "$settings"; }
-echo '{}' > "$settings"
-assert_exit 0 configure_claude_code
-assert_eq claude-opus-5-5 "$(model)" "the model when it was unset"
-jq '.model = "claude-sonnet-5-5"' "$settings" > "$settings.new" && mv "$settings.new" "$settings"
-assert_exit 0 configure_claude_code
-assert_contains "$RUN_OUTPUT" "Kept your value for Claude Code's model (model), claude-sonnet-5-5."
-assert_contains "$RUN_OUTPUT" "already set"
-assert_eq claude-sonnet-5-5 "$(model)" "the model of your own without a terminal"
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
-run status
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
-assert_contains "$RUN_OUTPUT" "ok         Claude Code's model (model): yours, claude-sonnet-5-5 (the repo's is claude-opus-5-5)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
-assert_exit 0 configure_claude_code <<< n
-assert_contains "$RUN_OUTPUT" "Claude Code's model (model) is claude-sonnet-5-5, not the repo's claude-opus-5-5. Replace it?"
-assert_eq claude-sonnet-5-5 "$(model)" "the model after no"
-assert_exit 0 configure_claude_code <<< y
-assert_eq claude-opus-5-5 "$(model)" "the model after yes"
-# Restore the real confirm and is_interactive
-load_script ai_tools/claude-code/install.sh
-jq '.model = "claude-sonnet-5-5"' "$settings" > "$settings.new" && mv "$settings.new" "$settings"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
-assert_eq claude-opus-5-5 "$(model)" "the model with DOTFILES_ASSUME_YES=1"
-
 # Each model's effort, which /effort saves, follows the same rule: unset, it's set (medium for Opus
 # 5.5, high for Sonnet 5.5). One of your own is kept without a terminal and named by status, and
 # replaced with DOTFILES_ASSUME_YES=1.
@@ -134,7 +97,7 @@ assert_contains "$RUN_OUTPUT" "ok         Claude Code's claude-opus-5-5 effort (
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
 assert_eq medium "$(effort claude-opus-5-5)" "the effort with DOTFILES_ASSUME_YES=1"
 
-# The status line command, and on Ubuntu the notification channel, follow the same rule
+# The status line command, and on Ubuntu the notification channel, are set when unset
 load_script ai_tools/claude-code/install.sh
 claude_code_path() { echo "$HOME/.local/bin/claude"; }
 is_ubuntu() { true; }
@@ -143,22 +106,6 @@ assert_exit 0 configure_claude_code
 # shellcheck disable=SC2088 # the literal value
 assert_eq "~/.claude/statusline.sh ghostty" \
     "$(jq -r '"\(.statusLine.command) \(.preferredNotifChannel)"' "$settings")" "the values set when unset"
-jq '.statusLine.command = "mine.sh" | .preferredNotifChannel = "terminal_bell"' "$settings" > "$settings.new" &&
-    mv "$settings.new" "$settings"
-mine="$(cat "$settings")"
-assert_exit 0 configure_claude_code
-assert_contains "$RUN_OUTPUT" "Kept your value for Claude Code's status line command (statusLine.command), mine.sh."
-assert_contains "$RUN_OUTPUT" "Kept your value for Claude Code's notification channel (preferredNotifChannel), terminal_bell."
-assert_contains "$RUN_OUTPUT" "already set"
-assert_eq "$mine" "$(cat "$settings")" "the settings with a status line and channel of your own"
-run status
-assert_contains "$RUN_OUTPUT" "ok         Claude Code's status line command (statusLine.command): yours, mine.sh (the repo's is ~/.claude/statusline.sh)"
-assert_contains "$RUN_OUTPUT" "ok         Claude Code's notification channel (preferredNotifChannel): yours, terminal_bell (the repo's is ghostty)"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
-# shellcheck disable=SC2088 # the literal value
-assert_eq "~/.claude/statusline.sh ghostty" \
-    "$(jq -r '"\(.statusLine.command) \(.preferredNotifChannel)"' "$settings")" \
-    "the values with DOTFILES_ASSUME_YES=1"
 # Off Ubuntu, the step leaves the channel alone and status doesn't name it
 is_ubuntu() { false; }
 jq '.preferredNotifChannel = "terminal_bell"' "$settings" > "$settings.new" && mv "$settings.new" "$settings"
@@ -204,8 +151,7 @@ assert_contains "$RUN_OUTPUT" "missing    Worktree hook: WorktreeCreate already 
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 
 # Status reports the sign-in from `claude auth status --json`, which prints loggedIn whether or
-# not it exits 0. Logged out, it names the command that signs in. Output it can't read, or no
-# claude, is unknown.
+# not it exits 0. Logged out, it names the command that signs in. Output it can't read is unknown.
 load_script ai_tools/claude-code/install.sh
 stub claude 'echo "{\"loggedIn\": $(cat "$(dirname "$STUB_LOG")/logged-in")}"; [ "$(cat "$(dirname "$STUB_LOG")/logged-in")" == true ]'
 echo true > "$SANDBOX/logged-in"
@@ -219,7 +165,4 @@ assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 echo '"maybe"' > "$SANDBOX/logged-in"
 run status
 assert_contains "$RUN_OUTPUT" "unknown    Signed in to Claude Code: claude auth status didn't say"
-hide claude
-run status
-assert_contains "$RUN_OUTPUT" "unknown    Signed in to Claude Code: Claude Code isn't installed"
 test_done

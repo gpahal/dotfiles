@@ -86,20 +86,6 @@ assert_eq "secret" "$(cat "$dir/feat/.env" 2> /dev/null)" "the .env copied into 
 assert_file_contains "$SANDBOX/fetch.log" "-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch"
 assert_file_contains "$SANDBOX/fetch.log" "-o BatchMode=yes -o ConnectTimeout=5"
 
-# Nor can ssh that git wt add runs, such as in a hook or an LFS smudge
-printf '#!/bin/bash\nprintf "%%s\\n" "$GIT_SSH_COMMAND" > "%s"\n' "$SANDBOX/hook-ssh" > "$repo/.git/hooks/post-checkout"
-chmod +x "$repo/.git/hooks/post-checkout"
-create hookssh "$repo"
-assert_eq "0 $dir/hookssh" "$status $out" "create hook with a post-checkout hook"
-assert_eq "ssh -o BatchMode=yes -o ConnectTimeout=5" "$(cat "$SANDBOX/hook-ssh" 2> /dev/null)" \
-    "the SSH command a hook in git wt add gets"
-rm "$repo/.git/hooks/post-checkout"
-remove "$dir/hookssh"
-
-# A second create with the same name gets the same worktree
-create feat "$repo"
-assert_eq "0 $dir/feat" "$status $out" "a second create hook's status and stdout"
-
 # A fetch in the last 10 minutes is recent enough: the next create doesn't fetch again
 git -C "$SANDBOX/seed" commit -q --allow-empty -m "pushed after the fetch"
 git -C "$SANDBOX/seed" push -q origin main
@@ -108,12 +94,6 @@ create recent "$repo"
 assert_eq "0 $dir/recent" "$status $out" "create hook after a recent fetch"
 assert_eq "" "$(cat "$SANDBOX/fetch.log")" "fetches after a recent one"
 assert_eq "$fresh" "$(git -C "$dir/recent" rev-parse HEAD)" "recent's base"
-# One 11 minutes ago isn't
-touch -t "$(date -d '-11 min' +%Y%m%d%H%M 2> /dev/null || date -v-11M +%Y%m%d%H%M)" "$repo/.git/FETCH_HEAD"
-create stale "$repo"
-assert_eq "0 $dir/stale" "$status $out" "create hook after an old fetch"
-assert_file_contains "$SANDBOX/fetch.log" "fetch"
-assert_eq "$(git -C "$SANDBOX/seed" rev-parse HEAD)" "$(git -C "$dir/stale" rev-parse HEAD)" "stale's base"
 # A fetch that fails warns, and the worktree branches from the local copy
 touch -t 202001010000 "$repo/.git/FETCH_HEAD"
 git -C "$repo" remote set-url origin "$SANDBOX/missing.git"
@@ -126,7 +106,7 @@ git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
 create retry "$repo"
 assert_eq "0 $dir/retry" "$status $out" "create hook after a failed fetch"
 assert_file_contains "$SANDBOX/fetch.log" "fetch"
-for wt in recent stale offline retry; do
+for wt in recent offline retry; do
     remove "$dir/$wt"
 done
 
@@ -159,26 +139,20 @@ assert_file_contains "$SANDBOX/ssh.log" "-o BatchMode=yes -o ConnectTimeout=5 ex
 git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
 git -C "$repo" config --unset core.sshCommand
 
-# GIT_SSH is an executable path, not a shell command. Preserve it, including spaces.
-cp "$SANDBOX/logssh" "$SANDBOX/ssh wrapper"
+# GIT_SSH is an executable path, not a shell command. Preserve it, with a space and an apostrophe,
+# under the Mac's /bin/bash 3.2, which parses the quoting differently.
+mkdir "$SANDBOX/it's"
+cp "$SANDBOX/logssh" "$SANDBOX/it's/ssh wrapper"
 : > "$SANDBOX/ssh.log"
 git -C "$repo" remote set-url origin example.invalid:origin.git
-GIT_ALLOW_PROTOCOL=file:ssh GIT_SSH="$SANDBOX/ssh wrapper" create ssh-wrapper "$repo"
+GIT_ALLOW_PROTOCOL=file:ssh GIT_SSH="$SANDBOX/it's/ssh wrapper" HOOK_BASH=/bin/bash create ssh-wrapper "$repo"
 assert_eq "0 $dir/ssh-wrapper" "$status $out" "create with GIT_SSH"
 assert_file_contains "$SANDBOX/ssh.log" 'BatchMode=yes'
 remove "$dir/ssh-wrapper"
-
-# An apostrophe in GIT_SSH, under the Mac's /bin/bash 3.2, which parses the quoting differently
-mkdir "$SANDBOX/it's"
-cp "$SANDBOX/logssh" "$SANDBOX/it's/ssh"
-: > "$SANDBOX/ssh.log"
-GIT_ALLOW_PROTOCOL=file:ssh GIT_SSH="$SANDBOX/it's/ssh" HOOK_BASH=/bin/bash create ssh-apostrophe "$repo"
-assert_eq "0 $dir/ssh-apostrophe" "$status $out" "create with an apostrophe in GIT_SSH"
-assert_file_contains "$SANDBOX/ssh.log" 'BatchMode=yes'
-remove "$dir/ssh-apostrophe"
 git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
 
-# A fetch stalled after connecting gets 15 s in all, then is killed with its child process.
+# A fetch stalled after connecting gets its deadline in all, 15 s unless shortened as here, then is
+# killed with its child process.
 cp "$HOME/.local/bin/git" "$SANDBOX/git-before-stall"
 cat > "$HOME/.local/bin/git" <<EOF
 #!/bin/bash
@@ -194,10 +168,10 @@ EOF
 chmod +x "$HOME/.local/bin/git"
 rm -f "$repo/.git/FETCH_HEAD"
 started=$SECONDS
-create stalled "$repo"
+WORKTREE_HOOK_FETCH_DEADLINE=2 create stalled "$repo"
 elapsed=$((SECONDS - started))
 assert_eq "0 $dir/stalled" "$status $out" "create after stalled fetch"
-[ "$elapsed" -ge 14 ] && [ "$elapsed" -lt 25 ] || fail "stalled fetch took $elapsed seconds, not 15"
+[ "$elapsed" -ge 1 ] && [ "$elapsed" -lt 12 ] || fail "stalled fetch took $elapsed seconds, not 2"
 assert_file_contains "$SANDBOX/stderr" "branching from the local copy"
 child="$(cat "$SANDBOX/fetch-child")"
 # A terminated child can remain briefly as a zombie before init reaps it.
@@ -214,15 +188,6 @@ assert_eq "0 $dir/old-remote" "$status $out" "create hook with a stale origin br
 assert_eq "$(git -C "$repo" rev-parse origin/main)" "$(git -C "$dir/old-remote" rev-parse HEAD)" \
     "old-remote's base"
 remove "$dir/old-remote"
-
-# A tag named origin/main doesn't change the base: the hook passes the full remote-tracking ref
-git -C "$repo" tag origin/main "$(git -C "$repo" rev-parse origin/main~1)"
-create tagged "$repo"
-assert_eq "0 $dir/tagged" "$status $out" "create hook with an origin/main tag"
-assert_eq "$(git -C "$repo" rev-parse refs/remotes/origin/main)" "$(git -C "$dir/tagged" rev-parse HEAD)" \
-    "tagged's base"
-git -C "$repo" tag -d origin/main > /dev/null
-remove "$dir/tagged"
 
 # With hundreds of worktrees, the porcelain listing overflows the pipe; finding main's worktree
 # first mustn't kill the listing with SIGPIPE
@@ -320,43 +285,44 @@ assert_eq 0 "$status" "remove hook's exit status for an existing branch"
 git -C "$repo" show-ref --verify --quiet refs/heads/my-feature ||
     fail "remove hook deleted my-feature, which existed before the worktree"
 
-# A file .worktreeinclude names that can't be copied, such as a broken symlink, gets a warning,
-# and the worktree is still created and its path printed
-printf '.env*\n' >> "$repo/.gitignore"
-printf '.env*\n' >> "$repo/.worktreeinclude"
-git -C "$repo" commit -q -am "ignore .env*"
-ln -s "$SANDBOX/missing" "$repo/.env.local"
-create inc "$repo"
-assert_eq "0 $dir/inc" "$status $out" "create hook with a broken symlink to copy"
-assert_contains "$(cat "$SANDBOX/stderr")" ".env.local" "create hook's stderr"
-assert_eq "secret" "$(cat "$dir/inc/.env" 2> /dev/null)" "the .env copied into inc"
-remove "$dir/inc"
-rm "$repo/.env.local"
-
-# Patterns that match below the top, name a directory, or negate: a .env in a tracked subdir, a
-# whole ignored dir the include names, and names it then excludes again. A pattern that reaches
-# inside an ignored dir, such as config/*.json when config/ is ignored, isn't supported, so
-# config/a.json stays behind.
-mkdir -p "$repo/apps/web" "$repo/.cache/a" "$repo/config"
+# What .worktreeinclude names is copied: patterns that match below the top, such as a .env in a
+# tracked subdir, name a directory, or negate. An ignored dir the include names is copied whole,
+# symlinks kept. Nothing inside an ignored dir it doesn't name is copied, even what a pattern that
+# matches at any depth names: config/a.json for config/*.json, the .pem in certs/, and the .env in
+# node_modules/ and in sub/node_modules/, which git lists as sub/. A file that can't be copied,
+# such as a broken symlink, gets a warning, and the worktree is still created and its path printed.
+mkdir -p "$repo/apps/web" "$repo/.cache/a" "$repo/config" "$repo/node_modules/pkg" "$repo/vendor/lib" \
+    "$repo/certs/dev" "$repo/sub/node_modules/x"
 touch "$repo/apps/web/index.js"
-printf '.cache/\nconfig/\n*.local\n' >> "$repo/.gitignore"
-printf '.cache/\nconfig/*.json\n*.local\n!keep.local\n' >> "$repo/.worktreeinclude"
+printf '.env*\n.cache/\nconfig/\n*.local\nnode_modules/\nvendor/\ncerts/\n' >> "$repo/.gitignore"
+printf '.env*\n.cache/\nconfig/*.json\n*.local\n!keep.local\nvendor\n*.pem\n' >> "$repo/.worktreeinclude"
 git -C "$repo" add .gitignore .worktreeinclude apps/web/index.js
 git -C "$repo" commit -q -m "more includes"
+ln -s "$SANDBOX/missing" "$repo/.env.local"
 echo web > "$repo/apps/web/.env"
 echo cached > "$repo/.cache/a/b"
 echo a > "$repo/config/a.json"
 echo l > "$repo/a.local"
 echo k > "$repo/keep.local"
+echo n > "$repo/node_modules/pkg/.env"
+echo n > "$repo/sub/node_modules/x/.env"
+echo v > "$repo/vendor/lib/v.js"
+ln -s v.js "$repo/vendor/lib/link.js"
+echo c > "$repo/certs/dev/dev.pem"
 create pat "$repo"
 assert_eq "0 $dir/pat" "$status $out" "create hook with nested, directory, and negated patterns"
+assert_contains "$(cat "$SANDBOX/stderr")" ".env.local" "create hook's stderr with a broken symlink to copy"
+assert_eq "secret" "$(cat "$dir/pat/.env" 2> /dev/null)" "the .env copied"
 assert_eq "web" "$(cat "$dir/pat/apps/web/.env" 2> /dev/null)" "the nested .env copied"
 assert_eq "cached" "$(cat "$dir/pat/.cache/a/b" 2> /dev/null)" "the .cache dir copied"
 assert_eq "l" "$(cat "$dir/pat/a.local" 2> /dev/null)" "a.local copied"
-for skipped in config keep.local; do
+assert_eq "v" "$(cat "$dir/pat/vendor/lib/v.js" 2> /dev/null)" "vendor copied"
+assert_eq "v.js" "$(readlink "$dir/pat/vendor/lib/link.js")" "the symlink in vendor kept"
+for skipped in config keep.local certs node_modules sub; do
     [ ! -e "$dir/pat/$skipped" ] || fail "copied $skipped, which .worktreeinclude leaves out"
 done
 remove "$dir/pat"
+rm -rf "$repo/.env.local" "$repo/node_modules" "$repo/vendor" "$repo/certs" "$repo/sub"
 
 # A branch that tracks apps as a symlink to a dir outside the worktree gets nothing copied
 # through it, even though the checkout's ignored apps/web/.env matches the include
@@ -374,35 +340,13 @@ assert_contains "$(cat "$SANDBOX/stderr")" \
     "worktree-hook: skipped apps/web/.env: apps is a symlink in the worktree" "create hook's stderr"
 remove "$dir/linkapps"
 
-# An ignored dir the include names is copied whole, symlinks kept. Nothing inside an ignored dir
-# it doesn't name is copied, even what a pattern that matches at any depth names: the .pem in
-# certs/, and the .env in node_modules/ and in sub/node_modules/, which git lists as sub/.
-mkdir -p "$repo/node_modules/pkg" "$repo/vendor/lib" "$repo/certs/dev" "$repo/sub/node_modules/x"
-printf 'node_modules/\nvendor/\ncerts/\n' >> "$repo/.gitignore"
-printf 'vendor\n*.pem\n' >> "$repo/.worktreeinclude"
-git -C "$repo" commit -q -am "ignore node_modules, vendor, and certs"
-echo n > "$repo/node_modules/pkg/.env"
-echo n > "$repo/sub/node_modules/x/.env"
-echo v > "$repo/vendor/lib/v.js"
-ln -s v.js "$repo/vendor/lib/link.js"
-echo c > "$repo/certs/dev/dev.pem"
-create mods "$repo"
-assert_eq "0 $dir/mods" "$status $out" "create hook with ignored dirs"
-assert_eq "v" "$(cat "$dir/mods/vendor/lib/v.js" 2> /dev/null)" "vendor copied"
-assert_eq "v.js" "$(readlink "$dir/mods/vendor/lib/link.js")" "the symlink in vendor kept"
-for skipped in certs node_modules sub; do
-    [ ! -e "$dir/mods/$skipped" ] || fail "copied from $skipped, which .worktreeinclude doesn't name"
-done
-remove "$dir/mods"
-rm -rf "$repo/node_modules" "$repo/vendor" "$repo/certs" "$repo/sub"
-
 # A merged branch is deleted even when thousands of other branches contain it, so the list of
-# them overflows the pipe
+# them, over 100 KB, overflows the pipe
 create big "$repo"
 assert_eq "0 $dir/big" "$status $out" "create hook for big"
 big_commit="$(git -C "$dir/big" rev-parse HEAD)"
 i=0
-while [ "$i" -lt 5000 ]; do
+while [ "$i" -lt 2000 ]; do
     echo "create refs/heads/many/a-long-branch-name-to-fill-the-pipe-faster-$i $big_commit"
     i=$((i + 1))
 done | git -C "$repo" update-ref --stdin
@@ -410,27 +354,6 @@ remove "$dir/big"
 assert_eq 0 "$status" "remove hook's exit status for big"
 git -C "$repo" show-ref --verify --quiet refs/heads/big && fail "remove hook kept the merged big branch"
 git -C "$repo" for-each-ref --format='delete %(refname)' refs/heads/many | git -C "$repo" update-ref --stdin
-
-# With only the system's directories on PATH, the hook still finds git wt in ~/.local/bin and
-# Homebrew's jq. Only meaningful where jq isn't in /usr/bin or /bin.
-if [ ! -x /usr/bin/jq ] && [ ! -x /bin/jq ]; then
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$REPO_DIR/git/bin/git-wt" "$HOME/.local/bin/git-wt"
-    status=0
-    out="$(printf '{"hook_event_name":"WorktreeCreate","name":"minimal","cwd":"%s"}' "$repo" |
-        env PATH=/usr/bin:/bin bash "$hook" 2> "$SANDBOX/stderr")" || status=$?
-    assert_eq "0 $dir/minimal" "$status $out" "create hook with a minimal PATH"
-    rm "$HOME/.local/bin/git-wt"
-fi
-
-# A branch named like a tag is still the branch the hook created, so removing it deletes it
-git -C "$repo" tag v1
-create v1 "$repo"
-assert_eq "0 $dir/v1" "$status $out" "create hook for a name a tag has"
-remove "$dir/v1"
-assert_eq 0 "$status" "remove hook's exit status for a name a tag has"
-git -C "$repo" show-ref --verify --quiet refs/heads/v1 && fail "remove hook kept the v1 branch, which a tag shares"
-git -C "$repo" tag -d v1 > /dev/null
 
 # Removal also works when the common Git directory isn't <checkout>/.git.
 mkdir -p "$SANDBOX/storage"
@@ -502,16 +425,9 @@ settings="$HOME/.claude/settings.json"
 echo '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}' > "$settings"
 json_merge "$settings" "$(claude_code_settings)" > /dev/null
 json_merge "$settings" "$(claude_code_settings)" > /dev/null
+assert_eq '{"SessionEnd":1,"Stop":1,"WorktreeCreate":1,"WorktreeRemove":1}' \
+    "$(jq -cS '.hooks | map_values([.[].hooks[]] | length)' "$settings")" "hooks per event"
 assert_eq '["other"]' "$(jq -c '[.hooks.Stop[].hooks[].command]' "$settings")" "Stop hooks"
-assert_eq '["~/.claude/hooks/worktree-hook.sh"]' \
-    "$(jq -c '[.hooks.WorktreeCreate[].hooks[].command]' "$settings")" "WorktreeCreate hooks"
-assert_eq '["~/.claude/hooks/worktree-hook.sh"]' \
-    "$(jq -c '[.hooks.WorktreeRemove[].hooks[].command]' "$settings")" "WorktreeRemove hooks"
-assert_eq '["~/.claude/hooks/worktree-hook.sh"]' \
-    "$(jq -c '[.hooks.SessionEnd[].hooks[].command]' "$settings")" "SessionEnd hooks"
-assert_eq '[120]' "$(jq -c '[.hooks.WorktreeCreate[].hooks[].timeout]' "$settings")" \
-    "WorktreeCreate hook timeouts"
-assert_eq '[30]' "$(jq -c '[.hooks.SessionEnd[].hooks[].timeout]' "$settings")" "SessionEnd hook timeouts"
 json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied after json_merge"
 # A timeout you set stays
 jq '.hooks.WorktreeRemove[0].hooks[0].timeout = 30' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"

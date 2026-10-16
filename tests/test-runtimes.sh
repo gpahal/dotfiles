@@ -5,8 +5,8 @@ set -euo pipefail
 
 # The runtimes step sets mise's globals when they're unset, asks before replacing ones you set,
 # installs rustup only when ~/.cargo/bin/rustup isn't there, sets or repairs Rust's default
-# toolchain, and still sets up Rust when mise fails, then fails. Without mise it fails before
-# installing anything. mise, and curl, which fetches the rustup installer, are stubbed.
+# toolchain, and still sets up Rust when mise fails, then fails. test-step-prereqs.sh covers it
+# without mise. mise, and curl, which fetches the rustup installer, are stubbed.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -102,9 +102,9 @@ assert_file_contains "$STUB_LOG" "mise use --global node@lts go@latest"
 assert_eq "" "$(grep '^mise-cwd ' "$STUB_LOG" | grep -vxF "mise-cwd $HOME" || true)" "dirs mise ran in"
 grep -q '^mise-cwd ' "$STUB_LOG" || fail "the mise stub didn't log its dir"
 
-# A global you set yourself is a value you can change: without a terminal it's kept, and status
-# names it. With one, setup asks every run, and replaces it on yes. DOTFILES_ASSUME_YES=1 answers
-# yes. A global that's unset is set without asking, and one that's the repo's is left alone.
+# A global you set yourself, here node's, is a value you can change: without a terminal it's kept,
+# and status names it. With one, setup asks every run, and replaces it on yes. A global that's
+# unset is set without asking, and one that's the repo's is left alone.
 touch "$GLOBALS_FILE"
 : > "$STUB_LOG"
 export MISE_NODE=22
@@ -134,9 +134,6 @@ assert_file_not_contains "$STUB_LOG" "go@latest"
 # lib/common.sh brings back the real confirm and is_interactive
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "mise use --global node@lts"
 # Unset: set without a question, alongside a kept custom value
 rm "$GLOBALS_FILE"
 : > "$STUB_LOG"
@@ -147,39 +144,6 @@ assert_contains "$RUN_OUTPUT" "Set mise's global go to latest."
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    mise's global go: not set; the repo's is latest"
 unset MISE_NODE
-
-# The same for go: kept without a terminal, kept on no, replaced on yes and with
-# DOTFILES_ASSUME_YES=1
-touch "$GLOBALS_FILE"
-export MISE_GO=1.22
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Kept your value for mise's global go, 1.22. The repo's is latest."
-assert_contains "$RUN_OUTPUT" "mise's global node is already lts."
-assert_file_not_contains "$STUB_LOG" "mise use"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         mise's global go: yours, 1.22 (the repo's is latest)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
-: > "$STUB_LOG"
-assert_exit 0 main <<< n
-assert_contains "$RUN_OUTPUT" "mise's global go is 1.22, not the repo's latest. Replace it?"
-assert_file_not_contains "$STUB_LOG" "mise use"
-assert_exit 0 main <<< y
-assert_file_contains "$STUB_LOG" "mise use --global go@latest"
-assert_file_not_contains "$STUB_LOG" "node@lts"
-load_script lib/common.sh
-export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "mise use --global go@latest"
-unset MISE_GO
-rm "$GLOBALS_FILE"
 
 # MISE_GLOBAL_CONFIG_FILE names the global config, which is read by file
 touch "$GLOBALS_FILE" "$SANDBOX/global.toml"
@@ -261,11 +225,4 @@ rm "$HOME/.cargo/bin/rustup"
 cp "$RUST_STUB" "$STUB_DIR/rustup"
 assert_exit 1 rustup_installed
 rm "$STUB_DIR/rustup"
-
-# A missing mise fails the step before it installs anything
-rm "$STUB_DIR/mise"
-: > "$STUB_LOG"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "mise"
-assert_file_not_contains "$STUB_LOG" "rustup-init"
 test_done

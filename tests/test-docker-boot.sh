@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# os: ubuntu
 
 # Docker starts at boot, so containers with a restart policy come back after a reboot:
 # docker.service is enabled, and docker.socket is enabled and listening. The docker step enables

@@ -38,8 +38,6 @@ fake_tmux_plugins
 
 assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
 assert_contains "$RUN_OUTPUT" "Copied"
-# Only macOS gets the keychain's SSH block
-[ "$(uname -s)" != Darwin ] || assert_contains "$RUN_OUTPUT" "Added a Host * block"
 
 # The second run copies and adds nothing
 assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
@@ -61,20 +59,4 @@ if [ "$(uname -s)" != Darwin ]; then
   missing    GitHub SSH remotes go over HTTPS, through gh's credential helper (a re-run after gh auth login and gh auth setup-git adds it)"
 fi
 assert_eq "$expected" "$items" "status items that need attention"
-
-# Logged in, the git step sets up gh's credential helper once, and status is all set. Like gh,
-# the stub clears the helpers before it with an empty one, such as macOS's osxkeychain.
-stub gh 'case "$1 $2" in
-    "auth status" | "auth token") exit 0 ;;
-    "auth setup-git")
-        git config --global --add credential.https://github.com.helper ""
-        git config --global --add credential.https://github.com.helper "!gh auth git-credential"
-        ;;
-    *) exit 1 ;;
-esac'
-assert_exit 0 bash "$REPO_DIR/setup.sh" git
-assert_contains "$RUN_OUTPUT" "Set git to use gh for GitHub credentials"
-assert_exit 0 bash "$REPO_DIR/setup.sh" git
-assert_contains "$RUN_OUTPUT" "git already uses gh for GitHub credentials"
-assert_exit 0 bash "$REPO_DIR/setup.sh" --status "${STEPS[@]}"
 test_done

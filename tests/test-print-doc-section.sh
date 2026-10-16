@@ -45,9 +45,4 @@ assert_eq '  - Enable Ghostty notifications (see README.md), in the list (see RE
 
 run print_doc_section "$DOTFILES_DIR/sub/README.md" "## Manual steps"
 assert_eq '  - See the main steps (see README.md) and manual Steps (see README.md).' "$RUN_OUTPUT" "a link up to another doc"
-
-# A heading with a backslash is found
-printf '%s\n' '## A \ B' '' 'text' '## Next' > "$DOTFILES_DIR/doc.md"
-run print_doc_section "$DOTFILES_DIR/doc.md" '## A \ B'
-assert_eq "  text" "$RUN_OUTPUT" "a heading with a backslash"
 test_done

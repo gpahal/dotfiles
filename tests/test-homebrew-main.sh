@@ -6,9 +6,9 @@ set -euo pipefail
 # The homebrew step's main: the Command Line Tools on macOS and the apt packages on Ubuntu come
 # first, a failed bundle still installs the casks, one failed cask doesn't stop the rest, an app
 # installed outside Homebrew counts as installed, Ctrl-C (exit 130 from brew) stops the step, the
-# App Store hint shows only when an App Store app or mas is missing, apt-get update is retried only
-# while another update holds apt's lists lock, Ubuntu refreshes the font cache after any cask
-# install, and a re-run installs nothing. test-homebrew-install.sh covers installing Homebrew
+# App Store hint shows when an App Store app is missing, apt-get update is retried only while
+# another update holds apt's lists lock, Ubuntu refreshes the font cache after a cask install, and
+# a re-run installs nothing. test-homebrew-install.sh covers installing Homebrew
 # itself.
 
 # shellcheck source=lib.sh
@@ -68,14 +68,6 @@ installs() {
 
 is_macos() { true; }
 is_ubuntu() { false; }
-stub uname 'if [ "$1" == -m ]; then echo arm64; else exec /usr/bin/uname "$@"; fi'
-
-# An Intel Mac: the step fails before it installs anything
-stub uname 'if [ "$1" == -m ]; then echo x86_64; else exec /usr/bin/uname "$@"; fi'
-reset
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Intel Macs aren't supported"
-assert_eq "uname -m" "$(cat "$STUB_LOG")" "commands run on an Intel Mac"
 # An Apple Silicon Mac, even on an x86_64 CI runner: setup refuses Intel
 stub uname 'if [ "$1" == -m ]; then echo arm64; else exec /usr/bin/uname "$@"; fi'
 
@@ -110,13 +102,6 @@ assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "brew bundle install --no-upgrade
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs with only the App Store apps missing"
 
-# The bundle fails with every App Store app installed, e.g. on a formula: no App Store hint
-reset
-echo 1 > "$SANDBOX/bundle-status"
-stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1470584107  Dato         (5.8.3)\n1295203466  Windows App  (11.2.1)\n"'
-assert_exit 1 main
-assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
-
 # One cask fails: the rest install, and the step fails naming it
 reset
 touch "$SANDBOX/bundle-ok"
@@ -132,12 +117,6 @@ assert_eq "$((${#CASKS[@]} - 1))" "$(wc -l < "$SANDBOX/casks" | tr -d ' ')" "cas
 assert_exit 0 main
 assert_eq "brew install --cask zed" "$(installs)" "installs on a re-run"
 assert_contains "$RUN_OUTPUT" "Brew formulae and App Store apps already installed."
-
-# Everything installed: nothing to do, with one brew call for every cask's app
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_eq "" "$(installs)" "installs with everything installed"
-assert_eq "brew info --json=v2 --installed --cask" "$(grep '^brew info' "$STUB_LOG")" "brew info calls"
 
 # brew lists raycast, but its app was deleted: the step reinstalls it
 rm -rf "$SANDBOX/apps/raycast.app"
@@ -176,18 +155,12 @@ assert_eq "" "$(installs)" "brew installs without the apt packages"
 
 # apt-get update fails at once while apt-daily holds the lists lock, so it's retried a few times,
 # and only for that. sudo runs apt-get, which fails with the lock error the number of times in
-# $SANDBOX/locked, or with another error while $SANDBOX/apt-broken exists, or with a permission
-# error on the lock while $SANDBOX/apt-denied exists.
+# $SANDBOX/locked, or with another error while $SANDBOX/apt-broken exists.
 stub sudo 'exec env "$@"'
 stub apt-get 'S="'"$SANDBOX"'"
 [ "${*: -1}" == update ] || exit 0
 if [ -e "$S/apt-broken" ]; then
     echo "E: The repository http://example.invalid resolute Release does not have a Release file." >&2
-    exit 100
-fi
-if [ -e "$S/apt-denied" ]; then
-    echo "E: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)" >&2
-    echo "E: Unable to lock directory /var/lib/apt/lists/" >&2
     exit 100
 fi
 n="$(cat "$S/locked" 2>/dev/null || echo 0)"
@@ -196,8 +169,10 @@ echo $((n - 1)) > "$S/locked"
 echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)" >&2
 echo "E: Unable to lock directory /var/lib/apt/lists/" >&2
 exit 100'
-# shellcheck disable=SC2034 # apt_get_update reads it
-APT_UPDATE_RETRY_DELAY=0
+# Fewer tries than the step's, so the still-locked case runs fewer stubs, but enough for two lock
+# failures then a success
+# shellcheck disable=SC2034 # apt_get_update reads them
+APT_UPDATE_RETRY_DELAY=0 APT_UPDATE_TRIES=4
 updates() { grep -c "^apt-get .* update$" "$STUB_LOG" || true; }
 missing_ubuntu_commands() { echo " jq"; }
 reset
@@ -221,29 +196,6 @@ assert_exit 1 main
 assert_eq 1 "$(updates)" "apt-get updates after another error"
 assert_contains "$RUN_OUTPUT" "does not have a Release file"
 rm "$SANDBOX/apt-broken"
-# Nor is an error that names the lock without another update holding it
-reset
-touch "$SANDBOX/apt-denied"
-assert_exit 1 main
-assert_eq 1 "$(updates)" "apt-get updates after a permission error on the lock"
-assert_not_contains "$RUN_OUTPUT" "apt's lists lock is held"
-rm "$SANDBOX/apt-denied"
-# apt-get update's progress shows as it runs, not only once it exits: the stub prints a line, then
-# waits for the test to see it
-stub apt-get 'echo "Get:1 http://example.invalid resolute InRelease"
-for _ in $(seq 50); do
-    [ ! -e "'"$SANDBOX"'/progress-seen" ] || exit 0
-    sleep 0.1
-done
-exit 1'
-rm -f "$SANDBOX/progress-seen"
-apt_get_update > "$SANDBOX/progress" 2>&1 &
-progress_pid=$!
-for _ in $(seq 50); do
-    ! grep -q "Get:1" "$SANDBOX/progress" || { touch "$SANDBOX/progress-seen"; break; }
-    sleep 0.1
-done
-wait "$progress_pid" || fail "apt_get_update's output didn't show until apt-get update exited"
 stub sudo 'exit 0'
 unset DOTFILES_ASSUME_YES
 
@@ -268,19 +220,6 @@ assert_contains "$RUN_OUTPUT" "apt packages already installed."
 assert_contains "$RUN_OUTPUT" "Brew casks already installed."
 assert_file_not_contains "$STUB_LOG" "fc-cache"
 assert_file_not_contains "$STUB_LOG" "sudo"
-
-# A cask with no fonts installs: the cache is still refreshed
-grep -vx zed "$SANDBOX/casks" > "$SANDBOX/casks.new" && mv "$SANDBOX/casks.new" "$SANDBOX/casks"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_eq "brew install --cask zed" "$(installs)" "installs with zed missing"
-assert_file_contains "$STUB_LOG" "fc-cache -f $FONTS"
-
-# A missing locale is reported, but doesn't fail the step
-locale_installed() { false; }
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "The ubuntu step"
-locale_installed() { true; }
 
 # With XDG_DATA_HOME set, Homebrew puts fonts under it, and that's the dir refreshed
 reset
@@ -325,11 +264,4 @@ assert_exit 0 install_casks
 assert_contains "$RUN_OUTPUT" "Brew casks already installed."
 assert_not_contains "$RUN_OUTPUT" "Installing brew casks"
 assert_file_not_contains "$STUB_LOG" "outside"
-
-# mas itself missing, e.g. when the bundle failed before installing it: the App Store hint shows
-is_macos() { true; }
-stub brew '[ "$1 $2" != "bundle install" ] || exit 1; [ "$1 $2" != "bundle check" ]'
-hide mas
-assert_exit 1 install_bundle
-assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 test_done

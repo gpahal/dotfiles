@@ -4,8 +4,8 @@
 set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin and restarts a running Stream Deck only when
-# the plugin changed, and carries on when Stream Deck isn't running. On Ubuntu, it skips. The
-# step lists every file in the plugin, and the manifest's actions match open-in's targets.
+# the plugin changed, and carries on when Stream Deck isn't running. The step lists every file in
+# the plugin, and the manifest's actions match open-in's targets.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -60,15 +60,6 @@ stub pkill
 stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
-
-# --- Ubuntu: nothing to do ---
-is_macos() { false; }
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Stream Deck has no Linux app; skipping."
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "skipped    Stream Deck plugin"
-assert_eq "" "$(cat "$STUB_LOG")" "commands run on Ubuntu"
 
 # The manifest's actions are open-in's targets, and their images are in the plugin
 if command -v jq &> /dev/null; then

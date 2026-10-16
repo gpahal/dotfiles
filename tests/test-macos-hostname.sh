@@ -2,6 +2,7 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
+# os: macos
 
 # The macos step sets HostName to LocalHostName when it's unset or has characters a URL can't
 # hold, after asking, since Ghostty drops an OSC 7 folder report whose host is such a name. A

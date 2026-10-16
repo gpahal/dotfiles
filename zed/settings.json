@@ -10,6 +10,8 @@
   // Homebrew updates Zed (through `upgrade`), so Zed's own updater stays off
   "auto_update": false,
   "cli_default_open_behavior": "new_window",
+  // The Stream Deck plugin (stream-deck/) reads the open file's path from the window title
+  "window_title_format": "${projectName}${separator}${filePath}",
   "disable_ai": true,
   "project_panel": {
     "dock": "left"

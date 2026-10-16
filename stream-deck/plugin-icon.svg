@@ -1,0 +1,10 @@
+<!-- The plugin's icon. Stream Deck needs it as PNGs: com.gpahal.dotfiles.sdPlugin/images/plugin.png
+  at 256 px and plugin@2x.png at 512 px. Headless Chrome renders them: screenshot this file with a
+  256x256 window, a transparent background, and a device scale factor of 1, then 2. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="48" fill="#18181b"/>
+  <rect x="48" y="48" width="72" height="72" rx="16" fill="#3b82f6"/>
+  <rect x="136" y="48" width="72" height="72" rx="16" fill="#8b5cf6"/>
+  <rect x="48" y="136" width="72" height="72" rx="16" fill="#22c55e"/>
+  <rect x="136" y="136" width="72" height="72" rx="16" fill="#52525b"/>
+</svg>

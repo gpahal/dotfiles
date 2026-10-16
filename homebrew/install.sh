@@ -38,6 +38,7 @@ CASKS=(
     appcleaner
     the-unarchiver
     logi-options+
+    elgato-stream-deck
 )
 
 # Casks with Linux builds that Ubuntu gets too. Fonts install into $XDG_DATA_HOME/fonts, or

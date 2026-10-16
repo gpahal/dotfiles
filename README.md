@@ -63,6 +63,7 @@ bash setup.sh
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
 | `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
+| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and restarts Stream Deck to load it. macOS only |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets macOS defaults. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
@@ -215,6 +216,21 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
 - Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
+- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys read
+
+### Stream Deck
+
+macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dotfiles** category has three actions that act on the app in front:
+
+| Key | From Ghostty | From Zed | From Finder |
+| :- | :- | :- | :- |
+| **Finder** | Opens the tab's folder | Reveals the open file | Opens the selected folder or reveals the selected file, or opens the window's folder |
+| **Editor** | Opens the tab's folder in Zed | Shows the open file | Opens the selection, or the window's folder, in Zed |
+| **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, or the selected file's folder |
+
+Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to `~/Library/Logs/dotfiles-stream-deck.log`.
+
+Stream Deck runs the plugin's `bin/open-in`, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title, and Automation lets it control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup.
 
 ### tmux
 
@@ -317,6 +333,7 @@ macOS only. Installed with brew casks:
 - [AppCleaner](https://freemacsoft.net/appcleaner/): app uninstaller
 - [The Unarchiver](https://theunarchiver.com/): opens any archive format
 - [Logi Options+](https://www.logitech.com/software/logi-options-plus.html): Logitech device settings. The `logitech` step installs Solaar on Ubuntu instead
+- [Elgato Stream Deck](https://www.elgato.com/s/downloads): Stream Deck keys, with the [Stream Deck](#stream-deck) plugin
 
 Installed from the Mac App Store with mas, once you're signed in to the App Store and have bought the paid ones (see [First run](#macos)):
 
@@ -363,25 +380,26 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
+13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, and **Terminal** from the **Dotfiles** category onto keys. Press each once with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title.
 
 **Shell**
 
-13. Run `atuin import auto` once to bring your zsh history into Atuin.
-14. Run `:GoInstallBinaries` in vim once for vim-go's tools.
+14. Run `atuin import auto` once to bring your zsh history into Atuin.
+15. Run `:GoInstallBinaries` in vim once for vim-go's tools.
 
 **Accounts and keys**
 
-15. Sign in to the Tailscale app with the account the Ubuntu machine and your phone use, and approve the VPN configuration it asks for.
-16. Add your Google account to Calendar and Contacts.
-17. In Google Chrome, sign in to the sites you want the agents to use.
-18. If you skipped the GitHub login during setup, run `gh auth login`, then `gh auth setup-git`.
-19. Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
+16. Sign in to the Tailscale app with the account the Ubuntu machine and your phone use, and approve the VPN configuration it asks for.
+17. Add your Google account to Calendar and Contacts.
+18. In Google Chrome, sign in to the sites you want the agents to use.
+19. If you skipped the GitHub login during setup, run `gh auth login`, then `gh auth setup-git`.
+20. Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
 
 **Security and backups**
 
-20. Turn on [Touch ID for sudo](#touch-id-for-sudo) with `just touch-id` (optional).
-21. Turn on FileVault in **System Settings → Privacy & Security → FileVault**, and the firewall in **System Settings → Network → Firewall**. `bash setup.sh --status macos` reports both.
-22. Back up to a destination off the Mac, such as Time Machine to a network disk, and restore a file once to check it.
+21. Turn on [Touch ID for sudo](#touch-id-for-sudo) with `just touch-id` (optional).
+22. Turn on FileVault in **System Settings → Privacy & Security → FileVault**, and the firewall in **System Settings → Network → Firewall**. `bash setup.sh --status macos` reports both.
+23. Back up to a destination off the Mac, such as Time Machine to a network disk, and restore a file once to check it.
 
 ### Ubuntu
 
@@ -427,6 +445,7 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - In a scratch repo, `git commit --allow-empty -m test`, then `git log --show-signature -1`, shows `Good "git" signature`.
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
+- With a file open in Zed, the Stream Deck **Finder** key reveals it, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed.
 
 ### Ubuntu
 

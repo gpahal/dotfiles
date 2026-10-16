@@ -83,6 +83,9 @@ assert_exit 0 diag status_disk_space "$HOME"
 assert_contains "$RUN_OUTPUT" "ok         Free space on /System/Volumes/Data: 380.0 GiB of 994.0 GiB (38%)"
 read_only
 
+# test-macos-hostname.sh covers the hostname
+stub scutil 'echo Garvits-MacBook-Pro'
+
 # --- the macos step ---
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/install.sh

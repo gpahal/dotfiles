@@ -11,6 +11,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# The GitHub key title names the Mac
+stub scutil 'echo Test-Mac'
 load_script git/setup-signing.sh
 is_macos() { false; }
 is_ubuntu() { true; }

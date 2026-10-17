@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, and open Claude, Chrome, or a new Chrome tab",
+  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, open Claude, Chrome, or a new Chrome tab, and show live system stats",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -61,6 +61,112 @@
       "Icon": "images/chrome-tab",
       "States": [{ "Image": "images/key-chrome-tab" }],
       "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Overview",
+      "UUID": "com.gpahal.dotfiles.overview",
+      "Tooltip": "Show CPU and memory use; press for the page of system stats",
+      "Icon": "images/overview",
+      "States": [{ "Image": "images/key-overview" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "CPU",
+      "UUID": "com.gpahal.dotfiles.cpu",
+      "Tooltip": "CPU use over the last minute; press for Activity Monitor",
+      "Icon": "images/cpu",
+      "States": [{ "Image": "images/key-cpu" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Memory",
+      "UUID": "com.gpahal.dotfiles.memory",
+      "Tooltip": "Memory used, colored by memory pressure; press for Activity Monitor",
+      "Icon": "images/memory",
+      "States": [{ "Image": "images/key-memory" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Swap",
+      "UUID": "com.gpahal.dotfiles.swap",
+      "Tooltip": "Swap used; press for Activity Monitor",
+      "Icon": "images/swap",
+      "States": [{ "Image": "images/key-swap" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Top Process",
+      "UUID": "com.gpahal.dotfiles.top",
+      "Tooltip": "The process using the most CPU; press for Activity Monitor",
+      "Icon": "images/top",
+      "States": [{ "Image": "images/key-top" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "GPU",
+      "UUID": "com.gpahal.dotfiles.gpu",
+      "Tooltip": "GPU use over the last minute, from macmon; press for Activity Monitor",
+      "Icon": "images/gpu",
+      "States": [{ "Image": "images/key-gpu" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Temperature",
+      "UUID": "com.gpahal.dotfiles.temperature",
+      "Tooltip": "CPU and GPU temperature, from macmon; press for Activity Monitor",
+      "Icon": "images/temperature",
+      "States": [{ "Image": "images/key-temperature" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Power",
+      "UUID": "com.gpahal.dotfiles.power",
+      "Tooltip": "Power drawn by the Mac, the CPU, and the GPU, from macmon; press for Activity Monitor",
+      "Icon": "images/power",
+      "States": [{ "Image": "images/key-power" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Disk",
+      "UUID": "com.gpahal.dotfiles.disk",
+      "Tooltip": "Free space on the startup disk; press for Activity Monitor",
+      "Icon": "images/disk",
+      "States": [{ "Image": "images/key-disk" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Network",
+      "UUID": "com.gpahal.dotfiles.network",
+      "Tooltip": "Download and upload speed; press for Activity Monitor",
+      "Icon": "images/network",
+      "States": [{ "Image": "images/key-network" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Activity Monitor",
+      "UUID": "com.gpahal.dotfiles.activity-monitor",
+      "Tooltip": "Open Activity Monitor, or bring it to the front",
+      "Icon": "images/activity-monitor",
+      "States": [{ "Image": "images/key-activity-monitor" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Back",
+      "UUID": "com.gpahal.dotfiles.back",
+      "Tooltip": "Return to the profile before the system stats page",
+      "Icon": "images/back",
+      "States": [{ "Image": "images/key-back" }],
+      "Controllers": ["Keypad"],
+      "VisibleInActionsList": false
+    }
+  ],
+  "Profiles": [
+    {
+      "Name": "profiles/System",
+      "DeviceType": 0,
+      "AutoInstall": false,
+      "DontAutoSwitchWhenInstalled": true,
+      "Readonly": false
     }
   ]
 }

@@ -4,9 +4,11 @@
 set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin and restarts a running Stream Deck only when
-# the plugin changed, and carries on when Stream Deck isn't running. The step lists every file in
-# the plugin, and the manifest's actions match open-in's and open-app's targets, which plugin.js
-# maps to them.
+# the plugin changed, trying again when it doesn't reopen at first, and carries on when Stream
+# Deck isn't running. The step lists every file in
+# the plugin, and each of the manifest's actions is a target plugin.js maps to open-in or open-app,
+# a stat key stats.js draws, or Back. The bundled System profile is built from stream-deck/profile
+# and holds only the plugin's actions.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -55,28 +57,64 @@ assert_contains "$RUN_OUTPUT" "Stream Deck isn't running; it loads the plugin wh
 assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
 cmp -s "$src/plugin.js" "$PLUGIN_DIR/plugin.js" || fail "plugin.js wasn't restored"
 
-# Stream Deck doesn't reopen: the step fails
+# open fails with -600 just after Stream Deck quits: the step tries again
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill
+stub sleep
+# shellcheck disable=SC2016 # expanded when the stub runs
+stub open '[ -f "$SANDBOX/opened-once" ] && exit 0; touch "$SANDBOX/opened-once"; exit 1'
+export SANDBOX
+: > "$STUB_LOG"
+assert_exit 0 main --no-backup
+assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin."
+assert_eq 2 "$(grep -c '^open ' "$STUB_LOG")" "tries to reopen Stream Deck"
+
+# Stream Deck doesn't reopen: the step fails
+echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
 
-# The manifest's actions are open-in's and open-app's targets, plugin.js maps each to its script,
-# and their images are in the plugin
+# Each of the manifest's actions is a script's target, a stat key, or Back, and their images are in
+# the plugin
 if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
-    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.claude com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab " \
+    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.claude com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab com.gpahal.dotfiles.overview com.gpahal.dotfiles.cpu com.gpahal.dotfiles.memory com.gpahal.dotfiles.swap com.gpahal.dotfiles.top com.gpahal.dotfiles.gpu com.gpahal.dotfiles.temperature com.gpahal.dotfiles.power com.gpahal.dotfiles.disk com.gpahal.dotfiles.network com.gpahal.dotfiles.activity-monitor com.gpahal.dotfiles.back " \
         "$actions" "the manifest's actions"
     for action in $actions; do
         target="${action##*.}"
-        grep -qE "^  \"?$target\"?: \"open-(in|app)\",$" "$src/plugin.js" ||
-            fail "plugin.js doesn't map $target to a script"
+        [ "$target" == back ] ||
+            grep -qE "^  \"?$target\"?: \"open-(in|app)\",$" "$src/plugin.js" ||
+            grep -qE "^  \"?$target\"?: \[" "$src/stats.js" ||
+            fail "neither plugin.js nor stats.js handles $target"
     done
     for image in $(jq -r '.Icon, .CategoryIcon, (.Actions[] | .Icon, .States[].Image)' "$src/manifest.json"); do
         [ -f "$src/$image.svg" ] || [ -f "$src/$image.png" ] || fail "the manifest names $image, which isn't in the plugin"
     done
+    for profile in $(jq -r '.Profiles[].Name' "$src/manifest.json"); do
+        [ -f "$src/$profile.streamDeckProfile" ] || fail "the manifest names $profile, which isn't in the plugin"
+    done
 else
     skip_rest "the manifest checks: jq isn't installed"
+fi
+
+# The System profile's zip holds stream-deck/profile's files, so build-profile.sh ran after the
+# last edit, and its keys are the plugin's actions
+zip_file="$src/profiles/System.streamDeckProfile"
+if command -v unzip &> /dev/null && command -v jq &> /dev/null; then
+    profile_src="$REPO_DIR/stream-deck/profile"
+    zipped="$(unzip -Z1 "$zip_file" | grep -v '/$' | LC_ALL=C sort)"
+    sources="$(cd "$profile_src" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)"
+    assert_eq "$sources" "$zipped" "the System profile's files; run stream-deck/build-profile.sh"
+    for file in $sources; do
+        [ "$(unzip -p "$zip_file" "$file")" == "$(cat "$profile_src/$file")" ] ||
+            fail "the System profile's $file is out of date; run stream-deck/build-profile.sh"
+    done
+    for action in $(cat "$profile_src"/*.sdProfile/Profiles/*/manifest.json | jq -r '.Controllers[].Actions // {} | .[].UUID'); do
+        jq -e --arg uuid "$action" '.Actions | any(.UUID == $uuid)' "$src/manifest.json" > /dev/null ||
+            fail "the System profile has $action, which the manifest lacks"
+    done
+else
+    skip_rest "the profile checks: unzip or jq isn't installed"
 fi
 test_done

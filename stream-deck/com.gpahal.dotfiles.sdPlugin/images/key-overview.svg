@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+<rect width="144" height="144" fill="#18181b"/>
+<text x="72" y="30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#a1a1aa" text-anchor="middle">SYSTEM</text>
+<text x="16" y="78" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#a1a1aa" text-anchor="start">CPU</text>
+<text x="128" y="78" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#71717a" text-anchor="end">—</text>
+<text x="16" y="120" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#a1a1aa" text-anchor="start">MEM</text>
+<text x="128" y="120" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#71717a" text-anchor="end">—</text>
+</svg>

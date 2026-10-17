@@ -1,8 +1,8 @@
 #!/bin/bash
 set -uo pipefail
 
-# Usage: open-app claude|chrome|chrome-tab
-# Open Claude or Google Chrome, or bring it to the front when it's running. chrome-tab then opens
+# Usage: open-app claude|chrome|chrome-tab|activity-monitor
+# Open Claude, Google Chrome, or Activity Monitor, or bring it to the front when it's running. chrome-tab then opens
 # a new Chrome tab, and when the clipboard holds text, pastes it into the address bar and selects
 # it. hammerspoon/init.lua does the same for its hotkeys. The Stream Deck plugin runs it for each
 # key press, so macOS asks Stream Deck for its permissions: Automation for System Events, and
@@ -15,6 +15,7 @@ set -uo pipefail
 PATH="${PATH:+$PATH:}/usr/bin:/bin"
 CLAUDE=com.anthropic.claudefordesktop
 CHROME=com.google.Chrome
+ACTIVITY_MONITOR=com.apple.ActivityMonitor
 
 # Stream Deck adds the time to each line it logs
 log() {
@@ -65,8 +66,9 @@ main() {
     case "$target" in
         claude) bundle="$CLAUDE" name=Claude ;;
         chrome | chrome-tab) bundle="$CHROME" name="Google Chrome" ;;
+        activity-monitor) bundle="$ACTIVITY_MONITOR" name="Activity Monitor" ;;
         *)
-            echo "Usage: open-app claude|chrome|chrome-tab" >&2
+            echo "Usage: open-app claude|chrome|chrome-tab|activity-monitor" >&2
             return 2
             ;;
     esac

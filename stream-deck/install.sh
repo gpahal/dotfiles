@@ -4,9 +4,10 @@ set -euo pipefail
 # Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Its Finder, Editor,
 # and Terminal actions open the folder or file in front in Finder, Zed, or Ghostty. Its
 # bin/open-in says how it finds them. Its Claude, Chrome, and New Tab actions run bin/open-app,
-# which does what the Hammerspoon hotkeys do. Stream Deck loads plugins when it starts, so a run that
-# changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no Linux
-# app. The homebrew step installs Stream Deck.
+# which does what the Hammerspoon hotkeys do. Its stat keys, which plugin.js describes, show live
+# CPU, memory, and other stats, and its Overview key opens a page of them. Stream Deck loads
+# plugins when it starts, so a run that changes the plugin restarts a running Stream Deck. macOS
+# only, since Stream Deck has no Linux app. The homebrew step installs Stream Deck.
 #
 # A temp HOME doesn't isolate this step, which restarts the Stream Deck you're running when the
 # plugin changed.
@@ -17,11 +18,17 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 # Listed rather than found, so a stray file in the repo, such as a .DS_Store, isn't installed
-PLUGIN_FILES="manifest.json plugin.js bin/open-in bin/open-app images/plugin.png
-images/plugin@2x.png images/category.svg images/finder.svg images/editor.svg images/terminal.svg
-images/claude.svg images/chrome.svg images/chrome-tab.svg images/key-finder.svg
-images/key-editor.svg images/key-terminal.svg images/key-claude.svg images/key-chrome.svg
-images/key-chrome-tab.svg"
+PLUGIN_FILES="manifest.json plugin.js stats.js bin/open-in bin/open-app
+profiles/System.streamDeckProfile images/plugin.png images/plugin@2x.png images/category.svg
+images/finder.svg images/editor.svg images/terminal.svg images/claude.svg images/chrome.svg
+images/chrome-tab.svg images/key-finder.svg images/key-editor.svg images/key-terminal.svg
+images/key-claude.svg images/key-chrome.svg images/key-chrome-tab.svg images/overview.svg
+images/cpu.svg images/memory.svg images/swap.svg images/top.svg images/gpu.svg
+images/temperature.svg images/power.svg images/disk.svg images/network.svg
+images/activity-monitor.svg images/back.svg images/key-overview.svg images/key-cpu.svg
+images/key-memory.svg images/key-swap.svg images/key-top.svg images/key-gpu.svg
+images/key-temperature.svg images/key-power.svg images/key-disk.svg images/key-network.svg
+images/key-activity-monitor.svg images/key-back.svg"
 
 # Pass each plugin file, as source and destination, to a function: copy_plugin_file to copy it,
 # or status_file to report it
@@ -42,8 +49,10 @@ copy_plugin_file() {
 }
 
 # SIGTERM quits Stream Deck; it saves profile changes as they're made. open fails with error -600
-# while the old process is still quitting, so wait for it to go first.
+# while the old process is still quitting, so wait for it to go first. LaunchServices can still
+# report -600 for a moment after the process is gone, so open is tried a few times.
 restart_stream_deck() {
+    local opened=false
     if ! pkill -x "Stream Deck"; then
         echo "  Stream Deck isn't running; it loads the plugin when it starts."
         return 0
@@ -52,7 +61,14 @@ restart_stream_deck() {
         pgrep -x "Stream Deck" > /dev/null || break
         sleep 0.5
     done
-    if ! open -g -b com.elgato.StreamDeck; then
+    for _ in 1 2 3 4 5; do
+        if open -g -b com.elgato.StreamDeck; then
+            opened=true
+            break
+        fi
+        sleep 1
+    done
+    if ! "$opened"; then
         echo "  Couldn't reopen Stream Deck. Open it to load the plugin." >&2
         return 1
     fi

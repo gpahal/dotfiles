@@ -1,16 +1,21 @@
 -- Global hotkeys. Each opens its app, or brings it to the front when it's running:
 --   Ctrl+Opt+Space  Claude
---   Ctrl+Opt+C      Google Chrome
---   Ctrl+Opt+T      T3 Code
+--   Ctrl+Opt+B      Google Chrome
 --   Ctrl+Opt+N      a new Chrome tab, with the clipboard's text pasted into the address bar and
 --                   selected, so typing or Delete replaces it
--- The hammerspoon step copies this file to ~/.hammerspoon/init.lua. Hammerspoon needs
--- Accessibility to send the new tab's keystrokes, a manual step. The Stream Deck plugin's
--- bin/open-app does the same for its keys.
+--   Ctrl+Opt+T      Ghostty at the folder in front, as the Stream Deck's Terminal key does
+--   Ctrl+Opt+C      T3 Code
+--   Ctrl+Opt+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
+-- The hammerspoon step copies this file to ~/.hammerspoon/init.lua, and the Stream Deck plugin's
+-- bin/open-in, which finds the folder or file, to ~/.hammerspoon/bin/open-in. Hammerspoon needs
+-- Accessibility to send the new tab's keystrokes and read Zed's window title and T3 Code's page,
+-- both manual steps, and macOS asks it for Automation of Ghostty, Finder, and System Events. The
+-- Stream Deck plugin's bin/open-app does the same for its keys.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
 local T3_CODE = "com.t3tools.t3code"
+local OPEN_IN = hs.configdir .. "/bin/open-in"
 local MODS = { "ctrl", "alt" }
 -- How long Chrome gets to come to the front, which includes starting it
 local FRONT_TIMEOUT = 10
@@ -84,7 +89,25 @@ local function newChromeTab()
     end, 0.02)
 end
 
+-- open-in shows a notification when it fails, so only its log line is left to print
+local function openIn(target)
+    local task = hs.task.new("/bin/bash", function(_, _, stderr)
+        print("open-in: " .. stderr)
+    end, { OPEN_IN, target })
+    local env = task:environment()
+    env.OPEN_IN_CALLER = "Hammerspoon"
+    env.OPEN_IN_LOG = "Hammerspoon's console"
+    task:setEnvironment(env)
+    if not task:start() then
+        hs.alert.show("Couldn't run " .. OPEN_IN)
+        return
+    end
+    dotfiles.openIn = task
+end
+
 hs.hotkey.bind(MODS, "space", function() open(CLAUDE, "Claude") end)
-hs.hotkey.bind(MODS, "c", function() open(CHROME, "Google Chrome") end)
-hs.hotkey.bind(MODS, "t", function() open(T3_CODE, "T3 Code") end)
+hs.hotkey.bind(MODS, "b", function() open(CHROME, "Google Chrome") end)
 hs.hotkey.bind(MODS, "n", newChromeTab)
+hs.hotkey.bind(MODS, "t", function() openIn("terminal") end)
+hs.hotkey.bind(MODS, "c", function() open(T3_CODE, "T3 Code") end)
+hs.hotkey.bind(MODS, "e", function() openIn("editor") end)

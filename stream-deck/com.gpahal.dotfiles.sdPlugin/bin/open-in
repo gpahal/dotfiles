@@ -5,13 +5,16 @@ set -uo pipefail
 # Open what's in front in Finder, Zed, or Ghostty: a Ghostty tab's folder, the file open in Zed,
 # Finder's selection (or its front window's folder), or the folder of the thread T3 Code shows.
 # With no path to use, such as with another app in front, open a new window instead: Finder and
-# Ghostty at home, Zed empty. The Stream Deck plugin runs it for each key press, so macOS asks
-# Stream Deck for its permissions: Automation for Ghostty, Finder, and System Events, and
-# Accessibility to read Zed's window title and T3 Code's page.
+# Ghostty at home, Zed empty. The Stream Deck plugin runs it for each key press, and Hammerspoon's
+# Ctrl+Opt+T and E run a copy, so macOS asks each for its permissions: Automation for Ghostty,
+# Finder, and System Events, and Accessibility to read Zed's window title and T3 Code's page.
+# OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log goes, for the
+# notifications.
 #
-# Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1 when it couldn't open anything, or when a missing
-# permission kept it from reading the path, though it still opens a new window then. Either way
-# it shows a notification saying why, and the plugin shows a warning on the key.
+# Each run prints a line to stderr, which the caller adds to its log. It exits 1 when it couldn't
+# open anything, or when a missing permission kept it from reading the path, though it still opens
+# a new window then. Either way it shows a notification saying why, and the plugin shows a warning
+# on the key.
 
 # Stream Deck starts plugins with a minimal environment
 PATH="${PATH:+$PATH:}/usr/bin:/bin"
@@ -20,21 +23,23 @@ ZED=dev.zed.Zed
 ZED_CLI="${DOTFILES_ZED_CLI:-/Applications/Zed.app/Contents/MacOS/cli}"
 T3_CODE=com.t3tools.t3code
 T3_STATE="${DOTFILES_T3_STATE:-$HOME/.t3/userdata/statev2.sqlite}"
+CALLER="${OPEN_IN_CALLER:-Stream Deck}"
+CALLER_LOG="${OPEN_IN_LOG:-~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log}"
 # The functions set these rather than print them, since a command substitution's subshell would
 # lose PERMISSION_ERROR
 SCRIPT_RESULT=""
 PERMISSION_ERROR=""
 CONTEXT_PATH=""
 
-# Stream Deck adds the time to each line it logs
+# Stream Deck and Hammerspoon add the time to each line they log
 log() {
     printf '%s\n' "$*" >&2
 }
 
 notify() {
-    osascript - "$1" <<'EOF' > /dev/null 2>&1
+    osascript - "$1" "$CALLER" <<'EOF' > /dev/null 2>&1
 on run argv
-    display notification (item 1 of argv) with title "Stream Deck"
+    display notification (item 1 of argv) with title (item 2 of argv)
 end run
 EOF
 }
@@ -252,10 +257,10 @@ main() {
     esac
     if [ -n "$PERMISSION_ERROR" ]; then
         status=1
-        notify "Stream Deck lacks a permission: $PERMISSION_ERROR"
+        notify "$CALLER lacks a permission: $PERMISSION_ERROR"
     elif [ "$status" -ne 0 ]; then
         log "ERROR couldn't open ${CONTEXT_PATH:-a new window} for $target"
-        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See $CALLER_LOG"
     fi
     return "$status"
 }

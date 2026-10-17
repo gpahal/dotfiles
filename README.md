@@ -225,9 +225,11 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 
 | Key | From Ghostty | From Zed | From Finder |
 | :- | :- | :- | :- |
-| **Finder** | Opens the tab's folder | Reveals the open file | Opens the selected folder or reveals the selected file, or opens the window's folder |
 | **Editor** | Opens the tab's folder in Zed | Shows the open file | Opens the selection, or the window's folder, in Zed |
 | **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, or the selected file's folder |
+| **Files** | Opens the tab's folder in Finder | Reveals the open file in Finder | Opens the selected folder or reveals the selected file, or opens the window's folder |
+
+The keys of apps show each app's official icon or logo, taken from the app's own repo or the brand's published logo. [`stream-deck/icons`](stream-deck/icons/README.md) keeps the originals and lists where each came from.
 
 Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
@@ -407,7 +409,7 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
-13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, **Terminal**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, **Claude**, and **Overview** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press the first three once each with Ghostty, Zed, and Finder in front, then press **New Tab** and **Gmail**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and paste into the new tab.
+13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press **Editor**, **Terminal**, and **Files** once each with Ghostty, Zed, and Finder in front, then press **New Tab** and **Gmail**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and paste into the new tab.
 14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+N` can paste into the new tab. The config sets it to open at login.
 
 **Shell**
@@ -473,7 +475,7 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - In a scratch repo, `git commit --allow-empty -m test`, then `git log --show-signature -1`, shows `Good "git" signature`.
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
-- With a file open in Zed, the Stream Deck **Finder** key reveals it, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed.
+- With a file open in Zed, the Stream Deck **Files** key reveals it in Finder, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed.
 - With a URL copied, `Ctrl+Opt+N` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Space` and the **Claude** key bring Claude to the front, and `Ctrl+Opt+T` and the **T3 Code** key bring T3 Code to the front. With Gmail open in a background tab, the **Gmail** key switches Chrome to that tab instead of opening another.
 - The Stream Deck **Overview** key shows CPU and memory. Pressing it opens the **System** page, where every key shows a number within a few seconds, a stat key opens Activity Monitor, and **Back** returns to your keys.
 

@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, open Chrome, a new Chrome tab, Gmail, T3 Code, or Claude, and show live system stats",
+  "Description": "Open the folder or file in front in Zed, Ghostty, or the file manager, open Chrome, a new Chrome tab, Gmail, T3 Code, or Claude, and show live system stats",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -15,11 +15,11 @@
   "Software": { "MinimumVersion": "7.1" },
   "Actions": [
     {
-      "Name": "Finder",
-      "UUID": "com.gpahal.dotfiles.finder",
-      "Tooltip": "Show the folder or file in front in Finder",
-      "Icon": "images/finder",
-      "States": [{ "Image": "images/key-finder" }],
+      "Name": "Overview",
+      "UUID": "com.gpahal.dotfiles.overview",
+      "Tooltip": "Show CPU and memory use; press for the page of system stats",
+      "Icon": "images/overview",
+      "States": [{ "Image": "images/key-overview" }],
       "Controllers": ["Keypad"]
     },
     {
@@ -36,6 +36,14 @@
       "Tooltip": "Open Ghostty at the folder in front",
       "Icon": "images/terminal",
       "States": [{ "Image": "images/key-terminal" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Files",
+      "UUID": "com.gpahal.dotfiles.files",
+      "Tooltip": "Show the folder or file in front in the file manager",
+      "Icon": "images/files",
+      "States": [{ "Image": "images/key-files" }],
       "Controllers": ["Keypad"]
     },
     {
@@ -76,14 +84,6 @@
       "Tooltip": "Open Claude, or bring it to the front",
       "Icon": "images/claude",
       "States": [{ "Image": "images/key-claude" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Overview",
-      "UUID": "com.gpahal.dotfiles.overview",
-      "Tooltip": "Show CPU and memory use; press for the page of system stats",
-      "Icon": "images/overview",
-      "States": [{ "Image": "images/key-overview" }],
       "Controllers": ["Keypad"]
     },
     {

@@ -14,7 +14,7 @@ const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const pluginUUID = arg("-pluginUUID");
 // Each action's script, by the last part of its UUID
 const scripts = {
-  finder: "open-in",
+  files: "open-in",
   editor: "open-in",
   terminal: "open-in",
   claude: "open-app",
@@ -81,7 +81,7 @@ socket.onclose = () => {
 socket.onmessage = ({ data }) => {
   const { event, action, context, device } = JSON.parse(data);
   if (!action) return;
-  // com.gpahal.dotfiles.finder is finder
+  // com.gpahal.dotfiles.files is files
   const target = action.slice(action.lastIndexOf(".") + 1);
   if (event === "willAppear" && stats.isStat(target)) {
     visible.set(context, target);

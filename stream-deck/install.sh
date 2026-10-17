@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Its Finder, Editor,
-# and Terminal actions open the folder or file in front in Finder, Zed, or Ghostty. Its
+# Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Its Editor,
+# Terminal, and Files actions open the folder or file in front in Zed, Ghostty, or Finder. Its
 # bin/open-in says how it finds them. Its Chrome, New Tab, Gmail, T3 Code, and Claude actions
 # run bin/open-app, which does what the Hammerspoon hotkeys do, and also finds Chrome's Gmail tab. Its stat keys, which plugin.js describes, show live
 # CPU, memory, and other stats, and its Overview key opens a page of them. Stream Deck loads
@@ -20,12 +20,14 @@ PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLU
 # Listed rather than found, so a stray file in the repo, such as a .DS_Store, isn't installed
 PLUGIN_FILES="manifest.json plugin.js stats.js bin/open-in bin/open-app
 profiles/System.streamDeckProfile images/plugin.png images/plugin@2x.png images/category.svg
-images/finder.svg images/editor.svg images/terminal.svg images/claude.svg images/chrome.svg
-images/chrome-tab.svg images/gmail.svg images/t3-code.svg images/key-finder.svg images/key-editor.svg images/key-terminal.svg
-images/key-claude.svg images/key-chrome.svg images/key-chrome-tab.svg images/key-gmail.svg images/key-t3-code.svg images/overview.svg
+images/overview.svg images/editor.svg images/terminal.svg images/files.svg images/chrome.svg
+images/chrome-tab.svg images/gmail.svg images/t3-code.svg images/claude.svg images/key-overview.svg
+images/key-editor.png images/key-editor@2x.png images/key-terminal.png images/key-terminal@2x.png
+images/key-files.svg images/key-chrome.svg images/key-chrome-tab.svg images/key-gmail.svg
+images/key-t3-code.png images/key-t3-code@2x.png images/key-claude.svg
 images/cpu.svg images/memory.svg images/swap.svg images/top.svg images/gpu.svg
 images/temperature.svg images/power.svg images/disk.svg images/network.svg
-images/activity-monitor.svg images/back.svg images/key-overview.svg images/key-cpu.svg
+images/activity-monitor.svg images/back.svg images/key-cpu.svg
 images/key-memory.svg images/key-swap.svg images/key-top.svg images/key-gpu.svg
 images/key-temperature.svg images/key-power.svg images/key-disk.svg images/key-network.svg
 images/key-activity-monitor.svg images/key-back.svg"

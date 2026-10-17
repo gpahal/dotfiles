@@ -48,7 +48,7 @@ export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" GHOSTTY_RUNNING=1 GHOSTTY_CWD="" ZED
 
 # Run open-in for a target with an app in front, and check its exit status and the lines it
 # added to the stub log, other than lsappinfo's and osascript's own
-# e.g. check finder com.apple.finder 0 "open $dir"
+# e.g. check files com.apple.finder 0 "open $dir"
 check() {
     : > "$STUB_LOG"
     FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1"
@@ -57,26 +57,26 @@ check() {
 
 # --- Ghostty in front ---
 export GHOSTTY_CWD="$dir"
-check finder com.mitchellh.ghostty 0 "open $dir"
+check files com.mitchellh.ghostty 0 "open $dir"
 check editor com.mitchellh.ghostty 0 "open -b dev.zed.Zed $dir"
 check terminal com.mitchellh.ghostty 0 "  new Ghostty tab at $dir"
 assert_contains "$RUN_OUTPUT" "terminal from com.mitchellh.ghostty: $dir"
 # A folder that isn't here, such as one over SSH: a new window
 export GHOSTTY_CWD=/nonexistent
-check finder com.mitchellh.ghostty 0 "  new Finder window"
+check files com.mitchellh.ghostty 0 "  new Finder window"
 check terminal com.mitchellh.ghostty 0 "  new Ghostty tab at $HOME"
 # Ghostty reports no folder, as when the hostname breaks its OSC 7 report: the log says where to look
 export GHOSTTY_CWD=""
-check finder com.mitchellh.ghostty 0 "  new Finder window"
+check files com.mitchellh.ghostty 0 "  new Finder window"
 assert_contains "$RUN_OUTPUT" "Ghostty doesn't know the tab's folder. Run: bash setup.sh --status macos"
 
 # --- Zed in front ---
 export ZED_TITLE="project — $file"
-check finder dev.zed.Zed 0 "open -R $file"
+check files dev.zed.Zed 0 "open -R $file"
 check editor dev.zed.Zed 0 "open -b dev.zed.Zed $file"
 check terminal dev.zed.Zed 0 "  new Ghostty window at $dir"
 export ZED_TITLE="dotfiles — ~/notes/todo.md"
-check finder dev.zed.Zed 0 "open -R $HOME/notes/todo.md"
+check files dev.zed.Zed 0 "open -R $HOME/notes/todo.md"
 # No file open: the title is only the project
 export ZED_TITLE="project"
 check editor dev.zed.Zed 0 "zed-cli --new"
@@ -84,7 +84,7 @@ check terminal dev.zed.Zed 0 "  new Ghostty window at $HOME"
 
 # --- Finder in front ---
 export FINDER_PATH="$dir/"
-check finder com.apple.finder 0 "open $dir"
+check files com.apple.finder 0 "open $dir"
 check terminal com.apple.finder 0 "  new Ghostty window at $dir"
 export FINDER_PATH="$file"
 check editor com.apple.finder 0 "open -b dev.zed.Zed $file"

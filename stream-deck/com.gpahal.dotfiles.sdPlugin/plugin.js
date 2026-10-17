@@ -1,5 +1,5 @@
-// Runs bin/open-in or bin/open-app for each key press of the plugin's actions, shows on the key whether it
-// worked, and passes what it printed to Stream Deck's log, which Stream Deck writes to
+// Runs bin/open-in or bin/open-app for each key press of the plugin's actions, shows a warning on
+// the key when it fails, and passes what it printed to Stream Deck's log, which Stream Deck writes to
 // ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with -port, -pluginUUID, and -registerEvent, and Node 24's
 // built-in WebSocket talks to it, so the plugin needs no packages.
 //
@@ -33,7 +33,7 @@ function runScript(target, context) {
   const script = path.join(__dirname, "bin", scripts[target]);
   execFile("/bin/bash", [script, target], (error, stdout, stderr) => {
     for (const line of `${stdout}${stderr}`.split("\n").filter(Boolean)) log(line);
-    send({ event: error ? "showAlert" : "showOk", context });
+    if (error) send({ event: "showAlert", context });
   });
 }
 

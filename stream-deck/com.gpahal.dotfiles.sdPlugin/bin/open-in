@@ -3,10 +3,11 @@ set -uo pipefail
 
 # Usage: open-in files|editor|terminal
 # Open what's in front in Finder, Zed, or Ghostty: a Ghostty tab's folder, the file open in Zed,
-# or Finder's selection (or its front window's folder). With no path to use, such as with another
-# app in front, open a new window instead: Finder and Ghostty at home, Zed empty. The Stream Deck
-# plugin runs it for each key press, so macOS asks Stream Deck for its permissions: Automation
-# for Ghostty, Finder, and System Events, and Accessibility to read Zed's window title.
+# Finder's selection (or its front window's folder), or the folder of the thread T3 Code shows.
+# With no path to use, such as with another app in front, open a new window instead: Finder and
+# Ghostty at home, Zed empty. The Stream Deck plugin runs it for each key press, so macOS asks
+# Stream Deck for its permissions: Automation for Ghostty, Finder, and System Events, and
+# Accessibility to read Zed's window title and T3 Code's page.
 #
 # Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1 when it couldn't open anything, or when a missing
 # permission kept it from reading the path, though it still opens a new window then. Either way
@@ -17,6 +18,8 @@ PATH="${PATH:+$PATH:}/usr/bin:/bin"
 GHOSTTY=com.mitchellh.ghostty
 ZED=dev.zed.Zed
 ZED_CLI="${DOTFILES_ZED_CLI:-/Applications/Zed.app/Contents/MacOS/cli}"
+T3_CODE=com.t3tools.t3code
+T3_STATE="${DOTFILES_T3_STATE:-$HOME/.t3/userdata/statev2.sqlite}"
 # The functions set these rather than print them, since a command substitution's subshell would
 # lose PERMISSION_ERROR
 SCRIPT_RESULT=""
@@ -36,16 +39,21 @@ end run
 EOF
 }
 
-# Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. A
+# Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. With
+# -l JavaScript first, run JavaScript for Automation instead. A
 # failure is logged, and one for a missing permission sets PERMISSION_ERROR: -1743 is a denied
 # Automation prompt, and -25211 or "assistive access" is missing Accessibility. Missing
 # Accessibility can also come as -1719, but so does Zed with no window open, so the code alone
 # isn't enough.
 applescript() {
-    local err status=0
+    local err status=0 lang=()
+    if [ "${1:-}" == -l ]; then
+        lang=(-l "$2")
+        shift 2
+    fi
     SCRIPT_RESULT=""
     err="$(mktemp)" || return 1
-    SCRIPT_RESULT="$(osascript - "$@" 2> "$err")" || status=$?
+    SCRIPT_RESULT="$(osascript ${lang[@]+"${lang[@]}"} - "$@" 2> "$err")" || status=$?
     if [ "$status" -ne 0 ]; then
         log "ERROR $(tr '\n' ' ' < "$err")"
         if grep -qE -- '-1743|-25211|assistive access' "$err"; then
@@ -91,6 +99,63 @@ EOF
     esac
 }
 
+# T3 Code's page URL ends with the thread it shows, as t3code://app/#/<environment>/<thread>.
+# AppleScript can't read the web view's AXURL, so JavaScript for Automation calls the
+# Accessibility API for it. The thread's folder is its worktree, or else its project's folder,
+# from T3 Code's state database. Both are T3 Code internals, so a change there leaves no path, and
+# the key opens a new window.
+t3_code_folder() {
+    local thread
+    applescript -l JavaScript <<'EOF' || return 1
+ObjC.import("AppKit");
+ObjC.bindFunction("AXIsProcessTrusted", ["bool", []]);
+ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
+ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
+function run() {
+  if (!$.AXIsProcessTrusted()) throw new Error("not allowed assistive access to read T3 Code's page (-25211)");
+  const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.t3tools.t3code");
+  if (apps.count === 0) return "";
+  const attr = (el, name) => {
+    const out = Ref();
+    return $.AXUIElementCopyAttributeValue(el, $(name), out) === 0 ? out[0] : null;
+  };
+  // The app's page is the web area at t3code:, not a browser pane's
+  const find = (el, depth) => {
+    const role = attr(el, "AXRole");
+    if (role && ObjC.unwrap(role) === "AXWebArea") {
+      const url = attr(el, "AXURL");
+      const s = url ? ObjC.unwrap(url.absoluteString) : "";
+      return s.startsWith("t3code:") ? s : "";
+    }
+    const kids = depth < 15 ? attr(el, "AXChildren") : null;
+    for (let i = 0; kids && i < kids.count; i++) {
+      const found = find(kids.objectAtIndex(i), depth + 1);
+      if (found) return found;
+    }
+    return "";
+  };
+  const app = $.AXUIElementCreateApplication(apps.objectAtIndex(0).processIdentifier);
+  const win = attr(app, "AXFocusedWindow") || attr(app, "AXMainWindow");
+  return win ? find(win, 0) : "";
+}
+EOF
+    thread="${SCRIPT_RESULT%%\?*}"
+    thread="${thread##*/}"
+    # A UUID, so it's safe in the query; settings and other pages have none
+    if ! [[ "$thread" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        log "T3 Code isn't showing a thread: ${SCRIPT_RESULT:-no page found}"
+        return 0
+    fi
+    CONTEXT_PATH="$(sqlite3 -readonly "$T3_STATE" "
+        SELECT coalesce(json_extract(t.payload_json, '\$.worktreePath'), p.workspace_root)
+        FROM orchestration_v2_projection_threads t
+        LEFT JOIN projection_projects p ON p.project_id = t.project_id
+        WHERE t.thread_id = '$thread'" 2>&1)" || {
+        log "ERROR couldn't read thread $thread's folder from $T3_STATE: $CONTEXT_PATH"
+        CONTEXT_PATH=""
+    }
+}
+
 # The first selected item, or the front window's folder, or the Desktop with no window open
 finder_selection() {
     applescript <<'EOF' || return 1
@@ -111,6 +176,7 @@ read_context_path() {
         "$GHOSTTY") ghostty_folder ;;
         "$ZED") zed_file ;;
         com.apple.finder) finder_selection ;;
+        "$T3_CODE") t3_code_folder ;;
     esac
     # Finder ends a folder's path with a slash
     [ "$CONTEXT_PATH" == / ] || CONTEXT_PATH="${CONTEXT_PATH%/}"

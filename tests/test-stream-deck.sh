@@ -5,8 +5,7 @@ set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin and restarts a running Stream Deck only when
 # the plugin changed, trying again when it doesn't reopen at first, and carries on when Stream
-# Deck isn't running. The step lists every file in
-# the plugin, and each of the manifest's actions is a target plugin.js maps to open-in or open-app,
+# Deck isn't running. Each of the manifest's actions is a target plugin.js maps to open-in or open-app,
 # a stat key stats.js draws, or Back. The bundled System profile is built from stream-deck/profile
 # and holds only the plugin's actions.
 
@@ -18,10 +17,11 @@ load_script stream-deck/install.sh
 is_macos() { true; }
 src="$REPO_DIR/stream-deck/$PLUGIN"
 
-# Every file in the repo's plugin is installed
-listed="$(tr -s ' ' '\n' <<< "$PLUGIN_FILES" | LC_ALL=C sort)"
-found="$(cd "$src" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)"
-assert_eq "$found" "$listed" "PLUGIN_FILES"
+# The plugin's files, found in the repo, leave out a .DS_Store Finder leaves there
+mkdir -p "$SANDBOX/repo/stream-deck/$PLUGIN/bin"
+touch "$SANDBOX/repo/stream-deck/$PLUGIN/"{manifest.json,.DS_Store,bin/open-in,bin/.DS_Store}
+assert_eq "bin/open-in
+manifest.json" "$(DOTFILES_DIR="$SANDBOX/repo" plugin_file_list | LC_ALL=C sort)" "plugin_file_list"
 
 # A new plugin: copied, and the running Stream Deck restarts to load it
 stub pkill
@@ -29,9 +29,9 @@ stub pgrep 'exit 1'
 stub open
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin."
-for file in $PLUGIN_FILES; do
+while IFS= read -r file; do
     cmp -s "$src/$file" "$PLUGIN_DIR/$file" || fail "$file wasn't copied to $PLUGIN_DIR"
-done
+done < <(cd "$src" && find . -type f | sed 's|^\./||')
 [ -x "$PLUGIN_DIR/bin/open-in" ] || fail "bin/open-in isn't executable"
 assert_eq "pkill -x Stream Deck
 pgrep -x Stream Deck

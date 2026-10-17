@@ -19,6 +19,9 @@ TID_LINE="auth       sufficient     pam_tid.so"
 REATTACH_MODULE="$PAM_LOCAL_MODULES_DIR/pam_reattach.so"
 # The owner the copy and its dir must have; tests, whose sandbox files are theirs, change it
 PAM_ROOT_UID=0
+# Where the check of the copy's parent dirs stops; tests, whose sandbox sits under dirs root and
+# they own, change it
+PAM_TRUSTED_DIR=/
 
 # Print where Homebrew links pam-reattach's module, the copy's source. Prints nothing without
 # Homebrew.
@@ -45,6 +48,21 @@ root_only_writable() {
 # Succeeds when the copy and its dir are root's alone to write
 reattach_module_safe() {
     root_only_writable "$PAM_LOCAL_MODULES_DIR" && root_only_writable "$REATTACH_MODULE"
+}
+
+# Print the first parent of the copy's dir, up to $PAM_TRUSTED_DIR, that isn't root's alone to
+# write, such as a /usr/local/lib an Intel Homebrew owned. Whoever can write one can swap the dir
+# below it, and with it the module sudo loads as root. just touch-id doesn't fix it, since other
+# tools may rely on the owner. A missing parent is fine: install -d creates it root's.
+reattach_unsafe_parent() {
+    local dir="$PAM_LOCAL_MODULES_DIR"
+    while [ "$dir" != "$PAM_TRUSTED_DIR" ] && [ "$dir" != / ]; do
+        dir="$(dirname "$dir")"
+        if [ -e "$dir" ] && ! root_only_writable "$dir"; then
+            echo "$dir"
+            return 0
+        fi
+    done
 }
 
 # Succeeds when the copy needs installing: Homebrew's module exists, and the copy is missing,
@@ -111,7 +129,7 @@ pam_module_exists() {
 # Touch ID is optional in the macos step, which skips it when off. Every module sudo_local loads
 # must exist: one can be removed under it, and then sudo may fail, depending on the stack.
 status_touch_id() {
-    local off="$1" module source fix
+    local off="$1" module source fix parent
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
@@ -125,10 +143,13 @@ status_touch_id() {
             # just touch-id reinstalls the copy from Homebrew's, so it refuses without that
             fix="re-run just touch-id"
             reattach_source_installed || fix="run brew install pam-reattach, then just touch-id"
+            parent="$(reattach_unsafe_parent)"
             if ! root_only_writable "$PAM_LOCAL_MODULES_DIR"; then
                 status_item missing "Touch ID in tmux: $PAM_LOCAL_MODULES_DIR, which sudo loads pam-reattach from, isn't root's alone to write; $fix"
             elif ! root_only_writable "$REATTACH_MODULE"; then
                 status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't root's alone to write; $fix"
+            elif [ -n "$parent" ]; then
+                status_item missing "Touch ID in tmux: $parent, above the dir sudo loads pam-reattach from, isn't root's alone to write; run sudo chown root $parent && sudo chmod go-w $parent"
             elif [ -n "$source" ] && [ -f "$source" ] && ! cmp -s "$source" "$REATTACH_MODULE"; then
                 status_item missing "Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id to install the new module"
             fi

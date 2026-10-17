@@ -197,7 +197,7 @@ mkdir -p "$HOME/ro"
 printf 'repo\n' > "$SANDBOX/repo/edited.yml"
 for copy in copy_file maybe_backup; do
     chmod 755 "$HOME/ro"
-    # JSON, so json_merge's jq succeeds and it goes on to back the file up
+    # JSON, so json_merge's jq succeeds and, since the filter changes it, goes on to back it up
     printf '"my edit"\n' > "$edited"
     printf 'older\n' > "$edited.bak"
     chmod 555 "$HOME/ro"
@@ -205,7 +205,7 @@ for copy in copy_file maybe_backup; do
         assert_exit 1 copy_file "$SANDBOX/repo/edited.yml" "$edited"
     else
         export DOTFILES_BACKUP=yes
-        assert_exit 1 json_merge "$edited" '.'
+        assert_exit 1 json_merge "$edited" '"merged"'
         unset DOTFILES_BACKUP
     fi
     assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup ($copy)"
@@ -273,4 +273,9 @@ assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_contains "$RUN_OUTPUT" "Back up $settings"
 assert_eq '{"mine": 1}' "$(cat "$settings.bak")" "backup after json_merge"
 assert_eq 1 "$(jq .a "$settings")" "settings after json_merge"
+# A filter that changes nothing leaves the file as it is, and asks nothing
+printf '{"a":1,  "mine":1}\n' > "$settings"
+assert_exit 0 json_merge "$settings" '.a = 1' <<< y
+assert_not_contains "$RUN_OUTPUT" "Back up" "json_merge with nothing to change"
+assert_eq '{"a":1,  "mine":1}' "$(cat "$settings")" "settings after json_merge with nothing to change"
 test_done

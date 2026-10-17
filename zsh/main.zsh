@@ -7,10 +7,6 @@ srcif() {
     [ -f "$1" ] && source "$1"
 }
 
-srczshif() {
-    [ -f "$ZSH_DIR/$1" ] && source "$ZSH_DIR/$1"
-}
-
 # Source a tool's shell init script, cached in ~/.cache/zsh to save running the tool on every
 # start. Usage: _cached_init [-f <file>] <tool> <init args...>. Regenerates the cache when the
 # binary is newer, or when it resolves to a different path or gets other arguments, which the
@@ -61,20 +57,13 @@ fi
 # /usr/bin ahead of Homebrew. typeset -U keeps the first copy, so this moves Homebrew to the front.
 [[ -n ${HOMEBREW_PREFIX:-} ]] && path=("$HOMEBREW_PREFIX/bin" "$HOMEBREW_PREFIX/sbin" $path)
 
-srczshif basic-settings.zsh
-srczshif functions.zsh
-srczshif aliases.zsh
-srczshif options.zsh
-srczshif history.zsh
-srczshif key-bindings.zsh
-srczshif completions.zsh
-srczshif title.zsh
-srczshif hooks.zsh
-srczshif reminders.zsh
-# Before plugins.zsh, whose mise activation wraps the handler this defines. Defined after, it
-# would replace mise's, which installs a missing tool from the mise config.
-srczshif command-not-found.zsh
-srczshif plugins.zsh
+# command-not-found comes before plugins, whose mise activation wraps the handler it defines.
+# Defined after, it would replace mise's, which installs a missing tool from the mise config.
+for _f in basic-settings functions aliases options history key-bindings completions title hooks \
+    reminders command-not-found plugins; do
+    source "$ZSH_DIR/$_f.zsh"
+done
+unset _f
 
 # zoxide and starship both ask to be initialized at the end of .zshrc; zoxide after compinit
 _cached_init zoxide init zsh

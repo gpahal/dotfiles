@@ -95,7 +95,8 @@ jobs:
           echo "$MISE_SHA256_LINUX_X64  $f" | sha256sum -c -
           sudo install -m 755 "$f" /usr/local/bin/mise
 
-      - name: Install pinned yq
+      - &install-yq
+        name: Install pinned yq
         env:
           YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
           YQ_SHA256: ${{ runner.os == 'macOS' && env.YQ_SHA256_DARWIN_ARM64 || env.YQ_SHA256_LINUX_AMD64 }}
@@ -167,19 +168,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq bubblewrap
 
-      - name: Install pinned yq
-        env:
-          YQ_PLATFORM: ${{ runner.os == 'macOS' && 'darwin_arm64' || 'linux_amd64' }}
-          YQ_SHA256: ${{ runner.os == 'macOS' && env.YQ_SHA256_DARWIN_ARM64 || env.YQ_SHA256_LINUX_AMD64 }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/ci-bin"
-          f="$RUNNER_TEMP/yq_$YQ_PLATFORM"
-          curl -fsSL -o "$f" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_$YQ_PLATFORM"
-          if command -v sha256sum > /dev/null; then sha=(sha256sum); else sha=(shasum -a 256); fi
-          echo "$YQ_SHA256  $f" | "${sha[@]}" -c -
-          install -m 755 "$f" "$RUNNER_TEMP/ci-bin/yq"
-          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ci-bin/yq" --version
+      - *install-yq
 
       # AppArmor can stop bwrap creating user namespaces. The codex step loads AppArmor's bwrap
       # profile for that; a throwaway runner can turn the restriction off.

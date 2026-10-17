@@ -21,8 +21,8 @@ export T3CODE_TELEMETRY_ENABLED=false
 # HOMEBREW_PREFIX may come from a shell that didn't add it, such as sh reading ~/.profile.
 [[ -n ${HOMEBREW_PREFIX:-} ]] && fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
 
-# Completion, color names, and the zcalc calculator
-autoload -U compinit colors zcalc
+# Completion and the zcalc calculator
+autoload -U compinit zcalc
 # The full compinit audits every completion directory, so run it at most once a day and reuse
 # the dump in between. Also run it when Homebrew has linked or unlinked a completion since the
 # dump, which changes the site-functions directory's mtime, so a tool installed today completes.
@@ -37,7 +37,6 @@ else
     compinit -i && touch "$_zcompdump"
 fi
 unset _zcompdump _zcompdump_fresh
-colors
 
 # Color man pages with bat. col -bx strips the overstrike formatting man emits; MANROFFOPT=-c
 # keeps groff from emitting SGR escapes, as the bat README advises.

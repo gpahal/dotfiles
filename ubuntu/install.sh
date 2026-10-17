@@ -19,7 +19,7 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-UBUNTU_LIB_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+UBUNTU_LIB_DIR="$DOTFILES_DIR/ubuntu/lib"
 # shellcheck source=lib/ssh.sh
 source "$UBUNTU_LIB_DIR/ssh.sh"
 # shellcheck source=lib/firewall.sh
@@ -263,8 +263,10 @@ status() {
         status_item ok "No reboot pending for updates"
     fi
     ubuntu_files status_file
-    status_check "openssh-server" apt_installed openssh-server
-    if ! apt_installed openssh-server; then
+    local sshd_installed=false
+    apt_installed openssh-server && sshd_installed=true
+    status_check "openssh-server" "$sshd_installed"
+    if ! "$sshd_installed"; then
         :
     elif sshd_enabled; then
         status_item ok "sshd starts at boot"
@@ -277,7 +279,7 @@ status() {
         status_check "$SSHD_DROP_IN" sshd_configured
     fi
     # Checked once the drop-in is in place, which a missing item above already reports
-    if apt_installed openssh-server && sshd_configured 2>/dev/null; then
+    if "$sshd_installed" && sshd_configured 2>/dev/null; then
         item="sshd's effective settings match $SSHD_DROP_IN"
         if [ ! -d "$SSHD_RUN_DIR" ]; then
             status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
@@ -318,7 +320,7 @@ status() {
     fi
     if ufw_enabled; then
         status_item ok "ufw on, denying incoming connections"
-        if ! apt_installed openssh-server; then
+        if ! "$sshd_installed"; then
             status_item missing "$rules: openssh-server isn't installed"
         elif [ ! -d "$SSHD_RUN_DIR" ]; then
             status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"

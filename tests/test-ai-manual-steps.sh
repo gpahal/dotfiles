@@ -33,17 +33,16 @@ apps() {
     echo "apps=$i" >> "$NCPREFS"
 }
 
-# notifications_persistent
-assert_exit 1 notifications_persistent com.mitchellh.ghostty
+# notifications_pending
+assert_exit 1 notifications_pending com.mitchellh.ghostty
 apps com.other.app $((ALLOWED | PERSISTENT)) com.mitchellh.ghostty $((ALLOWED | PERSISTENT | 7))
-assert_exit 0 notifications_persistent com.mitchellh.ghostty
-assert_exit 1 notifications_persistent com.openai.codex
+assert_eq "com.openai.codex" "$(notifications_pending com.mitchellh.ghostty com.openai.codex)" "persistent, and no entry"
 apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY))
-assert_exit 1 notifications_persistent com.mitchellh.ghostty
+assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty)" "banners"
 apps com.mitchellh.ghostty "$PERSISTENT"
-assert_exit 1 notifications_persistent com.mitchellh.ghostty
+assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty)" "not allowed"
 apps com.mitchellh.ghostty $((ALLOWED | PERSISTENT | TEMPORARY))
-assert_exit 1 notifications_persistent com.mitchellh.ghostty
+assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty)" "both styles"
 
 # Everything done: nothing to offer. The extension is installed, so the real Chrome doesn't count.
 ok=$((ALLOWED | PERSISTENT))

@@ -191,8 +191,7 @@ ntfy_lib_installed() {
 }
 
 install_ntfy_lib() {
-    ntfy_lib_installed && return 0
-    sudo mkdir -p "$(dirname "$NTFY_LIB")" && sudo install -m 0644 "$NTFY_LIB_SRC" "$NTFY_LIB"
+    ntfy_lib_installed || install_root_file "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
 # The hook is root's and runs as root, so it's installed whole, executable, with the ntfy code
@@ -200,13 +199,8 @@ smartd_hook_installed() {
     cmp -s "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && [ -x "$SMARTD_HOOK" ] && ntfy_lib_installed
 }
 
-# install_root_executable <source> <destination>
-install_root_executable() {
-    sudo mkdir -p "$(dirname "$2")" && sudo install -m 0755 "$1" "$2"
-}
-
 install_smartd_hook() {
-    install_root_executable "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && install_ntfy_lib
+    install_root_file "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_ntfy_lib
 }
 
 # The hook that pushes smartd's warnings, and the ntfy code it sources. In a VM smartd doesn't run,

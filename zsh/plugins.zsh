@@ -1,6 +1,7 @@
 # Source a plugin Homebrew installed, failing when it isn't there
 _source_plugin() {
-    local file="${HOMEBREW_PREFIX:-/opt/homebrew}/share/$1/$1.zsh"
+    [[ -n ${HOMEBREW_PREFIX:-} ]] || return 1
+    local file="$HOMEBREW_PREFIX/share/$1/$1.zsh"
     [[ -f $file ]] || return 1
     source "$file"
     return 0

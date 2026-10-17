@@ -335,7 +335,7 @@ stage_doc() {
 stage_code() {
     case "$1:$2" in
         upgrade:apt) echo 'apt_get_update && sudo apt' ;;
-        "upgrade:brew bundle") echo 'brew bundle install' ;;
+        "upgrade:brew bundle") echo '_install_new_formulae' ;;
         upgrade:casks) echo '_install_new_casks' ;;
         upgrade:fc-cache) echo 'fc-cache -f' ;;
         upgrade:rustup) echo '.cargo/bin/rustup update' ;;

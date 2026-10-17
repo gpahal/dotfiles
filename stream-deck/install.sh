@@ -19,28 +19,19 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
-# Listed rather than found, so a stray file in the repo, such as a .DS_Store, isn't installed
-PLUGIN_FILES="manifest.json plugin.js stats.js bin/open-in bin/open-app
-profiles/System.streamDeckProfile images/plugin.png images/plugin@2x.png images/category.svg
-images/overview.svg images/editor.svg images/terminal.svg images/files.svg images/chrome.svg
-images/chrome-tab.svg images/gmail.svg images/t3-code.svg images/claude.svg images/key-overview.svg
-images/key-editor.png images/key-editor@2x.png images/key-terminal.png images/key-terminal@2x.png
-images/key-files.svg images/key-chrome.svg images/key-chrome-tab.svg images/key-gmail.svg
-images/key-t3-code.png images/key-t3-code@2x.png images/key-claude.svg
-images/cpu.svg images/memory.svg images/swap.svg images/top.svg images/gpu.svg
-images/temperature.svg images/power.svg images/disk.svg images/network.svg
-images/activity-monitor.svg images/back.svg images/key-cpu.svg
-images/key-memory.svg images/key-swap.svg images/key-top.svg images/key-gpu.svg
-images/key-temperature.svg images/key-power.svg images/key-disk.svg images/key-network.svg
-images/key-activity-monitor.svg images/key-back.svg"
+
+# Print each file in the repo's plugin, relative to it. A .DS_Store Finder leaves isn't one.
+plugin_file_list() {
+    (cd "$DOTFILES_DIR/stream-deck/$PLUGIN" && find . -type f ! -name .DS_Store | sed 's|^\./||')
+}
 
 # Pass each plugin file, as source and destination, to a function: copy_plugin_file to copy it,
 # or status_file to report it
 each_plugin_file() {
     local action="$1" file status=0
-    for file in $PLUGIN_FILES; do
+    while IFS= read -r file; do
         "$action" "$DOTFILES_DIR/stream-deck/$PLUGIN/$file" "$PLUGIN_DIR/$file" || status=1
-    done
+    done < <(plugin_file_list)
     return "$status"
 }
 

@@ -67,7 +67,7 @@ current_url() {
 save_url() {
     sudo mkdir -p "$(dirname "$NTFY_URL_FILE")" &&
         sudo chmod 755 "$(dirname "$NTFY_URL_FILE")" &&
-        printf '%s\n' "$1" | sudo sh -c 'umask 022 && cat > "$1" && chmod 644 "$1"' sh "$NTFY_URL_FILE"
+        write_root_file "$NTFY_URL_FILE" "$1" 0644
 }
 
 send_test_push() {

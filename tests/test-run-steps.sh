@@ -104,16 +104,14 @@ assert_exit 1 run_steps --status first
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran on an Intel Mac"
 stub uname '[ "$1" != -m ] || echo arm64'
 
-# An unknown step stops the run before any step runs
-rm -f "$SANDBOX/ran"
-assert_exit 1 run_steps "" first nope
-assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps: first last"
-[ ! -e "$SANDBOX/ran" ] || fail "a step ran despite an unknown step name"
-# step_script takes either OS's steps, so the error lists both when the runner sets them
+# An unknown step stops the run before any step runs. step_script takes either OS's steps, so the
+# error lists both.
 # shellcheck disable=SC2034 # unknown_step reads them
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
-assert_exit 1 run_steps "" nope
+rm -f "$SANDBOX/ran"
+assert_exit 1 run_steps "" first nope
 assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux"
+[ ! -e "$SANDBOX/ran" ] || fail "a step ran despite an unknown step name"
 
 # The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
 load_script lib/common.sh

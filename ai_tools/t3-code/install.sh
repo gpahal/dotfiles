@@ -236,7 +236,7 @@ t3_code_renamed_app() {
 
 # Succeeds when the LaunchAgent is current and launchd's environment has the variable now
 t3_code_telemetry_off() {
-    [ "$(cat "$T3_CODE_TELEMETRY_AGENT" 2>/dev/null)" == "$T3_CODE_TELEMETRY_AGENT_CONTENT" ] &&
+    file_is "$T3_CODE_TELEMETRY_AGENT" "$T3_CODE_TELEMETRY_AGENT_CONTENT" &&
         [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
 }
 
@@ -390,7 +390,7 @@ install_t3_cli() {
 }
 
 t3_code_drop_in_current() {
-    [ "$(cat "$T3_CODE_SERVICE_DROP_IN" 2>/dev/null)" == "$T3_CODE_SERVICE_DROP_IN_CONTENT" ]
+    file_is "$T3_CODE_SERVICE_DROP_IN" "$T3_CODE_SERVICE_DROP_IN_CONTENT"
 }
 
 # Check systemd's loaded unit separately from the running process: daemon-reload changes the
@@ -611,27 +611,16 @@ warn_t3_code_service_docker_group() {
 # Ubuntu blocks Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
 # profile allows it. `t3 browser setup` adds the profile and any libraries the browser is missing.
 # Without sudo it changes nothing and, when there's something to do, says it needs root. Returns 0
-# when there's nothing to do, 1 when it needs root, 2 on failure, and 3 for older releases that
-# don't provide the command.
+# when there's nothing to do, 1 when it needs root, and 2 on failure.
 t3_code_browser_ready() {
-    local report help
-    if ! report="$("$HOME/.local/bin/t3" browser setup 2>&1)"; then
-        help="$("$HOME/.local/bin/t3" --help 2>/dev/null)" || return 2
-        if [[ "$help" == *SUBCOMMANDS* ]] && ! grep -qE '^ +browser( +|$)' <<< "$help"; then
-            return 3
-        fi
-        return 2
-    fi
+    local report
+    report="$("$HOME/.local/bin/t3" browser setup 2>&1)" || return 2
     [[ "$report" != *"needs root"* ]]
 }
 
 setup_t3_code_browser() {
     local ready=0
     t3_code_browser_ready || ready=$?
-    if [ "$ready" -eq 3 ]; then
-        echo "  This t3 release does not provide t3 browser setup; skipping."
-        return 0
-    fi
     if [ "$ready" -eq 2 ]; then
         echo "  t3 browser setup failed; run it directly to inspect the error." >&2
         return 1
@@ -742,7 +731,6 @@ status() {
         case "$ready" in
             0) status_item ok "T3 Code's browser can run in Chrome's sandbox" ;;
             1) status_item missing "T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup" ;;
-            3) status_item skipped "Browser sandbox: this t3 release does not provide t3 browser setup" ;;
             *) status_item unknown "T3 Code's browser sandbox: t3 browser setup failed; run it directly to inspect the error" ;;
         esac
         t3_code_status_connect

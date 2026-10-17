@@ -1,15 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# tmux.conf loads without errors in a server started with only /usr/bin and /bin on PATH, as
-# continuum's systemd unit starts it at boot, and puts Homebrew's Linux dirs on the global PATH
-# when they exist, so panes and run jobs such as tpm find Homebrew's tools; elsewhere PATH is left
-# alone. A reload (prefix+r) adds no second copy of those dirs or of its array options. A client
+# tmux.conf loads without errors in a server started with only /usr/bin and /bin on PATH, and
+# leaves PATH alone. A reload (prefix+r) adds no second copy of its array options. A client
 # whose TERM is tmux-256color, such as tmux nested in a pane over SSH, gets the RGB feature, and
 # passthrough sequences, such as notifications, get out of panes you can't see. Killing the session
 # a client is on, as prefix+X does, moves the client to another session (detach-on-destroy off).
-# Runs a server on the sandbox's TMUX_TMPDIR, with a stand-in tpm that records the PATH its run job
-# got, and an outer server whose pane holds the client.
+# Runs a server on the sandbox's TMUX_TMPDIR, with a stand-in tpm, and an outer server whose pane
+# holds the client.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -19,10 +17,8 @@ command -v tmux &>/dev/null || skip "tmux isn't installed"
 
 TMUX_BIN="$(command -v tmux)"
 CONF="$REPO_DIR/tmux/tmux.conf"
-BREW_DIRS=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin
 mkdir -p "$HOME/.tmux/plugins/tpm"
-# shellcheck disable=SC2016 # expanded by sh
-printf '%s\n' '#!/bin/sh' 'echo "$PATH" > "$HOME/tpm-path"' > "$HOME/.tmux/plugins/tpm/tpm"
+printf '%s\n' '#!/bin/sh' > "$HOME/.tmux/plugins/tpm/tpm"
 chmod +x "$HOME/.tmux/plugins/tpm/tpm"
 
 # Loaded with source-file, not -f, which would hold the config's errors back until a client
@@ -31,16 +27,10 @@ run env -i PATH=/usr/bin:/bin HOME="$HOME" TMUX_TMPDIR="$TMUX_TMPDIR" \
     "$TMUX_BIN" -f /dev/null new-session -d -s one \; source-file "$CONF"
 assert_eq 0 "$RUN_STATUS" "loading tmux.conf"
 assert_eq "" "$RUN_OUTPUT" "config errors"
-global="$(tmux show-environment -g PATH)"
-if [ -d /home/linuxbrew/.linuxbrew/bin ]; then
-    assert_eq "PATH=$BREW_DIRS:/usr/bin:/bin" "$global" "global PATH"
-    assert_eq "$BREW_DIRS:/usr/bin:/bin" "$(cat "$HOME/tpm-path")" "PATH in tpm's run job"
-else
-    assert_eq "PATH=/usr/bin:/bin" "$global" "global PATH without Homebrew's Linux dirs"
-fi
+assert_eq "PATH=/usr/bin:/bin" "$(tmux show-environment -g PATH)" "global PATH"
 assert_eq all "$(tmux show-options -gv allow-passthrough)" "allow-passthrough"
 
-# Two reloads leave PATH and the array options as one load set them
+# Two reloads leave the array options as one load set them
 arrays() {
     tmux show -s terminal-overrides
     tmux show -s terminal-features
@@ -53,7 +43,6 @@ for _ in 1 2; do
     tmux source-file "$CONF"
 done
 assert_eq "$once" "$(arrays)" "arrays after three loads"
-assert_eq "$global" "$(tmux show-environment -g PATH)" "global PATH after three loads"
 
 # A nested client, attached from the outer server's pane
 tmux new-session -d -s two

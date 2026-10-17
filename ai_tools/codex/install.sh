@@ -23,53 +23,57 @@ BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
-# Top-level strings you may keep your own values of (replace_custom_value): the default model and
-# high reasoning effort, which /model changes. configure_codex sets CODEX_REPLACE_KEEPABLE to
-# whether to write each over yours.
-CODEX_KEEPABLE_KEYS=(model model_reasoning_effort)
-CODEX_KEEPABLE_VALUES=(gpt-6.1-sol high)
-CODEX_KEEPABLE_NAMES=("Codex's model (model)" "Codex's reasoning effort (model_reasoning_effort)")
-CODEX_REPLACE_KEEPABLE=(false false)
-
-# Print a top-level string in the config, or nothing when it's unset, not a string, or the config
-# can't be read
-codex_top_level_string() {
-    yq -p toml -o yaml ".$1 | select(tag == \"!!str\")" "$CODEX_CONFIG" 2>/dev/null || true
+# Settings you may keep your own values of (replace_custom_value), each a yq path, the repo's
+# value as TOML (see codex_set), and a name. configure_codex sets CODEX_REPLACE to whether to write
+# each over yours. Values only Ubuntu gets are marked ubuntu.
+# Usage: codex_keepable <yq path> <TOML value> <name> [ubuntu]
+CODEX_KEEP_PATHS=()
+CODEX_KEEP_VALUES=()
+CODEX_KEEP_NAMES=()
+CODEX_KEEP_UBUNTU=()
+CODEX_REPLACE=()
+codex_keepable() {
+    CODEX_KEEP_PATHS+=("$1")
+    CODEX_KEEP_VALUES+=("$2")
+    CODEX_KEEP_NAMES+=("Codex's $3")
+    CODEX_KEEP_UBUNTU+=("$([ "${4:-}" == ubuntu ] && echo true || echo false)")
+    CODEX_REPLACE+=(false)
 }
-
+# The default model and high reasoning effort, which /model changes
+codex_keepable .model '"gpt-6.1-sol"' "model (model)"
+codex_keepable .model_reasoning_effort '"high"' "reasoning effort (model_reasoning_effort)"
 # The CLI footer: model with reasoning effort, directory, git branch, and context used. /statusline
-# lists every item ID, and saves your choice to tui.status_line, a value you can change
-# (replace_custom_value): configure_codex sets CODEX_REPLACE_STATUS_LINE to whether to write this.
-CODEX_STATUS_LINE='["model-with-reasoning", "current-dir", "git-branch", "context-used"]'
-CODEX_STATUS_LINE_NAME="Codex's status line (tui.status_line)"
-CODEX_REPLACE_STATUS_LINE=false
+# lists every item ID, and saves your choice here.
+codex_keepable .tui.status_line '["model-with-reasoning", "current-dir", "git-branch", "context-used"]' \
+    "status line (tui.status_line)"
+# How the CLI sends notifications. Ubuntu is used over SSH, where a tmux pane may not carry
+# Ghostty's TERM_PROGRAM (see the claude-code step), and `auto` then rings the bell. OSC 9, wrapped
+# for tmux, reaches Ghostty on the Mac. On macOS, the repo's tmux config passes TERM_PROGRAM into
+# panes, so `auto` finds Ghostty.
+codex_keepable .tui.notification_method '"osc9"' "notification method (tui.notification_method)" ubuntu
 
-# Print the config's tui.status_line as one line of JSON, or nothing when it's unset or the
-# config can't be read
-codex_status_line() {
-    local line
-    line="$(yq -p toml -o json -I=0 '.tui.status_line' "$CODEX_CONFIG" 2>/dev/null)" || return 0
-    [ "$line" == null ] || printf '%s\n' "$line"
+# Succeeds when value $1 of CODEX_KEEP_PATHS applies on this OS
+codex_keep_applies() {
+    ! "${CODEX_KEEP_UBUNTU[$1]}" || is_ubuntu
 }
 
-# Print CODEX_STATUS_LINE as codex_status_line prints it
-codex_status_line_wanted() {
-    printf 'v = %s\n' "$CODEX_STATUS_LINE" | yq -p toml -o json -I=0 '.v'
+# Print one line of JSON without a string's quotes
+codex_unquote() {
+    local value="${1#\"}"
+    printf '%s\n' "${value%\"}"
 }
 
-# On Ubuntu, how the CLI sends notifications, a value you can change (replace_custom_value).
-# Ubuntu is used over SSH, where a tmux pane may not carry Ghostty's TERM_PROGRAM (see the
-# claude-code step), and `auto` then rings the bell. OSC 9, wrapped for tmux, reaches Ghostty on
-# the Mac. On macOS, the repo's tmux config passes TERM_PROGRAM into panes, so `auto` finds
-# Ghostty. configure_codex sets CODEX_REPLACE_NOTIFICATION to whether to write this over yours.
-CODEX_NOTIFICATION=osc9
-CODEX_NOTIFICATION_NAME="Codex's notification method (tui.notification_method)"
-CODEX_REPLACE_NOTIFICATION=false
+# Print the config's value at path $1 of CODEX_KEEP_PATHS as one line of JSON, without a string's
+# quotes, or nothing when it's unset or the config can't be read
+codex_keep_current() {
+    local value
+    value="$(yq -p toml -o json -I=0 "${CODEX_KEEP_PATHS[$1]}" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    [ "$value" == null ] || codex_unquote "$value"
+}
 
-# Print the config's tui.notification_method, or nothing when it's unset, not a string, or the
-# config can't be read
-codex_notification_method() {
-    yq -p toml -o yaml '.tui.notification_method | select(tag == "!!str")' "$CODEX_CONFIG" 2>/dev/null || true
+# Print the repo's value $1 of CODEX_KEEP_VALUES as codex_keep_current prints it
+codex_keep_wanted() {
+    codex_unquote "$(printf 'v = %s\n' "${CODEX_KEEP_VALUES[$1]}" | yq -p toml -o json -I=0 '.v')"
 }
 
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
@@ -84,11 +88,11 @@ codex_settings() {
     local i
     CODEX_PATHS=()
     CODEX_VALUES=()
-    # Default model and effort, unless you chose your own and keep them
-    for i in "${!CODEX_KEEPABLE_KEYS[@]}"; do
-        if "${CODEX_REPLACE_KEEPABLE[i]}" ||
-            [ -z "$(codex_top_level_string "${CODEX_KEEPABLE_KEYS[i]}")" ]; then
-            codex_set ".${CODEX_KEEPABLE_KEYS[i]}" "\"${CODEX_KEEPABLE_VALUES[i]}\""
+    # The settings you may keep, unless you chose your own and keep them
+    for i in "${!CODEX_KEEP_PATHS[@]}"; do
+        codex_keep_applies "$i" || continue
+        if "${CODEX_REPLACE[i]}" || [ -z "$(codex_keep_current "$i")" ]; then
+            codex_set "${CODEX_KEEP_PATHS[i]}" "${CODEX_KEEP_VALUES[i]}"
         fi
     done
     # Short answers and reasoning summaries
@@ -106,14 +110,7 @@ codex_settings() {
     # ai_tools/README.md → Privacy).
     codex_set .analytics.enabled 'false'
     codex_set .feedback.enabled 'false'
-    # CLI footer, unless you chose your own and keep it
-    if "$CODEX_REPLACE_STATUS_LINE" || [ -z "$(codex_status_line)" ]; then
-        codex_set .tui.status_line "$CODEX_STATUS_LINE"
-    fi
     if is_ubuntu; then
-        if "$CODEX_REPLACE_NOTIFICATION" || [ -z "$(codex_notification_method)" ]; then
-            codex_set .tui.notification_method "\"$CODEX_NOTIFICATION\""
-        fi
         # Keep MCP OAuth tokens in ~/.codex/.credentials.json. Over SSH, the GNOME keyring stays
         # locked until someone logs in at the desk, so with `auto` where tokens go, and whether
         # Codex can read them, depends on that.
@@ -227,22 +224,13 @@ codex_config_matches() {
 configure_codex() {
     echo "Configuring Codex..."
     local edited i
-    for i in "${!CODEX_KEEPABLE_KEYS[@]}"; do
-        CODEX_REPLACE_KEEPABLE[i]=false
-        if replace_custom_value "${CODEX_KEEPABLE_NAMES[i]}" \
-            "$(codex_top_level_string "${CODEX_KEEPABLE_KEYS[i]}")" "${CODEX_KEEPABLE_VALUES[i]}"; then
-            CODEX_REPLACE_KEEPABLE[i]=true
+    for i in "${!CODEX_KEEP_PATHS[@]}"; do
+        CODEX_REPLACE[i]=false
+        if codex_keep_applies "$i" && replace_custom_value "${CODEX_KEEP_NAMES[i]}" \
+            "$(codex_keep_current "$i")" "$(codex_keep_wanted "$i")"; then
+            CODEX_REPLACE[i]=true
         fi
     done
-    CODEX_REPLACE_STATUS_LINE=false
-    if replace_custom_value "$CODEX_STATUS_LINE_NAME" "$(codex_status_line)" "$(codex_status_line_wanted)"; then
-        CODEX_REPLACE_STATUS_LINE=true
-    fi
-    CODEX_REPLACE_NOTIFICATION=false
-    if is_ubuntu && replace_custom_value "$CODEX_NOTIFICATION_NAME" "$(codex_notification_method)" \
-        "$CODEX_NOTIFICATION"; then
-        CODEX_REPLACE_NOTIFICATION=true
-    fi
     local settings="model, output, sandbox, approval, data-sharing, and status line settings"
     if is_macos; then
         settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
@@ -371,7 +359,7 @@ setup_codex_sandbox() {
 }
 
 status() {
-    local codex line wanted value i
+    local wanted value i
     if is_macos; then
         status_cask chatgpt /Applications/ChatGPT.app
     else
@@ -386,21 +374,14 @@ status() {
     else
         if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
-            for i in "${!CODEX_KEEPABLE_KEYS[@]}"; do
-                value="$(codex_top_level_string "${CODEX_KEEPABLE_KEYS[i]}")"
-                if [ -n "$value" ] && [ "$value" != "${CODEX_KEEPABLE_VALUES[i]}" ]; then
-                    status_custom_value "${CODEX_KEEPABLE_NAMES[i]}" "$value" "${CODEX_KEEPABLE_VALUES[i]}"
+            for i in "${!CODEX_KEEP_PATHS[@]}"; do
+                codex_keep_applies "$i" || continue
+                value="$(codex_keep_current "$i")"
+                wanted="$(codex_keep_wanted "$i")"
+                if [ -n "$value" ] && [ "$value" != "$wanted" ]; then
+                    status_custom_value "${CODEX_KEEP_NAMES[i]}" "$value" "$wanted"
                 fi
             done
-            line="$(codex_status_line)"
-            wanted="$(codex_status_line_wanted)"
-            if [ -n "$line" ] && [ "$line" != "$wanted" ]; then
-                status_custom_value "$CODEX_STATUS_LINE_NAME" "$line" "$wanted"
-            fi
-            value="$(codex_notification_method)"
-            if is_ubuntu && [ -n "$value" ] && [ "$value" != "$CODEX_NOTIFICATION" ]; then
-                status_custom_value "$CODEX_NOTIFICATION_NAME" "$value" "$CODEX_NOTIFICATION"
-            fi
         fi
         user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
     fi

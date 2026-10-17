@@ -20,8 +20,8 @@ plug_vim_pinned() {
     cmp -s "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM"
 }
 
-# Not a copy_file: plug.vim is vendored, not edited, so a copy that differs, such as one an older
-# vimrc downloaded or PlugUpgrade wrote, is replaced without a backup
+# Not a copy_file: plug.vim is vendored, not edited, so a copy that differs, such as one
+# PlugUpgrade wrote, is replaced without a backup
 install_plug_vim() {
     local tmp
     if plug_vim_pinned; then

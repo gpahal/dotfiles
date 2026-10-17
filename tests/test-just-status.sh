@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # just status runs both runners whatever the first returns, then exits 1 when either failed, 3
-# when either needs attention, and 0 otherwise, so a scheduled run notices a step that needs
-# attention. Stub runners that exit a given code stand in for the real ones. No recipe runs an
-# argument as shell code.
+# when either needs attention, and 0 otherwise. Stub runners that exit a given code stand in for
+# the real ones. No recipe runs an argument as shell code.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

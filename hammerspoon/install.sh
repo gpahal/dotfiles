@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Copy the Hammerspoon config, whose hotkeys open Claude, Chrome, a new Chrome tab with the
 # clipboard pasted, Ghostty and Zed at the folder or file in front, and T3 Code, and the Stream
-# Deck plugin's bin/open-in, which finds the folder or file. A running Hammerspoon reloads the config when it changes,
-# and the config sets Hammerspoon to open at login. macOS only, since Hammerspoon has no Linux
-# app. The homebrew step installs Hammerspoon.
+# Deck plugin's bin/open-in, which finds the folder or file. A running Hammerspoon reloads the
+# config when it changes, and the config sets Hammerspoon to open at login. macOS only, since
+# Hammerspoon has no Linux app. The homebrew step installs Hammerspoon.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

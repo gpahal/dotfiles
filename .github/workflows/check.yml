@@ -29,10 +29,10 @@ concurrency:
 # the xcode-27 public-preview runner: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
 # Ubuntu takes apt's packages and these pinned releases. macOS takes current Homebrew packages
 # except for shellcheck and yq, so it checks compatibility with newer tools.
-# scripts/check-tool-versions.sh fails a leg whose tools are older
-# than the declared minimums. One shellcheck for every leg, from its release: versions report
-# different warnings, and Ubuntu's package is older. Ubuntu's yq package is a different tool, so
-# mikefarah's comes from its release. Pin it on macOS too, where brew can lag behind our minimum.
+# scripts/check-tool-versions.sh fails a leg whose tools are older than the declared minimums. One
+# shellcheck for every leg, from its release: versions report different warnings, and Ubuntu's
+# package is older. Ubuntu's yq package is a different tool, so mikefarah's comes from its release.
+# Pin it on macOS too, where brew can lag behind our minimum.
 #
 # Each downloaded release is checked against a pinned SHA-256 before it's installed: from the
 # release's checksum file where it has one (mise's SHASUMS256.txt, yq's checksums), else hashed from

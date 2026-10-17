@@ -6,8 +6,8 @@ set -euo pipefail
 # A step missing a command it needs fails before it changes anything: claude-code and claude-desktop
 # without jq, claude-code without curl when Claude Code is missing, codex without yq, tmux without
 # tmux or git, git without gh, ubuntu and docker without jq, ubuntu without curl when Tailscale is
-# missing, t3-code without brew on macOS and without curl on Ubuntu when it would download the app
-# or the CLI, runtimes without mise, and without curl when rustup is missing, and zsh without its
+# missing, t3-code without brew on macOS and without curl on Ubuntu when it would download the t3
+# CLI, runtimes without mise, and without curl when rustup is missing, and zsh without its
 # login zsh. chrome without curl is in test-chrome.sh.
 
 # shellcheck source=lib.sh
@@ -111,7 +111,7 @@ t3_code_macos() {
     is_ubuntu() { false; }
     main
 }
-# T3 Code on Ubuntu without the desktop app or the t3 CLI, which it would download
+# T3 Code on Ubuntu without the t3 CLI, which it would download
 t3_code_ubuntu() {
     load_script ai_tools/t3-code/install.sh
     is_macos() { false; }

@@ -296,10 +296,11 @@ while IFS=$'\t' read -r file home; do
     fi
 done < "$tmp/copied-back"
 
-# README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools
-# in scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds
-# to failed, directly or through _stage_failed, must map to text its Updating section has, and the command that text quotes must be in
-# the function's body. Each item of the section's first list must describe a stage. A new stage goes in the map.
+# README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools in
+# scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds to
+# failed, directly or through _stage_failed, must map to text its Updating section has, and the
+# command that text quotes must be in the function's body. Each item of the section's first list
+# must describe a stage. A new stage goes in the map.
 stage_doc() {
     case "$1:$2" in
         upgrade:apt) echo 'sudo apt-get update && sudo apt upgrade' ;;

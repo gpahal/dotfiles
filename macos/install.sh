@@ -28,10 +28,10 @@ hotkey_off_plist() {
     echo "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>$1</integer></array><key>type</key><string>standard</string></dict></dict>"
 }
 
-# The shortcuts the step turns off, as symbolic hotkey, modifiers, and description. Spotlight's
-# "Show Spotlight search" is Cmd+Space (Cmd is 1048576); Raycast's own setting binds it once it's
-# free. "Select next source in Input menu" is Ctrl+Opt+Space (Ctrl 262144 plus Opt 524288), which
-# hammerspoon/init.lua binds.
+# The shortcuts the step turns off, as symbolic hotkey, modifiers, description, and the app that
+# takes the shortcut. Spotlight's "Show Spotlight search" is Cmd+Space (Cmd is 1048576); Raycast's
+# own setting binds it once it's free. "Select next source in Input menu" is Ctrl+Opt+Space (Ctrl
+# 262144 plus Opt 524288), which hammerspoon/init.lua binds.
 symbolic_hotkeys() {
     "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Raycast"
     "$@" 61 786432 "the next input source's Ctrl+Opt+Space shortcut" "Hammerspoon"
@@ -249,8 +249,8 @@ status_app_firewall() {
 # Ghostty's shell integration reports the shell's folder with OSC 7, as a URL whose host is the
 # hostname, and Ghostty drops a URL it can't parse. A Mac with no HostName takes one from the
 # network, which can be a name such as Unknown_d6:96:0e:05:c6:0a, whose colons break the URL.
-# Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys find no folder. So
-# HostName is set to LocalHostName, the name in System Settings → General → Sharing, which macOS
+# Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys and Hammerspoon's
+# Ctrl+Opt+T and E find no folder. So HostName is set to LocalHostName, the name in System Settings → General → Sharing, which macOS
 # keeps to letters, digits, and hyphens.
 hostname_valid() {
     local name

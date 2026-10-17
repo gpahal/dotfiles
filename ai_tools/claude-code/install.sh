@@ -129,19 +129,18 @@ claude_code_settings() {
     # Start new sessions in auto mode. Only user or managed settings can make auto the default.
     # Turn off auto memory. Keep transcripts 90 days instead of 30, so /resume reaches further back.
     # Default to Opus 5.5 with medium effort, the fullscreen TUI, and normal key bindings.
-    #   Switch models instead of pausing when safeguards flag a message. New worktrees branch
-    #   from origin/<default-branch>.
-    # Worktrees: ~/.claude/hooks/worktree-hook.sh creates and removes them under
-    #   ~/.worktrees/<group>/<repo>/<name>, through git wt, and at SessionEnd removes the
-    #   session's subagent worktrees that hold nothing to lose. It's added unless already there,
-    #   and only once git wt is installed. While another command holds WorktreeCreate or
+    #   Switch models instead of pausing when safeguards flag a message.
+    # Worktrees: ~/.claude/hooks/worktree-hook.sh creates them, branching from origin's default
+    #   branch, and removes them under ~/.worktrees/<group>/<repo>/<name>, through git wt, and at
+    #   SessionEnd removes the session's subagent worktrees that hold nothing to lose. It's added
+    #   unless already there, and only once git wt is installed. While another command holds WorktreeCreate or
     #   WorktreeRemove, it's removed from all three events. Its 120 s timeout stops a stuck
     #   git wt from holding up claude -w for the default 10 minutes.
     # Status line: ~/.claude/statusline.sh (model, effort, context, 5-hour limit, git branch).
     #   Refresh every five seconds, including while idle. Other keys, such as padding, stay.
     # Send Anthropic less: no error reports, session quality surveys (they can attach the
     #   transcript), /feedback, or feedback drafts. Training on your chats is an account
-    #   setting (see ai_tools/README.md → Manual steps). Telemetry stays on: DO_NOT_TRACK and
+    #   setting (see ai_tools/README.md → Privacy). Telemetry stays on: DO_NOT_TRACK and
     #   DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns off
     #   /advisor, /skill-doctor, skill and plugin sync, and more. Leave
     #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so

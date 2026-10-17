@@ -10,7 +10,7 @@ set -euo pipefail
 # message shows it.
 # --test runs the installed smartd hook with a made-up warning, and the UPS notifier, when a UPS is
 # set up, with a test event, which they push to ntfy. The topic is yours to pick, so setup.sh
-# doesn't run this. Idempotent: safe to re-run.
+# doesn't run this.
 # Ubuntu only.
 
 # shellcheck source=../lib/common.sh

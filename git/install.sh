@@ -5,8 +5,8 @@ set -euo pipefail
 # also send GitHub's SSH remotes over HTTPS.
 #
 # The repo config goes to ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set).
-# ~/.gitconfig, which git reads after it, holds what tools write there: gh's credential helper
-# and, from git/setup-signing.sh, commit signing.
+# ~/.gitconfig, which git reads after it, holds what tools write there: gh's credential helper,
+# Ubuntu's HTTPS rewrite of GitHub's SSH remotes, and, from git/setup-signing.sh, commit signing.
 # The repo config includes ~/.gitconfig.local for any other per-machine settings.
 
 # shellcheck source=../lib/common.sh

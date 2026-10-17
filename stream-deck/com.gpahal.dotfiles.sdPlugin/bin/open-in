@@ -45,9 +45,9 @@ EOF
 }
 
 # Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. With
-# -l JavaScript first, run JavaScript for Automation instead. A
-# failure is logged, and one for a missing permission sets PERMISSION_ERROR: -1743 is a denied
-# Automation prompt, and -25211 or "assistive access" is missing Accessibility. Missing
+# -l JavaScript first, run JavaScript for Automation instead. A failure is logged, and one for a
+# missing permission sets PERMISSION_ERROR: -1743 is a denied Automation prompt, and -25211 or
+# "assistive access" is missing Accessibility. Missing
 # Accessibility can also come as -1719, but so does Zed with no window open, so the code alone
 # isn't enough.
 applescript() {

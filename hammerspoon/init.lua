@@ -8,9 +8,9 @@
 --   Ctrl+Opt+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
 -- The hammerspoon step copies this file to ~/.hammerspoon/init.lua, and the Stream Deck plugin's
 -- bin/open-in, which finds the folder or file, to ~/.hammerspoon/bin/open-in. Hammerspoon needs
--- Accessibility to send the new tab's keystrokes and read Zed's window title and T3 Code's page,
--- both manual steps, and macOS asks it for Automation of Ghostty, Finder, and System Events. The
--- Stream Deck plugin's bin/open-app does the same for its keys.
+-- Accessibility, a manual step, to send the new tab's keystrokes and read Zed's window title and
+-- T3 Code's page, and macOS asks it for Automation of Ghostty, Finder, and System Events. The
+-- Stream Deck plugin's bin/open-app sends the same keystrokes for its New Tab key.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
@@ -24,7 +24,7 @@ local NEW_TAB_DELAY = 0.15
 -- Microseconds between each keystroke's key down and key up
 local KEY_DELAY = 20000
 
--- Hammerspoon garbage-collects a timer or watcher nothing refers to, so they're kept here
+-- Hammerspoon garbage-collects a timer, watcher, or task nothing refers to, so they're kept here
 dotfiles = {}
 
 -- Open Hammerspoon at login, so the hotkeys work from the start

@@ -9,7 +9,6 @@ set -euo pipefail
 # T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets user.signingkey,
 # gpg.format, gpg.ssh.allowedSignersFile, commit.gpgsign, and tag.gpgsign in ~/.gitconfig, which
 # holds per-machine git settings (see git/install.sh), and leaves its other settings as they are.
-# Idempotent: safe to re-run.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

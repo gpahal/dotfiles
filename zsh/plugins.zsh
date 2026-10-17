@@ -39,7 +39,7 @@ _cached_init -f ${ATUIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/atuin}/con
 # mise (dev tool version manager: node, go, ...). Not cached: its output embeds the current PATH.
 if command -v mise &>/dev/null; then
     # mise puts its tool dirs ahead of the PATH it saw at activation, so a CLI installed both ways
-    # (codex with npm and natively) would resolve to mise's copy here and to ~/.local/bin's in
+    # (claude with npm and natively) would resolve to mise's copy here and to ~/.local/bin's in
     # login shells. In its default (non-aggressive) mode, entries added after activation stay in
     # front at every prompt, so take ~/.local/bin out first and add it back after.
     path=(${path:#$HOME/.local/bin})

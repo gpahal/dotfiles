@@ -103,7 +103,7 @@ codex_settings() {
     codex_set .sandbox_mode '"workspace-write"'
     # Send OpenAI less: no usage metrics or product events (CLI and desktop app), and no
     # /feedback log uploads. Training on your chats is an account setting (see
-    # ai_tools/README.md → Manual steps).
+    # ai_tools/README.md → Privacy).
     codex_set .analytics.enabled 'false'
     codex_set .feedback.enabled 'false'
     # CLI footer, unless you chose your own and keep it

@@ -101,11 +101,11 @@ just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in M
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. The target is Ubuntu 26.04 LTS Desktop on x86_64. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
 
 What differs from macOS:
 
-- **Steps.** Ubuntu runs `homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker chrome logitech manual-steps`. Ghostty and Zed are only for when you sit at the machine. Over SSH from the Mac you need neither.
+- **Steps.** Ubuntu runs `homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker chrome logitech manual-steps`. Ghostty and Zed are only for when you sit at the machine.
 - **System packages.** Before Homebrew, the `homebrew` step installs these apt packages, after asking: `build-essential procps curl file git zsh lsof bsdextrautils unzip jq locales fontconfig`.
 - **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only `macmon`, `terminal-notifier`, `pam-reattach`, and `mas`. zsh comes from apt. Of the casks, Ubuntu gets `zed` and `font-monaspace` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
 - **PATH.** Homebrew comes first, as on macOS, so brew's `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
@@ -124,7 +124,7 @@ The Ubuntu machine stays on so the Mac and the phone can reach its agents at any
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
 - **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.
-- **Tailscale.** Once you've logged in, Tailscale updates itself, and `tailscale serve` works without `sudo`. So can anything else running as you, and it can run `tailscale funnel` too, which opens a port to the internet, if the tailnet's policy grants funnel. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
+- **Tailscale.** Once you've logged in, Tailscale updates itself, and you can run `tailscale serve` without `sudo`. So can anything else running as you, and it can run `tailscale funnel` too, which opens a port to the internet, if the tailnet's policy grants funnel. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
 - **Firewall.** ufw lets SSH in only from private addresses, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
 - **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`. For containers to reach a port on the host, run `sudo ufw allow in on docker0`.
 - **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
@@ -156,7 +156,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - [Git](https://git-scm.com/) config with the [delta](https://github.com/dandavison/delta) pager, `zdiff3` and `histogram` diffs, `rerere`, auto-squash and `updateRefs` on rebase, rebase on pull, and object checks on fetch
 - [difftastic](https://github.com/Wilfred/difftastic) as the diff tool: `git dft`, `git dd`, and `git dlog`
 - `git cob` and `git cobr` pick a local or remote branch with fzf and switch to it. `git co` runs `switch`, `git unstage` runs `restore --staged`, and `git del` deletes a merged branch
-- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt path`, `list`, `rm`, and `prune` do the rest; `git wt` alone lists them
+- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt path`, `list`, `rm`, and `prune` do the rest; `git wt` alone prints its usage
 - Copied to `~/.config/git/config`, with a global ignore file at `~/.config/git/ignore`
 - Put settings for one machine in `~/.gitconfig.local`. To clone a repo with malformed objects, run `git -c transfer.fsckObjects=false clone <url>`
 
@@ -217,7 +217,7 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
 - Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
-- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys read
+- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+T` and `Ctrl+Opt+E` read
 
 ### Stream Deck
 
@@ -226,7 +226,7 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 | Key | From Ghostty | From Zed | From Finder | From T3 Code |
 | :- | :- | :- | :- | :- |
 | **Editor** | Opens the tab's folder in Zed | Shows the open file | Opens the selection, or the window's folder, in Zed | Opens the thread's folder in Zed |
-| **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, or the selected file's folder | Opens a Ghostty window at the thread's folder |
+| **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, the selected file's folder, or the window's folder | Opens a Ghostty window at the thread's folder |
 | **Files** | Opens the tab's folder in Finder | Reveals the open file in Finder | Opens the selected folder or reveals the selected file, or opens the window's folder | Opens the thread's folder in Finder |
 
 A T3 Code thread's folder is its worktree, or its project's folder when it has none.
@@ -277,7 +277,7 @@ The [Stream Deck](#stream-deck) has keys for the same six. `Ctrl+Opt+T` and `Ctr
 
 ### EditorConfig
 
-- `~/.editorconfig` applies to every project without its own `root = true`: UTF-8, LF, a final newline, no trailing whitespace outside Markdown, 4-space indents, 2 for JSON, YAML, JavaScript, and TypeScript, and tabs for Go and Makefiles
+- `~/.editorconfig` applies to every project without its own `root = true`: UTF-8, LF, a final newline, no trailing whitespace outside Markdown and patches, 4-space indents, 2 for JSON, YAML, JavaScript, and TypeScript, and tabs for Go and Makefiles
 
 ### Runtimes
 

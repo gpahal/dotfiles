@@ -35,13 +35,13 @@ _brew_cask_outdated() {
 # would quit and replace them when the app bundle is behind, so `upgrade` sets
 # HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave them to this. A cask given as <cask>:<process>
 # counts as running when a process has that exact name. For the others, an app's name can gain or
-# lose a suffix in parentheses between releases, so match any running app whose name starts with
-# the cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or `brew info` leaves
-# the cask alone and fails, since its output can't say the cask is up to date or what app it has.
-# An interrupted brew command returns its status, so the caller stops.
-# An app that renamed itself as it updated, as T3 Code can, would
-# fail brew upgrade, which first removes the app under the name brew recorded and stops when
-# that's gone. Such a cask is re-recorded instead, keeping the app on disk (_readopt_renamed_cask).
+# lose a suffix in parentheses between releases, so match any running app whose name starts with the
+# cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
+# `brew info` leaves the cask alone and fails, since its output can't say the cask is up to date or
+# what app it has. An interrupted brew command returns its status, so the caller stops. An app that
+# renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
+# under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
+# keeping the app on disk (_readopt_renamed_cask).
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
     local rerun="$1" entry cask process info path app running outdated status rc exit_status=0
@@ -227,7 +227,7 @@ upgrade_ai_tools() {
 # Update everything that's installed
 upgrade() {
     local failed=()
-    # Ubuntu's packages, including Docker's. unattended-upgrades only installs security updates.
+    # Ubuntu's packages. unattended-upgrades installs only security, Chrome, and Docker updates.
     # apt upgrade, unlike apt-get upgrade, installs new dependencies, so upgrades that need them
     # (such as the kernel meta-packages) aren't held back. Both wait for the locks that apt-daily
     # and unattended-upgrades hold after boot.

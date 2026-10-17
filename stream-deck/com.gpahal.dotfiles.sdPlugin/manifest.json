@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty",
+  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, and open Claude, Chrome, or a new Chrome tab",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -36,6 +36,30 @@
       "Tooltip": "Open Ghostty at the folder in front",
       "Icon": "images/terminal",
       "States": [{ "Image": "images/key-terminal" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Claude",
+      "UUID": "com.gpahal.dotfiles.claude",
+      "Tooltip": "Open Claude, or bring it to the front",
+      "Icon": "images/claude",
+      "States": [{ "Image": "images/key-claude" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Chrome",
+      "UUID": "com.gpahal.dotfiles.chrome",
+      "Tooltip": "Open Google Chrome, or bring it to the front",
+      "Icon": "images/chrome",
+      "States": [{ "Image": "images/key-chrome" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "New Tab",
+      "UUID": "com.gpahal.dotfiles.chrome-tab",
+      "Tooltip": "Open a new Chrome tab with the clipboard's text pasted and selected",
+      "Icon": "images/chrome-tab",
+      "States": [{ "Image": "images/key-chrome-tab" }],
       "Controllers": ["Keypad"]
     }
   ]

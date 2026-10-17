@@ -1,0 +1,101 @@
+#!/bin/bash
+set -uo pipefail
+
+# Usage: open-app claude|chrome|chrome-tab
+# Open Claude or Google Chrome, or bring it to the front when it's running. chrome-tab then opens
+# a new Chrome tab, and when the clipboard holds text, pastes it into the address bar and selects
+# it. hammerspoon/init.lua does the same for its hotkeys. The Stream Deck plugin runs it for each
+# key press, so macOS asks Stream Deck for its permissions: Automation for System Events, and
+# Accessibility to send the new tab's keystrokes.
+#
+# Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1, and
+# shows a notification saying why, when it couldn't open the app or send the keystrokes.
+
+# Stream Deck starts plugins with a minimal environment
+PATH="${PATH:+$PATH:}/usr/bin:/bin"
+CLAUDE=com.anthropic.claudefordesktop
+CHROME=com.google.Chrome
+
+# Stream Deck adds the time to each line it logs
+log() {
+    printf '%s\n' "$*" >&2
+}
+
+notify() {
+    osascript - "$1" <<'EOF' > /dev/null 2>&1
+on run argv
+    display notification (item 1 of argv) with title "Stream Deck"
+end run
+EOF
+}
+
+# Whitespace alone isn't worth pasting
+clipboard_has_text() {
+    pbpaste 2> /dev/null | grep -q '[^[:space:]]'
+}
+
+# Wait for Chrome to come to the front, which includes starting it, then press Cmd+T, and with
+# "paste", Cmd+V and Cmd+A once the new tab's address bar has focus. With no window open, Cmd+T
+# opens one. Prints why it failed: -1743 is a denied Automation prompt, and 1002 or -25211 is
+# missing Accessibility.
+new_tab() {
+    osascript - "$1" <<EOF 2>&1 > /dev/null
+on run argv
+    tell application "System Events"
+        repeat 100 times
+            if bundle identifier of first application process whose frontmost is true is "$CHROME" then exit repeat
+            delay 0.1
+        end repeat
+        if bundle identifier of first application process whose frontmost is true is not "$CHROME" then
+            error "Google Chrome didn't come to the front"
+        end if
+        keystroke "t" using command down
+        if item 1 of argv is "paste" then
+            delay 0.15
+            keystroke "v" using command down
+            keystroke "a" using command down
+        end if
+    end tell
+end run
+EOF
+}
+
+main() {
+    local target="${1:-}" bundle name paste=no err
+    case "$target" in
+        claude) bundle="$CLAUDE" name=Claude ;;
+        chrome | chrome-tab) bundle="$CHROME" name="Google Chrome" ;;
+        *)
+            echo "Usage: open-app claude|chrome|chrome-tab" >&2
+            return 2
+            ;;
+    esac
+    if ! open -b "$bundle"; then
+        log "ERROR couldn't open $name"
+        notify "Couldn't open $name. Is it installed?"
+        return 1
+    fi
+    if [ "$target" != chrome-tab ]; then
+        log "$target: opened $name"
+        return 0
+    fi
+    ! clipboard_has_text || paste="paste"
+    if ! err="$(new_tab "$paste")"; then
+        err="$(printf '%s' "$err" | tr '\n' ' ')"
+        err="${err% }"
+        log "ERROR $err"
+        if printf '%s' "$err" | grep -qE -- '-1743|-25211|\(1002\)|assistive access'; then
+            notify "Stream Deck lacks a permission: $err"
+        else
+            notify "Couldn't open a new Chrome tab. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+        fi
+        return 1
+    fi
+    if [ "$paste" == paste ]; then
+        log "$target: opened a new tab with the clipboard pasted"
+    else
+        log "$target: opened a new tab"
+    fi
+}
+
+main "$@"

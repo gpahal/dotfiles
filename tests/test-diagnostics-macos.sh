@@ -214,7 +214,7 @@ read_only
 
 # The whole report: the diagnostics are in it, and none needs attention
 default_matches() { true; }
-spotlight_shortcut_off() { true; }
+hotkey_off() { true; }
 mkdir -p "$HOME/Screenshots"
 rm "$SUDO_LOCAL"
 filevault 'FileVault is Off.\n'

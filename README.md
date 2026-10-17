@@ -64,8 +64,9 @@ bash setup.sh
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
 | `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and restarts Stream Deck to load it. macOS only |
+| `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config, whose hotkeys open Claude, Chrome, and a new Chrome tab. macOS only |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets macOS defaults and, when needed, the hostname. macOS only |
+| `macos` | Sets macOS defaults, frees the shortcuts Raycast and Hammerspoon take, and, when needed, sets the hostname. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine, started at boot. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only; the `homebrew` step installs it on macOS |
@@ -230,7 +231,21 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 
 Sometimes there's no path to use: another app is in front, Zed has no file open, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. After each press, the key shows a check mark, or a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
-Stream Deck runs the plugin's `bin/open-in`, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title, and Automation lets it control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+The category's **Claude**, **Chrome**, and **New Tab** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`.
+
+Stream Deck runs the plugin's `bin/open-in` and `bin/open-app`, so macOS asks Stream Deck for the permissions they need. Accessibility lets them read Zed's window title and press the new tab's keys, and Automation lets them control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+
+### Hammerspoon
+
+macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets these global hotkeys. Each opens its app, or brings it to the front when it's running:
+
+| Hotkey | What it does |
+| :- | :- |
+| `Ctrl+Opt+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
+| `Ctrl+Opt+C` | Opens Google Chrome |
+| `Ctrl+Opt+T` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
+
+The [Stream Deck](#stream-deck) has keys for the same three. A running Hammerspoon reloads the config when the step changes it, and the config sets Hammerspoon to open at login. The new tab's keystrokes need Accessibility, a [manual step](#macos-1). `Ctrl+Opt+Space` is macOS's shortcut for the next input source, so the `macos` step turns that off.
 
 ### tmux
 
@@ -334,6 +349,7 @@ macOS only. Installed with brew casks:
 - [The Unarchiver](https://theunarchiver.com/): opens any archive format
 - [Logi Options+](https://www.logitech.com/software/logi-options-plus.html): Logitech device settings. The `logitech` step installs Solaar on Ubuntu instead
 - [Elgato Stream Deck](https://www.elgato.com/s/downloads): Stream Deck keys, with the [Stream Deck](#stream-deck) plugin
+- [Hammerspoon](https://www.hammerspoon.org/): the [hotkeys](#hammerspoon) that open Claude and Chrome
 
 Installed from the Mac App Store with mas, once you're signed in to the App Store and have bought the paid ones (see [First run](#macos)):
 
@@ -346,7 +362,7 @@ Installed from the Mac App Store with mas, once you're signed in to the App Stor
 The `macos` step sets these:
 
 - **Finder:** hidden files, extensions, path and status bars, the full path in the window title, list view, folders first, search the current folder, no warning when changing an extension
-- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
+- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, no next input source on `Ctrl+Opt+Space`, so [Hammerspoon](#hammerspoon) can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
 - **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
 - **Screenshots:** PNG in `~/Screenshots`, without window shadows
 - **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
@@ -381,26 +397,27 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
-13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, and **Terminal** from the **Dotfiles** category onto keys. Press each once with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title.
+13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, **Terminal**, **Claude**, **Chrome**, and **New Tab** from the **Dotfiles** category onto keys. Press the first three once each with Ghostty, Zed, and Finder in front, then press **New Tab**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and paste into the new tab.
+14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+T` can paste into the new tab. The config sets it to open at login.
 
 **Shell**
 
-14. Run `atuin import auto` once to bring your zsh history into Atuin.
-15. Run `:GoInstallBinaries` in vim once for vim-go's tools.
+15. Run `atuin import auto` once to bring your zsh history into Atuin.
+16. Run `:GoInstallBinaries` in vim once for vim-go's tools.
 
 **Accounts and keys**
 
-16. Sign in to the Tailscale app with the account the Ubuntu machine and your phone use, and approve the VPN configuration it asks for.
-17. Add your Google account to Calendar and Contacts.
-18. In Google Chrome, sign in to the sites you want the agents to use.
-19. If you skipped the GitHub login during setup, run `gh auth login`, then `gh auth setup-git`.
-20. Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
+17. Sign in to the Tailscale app with the account the Ubuntu machine and your phone use, and approve the VPN configuration it asks for.
+18. Add your Google account to Calendar and Contacts.
+19. In Google Chrome, sign in to the sites you want the agents to use.
+20. If you skipped the GitHub login during setup, run `gh auth login`, then `gh auth setup-git`.
+21. Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
 
 **Security and backups**
 
-21. Turn on [Touch ID for sudo](#touch-id-for-sudo) with `just touch-id` (optional).
-22. Turn on FileVault in **System Settings → Privacy & Security → FileVault**, and the firewall in **System Settings → Network → Firewall**. `bash setup.sh --status macos` reports both.
-23. Back up to a destination off the Mac, such as Time Machine to a network disk, and restore a file once to check it.
+22. Turn on [Touch ID for sudo](#touch-id-for-sudo) with `just touch-id` (optional).
+23. Turn on FileVault in **System Settings → Privacy & Security → FileVault**, and the firewall in **System Settings → Network → Firewall**. `bash setup.sh --status macos` reports both.
+24. Back up to a destination off the Mac, such as Time Machine to a network disk, and restore a file once to check it.
 
 ### Ubuntu
 
@@ -447,6 +464,7 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
 - With a file open in Zed, the Stream Deck **Finder** key reveals it, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed.
+- With a URL copied, `Ctrl+Opt+T` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Space` and the **Claude** key bring Claude to the front.
 
 ### Ubuntu
 
@@ -502,6 +520,7 @@ cp ~/.claude/hooks/worktree-hook.sh ai_tools/claude-code/worktree-hook.sh
 cp ~/.claude/statusline.sh ai_tools/claude-code/statusline.sh
 cp ~/.config/zed/settings.json ~/.config/zed/keymap.json zed/
 cp ~/.editorconfig editorconfig/editorconfig
+cp ~/.hammerspoon/init.lua hammerspoon/init.lua   # macOS
 cp ~/Library/LaunchAgents/dotfiles.ssh-add.plist ssh/dotfiles.ssh-add.plist   # macOS
 cp ~/Library/LaunchAgents/dotfiles.claude-desktop.plist ai_tools/claude-desktop/dotfiles.claude-desktop.plist   # macOS
 cp ~/.config/environment.d/99-homebrew.conf ubuntu/environment.d/99-homebrew.conf   # Ubuntu

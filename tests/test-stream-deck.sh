@@ -79,7 +79,7 @@ assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
 # the plugin
 if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
-    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.claude com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab com.gpahal.dotfiles.overview com.gpahal.dotfiles.cpu com.gpahal.dotfiles.memory com.gpahal.dotfiles.swap com.gpahal.dotfiles.top com.gpahal.dotfiles.gpu com.gpahal.dotfiles.temperature com.gpahal.dotfiles.power com.gpahal.dotfiles.disk com.gpahal.dotfiles.network com.gpahal.dotfiles.activity-monitor com.gpahal.dotfiles.back " \
+    assert_eq "com.gpahal.dotfiles.finder com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab com.gpahal.dotfiles.t3-code com.gpahal.dotfiles.claude com.gpahal.dotfiles.overview com.gpahal.dotfiles.cpu com.gpahal.dotfiles.memory com.gpahal.dotfiles.swap com.gpahal.dotfiles.top com.gpahal.dotfiles.gpu com.gpahal.dotfiles.temperature com.gpahal.dotfiles.power com.gpahal.dotfiles.disk com.gpahal.dotfiles.network com.gpahal.dotfiles.activity-monitor com.gpahal.dotfiles.back " \
         "$actions" "the manifest's actions"
     for action in $actions; do
         target="${action##*.}"

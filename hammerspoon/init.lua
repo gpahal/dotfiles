@@ -1,7 +1,8 @@
 -- Global hotkeys. Each opens its app, or brings it to the front when it's running:
 --   Ctrl+Opt+Space  Claude
 --   Ctrl+Opt+C      Google Chrome
---   Ctrl+Opt+T      a new Chrome tab, with the clipboard's text pasted into the address bar and
+--   Ctrl+Opt+T      T3 Code
+--   Ctrl+Opt+N      a new Chrome tab, with the clipboard's text pasted into the address bar and
 --                   selected, so typing or Delete replaces it
 -- The hammerspoon step copies this file to ~/.hammerspoon/init.lua. Hammerspoon needs
 -- Accessibility to send the new tab's keystrokes, a manual step. The Stream Deck plugin's
@@ -9,6 +10,7 @@
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
+local T3_CODE = "com.t3tools.t3code"
 local MODS = { "ctrl", "alt" }
 -- How long Chrome gets to come to the front, which includes starting it
 local FRONT_TIMEOUT = 10
@@ -84,4 +86,5 @@ end
 
 hs.hotkey.bind(MODS, "space", function() open(CLAUDE, "Claude") end)
 hs.hotkey.bind(MODS, "c", function() open(CHROME, "Google Chrome") end)
-hs.hotkey.bind(MODS, "t", newChromeTab)
+hs.hotkey.bind(MODS, "t", function() open(T3_CODE, "T3 Code") end)
+hs.hotkey.bind(MODS, "n", newChromeTab)

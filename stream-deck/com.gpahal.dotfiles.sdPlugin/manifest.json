@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, open Chrome, a new Chrome tab, T3 Code, or Claude, and show live system stats",
+  "Description": "Open the folder or file in front in Finder, Zed, or Ghostty, open Chrome, a new Chrome tab, Gmail, T3 Code, or Claude, and show live system stats",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -52,6 +52,14 @@
       "Tooltip": "Open a new Chrome tab with the clipboard's text pasted and selected",
       "Icon": "images/chrome-tab",
       "States": [{ "Image": "images/key-chrome-tab" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Gmail",
+      "UUID": "com.gpahal.dotfiles.gmail",
+      "Tooltip": "Bring Chrome's Gmail tab to the front, or open Gmail in a new tab",
+      "Icon": "images/gmail",
+      "States": [{ "Image": "images/key-gmail" }],
       "Controllers": ["Keypad"]
     },
     {

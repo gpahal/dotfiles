@@ -4,8 +4,9 @@ set -euo pipefail
 
 # The Stream Deck plugin's open-app opens Claude, Chrome, T3 Code, or Activity Monitor. For a new
 # tab it presses Cmd+T in Chrome, then Cmd+V and Cmd+A only when the clipboard holds more than
-# whitespace. A failed open, a missing permission, or Chrome not coming to the front fails with a
-# notification. Stubs stand in for open, pbpaste, and osascript.
+# whitespace. For Gmail it has Chrome select a Gmail tab or open the inbox. A failed open, a
+# missing permission, or Chrome not coming to the front fails with a notification. Stubs stand in
+# for open, pbpaste, and osascript.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,7 +15,8 @@ setup_sandbox
 OPEN_APP="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-app"
 
 # CLIPBOARD is the clipboard's text. The new tab's script logs the keystrokes it would press, or
-# fails with NEW_TAB_ERROR.
+# fails with NEW_TAB_ERROR. Gmail's script logs the URL it would open and prints GMAIL_RESULT, or
+# fails with GMAIL_ERROR.
 # shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub pbpaste 'printf "%s" "${CLIPBOARD:-}"'
 # shellcheck disable=SC2016
@@ -26,10 +28,15 @@ case "$script" in
         echo "  Cmd+T" >> "$STUB_LOG"
         [ "$2" != paste ] || echo "  Cmd+V Cmd+A" >> "$STUB_LOG"
         ;;
+    *"active tab index"*)
+        if [ -n "${GMAIL_ERROR:-}" ]; then echo "$GMAIL_ERROR" >&2; exit 1; fi
+        echo "  gmail: $2" >> "$STUB_LOG"
+        echo "$GMAIL_RESULT"
+        ;;
     *"display notification"*) echo "  notification: $2" >> "$STUB_LOG" ;;
 esac'
 stub open
-export CLIPBOARD="" NEW_TAB_ERROR=""
+export CLIPBOARD="" NEW_TAB_ERROR="" GMAIL_RESULT=found GMAIL_ERROR=""
 
 # Run open-app for a target, and check its exit status and the lines it added to the stub log,
 # other than osascript's and pbpaste's own
@@ -65,6 +72,23 @@ export NEW_TAB_ERROR="execution error: Google Chrome didn't come to the front (-
 check chrome-tab 1 "open -b com.google.Chrome
   notification: Couldn't open a new Chrome tab. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
 export NEW_TAB_ERROR=""
+
+# Gmail: an open tab comes to the front, or a new tab opens the inbox
+check gmail 0 "open -b com.google.Chrome
+  gmail: https://mail.google.com/mail/u/0/#inbox"
+assert_contains "$RUN_OUTPUT" "gmail: brought the Gmail tab to the front"
+GMAIL_RESULT=opened check gmail 0 "open -b com.google.Chrome
+  gmail: https://mail.google.com/mail/u/0/#inbox"
+assert_contains "$RUN_OUTPUT" "gmail: opened Gmail in a new tab"
+# A denied Automation prompt for Chrome fails, with a notification that says so
+export GMAIL_ERROR="execution error: Not authorized to send Apple events to Google Chrome. (-1743)"
+check gmail 1 "open -b com.google.Chrome
+  notification: Stream Deck lacks a permission: $GMAIL_ERROR"
+assert_contains "$RUN_OUTPUT" "ERROR $GMAIL_ERROR"
+export GMAIL_ERROR="execution error: Google Chrome got an error: something else (-2700)"
+check gmail 1 "open -b com.google.Chrome
+  notification: Couldn't open Gmail. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+export GMAIL_ERROR=""
 
 # A failed open fails, with a notification, and sends no keystrokes
 stub open 'exit 1'

@@ -2,8 +2,8 @@
 set -euo pipefail
 # os: macos
 
-# The Stream Deck plugin's open-app opens Claude, Chrome, or Activity Monitor. For a new tab it
-# presses Cmd+T in Chrome, then Cmd+V and Cmd+A only when the clipboard holds more than
+# The Stream Deck plugin's open-app opens Claude, Chrome, T3 Code, or Activity Monitor. For a new
+# tab it presses Cmd+T in Chrome, then Cmd+V and Cmd+A only when the clipboard holds more than
 # whitespace. A failed open, a missing permission, or Chrome not coming to the front fails with a
 # notification. Stubs stand in for open, pbpaste, and osascript.
 
@@ -41,6 +41,7 @@ check() {
 
 check claude 0 "open -b com.anthropic.claudefordesktop"
 check chrome 0 "open -b com.google.Chrome"
+check t3-code 0 "open -b com.t3tools.t3code"
 check activity-monitor 0 "open -b com.apple.ActivityMonitor"
 # An empty clipboard, or only whitespace: a new tab, no paste
 check chrome-tab 0 "open -b com.google.Chrome

@@ -19,9 +19,10 @@ setup_sandbox
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/setup-touch-id-sudo.sh
 is_macos() { true; }
-# The sandbox's files are yours, so "root-owned" means owned by you here
-# shellcheck disable=SC2034 # macos/pam.sh reads it
-PAM_ROOT_UID="$(id -u)"
+# The sandbox's files are yours, so "root-owned" means owned by you here, and the parent dirs the
+# check walks stop at the sandbox
+# shellcheck disable=SC2034 # macos/pam.sh reads them
+PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 
 SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
 SOURCE="$SANDBOX/brew/lib/pam/pam_reattach.so"
@@ -124,6 +125,14 @@ chmod 775 "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $DOTFILES_PAM_LOCAL_MODULES_DIR"
 chmod 755 "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+# A parent others can write: status gives the fix, and main refuses, since it doesn't change it
+chmod 775 "$SANDBOX"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $SANDBOX, above the dir sudo loads pam-reattach from"
+assert_contains "$RUN_OUTPUT" "sudo chmod go-w $SANDBOX"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$SANDBOX, above $DOTFILES_PAM_LOCAL_MODULES_DIR, isn't root's alone to write"
+chmod 700 "$SANDBOX"
 # shellcheck disable=SC2034 # macos/pam.sh reads it
 PAM_ROOT_UID=99999
 assert_exit 3 main --status

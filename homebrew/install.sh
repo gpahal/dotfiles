@@ -15,10 +15,18 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-# shellcheck source=lib/casks.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/casks.sh"
 
 BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
+
+# Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
+# them all. The path is empty for a cask with no app, and for every cask off macOS or without jq.
+installed_cask_apps() {
+    if is_macos && command -v jq &>/dev/null; then
+        brew info --json=v2 --installed --cask 2>/dev/null | jq -r ".casks[] | [.token, $CASK_APP_JQ] | @tsv"
+    else
+        brew list --cask -1 2>/dev/null | awk '{ print $0 "\t" }'
+    fi
+}
 
 # The apt packages that provide UBUNTU_COMMANDS (lib/common.sh), which Ubuntu needs before
 # Homebrew, locales for locale-gen, which the ubuntu step runs to add the en_US.UTF-8 locale, and
@@ -133,10 +141,15 @@ bundle_installed() {
     brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
 }
 
+# Run brew bundle <check|install> on everything in the Brewfile but its App Store apps
+bundle_except_mas() {
+    HOMEBREW_BUNDLE_MAS_SKIP="$(mas_app_ids "$BREWFILE" | tr '\n' ' ')" \
+        brew bundle "$1" --file="$BREWFILE" --no-upgrade
+}
+
 # Succeeds when everything in the Brewfile but its App Store apps is installed
 bundle_installed_except_mas() {
-    HOMEBREW_BUNDLE_MAS_SKIP="$(mas_app_ids "$BREWFILE" | tr '\n' ' ')" \
-        brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
+    bundle_except_mas check &>/dev/null
 }
 
 # Formulae and App Store apps from the Brewfile

@@ -30,19 +30,26 @@ done
 stanza="$(printf '%s\n' "Types: deb" "URIs: https://example.com/ubuntu" "Suites: resolute")"
 printf '%s\n' "$stanza" "Enabled: no" > "$file"
 assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$stanza")" "a stanza turned off"
+# curl answers the HEAD request for the Release file with $SANDBOX/http-status
+stub curl 'cat "'"$SANDBOX"'/http-status"'
+release=https://example.com/dists/resolute/Release
+echo 200 > "$SANDBOX/http-status"
 echo "$content" > "$file"
-assert_eq "  ok         Example's apt source ($file)" "$(status_apt_source Example "$file" "$content" example)" "status, ok"
+assert_eq "  ok         Example's apt source ($file)" \
+    "$(status_apt_source Example "$file" "$content" example "$release")" "status, ok"
 echo "${content/resolute/stale-suite}" > "$file"
 assert_eq "  missing    Example's apt source ($file): differs from what setup writes; re-run the example step" \
-    "$(status_apt_source Example "$file" "$content" example)" "status, differing"
+    "$(status_apt_source Example "$file" "$content" example "$release")" "status, differing"
+echo 404 > "$SANDBOX/http-status"
+assert_eq "  missing    Example's apt source ($file): differs from what setup writes; Example hasn't published packages for Ubuntu resolute yet" \
+    "$(status_apt_source Example "$file" "$content" example "$release")" "status, differing, not yet published"
+echo 200 > "$SANDBOX/http-status"
 rm "$file"
 assert_eq "  missing    Example's apt source ($file): missing; re-run the example step" \
-    "$(status_apt_source Example "$file" "$content" example)" "status, missing"
+    "$(status_apt_source Example "$file" "$content" example "$release")" "status, missing"
 
 # --- add_apt_repo ---
-# curl answers the HEAD request for the Release file with $SANDBOX/http-status. fetch writes the
-# key, or fails when $SANDBOX/fetch-fails exists. apt-get update succeeds.
-stub curl 'cat "'"$SANDBOX"'/http-status"'
+# fetch writes the key, or fails when $SANDBOX/fetch-fails exists. apt-get update succeeds.
 fetch() {
     echo "fetch $1" >> "$STUB_LOG"
     [ ! -e "$SANDBOX/fetch-fails" ] || return 1

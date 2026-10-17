@@ -92,10 +92,15 @@ bump_tmux_plugins() {
     return "$status"
 }
 
-# Print the highest x.y.z tag, as BSD and GNU sort both order it
+# Print the highest of the x.y.z versions on stdin, as BSD and GNU sort both order them
+highest_version() {
+    sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
+}
+
+# Print the highest x.y.z tag
 latest_plug_tag() {
     GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "https://github.com/$PLUG_REPO" | sed -n 's|.*refs/tags/||p' |
-        grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
+        grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | highest_version
 }
 
 bump_plug_vim() {
@@ -108,7 +113,7 @@ bump_plug_vim() {
     fi
     # Only a newer release: the highest of the two isn't the vendored one
     if [ "$new" == "$old" ] ||
-        [ "$(printf '%s\n' "$old" "$new" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" == "$old" ]; then
+        [ "$(printf '%s\n' "$old" "$new" | highest_version)" == "$old" ]; then
         echo "  vim-plug: unchanged"
         return 0
     fi

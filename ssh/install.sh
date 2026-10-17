@@ -143,12 +143,11 @@ main() {
     chmod 700 "$HOME/.ssh" || status=1
     if is_macos; then
         add_host_star || status=1
-        [ ! -f "$SSH_CONFIG" ] || chmod 600 "$SSH_CONFIG" || status=1
         install_ssh_add_agent || status=1
     else
         echo "  Skipping the keychain's Host * block and the LaunchAgent: macOS only"
-        [ ! -f "$SSH_CONFIG" ] || chmod 600 "$SSH_CONFIG" || status=1
     fi
+    [ ! -f "$SSH_CONFIG" ] || chmod 600 "$SSH_CONFIG" || status=1
     return "$status"
 }
 

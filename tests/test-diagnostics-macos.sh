@@ -91,13 +91,13 @@ export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/install.sh
 is_macos() { true; }
 # Only the macos step's own functions: none of the Touch ID script's, such as usage and
-# write_sudo_local
-assert_eq "" "$(declare -F usage write_sudo_local || true)" "the Touch ID script's functions"
+# install_reattach_module
+assert_eq "" "$(declare -F usage install_reattach_module || true)" "the Touch ID script's functions"
 SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
 # The root-owned copy sudo loads, which in the sandbox is yours
 REATTACH="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
-# shellcheck disable=SC2034 # macos/pam.sh reads it
-PAM_ROOT_UID="$(id -u)"
+# shellcheck disable=SC2034 # macos/pam.sh reads them
+PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 HEADER="# sudo_local: local config file which survives system update and is included for sudo"
 TID_LINE="auth       sufficient     pam_tid.so"
 stub brew '[ "$1" != --prefix ] || echo "$(dirname "$STUB_LOG")/brew"'

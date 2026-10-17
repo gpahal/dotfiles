@@ -10,29 +10,32 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 NOTIFICATION_SETTINGS="$HOME/Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 
-# Succeeds when an app's notifications are allowed with the Persistent alert style. Fails when
-# they aren't, or when the settings can't be read: macOS only lets a terminal with Full Disk
-# Access read them. Flag bits as decoded by https://github.com/drewdiver/ncprefs.py:
+# Print each of the given apps whose notifications aren't allowed with the Persistent alert style,
+# reading each app's entry once. Fails when the settings can't be read: macOS only lets a terminal
+# with Full Disk Access read them. Flag bits as decoded by https://github.com/drewdiver/ncprefs.py:
 # 1<<25 Allow notifications, 1<<3 Temporary (banners), 1<<4 Persistent (alerts).
-notifications_persistent() {
-    local bundle_id="$1" count i flags
+notifications_pending() {
+    local count i id flags wanted=" $* " persistent=" "
     count="$(plutil -extract apps raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
     for ((i = 0; i < count; i++)); do
-        [ "$(plutil -extract "apps.$i.bundle-id" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" == "$bundle_id" ] || continue
-        flags="$(plutil -extract "apps.$i.flags" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
-        return $(( (flags >> 25 & 1) && (flags >> 4 & 1) && !(flags >> 3 & 1) ? 0 : 1 ))
+        id="$(plutil -extract "apps.$i.bundle-id" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || continue
+        [[ "$wanted" == *" $id "* ]] || continue
+        flags="$(plutil -extract "apps.$i.flags" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || continue
+        if (( (flags >> 25 & 1) && (flags >> 4 & 1) && !(flags >> 3 & 1) )); then
+            persistent+="$id "
+        fi
     done
-    return 1
+    for id; do
+        [[ "$persistent" == *" $id "* ]] || echo "$id"
+    done
 }
 
 open_manual_steps() {
     local bundle_id pending_notifications="" readable=true extension_installed=false open_extension=false targets=""
     # Unreadable settings would count all four apps as pending, so don't offer to open them
-    if plutil -extract apps raw -o - "$NOTIFICATION_SETTINGS" &>/dev/null; then
-        for bundle_id in com.mitchellh.ghostty com.anthropic.claudefordesktop com.openai.codex com.t3tools.t3code; do
-            notifications_persistent "$bundle_id" || pending_notifications+=" $bundle_id"
-        done
-    else
+    if ! pending_notifications="$(notifications_pending com.mitchellh.ghostty \
+        com.anthropic.claudefordesktop com.openai.codex com.t3tools.t3code)"; then
+        pending_notifications=""
         readable=false
     fi
     if compgen -G "$HOME/Library/Application Support/Google/Chrome/*/Extensions/$CLAUDE_CHROME_EXTENSION_ID" > /dev/null; then

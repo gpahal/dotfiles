@@ -65,9 +65,9 @@ if command -v eza &>/dev/null; then
     alias t="eza --tree -a -I .git"
 fi
 
-alias public-ip="curl -Ss icanhazip.com"
-alias public-ip4="curl -Ss4 icanhazip.com/v4"
-alias public-ip6="curl -Ss6 icanhazip.com/v6"
+alias public-ip="curl -Ss https://icanhazip.com"
+alias public-ip4="curl -Ss4 https://icanhazip.com/v4"
+alias public-ip6="curl -Ss6 https://icanhazip.com/v6"
 
 if command -v bat &>/dev/null; then
     # Highlighted, but plain like cat: no pager, header, or grid. cat stays the real command, so

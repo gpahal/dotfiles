@@ -27,16 +27,6 @@ install_reattach_module() {
         sudo install -o root -g wheel -m 444 "$(reattach_source)" "$REATTACH_MODULE"
 }
 
-write_sudo_local() {
-    local tmp status=0
-    tmp="$(mktemp)"
-    printf '%s\n' "$1" > "$tmp"
-    # Read-only and owned by root, like the rest of /etc/pam.d
-    sudo install -m 444 "$tmp" "$SUDO_LOCAL" || status=$?
-    rm -f "$tmp"
-    return "$status"
-}
-
 status() {
     if is_macos; then
         status_touch_id missing
@@ -72,6 +62,12 @@ main() {
         return 1
     fi
 
+    local parent
+    parent="$(reattach_unsafe_parent)"
+    if [ -n "$parent" ] && { [ -f "$REATTACH_MODULE" ] || reattach_source_installed; }; then
+        echo "$parent, above $PAM_LOCAL_MODULES_DIR, isn't root's alone to write, so sudo can't safely load pam-reattach from there. Fix it with sudo chown root $parent && sudo chmod go-w $parent, then re-run this script." >&2
+        return 1
+    fi
     # Without Homebrew's module, a copy others can write can't be put right
     if [ -f "$REATTACH_MODULE" ] && ! reattach_source_installed && ! reattach_module_safe; then
         echo "$REATTACH_MODULE, which sudo loads, isn't root's alone to write. Run brew install pam-reattach, then re-run this script." >&2
@@ -110,7 +106,8 @@ main() {
         echo "  Installed $REATTACH_MODULE."
     fi
     if "$write"; then
-        if ! write_sudo_local "$desired"; then
+        # Read-only and owned by root, like the rest of /etc/pam.d
+        if ! write_root_file "$SUDO_LOCAL" "$desired" 444; then
             echo "  Couldn't write $SUDO_LOCAL." >&2
             return 1
         fi

@@ -140,7 +140,7 @@ ups_rtc_hook_installed() {
 }
 
 install_ups_rtc_hook() {
-    write_root_file "$UPS_RTC_HOOK" "$(ups_rtc_hook)" && sudo chmod 0755 "$UPS_RTC_HOOK"
+    write_root_file "$UPS_RTC_HOOK" "$(ups_rtc_hook)" 0755
 }
 
 # Print upsmon's password from upsd.users, or a new one when there's none. Fails when the file
@@ -191,7 +191,7 @@ ups_notifier_installed() {
 }
 
 install_ups_notifier() {
-    install_root_executable "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && install_ntfy_lib
+    install_root_file "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_ntfy_lib
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
@@ -260,12 +260,7 @@ warn_no_ups() {
 
 # Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them
 write_nut_file() {
-    local tmp status=0
-    tmp="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$tmp" && sudo install -m 0640 "$tmp" "$NUT_DIR/$1" &&
-        sudo chgrp nut "$NUT_DIR/$1" || status=1
-    rm -f "$tmp"
-    return "$status"
+    write_root_file "$NUT_DIR/$1" "$2" 0640 && sudo chgrp nut "$NUT_DIR/$1"
 }
 
 # The enumerator turns ups.conf's sections into nut-driver@<name> units, so it runs before the

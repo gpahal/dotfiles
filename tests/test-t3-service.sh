@@ -473,30 +473,19 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user start"
 confirm() { echo "$1"; false; }
 stub systemctl "$SYSTEMCTL_STUB"
 
-# Released CLIs without the browser subcommand are skipped; failures in supported CLIs are not.
+# A failed t3 browser setup fails the step
 cat > "$HOME/.local/bin/t3" << 'EOF'
 #!/bin/bash
-mode="$(cat "$(dirname "$STUB_LOG")/state/browser-mode")"
-if [ "$1" == --help ]; then
-    printf 'SUBCOMMANDS\n  serve    Run the server.\n'
-    [ "$mode" == unsupported ] || echo '  browser  Manage the browser.'
-    exit 0
-fi
-case "$mode" in
-    unsupported) echo 'Unexpected positional argument: "setup"'; exit 1 ;;
+case "$(cat "$(dirname "$STUB_LOG")/state/browser-mode")" in
     failed) echo 'Browser setup failed'; exit 1 ;;
     needs-root) echo 'AppArmor profile needs root' ;;
 esac
 EOF
-echo unsupported > "$STATE/browser-mode"
-assert_exit 3 t3_code_browser_ready
-assert_exit 0 setup_t3_code_browser
-assert_contains "$RUN_OUTPUT" 'does not provide t3 browser setup; skipping'
-run status
-assert_contains "$RUN_OUTPUT" 'skipped    Browser sandbox: this t3 release does not provide t3 browser setup'
 echo failed > "$STATE/browser-mode"
 assert_exit 2 t3_code_browser_ready
 assert_exit 1 setup_t3_code_browser
+run status
+assert_contains "$RUN_OUTPUT" "unknown    T3 Code's browser sandbox: t3 browser setup failed"
 echo needs-root > "$STATE/browser-mode"
 assert_exit 1 t3_code_browser_ready
 # Needing root, the step prints the command for you to run and doesn't fail. ~/.local/bin/t3 is

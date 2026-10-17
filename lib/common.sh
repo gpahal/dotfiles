@@ -99,10 +99,11 @@ install_root_file() {
 }
 
 # Write content, plus a newline, to a root-owned file, as install_root_file does
+# Usage: write_root_file <dest> <content> [mode]
 write_root_file() {
     local src status=0
     src="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" || status=1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" || status=1
     rm -f "$src"
     return "$status"
 }
@@ -198,20 +199,37 @@ has_arg() {
 # e.g. if status_requested "$@"; then status; return $?; fi
 status_requested() { has_arg --status "$@"; }
 
-# Succeeds when --quick is among the arguments
-quick_requested() { has_arg --quick "$@"; }
-
-# The flags every step and runner takes, besides -h and --help
-SHARED_FLAGS="--status --quick --backup --no-backup"
-
-# Succeeds, saying why, when the arguments have --quick without --status, which would otherwise
-# run the steps instead of reporting. The caller then prints its usage and exits 2.
-quick_without_status() {
-    if ! status_requested "$@" && quick_requested "$@"; then
+# check_args <usage function> <word function> [arg...]: check a step's or runner's arguments. -h or
+# --help prints the usage and exits 0. --status, --quick, --backup, and --no-backup pass, any
+# other flag exits 2, and each other argument goes to the word function. --quick without --status
+# exits 2 too, since it would otherwise run the steps instead of reporting.
+check_args() {
+    local usage_fn="$1" word_fn="$2" arg
+    shift 2
+    for arg in "$@"; do
+        case "$arg" in
+            -h | --help)
+                "$usage_fn"
+                exit 0
+                ;;
+        esac
+    done
+    for arg in "$@"; do
+        case "$arg" in
+            --status | --quick | --backup | --no-backup) ;;
+            -*)
+                echo "Unknown option: $arg" >&2
+                "$usage_fn" >&2
+                exit 2
+                ;;
+            *) "$word_fn" "$arg" ;;
+        esac
+    done
+    if ! status_requested "$@" && has_arg --quick "$@"; then
         echo "--quick only works with --status" >&2
-        return 0
+        "$usage_fn" >&2
+        exit 2
     fi
-    return 1
 }
 
 # Check a step's arguments; a step's main calls it first. -h or --help prints the usage and exits
@@ -220,39 +238,20 @@ quick_without_status() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local arg path usage
+    local path step_usage
     # The step's script is the outermost file, since main runs only when the script runs directly
     path="${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}"
     path="$(CDPATH='' cd -- "$(dirname "$path")" && pwd)/${path##*/}"
-    usage="Usage: bash ${path#"$DOTFILES_DIR"/} [--status [--quick]] [--backup | --no-backup]"
-    for arg in "$@"; do
-        case "$arg" in
-            -h | --help)
-                echo "$usage"
-                exit 0
-                ;;
-        esac
-    done
-    for arg in "$@"; do
-        # shellcheck disable=SC2086 # split into the flags
-        has_arg "$arg" $SHARED_FLAGS && continue
-        case "$arg" in
-            -*)
-                echo "Unknown option: $arg" >&2
-                echo "$usage" >&2
-                exit 2
-                ;;
-            *)
-                echo "Unknown argument: $arg" >&2
-                echo "$usage" >&2
-                exit 2
-                ;;
-        esac
-    done
-    if quick_without_status "$@"; then
-        echo "$usage" >&2
-        exit 2
-    fi
+    step_usage="Usage: bash ${path#"$DOTFILES_DIR"/} [--status [--quick]] [--backup | --no-backup]"
+    check_args _step_usage _unknown_step_argument "$@"
+}
+
+# step_args's usage and word functions, which read its step_usage
+_step_usage() { echo "$step_usage"; }
+_unknown_step_argument() {
+    echo "Unknown argument: $1" >&2
+    _step_usage >&2
+    exit 2
 }
 
 # Succeeds when stdin is a terminal, so a question can be answered. stdout may be piped, as in
@@ -993,10 +992,12 @@ write_back() {
     return 1
 }
 
-# Merge a jq expression into a JSON file, creating the file if needed
+# Merge a jq expression into a JSON file, creating the file if needed. A file the expression
+# doesn't change is left alone, unformatted and not backed up.
 json_merge() {
     local file="$1" filter="$2" tmp input=""
     require_cmd jq || return 1
+    ! json_applied "$file" "$filter" || return 0
     # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
     # dangling symlink, fails rather than start from {} and lose what it holds. Back up and write
     # nothing until jq succeeds with one JSON value, so a filter that fails, or yields no value or
@@ -1287,41 +1288,18 @@ status_result() {
 }
 
 # Read a runner's arguments: flags and step names, in any order. Sets RUNNER_MODE to --status or
-# "", and RUNNER_STEPS to the step names. -h or --help prints the caller's usage function and
-# exits; an unknown flag, or --quick without --status, prints it and exits 2. The loop above
-# already read the other flags.
+# "", and RUNNER_STEPS to the step names. Exits as check_args does, with the caller's usage
+# function. The loop above already read the other flags.
 # e.g. runner_args "$@"; run_steps "$RUNNER_MODE" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"}
 # shellcheck disable=SC2034 # the runners read RUNNER_MODE
 runner_args() {
-    local arg
     RUNNER_MODE=""
     RUNNER_STEPS=()
-    for arg in "$@"; do
-        case "$arg" in
-            -h | --help)
-                usage
-                exit 0
-                ;;
-        esac
-    done
-    for arg in "$@"; do
-        # shellcheck disable=SC2086 # split into the flags
-        has_arg "$arg" $SHARED_FLAGS && continue
-        case "$arg" in
-            -*)
-                echo "Unknown option: $arg" >&2
-                usage >&2
-                exit 2
-                ;;
-            *) RUNNER_STEPS+=("$arg") ;;
-        esac
-    done
+    check_args usage _add_runner_step "$@"
     ! status_requested "$@" || RUNNER_MODE=--status
-    if quick_without_status "$@"; then
-        usage >&2
-        exit 2
-    fi
 }
+
+_add_runner_step() { RUNNER_STEPS+=("$1"); }
 
 # Print the script of a step in the caller's MACOS_STEPS or UBUNTU_STEPS: $STEPS_DIR/manual-steps.sh
 # for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name. Either OS's
@@ -1365,15 +1343,10 @@ runner_main() {
     echo "=== $name setup complete! ==="
 }
 
-# Say a step name is unknown, listing the steps. step_script takes either OS's, so the caller's
-# MACOS_STEPS and UBUNTU_STEPS are both listed when it sets them.
+# Say a step name is unknown, listing the caller's MACOS_STEPS and UBUNTU_STEPS, since step_script
+# takes either OS's
 unknown_step() {
-    if [ -n "${MACOS_STEPS[*]-}" ] && [ -n "${UBUNTU_STEPS[*]-}" ]; then
-        echo "Unknown step: $1. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
-    else
-        # shellcheck disable=SC2154 # STEPS is set by the caller
-        echo "Unknown step: $1. Steps: ${STEPS[*]}" >&2
-    fi
+    echo "Unknown step: $1. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
 }
 
 # Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so

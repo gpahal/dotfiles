@@ -7,7 +7,7 @@ const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 
-const MACMON_PATHS = ["/opt/homebrew/bin/macmon", "/usr/local/bin/macmon"];
+const MACMON = "/opt/homebrew/bin/macmon";
 // Samples kept for the CPU and GPU sparklines
 const HISTORY = 30;
 const GIB = 1024 ** 3;
@@ -89,13 +89,12 @@ function createSampler({ log = () => {} } = {}) {
   // Runs macmon only while a key needs it; it prints a JSON line every 2 seconds
   function startMacmon() {
     if (macmon || macmonMissing) return;
-    const path = MACMON_PATHS.find((p) => fs.existsSync(p));
-    if (!path) {
+    if (!fs.existsSync(MACMON)) {
       macmonMissing = true;
       log("macmon isn't installed; GPU, temperature, and power keys show nothing");
       return;
     }
-    macmon = spawn(path, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
+    macmon = spawn(MACMON, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
     let buffer = "";
     macmon.stdout.on("data", (chunk) => {
       buffer += chunk;
@@ -196,9 +195,7 @@ function createSampler({ log = () => {} } = {}) {
       s.macmonMissing = macmonMissing;
       if (macmonLatest) {
         const m = macmonLatest;
-        // Older macmon has only gpu_usage, [MHz, ratio]
-        const gpu = m.gpu_active_ratio ?? m.gpu_usage?.[1];
-        s.gpu = gpu == null ? null : { usage: gpu * 100, mhz: m.gpu_freq_mhz ?? m.gpu_usage?.[0] };
+        s.gpu = m.gpu_active_ratio == null ? null : { usage: m.gpu_active_ratio * 100 };
         if (s.gpu) push(gpuHistory, s.gpu.usage);
         s.temperature = m.temp ? { cpu: m.temp.cpu_temp_avg, gpu: m.temp.gpu_temp_avg } : null;
         s.power = { system: m.sys_power, cpu: m.cpu_power, gpu: m.gpu_power };

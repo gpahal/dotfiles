@@ -18,21 +18,11 @@ CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
 CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
 
 # Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
+# or status_file to report it. The LaunchAgent isn't loaded now, since it would open Claude, which
+# must be quit for the settings below. launchd loads it from ~/Library/LaunchAgents at the next
+# login.
 claude_desktop_files() {
     "$1" "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"
-}
-
-# The agent isn't loaded now, since it would open Claude, which must be quit for the settings
-# below. launchd loads it from ~/Library/LaunchAgents at the next login.
-install_claude_desktop_login_agent() {
-    if cmp -s "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"; then
-        echo "  Claude already opens at login"
-        return 0
-    fi
-    mkdir -p "$(dirname "$CLAUDE_DESKTOP_LOGIN_AGENT")" || return 1
-    claude_desktop_files copy_file || return 1
-    echo "  Set Claude to open at login"
 }
 
 # Settings → Claude Code:
@@ -102,7 +92,7 @@ main() {
     require_cmd brew || return 1
     local result=0
     install_cask claude /Applications/Claude.app || result=1
-    install_claude_desktop_login_agent || result=1
+    claude_desktop_files copy_file || result=1
     configure_claude_desktop || result=1
     return "$result"
 }

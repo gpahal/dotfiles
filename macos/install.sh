@@ -250,8 +250,8 @@ status_app_firewall() {
 # hostname, and Ghostty drops a URL it can't parse. A Mac with no HostName takes one from the
 # network, which can be a name such as Unknown_d6:96:0e:05:c6:0a, whose colons break the URL.
 # Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys and Hammerspoon's
-# Ctrl+Opt+T and E find no folder. So HostName is set to LocalHostName, the name in System Settings → General → Sharing, which macOS
-# keeps to letters, digits, and hyphens.
+# Ctrl+Opt+T and E find no folder. So HostName is set to LocalHostName, the name in System
+# Settings → General → Sharing, which macOS keeps to letters, digits, and hyphens.
 hostname_valid() {
     local name
     name="$(scutil --get HostName 2>/dev/null)" || return 1

@@ -7,7 +7,7 @@ set -euo pipefail
 # unnoticed. The keys come from the step's jq filters: each field after a "." and each object
 # key. They're checked as properties in these files:
 # - server settings (settings.json): packages/contracts/src/settings.ts, and for the project script
-#   actions project.ts, or orchestration.ts, which held them up to 0.0.45. Either may be missing.
+#   actions project.ts
 # - client settings (client-settings.json): packages/contracts/src/settings.ts
 # A made-up key must be missing, so the search can fail. It's a smoke test of key names: a name
 # found anywhere in the files passes, so it doesn't check which object a key sits in, and it
@@ -42,24 +42,14 @@ if [ -z "$tag" ]; then
     [ -n "$tag" ] || { echo "Couldn't read the latest T3 Code release's tag" >&2; exit 1; }
 fi
 echo "T3 Code $tag"
-# get <path> [optional]: download a file at the tag, failing when it's missing unless it's optional
+# get <path>: download a file at the tag, failing when it's missing
 get() {
     download "https://raw.githubusercontent.com/$UPSTREAM/$tag/$1" "$tmp/${1##*/}" 2>/dev/null && return 0
-    rm -f "$tmp/${1##*/}"
-    [ -z "${2:-}" ] && { echo "Couldn't download $1 at $tag. If T3 Code moved it, update this script." >&2; exit 1; }
-    return 0
+    echo "Couldn't download $1 at $tag. If T3 Code moved it, update this script." >&2
+    exit 1
 }
 get packages/contracts/src/settings.ts
-get packages/contracts/src/project.ts optional
-get packages/contracts/src/orchestration.ts optional
-project_files=()
-for file in "$tmp/project.ts" "$tmp/orchestration.ts"; do
-    [ ! -f "$file" ] || project_files+=("$file")
-done
-if [ "${#project_files[@]}" -eq 0 ]; then
-    echo "Couldn't download project.ts or orchestration.ts at $tag. If T3 Code moved the project script schema, update this script." >&2
-    exit 1
-fi
+get packages/contracts/src/project.ts
 
 # shellcheck source=../ai_tools/t3-code/install.sh
 source "$REPO_DIR/ai_tools/t3-code/install.sh"
@@ -150,9 +140,9 @@ warn() {
     warnings=$((warnings + 1))
 }
 
-check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "${project_files[@]}"
+check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
-defaults_check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "${project_files[@]}"
+defaults_check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
 defaults_check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
 if [ "$errors" -gt 0 ]; then

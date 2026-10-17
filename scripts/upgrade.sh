@@ -142,8 +142,17 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Install the casks added to the homebrew step since setup last ran. Sourcing the step only defines
-# its functions, but it also sets -euo pipefail, so this runs in a subshell.
+# Install the formulae added to this repo's Brewfile since setup last ran. brew bundle check also
+# fails on a missing App Store app, which install can't fix without an App Store sign-in, so both
+# skip the Brewfile's App Store apps, as the homebrew step's check does. The mas stage updates the
+# apps. Sourcing the step only defines its functions, but it also sets -euo pipefail, so this and
+# _install_new_casks run in a subshell.
+_install_new_formulae() (
+    # shellcheck source=/dev/null
+    source "$DOTFILES_DIR/homebrew/install.sh" && { bundle_installed_except_mas || bundle_except_mas install; }
+)
+
+# Install the casks added to the homebrew step since setup last ran
 _install_new_casks() (
     # Not followed: shellcheck would flag the lib/common.sh variables it sets again as lost
     # shellcheck source=/dev/null
@@ -237,16 +246,7 @@ upgrade() {
     fi
 
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
-    # Formulae added to this repo's Brewfile since setup last ran. brew bundle check also fails on
-    # a missing App Store app, which install can't fix without an App Store sign-in, so both skip
-    # the Brewfile's App Store apps, by id, as the homebrew step's check does. The mas stage below
-    # updates the apps.
-    local brewfile="$DOTFILES_DIR/homebrew/Brewfile" mas_ids
-    mas_ids="$(mas_app_ids "$brewfile" | tr '\n' ' ')"
-    if ! HOMEBREW_BUNDLE_MAS_SKIP="$mas_ids" brew bundle check --file="$brewfile" --no-upgrade &>/dev/null; then
-        HOMEBREW_BUNDLE_MAS_SKIP="$mas_ids" brew bundle install --file="$brewfile" --no-upgrade ||
-            _stage_failed "brew bundle" "$?"
-    fi
+    _install_new_formulae || _stage_failed "brew bundle" "$?"
     _install_new_casks || _stage_failed casks "$?"
     brew cleanup || _stage_failed "brew cleanup" "$?"
     if [[ "$OSTYPE" == linux* ]]; then

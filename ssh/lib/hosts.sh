@@ -62,13 +62,6 @@ function host_patterns(line, patterns,   n, i, c, word, inword, quote) {
 }
 '
 
-# Print a Host line's patterns, one per line, and nothing for any other line
-host_patterns() {
-    printf '%s\n' "$1" | awk "$SSH_CONFIG_AWK"'
-        { n = host_patterns($0, p); for (i = 1; i <= n; i++) print p[i] }
-    '
-}
-
 # Succeeds when a Host line in the config lists the pattern, e.g. host_line '*' for `Host *` or
 # `Host * !bastion`. ssh matches Host patterns case-sensitively.
 host_line() {

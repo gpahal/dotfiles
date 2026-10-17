@@ -188,8 +188,13 @@ read_context_path() {
     [ -n "$CONTEXT_PATH" ] && [ -e "$CONTEXT_PATH" ] || CONTEXT_PATH=""
 }
 
+# A package, such as an app, is a folder Finder shows as a file, and opening one launches it
+is_package() {
+    mdls -raw -name kMDItemContentTypeTree "$1" 2>/dev/null | grep -q '"com.apple.package"'
+}
+
 open_finder() {
-    if [ -d "$1" ]; then
+    if [ -d "$1" ] && ! is_package "$1"; then
         open "$1"
     elif [ -n "$1" ]; then
         open -R "$1"

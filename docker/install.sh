@@ -25,7 +25,6 @@ DOCKER_UNATTENDED_CONTENT='// From the dotfiles docker step: install Docker upda
 Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
 DOCKER_DAEMON_CONFIG=/etc/docker/daemon.json
 DOCKER_DAEMON_KEYS="log-driver, live-restore, and localhost-only published ports"
-OS_RELEASE=/etc/os-release
 # The local log driver rotates each container's logs (5 files of 20 MB); json-file, the default,
 # grows without limit. It applies to containers created after the change. live-restore keeps
 # containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
@@ -297,26 +296,27 @@ main() {
     # Installed Docker updates only while its source is the one this step writes. A release upgrade
     # turns third-party sources off, and a re-run rewrites this one for the new release once Docker
     # publishes packages for it. A fresh install needs those packages for everything else here.
-    local repair_source=false
-    if ! docker_installed && ! apt_repo_published Docker "$(docker_release_url)"; then
+    local installed=false repair_source=false
+    docker_installed && installed=true
+    if ! "$installed" && ! apt_repo_published Docker "$(docker_release_url)"; then
         return 0
     fi
-    if docker_installed && ! docker_source_ok && apt_repo_published Docker "$(docker_release_url)"; then
+    if "$installed" && ! docker_source_ok && apt_repo_published Docker "$(docker_release_url)"; then
         repair_source=true
     fi
     local pending=()
-    docker_installed || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
+    "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
     in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo. The group is root-equivalent: anything running as you, agents included, can get root with docker run -v /:/host")
     # Freshly installed packages enable and start both units
-    if docker_installed && ! starts_at_boot; then
+    if "$installed" && ! starts_at_boot; then
         pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")
     fi
-    if docker_installed && ! socket_ready; then
+    if "$installed" && ! socket_ready; then
         pending+=("Enable docker.socket")
     fi
-    if ! docker_installed || ! daemon_configured; then
+    if ! "$installed" || ! daemon_configured; then
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
         else
@@ -331,7 +331,7 @@ main() {
         return 0
     fi
     confirm_sudo_changes "${pending[@]}" || return 0
-    if ! docker_installed; then
+    if ! "$installed"; then
         # The rest needs Docker's packages, and the docker group they add
         install_docker || return 1
     elif "$repair_source"; then

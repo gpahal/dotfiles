@@ -43,7 +43,7 @@ assert_contains "$RUN_OUTPUT" "missing    claude (cask)"
 assert_contains "$RUN_OUTPUT" "missing    ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installing claude..."
-assert_contains "$RUN_OUTPUT" "Set Claude to open at login"
+assert_contains "$RUN_OUTPUT" "Copied ai_tools/claude-desktop/dotfiles.claude-desktop.plist to $AGENT"
 assert_eq "$(cat "$DOTFILES_DIR/ai_tools/claude-desktop/dotfiles.claude-desktop.plist")" "$(cat "$AGENT")" "LaunchAgent"
 assert_file_contains "$STUB_LOG" "brew install --cask claude"
 
@@ -98,7 +98,7 @@ before="$(/bin/ls -i "$CONFIG")"
 stub pgrep 'exit 0'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set"
-assert_contains "$RUN_OUTPUT" "Claude already opens at login"
+assert_contains "$RUN_OUTPUT" "$AGENT is already up to date"
 assert_eq "$before" "$(/bin/ls -i "$CONFIG")" "config after a re-run"
 
 # A setting changed while Claude runs: without a terminal, it isn't quit and the config stays

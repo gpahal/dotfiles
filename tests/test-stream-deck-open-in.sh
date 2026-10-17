@@ -9,7 +9,7 @@ set -euo pipefail
 # another app in front or a path that isn't here, it opens a new window: Finder and Ghostty at
 # home, Zed empty. A missing permission still opens the window, then fails with a notification
 # naming the caller, Stream Deck or Hammerspoon. Stubs stand in for lsappinfo, osascript, open,
-# and the Zed CLI, and a database with T3 Code's tables for its state.
+# mdls, and the Zed CLI, and a database with T3 Code's tables for its state.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -46,6 +46,12 @@ case "$script" in
 esac'
 stub open
 stub zed-cli
+# Spotlight's type tree: a package for an app, a folder for anything else
+# shellcheck disable=SC2016
+stub mdls 'case "$4" in
+    *.app) printf "(\n    \"com.apple.application-bundle\",\n    \"com.apple.package\"\n)\n" ;;
+    *) printf "(\n    \"public.folder\"\n)\n" ;;
+esac'
 export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" GHOSTTY_RUNNING=1 GHOSTTY_CWD="" ZED_TITLE="" \
     FINDER_PATH="" ZED_ERROR="" T3_URL=""
 
@@ -66,12 +72,12 @@ sqlite3 "$DOTFILES_T3_STATE" "
         ('$thread_gone', 'p2', '{}');"
 
 # Run open-in for a target with an app in front, and check its exit status and the lines it
-# added to the stub log, other than lsappinfo's and osascript's own
+# added to the stub log, other than lsappinfo's, osascript's, and mdls's own
 # e.g. check files com.apple.finder 0 "open $dir"
 check() {
     : > "$STUB_LOG"
     FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1"
-    assert_eq "$4" "$(grep -vE '^(lsappinfo|osascript) ' "$STUB_LOG")" "$1 from $2"
+    assert_eq "$4" "$(grep -vE '^(lsappinfo|osascript|mdls) ' "$STUB_LOG")" "$1 from $2"
 }
 
 # --- Ghostty in front ---
@@ -105,6 +111,10 @@ check terminal dev.zed.Zed 0 "  new Ghostty window at $HOME"
 export FINDER_PATH="$dir/"
 check files com.apple.finder 0 "open $dir"
 check terminal com.apple.finder 0 "  new Ghostty window at $dir"
+# An app is a folder, but opening it would launch it, so Finder shows it instead
+mkdir -p "$SANDBOX/Example.app"
+export FINDER_PATH="$SANDBOX/Example.app/"
+check files com.apple.finder 0 "open -R $SANDBOX/Example.app"
 export FINDER_PATH="$file"
 check editor com.apple.finder 0 "open -b dev.zed.Zed $file"
 check terminal com.apple.finder 0 "  new Ghostty window at $dir"

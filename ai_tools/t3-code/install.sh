@@ -83,10 +83,12 @@ T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cl
 
 # Server settings, used by T3 Code on the Mac and by the server it starts on Ubuntu (Settings →
 # General, Threads, Storage): new threads use Claude Opus 5.5 at medium effort with the 1M context
-# window, in auto mode, each in its own worktree started from the local base branch; Add project
-# starts in ~/Dev; inactive threads settle after 5 days; old
-# worktrees, browser artifacts, and logs are cleaned up; pull requests start with squash merge;
-# commit and PR text follows custom instructions. Existing worktree setup actions wait for
+# window, in auto mode, each in its own worktree started from the local base branch, with a branch
+# named for its task; projects pull automatically; Add project starts in ~/Dev; inactive threads
+# settle after 10 days, unless they have a pull request; threads a usage limit stops are snoozed
+# and resume when it resets; old worktrees, settled threads' worktrees after 15 days, browser
+# artifacts, and logs are cleaned up; pull requests start with squash merge and lose the agent's
+# credits on merge; commit and PR text follows custom instructions. Existing worktree setup actions wait for
 # completion: T3 has no global async default, so each action list gets it.
 # A model of your own keeps its instance and options, a custom Claude instance's included, and its
 # effort is left to you too. Replacing it switches to Claude's instance, which drops another
@@ -139,15 +141,22 @@ t3_code_server_filter() {
     | .defaultThreadEnvMode = "worktree"
     | .newWorktreesStartFromOrigin = false
     | .addProjectBaseDirectory = "~/Dev"
-    | .sidebarAutoSettleAfterDays = 5
+    | .branchNamingMode = "semantic"
+    | .defaultAutoPull = true
+    | .sidebarAutoSettleAfterDays = 10
+    | .sidebarAutoSettleKeepPullRequests = true
+    | .snoozeLimitedThreads = true
+    | .autoResumeLimitedThreads = true
     | .worktreeCleanup.mode = "custom"
     | .worktreeCleanup.rules.worktreeAfterDays = 30
+    | .worktreeCleanup.rules.worktreeSettledAfterDays = 15
     | .worktreeCleanup.rules.worktreeOnMerge = true
     | .worktreeCleanup.rules.worktreeOnDelete = true
     | .worktreeCleanup.rules.worktreeUnchanged = true
     | .storageCleanup.browserArtifactsAfterDays = 30
     | .storageCleanup.logsAfterDays = 30
     | .pullRequestMergeMethod = "squash"
+    | .removeAgentCreditsOnMerge = true
     | .sourceControlWritingStyle.mode = "custom"
     | .sourceControlWritingStyle.customInstructions = "Keep titles concise. Use short bullet points in the description."
 '
@@ -194,12 +203,15 @@ t3_code_status_custom_values() {
 }
 
 # Desktop app settings: system notifications with sound and in-app notifications, a message sent
-# mid-turn steers the running turn instead of queueing, and the sidebar's working shelf
+# mid-turn steers the running turn instead of queueing, the sidebar's working shelf, and diffs
+# with their files expanded and no word wrap
 T3_CODE_CLIENT_FILTER='
     .notificationMode = "notifications-and-sound"
     | .inAppNotificationsEnabled = true
     | .followUpBehavior = "steer"
     | .sidebarWorkingShelfEnabled = true
+    | .diffFilesCollapsed = false
+    | .wordWrap = false
 '
 
 # The app's name can change between releases. Ask brew which app the t3-code

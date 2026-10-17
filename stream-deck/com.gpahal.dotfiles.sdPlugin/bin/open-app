@@ -48,10 +48,10 @@ new_tab() {
 on run argv
     tell application "System Events"
         repeat 100 times
-            if bundle identifier of first application process whose frontmost is true is "$CHROME" then exit repeat
+            if bundle identifier of (first application process whose frontmost is true) is "$CHROME" then exit repeat
             delay 0.1
         end repeat
-        if bundle identifier of first application process whose frontmost is true is not "$CHROME" then
+        if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
             error "Google Chrome didn't come to the front"
         end if
         keystroke "t" using command down

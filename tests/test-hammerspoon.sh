@@ -2,10 +2,12 @@
 set -euo pipefail
 
 # hammerspoon/init.lua, run by lua against a fake hs that records what the config does: it binds
-# Ctrl+Opt+Space, C, and T, each opening its app, and N for a new Chrome tab, which waits for
-# Chrome in front with the hotkey's modifiers released, presses Cmd+T, then pastes and selects
-# only when the clipboard holds more than whitespace. It sets Hammerspoon to open at login and reloads when init.lua
-# changes. tests/test-config-steps.sh covers the step that copies it.
+# Ctrl+Opt+Space, B, and C, each opening its app, T and E, which run open-in terminal and editor
+# as Hammerspoon, and N for a new Chrome tab, which waits for Chrome in front with the hotkey's
+# modifiers released, presses Cmd+T, then pastes and selects only when the clipboard holds more
+# than whitespace. It sets Hammerspoon to open at login and reloads when init.lua changes.
+# tests/test-config-steps.sh covers the step that copies it, and tests/test-stream-deck-open-in.sh
+# covers open-in.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -24,7 +26,7 @@ function print_calls()
     calls = {}
 end
 
-state = { front = nil, mods = {}, clipboard = nil, now = 0, installed = { ["com.google.Chrome"] = true, ["com.anthropic.claudefordesktop"] = true, ["com.t3tools.t3code"] = true } }
+state = { front = nil, mods = {}, clipboard = nil, now = 0, installed = { ["com.google.Chrome"] = true, ["com.anthropic.claudefordesktop"] = true, ["com.t3tools.t3code"] = true }, taskStarts = true }
 hotkeys, waiters, delayed, watchers = {}, {}, {}, {}
 
 hs = {
@@ -33,6 +35,20 @@ hs = {
     reload = function() record("reload") end,
     alert = { show = function(s) record("alert " .. s) end },
     pasteboard = { readString = function() return state.clipboard end },
+    task = { new = function(path, fn, args)
+        local t = { env = { PATH = "/usr/bin" } }
+        function t:environment() return self.env end
+        function t:setEnvironment(env) self.env = env end
+        function t:start()
+            if not state.taskStarts then return false end
+            record("task " .. path .. " " .. table.concat(args, " ") .. " as " .. self.env.OPEN_IN_CALLER
+                .. ", logging to " .. self.env.OPEN_IN_LOG .. ", PATH " .. self.env.PATH)
+            -- The task's exit runs the callback later
+            delayed[#delayed + 1] = function() fn(0, "", args[2] .. " from com.apple.finder: /tmp") end
+            return self
+        end
+        return t
+    end },
     pathwatcher = { new = function(path, fn)
         local w = { path = path, fn = fn }
         function w:start() watchers[#watchers + 1] = self; return self end
@@ -90,25 +106,38 @@ run_lua() {
         fail "lua failed: $RUN_OUTPUT"
 }
 
-# Loading: open at login, and the three hotkeys
-run_lua 'for _, k in ipairs({ "ctrl+alt+space", "ctrl+alt+c", "ctrl+alt+t", "ctrl+alt+n" }) do
-    print(k .. " " .. type(hotkeys[k]))
-end'
+# Loading: open at login, and the six hotkeys
+run_lua 'local keys = {}
+for k in pairs(hotkeys) do keys[#keys + 1] = k .. " " .. type(hotkeys[k]) end
+table.sort(keys); print(table.concat(keys, "\n"))'
 assert_eq "autoLaunch true
-ctrl+alt+space function
+ctrl+alt+b function
 ctrl+alt+c function
-ctrl+alt+t function
-ctrl+alt+n function" "$RUN_OUTPUT" "loading"
+ctrl+alt+e function
+ctrl+alt+n function
+ctrl+alt+space function
+ctrl+alt+t function" "$RUN_OUTPUT" "loading"
 
 # Claude, Chrome, and T3 Code open, and a missing app shows an alert
-run_lua 'hotkeys["ctrl+alt+space"](); hotkeys["ctrl+alt+c"](); hotkeys["ctrl+alt+t"]()
-state.installed["com.google.Chrome"] = nil; hotkeys["ctrl+alt+c"]()'
+run_lua 'hotkeys["ctrl+alt+space"](); hotkeys["ctrl+alt+b"](); hotkeys["ctrl+alt+c"]()
+state.installed["com.google.Chrome"] = nil; hotkeys["ctrl+alt+b"]()'
 assert_eq "autoLaunch true
 open com.anthropic.claudefordesktop
 open com.google.Chrome
 open com.t3tools.t3code
 open com.google.Chrome
 alert Couldn't open Google Chrome" "$RUN_OUTPUT" "Claude, Chrome, and T3 Code"
+
+# The terminal and the editor run the copied open-in, keeping Hammerspoon's environment, and print
+# its log line to the console. One that can't start shows an alert.
+run_lua 'hotkeys["ctrl+alt+t"](); hotkeys["ctrl+alt+e"](); print_calls(); flush()
+state.taskStarts = false; hotkeys["ctrl+alt+e"]()'
+assert_eq "autoLaunch true
+task /bin/bash /home/.hammerspoon/bin/open-in terminal as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
+task /bin/bash /home/.hammerspoon/bin/open-in editor as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
+open-in: terminal from com.apple.finder: /tmp
+open-in: editor from com.apple.finder: /tmp
+alert Couldn't run /home/.hammerspoon/bin/open-in" "$RUN_OUTPUT" "the terminal and the editor"
 
 # A new tab with text on the clipboard: nothing is pressed while Chrome isn't in front or Ctrl+Opt
 # is still held, then Cmd+T, and after the delay Cmd+V and Cmd+A

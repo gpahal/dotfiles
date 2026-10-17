@@ -7,9 +7,9 @@ set -euo pipefail
 # in Finder, Zed, or Ghostty.
 # Ghostty opens a tab when it's in front and a window otherwise. Without a path, such as with
 # another app in front or a path that isn't here, it opens a new window: Finder and Ghostty at
-# home, Zed empty. A missing permission still opens the window, then fails with a notification.
-# Stubs stand in for lsappinfo, osascript, open, and the Zed CLI, and a database with T3 Code's
-# tables for its state.
+# home, Zed empty. A missing permission still opens the window, then fails with a notification
+# naming the caller, Stream Deck or Hammerspoon. Stubs stand in for lsappinfo, osascript, open,
+# and the Zed CLI, and a database with T3 Code's tables for its state.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -42,7 +42,7 @@ case "$script" in
     *"set selected to selection"*) printf "%s\n" "$FINDER_PATH" ;;
     *"make new Finder window"*) echo "  new Finder window" >> "$STUB_LOG" ;;
     *"new surface configuration"*) echo "  new Ghostty $3 at $2" >> "$STUB_LOG" ;;
-    *"display notification"*) echo "  notification: $2" >> "$STUB_LOG" ;;
+    *"display notification"*) echo "  notification from $3: $2" >> "$STUB_LOG" ;;
 esac'
 stub open
 stub zed-cli
@@ -137,7 +137,7 @@ GHOSTTY_RUNNING="" check terminal com.google.Chrome 0 \
 # --- A missing permission: the new window opens, then a notification says why ---
 export ZED_ERROR="execution error: System Events got an error: osascript is not allowed assistive access. (-25211)"
 check editor dev.zed.Zed 1 "zed-cli --new
-  notification: Stream Deck lacks a permission: $ZED_ERROR"
+  notification from Stream Deck: Stream Deck lacks a permission: $ZED_ERROR"
 assert_contains "$RUN_OUTPUT" "ERROR $ZED_ERROR"
 # Zed with no window open fails with -1719 too, which isn't a missing permission
 export ZED_ERROR="execution error: System Events got an error: Can't get window 1 of process 1. Invalid index. (-1719)"
@@ -147,5 +147,8 @@ export ZED_ERROR=""
 # A failed open fails, with a notification
 stub zed-cli 'exit 1'
 check editor com.google.Chrome 1 "zed-cli --new
-  notification: Couldn't open a new window. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+  notification from Stream Deck: Couldn't open a new window. See ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log"
+# Run by Hammerspoon, the notification names it and its log
+OPEN_IN_CALLER=Hammerspoon OPEN_IN_LOG="Hammerspoon's console" check editor com.google.Chrome 1 "zed-cli --new
+  notification from Hammerspoon: Couldn't open a new window. See Hammerspoon's console"
 test_done

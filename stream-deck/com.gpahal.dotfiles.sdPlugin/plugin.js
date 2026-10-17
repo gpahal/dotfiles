@@ -20,6 +20,7 @@ const scripts = {
   claude: "open-app",
   chrome: "open-app",
   "chrome-tab": "open-app",
+  gmail: "open-app",
   "t3-code": "open-app",
   "activity-monitor": "open-app",
 };

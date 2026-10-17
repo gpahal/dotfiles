@@ -24,10 +24,10 @@ apply() {
     json_applied "$settings" "$T3_CODE_SERVER_FILTER" || fail "a second run would change: $1"
 }
 
-# Worktree cleanup: a global "off" becomes custom with the four rules
-rules='{"worktreeAfterDays":30,"worktreeOnMerge":true,"worktreeOnDelete":true,"worktreeUnchanged":true}'
+# Worktree cleanup: a global "off" becomes custom with the five rules
+rules='{"worktreeAfterDays":30,"worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":15,"worktreeUnchanged":true}'
 apply '{"worktreeCleanup": {"mode": "off"}}'
-assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -c '.worktreeCleanup' "$settings")" "worktreeCleanup from off"
+assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup from off"
 
 # Custom rules that differ are replaced. Project overrides are left alone, and the storage settings
 # get only browser captures' and logs' retention: worktreeCleanup replaces the worktree fields.
@@ -36,14 +36,15 @@ apply '{
   "projectSettingsOverrides": {"p1": {"worktreeCleanup": {"mode": "off"}}},
   "storageCleanup": {"browserArtifactsAfterDays": 10}
 }'
-assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -c '.worktreeCleanup' "$settings")" "worktreeCleanup from other rules"
+assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup from other rules"
 assert_eq '{"mode":"off"}' "$(jq -c '.projectSettingsOverrides.p1.worktreeCleanup' "$settings")" "project override"
 assert_eq '{"browserArtifactsAfterDays":30,"logsAfterDays":30}' \
     "$(jq -cS '.storageCleanup' "$settings")" "storageCleanup"
 
-# Rules T3 Code 0.1.0 added, which it writes out in full, keep their values and settle
+# A rule T3 Code 0.1.0 added that the filter doesn't set, which T3 writes out in full, keeps its
+# value and settles
 apply '{"worktreeCleanup": {"mode": "custom", "rules": {"worktreeKeepWhen": "tracked-changes", "worktreeAfterDays": 7, "worktreeSettledAfterDays": null}}}'
-assert_eq '{"mode":"custom","rules":{"worktreeAfterDays":30,"worktreeKeepWhen":"tracked-changes","worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":null,"worktreeUnchanged":true}}' \
+assert_eq '{"mode":"custom","rules":{"worktreeAfterDays":30,"worktreeKeepWhen":"tracked-changes","worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":15,"worktreeUnchanged":true}}' \
     "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup with rules from a newer T3 Code"
 
 # Writing style: mode and custom instructions are set, and a field the app adds, such as the

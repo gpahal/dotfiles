@@ -1,0 +1,15 @@
+{
+  "Device": {
+    "Model": "20GBA9901",
+    "UUID": ""
+  },
+  "Name": "System",
+  "Pages": {
+    "Current": "6a1e9c3b-2d47-4f85-b9e0-3c5a7d1f8b26",
+    "Default": "9d3b5f7a-1c2e-4a68-8b04-e6f1a3c5d792",
+    "Pages": [
+      "6a1e9c3b-2d47-4f85-b9e0-3c5a7d1f8b26"
+    ]
+  },
+  "Version": "3.0"
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+  <rect width="144" height="144" fill="#18181b"/>
+  <g fill="none" stroke="#f4f4f5" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 64h20l12-30 20 60 12-30h40" stroke="#4ade80"/>
+  </g>
+  <text x="72" y="128" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#a1a1aa" text-anchor="middle">ACTIVITY</text>
+</svg>

@@ -233,6 +233,16 @@ Sometimes there's no path to use: another app is in front, Zed has no file open,
 
 The category's **Claude**, **Chrome**, and **New Tab** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`.
 
+**Overview** shows CPU and memory use, and a press opens the **System** page of live stats. The plugin bundles the page as a profile, and **Back** returns to the profile you came from:
+
+| | | | | |
+| :- | :- | :- | :- | :- |
+| Back | CPU | Memory | Swap | Activity Monitor |
+| Top CPU | GPU | Temperature | Power | Disk |
+| Network | | | | |
+
+Each stat key updates every 2 seconds while it's on screen, and a press opens Activity Monitor. Green, yellow, and red show how close each stat is to trouble. Memory's color is macOS's memory pressure, as in Activity Monitor, since macOS fills free memory with cache. CPU and GPU draw the last minute as a line. GPU, Temperature, and Power come from [macmon](#cli-tools-installed-via-brew), and show a dash without it. The stat keys are also in the category, to put on any page. The page is laid out for the 15-key Stream Deck. Stream Deck installs it the first time you press **Overview** and keeps its own copy after, so a change to `stream-deck/profile` reaches Stream Deck only once you delete the **System** profile in Stream Deck's settings and press **Overview** again. After editing the page, run `bash stream-deck/build-profile.sh`.
+
 Stream Deck runs the plugin's `bin/open-in` and `bin/open-app`, so macOS asks Stream Deck for the permissions they need. Accessibility lets them read Zed's window title and press the new tab's keys, and Automation lets them control Ghostty, Finder, and System Events. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
 
 ### Hammerspoon
@@ -291,7 +301,6 @@ The `runtimes` step installs these:
 - [glow](https://github.com/charmbracelet/glow): Markdown in the terminal
 
 **System monitoring:**
-- [bottom](https://github.com/ClementTsang/bottom) (`btm`): system monitor, which counts memory as Activity Monitor does
 - [macmon](https://github.com/vladkens/macmon) (macOS only): power, temperature, and RAM monitor
 
 **Disk and process tools:**
@@ -397,7 +406,7 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
-13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, **Terminal**, **Claude**, **Chrome**, and **New Tab** from the **Dotfiles** category onto keys. Press the first three once each with Ghostty, Zed, and Finder in front, then press **New Tab**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and paste into the new tab.
+13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Finder**, **Editor**, **Terminal**, **Claude**, **Chrome**, **New Tab**, and **Overview** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press the first three once each with Ghostty, Zed, and Finder in front, then press **New Tab**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and paste into the new tab.
 14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+T` can paste into the new tab. The config sets it to open at login.
 
 **Shell**
@@ -465,6 +474,7 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
 - With a file open in Zed, the Stream Deck **Finder** key reveals it, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed.
 - With a URL copied, `Ctrl+Opt+T` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Space` and the **Claude** key bring Claude to the front.
+- The Stream Deck **Overview** key shows CPU and memory. Pressing it opens the **System** page, where every key shows a number within a few seconds, a stat key opens Activity Monitor, and **Back** returns to your keys.
 
 ### Ubuntu
 

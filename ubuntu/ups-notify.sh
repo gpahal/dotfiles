@@ -6,7 +6,7 @@
 # shutdown. It sources the ntfy code the step installs separately, since the nut user may not be
 # able to read the repo. Failures go to the journal under dotfiles-ups. It always exits 0.
 
-# Fixed paths, not variables a caller could set, since the hook runs as root or nut. Tests run a
+# Fixed paths, not variables a caller could set, since the notifier runs as nut. Tests run a
 # copy with these lines rewritten (ntfy_hook_copy in tests/lib.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"

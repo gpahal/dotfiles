@@ -11,7 +11,8 @@ set -uo pipefail
 # keystrokes.
 #
 # Each run prints a line to stderr, which the plugin passes to Stream Deck's log. It exits 1, and
-# shows a notification saying why, when it couldn't open the app or send the keystrokes.
+# shows a notification saying why, when it couldn't open the app, switch to or open the Gmail tab,
+# or send the keystrokes.
 
 # Stream Deck starts plugins with a minimal environment
 PATH="${PATH:+$PATH:}/usr/bin:/bin"

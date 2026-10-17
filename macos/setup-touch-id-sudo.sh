@@ -9,8 +9,7 @@ set -euo pipefail
 # Any other line in sudo_local goes: unlike the files AGENTS.md says are never replaced, macOS
 # reserves sudo_local for local sudo changes such as this one, and rebuilding it keeps status and
 # setup in agreement.
-# setup.sh doesn't run it, since it changes /etc with sudo. Idempotent: safe to re-run. --status
-# reports, changing nothing.
+# setup.sh doesn't run it, since it changes /etc with sudo. --status reports, changing nothing.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

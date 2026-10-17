@@ -1,16 +1,9 @@
-// Zed settings
-//
-// For information on how to configure Zed, see the Zed
-// documentation: https://zed.dev/docs/configuring-zed
-//
-// To see all of Zed's default settings without changing your
-// custom settings, run `zed: open default settings` from the
-// command palette (cmd-shift-p / ctrl-shift-p)
 {
   // Homebrew updates Zed (through `upgrade`), so Zed's own updater stays off
   "auto_update": false,
   "cli_default_open_behavior": "new_window",
-  // The Stream Deck plugin (stream-deck/) reads the open file's path from the window title
+  // The Stream Deck plugin (stream-deck/) and Hammerspoon's Ctrl+Opt+T and E read the open
+  // file's path from the window title
   "window_title_format": "${projectName}${separator}${filePath}",
   "disable_ai": true,
   "project_panel": {

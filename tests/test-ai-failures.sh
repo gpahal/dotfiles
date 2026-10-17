@@ -1,9 +1,11 @@
 #!/bin/bash
-# The step mains invoke these replacements.
+# The steps' functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# Failed downloads or config writes still permit independent AI setup work.
+# A failed install or settings write fails the claude-code, claude-desktop, t3-code, or codex step
+# after it sets up the rest. Without brew, install_cask and the Codex CLI fail with
+# missing_cmd_hint's message.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox

@@ -3,8 +3,9 @@ set -euo pipefail
 
 # Install Docker Engine on Ubuntu from Docker's apt repo, the Linux counterpart of OrbStack on the
 # Mac. The daemon starts at boot, so containers with a restart policy come back, `docker` works
-# without sudo, and container logs rotate. These need sudo, so the step lists what's missing and
-# asks once. On macOS, OrbStack (from the homebrew step) provides Docker.
+# without sudo, container logs rotate, containers keep running across daemon restarts, published
+# ports listen on 127.0.0.1, and Docker updates install with the daily security updates. These
+# need sudo, so the step lists what's missing and asks once. On macOS, OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -344,8 +345,8 @@ main() {
         echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."
     fi
     socket_ready || sudo systemctl enable --now docker.socket || result=1
-    # After the config, so a daemon this starts reads it rather than restarting for it
     daemon_configured || configure_daemon || result=1
+    # After the config, so a daemon this starts reads it rather than restarting for it
     starts_at_boot || sudo systemctl enable --now docker.service || result=1
     docker_auto_updates_configured ||
         write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT" || result=1

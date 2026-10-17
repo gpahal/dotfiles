@@ -101,7 +101,7 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 
 ### Desktop app settings
 
-The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The app stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, archives inactive sessions after 30 days, and opens quick entry with Option+Space. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
+The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The app stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, and archives inactive sessions after 30 days. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
 
 ## Codex
 

@@ -1,7 +1,8 @@
 // Runs bin/open-in or bin/open-app for each key press of the plugin's actions, shows a warning on
-// the key when it fails, and passes what it printed to Stream Deck's log, which Stream Deck writes to
-// ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with -port, -pluginUUID, and -registerEvent, and Node 24's
-// built-in WebSocket talks to it, so the plugin needs no packages.
+// the key when it fails, and passes what it printed to Stream Deck's log, which Stream Deck writes
+// to ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with
+// -port, -pluginUUID, and -registerEvent, and Node 24's built-in WebSocket talks to it, so the
+// plugin needs no packages.
 //
 // The stat keys, which stats.js draws, update every 2 seconds while one is on screen. Overview
 // switches to profiles/System, the page of stat keys the plugin bundles, and Back returns to the

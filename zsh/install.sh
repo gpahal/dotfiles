@@ -33,7 +33,7 @@ ZPROFILE_TOOLS_LINE='path=("$HOME/.cargo/bin" "$HOME/go/bin" $path)'
 ZPROFILE_MISE_LINE='[[ -o interactive ]] || { command -v mise &>/dev/null && eval "$(mise activate zsh --shims)"; }'
 # shellcheck disable=SC2016
 ZPROFILE_LOCAL_LINE='path=("$HOME/.local/bin" $path)'
-# Login shells also need ~/.local/bin (claude, codex, t3), which interactive shells get in
+# Login shells also need ~/.local/bin (claude, t3), which interactive shells get in
 # basic-settings.zsh. The ChatGPT app's SSH connections to Ubuntu start Codex from a login shell,
 # and on macOS `zsh -lc claude` should find the native Claude Code. Each line puts its dirs in
 # front, so the last comes first: ~/.local/bin, then mise's shims, then Cargo's and Go's dirs, then

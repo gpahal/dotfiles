@@ -771,8 +771,8 @@ cask_state() {
 }
 
 # Succeeds when a tool's home, from its environment variable, is unset or names the default
-# directory, however it's spelled. The AI tool steps only write to the default (see ai_tools/README.md
-# → Automated setup).
+# directory, however it's spelled. The AI tool steps only write to the default (see
+# ai_tools/README.md → Maintenance).
 # e.g. tool_home_is "${CODEX_HOME:-}" "$HOME/.codex"
 tool_home_is() {
     local home default

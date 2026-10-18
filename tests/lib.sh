@@ -57,8 +57,8 @@ setup_sandbox() {
     # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps.
     # macOS's mktemp ignores TMPDIR without a template, so a wrapper below gives it one.
     export TMPDIR="$SANDBOX/tmp"
-    # Set, so zsh/main.zsh and ~/.zprofile don't run the real brew's shellenv, and pointing
-    # nowhere, so they put no real Homebrew dir ahead of the stubs
+    # Set, so zsh/path.zsh doesn't set the real Homebrew's environment, and pointing nowhere, so
+    # it puts no real Homebrew dir ahead of the stubs
     export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
     # The apt sources directory, where tests point the steps' apt sources, and the release
     # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the

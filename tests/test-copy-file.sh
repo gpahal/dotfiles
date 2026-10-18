@@ -122,6 +122,12 @@ mkdir -p "$HOME/a&b"
 printf 'mine\n' > "$amp"
 assert_exit 0 copy_file "$src2" "$amp" <<< n
 assert_contains "$RUN_OUTPUT" "$amp exists and differs from the repo's copy, and will be replaced. Back it up to $amp.bak first?"
+# A {} in the path stays too: the backup's path replaces the question's last {}
+braces="$HOME/x{}y/config"
+mkdir -p "$HOME/x{}y"
+printf 'mine\n' > "$braces"
+assert_exit 0 copy_file "$src2" "$braces" <<< n
+assert_contains "$RUN_OUTPUT" "  $braces exists and differs from the repo's copy, and will be replaced. Back it up to $braces.bak first?"
 # Put the real is_interactive and confirm back
 load_script lib/common.sh
 

@@ -153,33 +153,57 @@ sshd_configured() {
     [ "$(sshd_drop_in "$current")" == "$current" ]
 }
 
-# sshd -T's -C argument for a login by you from this machine
+# The addresses sshd_settings_problems checks a login by you from, one per line: this machine, one
+# in each of $SSH_RANGES, the tailnet's 100.64.0.0/10, and this SSH session's client, so a Match
+# Address block for any of them shows
+sshd_login_addresses() {
+    {
+        printf '%s\n' 127.0.0.1 10.0.0.1 192.168.1.1 fd00::1 fe80::1 100.64.0.1
+        [ -z "${SSH_CONNECTION:-}" ] || echo "${SSH_CONNECTION%% *}"
+    } | awk '!seen[$0]++'
+}
+
+# sshd -T's -C argument for a login by you from an address. sshd's UseDNS defaults to no, which
+# makes the host the address.
 sshd_login_spec() {
-    echo "user=$(id -un),host=localhost,addr=127.0.0.1"
+    echo "user=$(id -un),host=$1,addr=$1"
 }
 
 # Print each setting of the drop-in $1 that sshd doesn't take, as sshd -T shows it for a login by
-# you from this machine, so a Match block for you applies, one "<Keyword> is <value>" line each:
-# PermitRootLogin, AllowUsers, PasswordAuthentication, and KbdInteractiveAuthentication. sshd
-# keeps the first value it reads for most of them, and adds every AllowUsers line's users, so
+# you from each address sshd_login_addresses lists, so a Match block for you or one of them
+# applies, one "<Keyword> is <value>" line each, ending in " for <addresses>" unless every address
+# gets it: PermitRootLogin, AllowUsers, PasswordAuthentication, and KbdInteractiveAuthentication.
+# sshd keeps the first value it reads for most of them, and adds every AllowUsers line's users, so
 # another file can undo the drop-in. Prints nothing when sshd takes them all. sshd -T needs root
 # and $SSHD_RUN_DIR, so pass sudo's flags, e.g. -n. Fails when sshd -T does, as it does for a
-# Match on a criterion -C doesn't give, such as LocalPort.
+# Match on a criterion -C doesn't give, such as LocalPort, and then prints the -C argument it
+# failed with.
 sshd_settings_problems() {
-    local drop_in="$1" config key want have
+    local drop_in="$1" addr config key want have problems="" n=0
     shift
     [ -d "$SSHD_RUN_DIR" ] || return 1
-    config="$(sudo "$@" sshd -T -C "$(sshd_login_spec)" 2>/dev/null)" || return 1
-    while read -r key want; do
-        case "$key" in
-            AllowUsers) have="$(awk '$1 == "allowusers" { print $2 }' <<< "$config" | join_lines ' ')" ;;
-            PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication)
-                have="$(awk -v key="$(tr '[:upper:]' '[:lower:]' <<< "$key")" '$1 == key { print $2; exit }' <<< "$config")"
-                ;;
-            *) continue ;;
-        esac
-        [ "$have" == "$want" ] || echo "$key is ${have:-unset}"
-    done <<< "$drop_in"
+    while IFS= read -r addr; do
+        n=$((n + 1))
+        if ! config="$(sudo "$@" sshd -T -C "$(sshd_login_spec "$addr")" 2>/dev/null < /dev/null)"; then
+            sshd_login_spec "$addr"
+            return 1
+        fi
+        while read -r key want; do
+            case "$key" in
+                AllowUsers) have="$(awk '$1 == "allowusers" { print $2 }' <<< "$config" | join_lines ' ')" ;;
+                PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication)
+                    have="$(awk -v key="$(tr '[:upper:]' '[:lower:]' <<< "$key")" '$1 == key { print $2; exit }' <<< "$config")"
+                    ;;
+                *) continue ;;
+            esac
+            [ "$have" == "$want" ] || problems+="$key is ${have:-unset}"$'\t'"$addr"$'\n'
+        done <<< "$drop_in"
+    done < <(sshd_login_addresses)
+    # One line per problem, in the order found
+    printf '%s' "$problems" | awk -F '\t' -v n="$n" '
+        !($1 in count) { order[++k] = $1 }
+        { count[$1]++; where[$1] = where[$1] (where[$1] == "" ? "" : ", ") $2 }
+        END { for (i = 1; i <= k; i++) print order[i] (count[order[i]] == n ? "" : " for " where[order[i]]) }'
 }
 
 ensure_sshd_run_dir() {
@@ -250,7 +274,8 @@ configure_sshd() {
         echo "  Couldn't activate the SSH settings; restored the previous drop-in. Fix the error and re-run." >&2
         return 1
     fi
-    # Checked only now, since the step leaves other files to you
+    # Checked only now, since the step leaves other files to you. On a failure, it prints the -C
+    # argument sshd -T failed with.
     problems="$(sshd_settings_problems "$new")" || checked=false
     # sshd has reloaded, so the warning holds unless another file keeps password logins on
     if key_only_in "$new" && ! key_only_in "$old" &&
@@ -260,12 +285,12 @@ configure_sshd() {
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
     if ! "$checked"; then
-        echo "  sudo sshd -T -C $(sshd_login_spec) failed, so whether sshd takes $SSHD_DROP_IN is" >&2
+        echo "  sudo sshd -T -C $problems failed, so whether sshd takes $SSHD_DROP_IN is" >&2
         echo "  unchecked. Run it to see why." >&2
         return 1
     fi
     if [ -n "$problems" ]; then
-        echo "  sshd doesn't take these settings from $SSHD_DROP_IN, since another file sets them first:" >&2
+        echo "  sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:" >&2
         while IFS= read -r line; do echo "    $line"; done <<< "$problems" >&2
         echo "  Find them with sudo grep -ri <setting> /etc/ssh, fix them, then re-run the step." >&2
         return 1
@@ -298,11 +323,12 @@ status_sshd() {
         elif ! sudo_cached; then
             status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
         elif ! problems="$(sshd_settings_problems "$(current_sshd_drop_in)" -n)"; then
-            status_item unverified "$item (sudo sshd -T -C $(sshd_login_spec) failed; run it to see why)"
+            status_item unverified "$item (sudo sshd -T -C $problems failed; run it to see why)"
+            problems=""
         elif [ -z "$problems" ]; then
             status_item ok "$item"
         else
-            status_item missing "$item ($(join_lines '; ' <<< "$problems"); another file sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+            status_item missing "$item ($(join_lines '; ' <<< "$problems"); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
         fi
     fi
     item="Password and keyboard-interactive SSH logins off"

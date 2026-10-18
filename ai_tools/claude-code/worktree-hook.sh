@@ -21,10 +21,11 @@ set -euo pipefail
 # and worktree.sparsePaths. Nothing in it may wait for input.
 
 # Claude Code started from the Dock or a launcher may have only the system's PATH. git wt is in
-# ~/.local/bin, and jq may be only in Homebrew's.
+# ~/.local/bin. Homebrew's dirs go last, for a jq the system lacks, so the hook runs the same git
+# as the session.
 for dir in /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin; do
     if [ -d "$dir" ]; then
-        PATH="$dir:$PATH"
+        PATH="$PATH:$dir"
     fi
 done
 export PATH="$HOME/.local/bin:$PATH"

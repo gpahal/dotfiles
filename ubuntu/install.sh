@@ -44,6 +44,8 @@ source "$UBUNTU_LIB_DIR/paths.sh"
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
 # Sorts before 50-cloud-init.conf: sshd keeps the first value it reads for most settings
 SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
+# sshd's own config, whose Match Address lines the step reads, to check sshd's settings for them
+SSHD_CONFIG=/etc/ssh/sshd_config
 # sshd -t and -T need this directory, which ssh.service creates, and Ubuntu only starts that
 # service on the first connection
 SSHD_RUN_DIR=/run/sshd
@@ -135,6 +137,8 @@ Dpkg::Options {
 # 172.16.0.0/12 is left out: the docker step keeps Docker's address pools in 172.17.0.0/16 to
 # 172.31.0.0/16, so allowing it would let any container try logins on sshd.
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
+# The tailnet's addresses, Tailscale's CGNAT range
+TAILNET_RANGE=100.64.0.0/10
 # Docker's bridges: the default one, and each user-defined network's br-<ID>, which ufw's + matches.
 # ufw denies SSH on them ahead of the allow rules, since a network created with an explicit
 # subnet, or with IPv6, gives containers addresses in $SSH_RANGES.

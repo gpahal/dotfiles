@@ -120,7 +120,7 @@ ubuntu_step_setup() {
     # prints the port, and the settings the drop-in sets as sshd reads them: the first value in the
     # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
     # user=<user>,...,addr=<address>, the first value in a "Match User <user>" or "Match Address
-    # <address>" block wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
+    # <address>" block, or one whose list has a /24 the address is in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
     stub ss
@@ -134,6 +134,9 @@ ubuntu_step_setup() {
                 { k = tolower($1) }
                 k == "match" {
                     matched = (tolower($2) == "user" && $3 == user) || (tolower($2) == "address" && $3 == addr)
+                    # A /24, or a list that has one, as the step samples them
+                    if (tolower($2) == "address" && match($3, /[0-9.]+\.0\/24/))
+                        matched = matched || index(addr, substr($3, RSTART, RLENGTH - 4)) == 1
                     inmatch = 1
                     next
                 }

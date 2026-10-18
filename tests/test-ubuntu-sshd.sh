@@ -161,22 +161,28 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PasswordAuthentication is yes"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
-# So does a Match block for an address: one in a private range, the tailnet's, or this session's
-# client's. The problem names the addresses it applies to.
+# So does a Match block for an address: one in a private range, the tailnet's, or one the Match
+# line names, such as a sub-range or an outside address. The problem names the addresses it applies
+# to.
 assert_exit 0 status
-for addr in 192.168.1.1 100.64.0.1 203.0.113.7; do
-    printf '%s\n' "Match Address $addr" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
-    export SSH_CONNECTION="203.0.113.7 51000 192.168.1.5 22"
+for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.0.113.7" \
+    "192.168.5.0/24 192.168.5.1" "!10.9.9.9,192.168.7.0/24 192.168.7.1"; do
+    addr="${match##* }"
+    printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
     : > "$STUB_LOG"
     assert_exit 3 status
-    unset SSH_CONNECTION
     assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for $addr;"
     assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr)"
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
-# Without SSH_CONNECTION, the client's address isn't checked
-assert_exit 0 status
+assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
+# This SSH session's client is checked too
+export SSH_CONNECTION="198.51.100.4 51000 192.168.1.5 22"
+: > "$STUB_LOG"
+assert_exit 0 status
+unset SSH_CONNECTION
+assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=198.51.100.4,addr=198.51.100.4"
 # Another setting sshd doesn't take fails the step, but password logins went off when sshd
 # reloaded, so it says so
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/00-local.conf"

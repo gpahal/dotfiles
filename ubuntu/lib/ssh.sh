@@ -147,13 +147,54 @@ sshd_configured() {
     [ "$(sshd_drop_in "$current")" == "$current" ]
 }
 
+# Print an address in a range given as an address, a CIDR range, or a pattern with * or ?: the
+# first host for IPv4 (10.0.0.0/8 gives 10.0.0.1), ::1 after an IPv6 prefix (fd00::/8 gives
+# fd00::1), and 1 for each wildcard
+range_sample() {
+    local addr="${1%/*}"
+    addr="${addr//\*/1}"
+    addr="${addr//\?/1}"
+    case "$addr" in
+        *::) echo "${addr}1" ;;
+        *.0) if [ "$addr" == "$1" ]; then echo "$addr"; else echo "${addr%.0}.1"; fi ;;
+        *) echo "$addr" ;;
+    esac
+}
+
+# Print each entry of the Address criteria in the Match lines of sshd's config and drop-ins, one
+# per line, such as 192.168.5.0/24 or !10.1.2.3. Takes sudo's flags, e.g. -n, for files only root
+# can read; one it can't read is left out.
+sshd_match_addresses() {
+    local file
+    for file in "$SSHD_CONFIG" "$(dirname "$SSHD_DROP_IN")"/*.conf; do
+        [ ! -e "$file" ] || read_root_file "$file" "$@" || true
+    done 2>/dev/null | awk '
+        { sub(/#.*/, "") }
+        tolower($1) == "match" {
+            for (i = 2; i < NF; i++) {
+                if (tolower($i) != "address") continue
+                n = split($(i + 1), entries, ",")
+                for (j = 1; j <= n; j++) print entries[j]
+                i++
+            }
+        }'
+}
+
 # The addresses sshd_settings_problems checks a login by you from, one per line: this machine, one
-# in each of $SSH_RANGES, the tailnet's 100.64.0.0/10, and this SSH session's client, so a Match
-# Address block for any of them shows
+# in each of $SSH_RANGES and the tailnet's range, this SSH session's client, and one in each
+# address or range a Match Address line names, so a Match block for any of them shows. Takes
+# sudo's flags, as sshd_match_addresses does.
 sshd_login_addresses() {
+    local range
     {
-        printf '%s\n' 127.0.0.1 10.0.0.1 192.168.1.1 fd00::1 fe80::1 100.64.0.1
+        echo 127.0.0.1
+        for range in "${SSH_RANGES[@]}" "$TAILNET_RANGE"; do
+            range_sample "$range"
+        done
         [ -z "${SSH_CONNECTION:-}" ] || echo "${SSH_CONNECTION%% *}"
+        sshd_match_addresses "$@" | while IFS= read -r range; do
+            case "$range" in '!'* | '') ;; *) range_sample "$range" ;; esac
+        done
     } | awk '!seen[$0]++'
 }
 
@@ -163,23 +204,24 @@ sshd_login_spec() {
     echo "user=$(id -un),host=$1,addr=$1"
 }
 
-# Print each setting of the drop-in $1 that sshd doesn't take, as sshd -T shows it for a login by
-# you from each address sshd_login_addresses lists, so a Match block for you or one of them
-# applies, one "<Keyword> is <value>" line each, ending in " for <addresses>" unless every address
-# gets it: PermitRootLogin, AllowUsers, PasswordAuthentication, and KbdInteractiveAuthentication.
-# sshd keeps the first value it reads for most of them, and adds every AllowUsers line's users, so
-# another file can undo the drop-in. Prints nothing when sshd takes them all. sshd -T needs root
-# and $SSHD_RUN_DIR, so pass sudo's flags, e.g. -n. Fails when sshd -T does, as it does for a
-# Match on a criterion -C doesn't give, such as LocalPort, and then prints the -C argument it
-# failed with.
+# Set SSHD_PROBLEMS to each setting of the drop-in $1 that sshd doesn't take, as sshd -T shows it
+# for a login by you from each address sshd_login_addresses lists, so a Match block for you or one
+# of them applies, one "<Keyword> is <value>" line each, ending in " for <addresses>" unless every
+# address gets it: PermitRootLogin, AllowUsers, PasswordAuthentication, and
+# KbdInteractiveAuthentication. sshd keeps the first value it reads for most of them, and adds
+# every AllowUsers line's users, so another file can undo the drop-in. It's empty when sshd takes
+# them all. sshd -T needs root and $SSHD_RUN_DIR, so pass sudo's flags, e.g. -n. Fails when sshd
+# -T does, as it does for a Match on a criterion -C doesn't give, such as LocalPort, and then sets
+# SSHD_FAILED_SPEC to the -C argument it failed with.
 sshd_settings_problems() {
     local drop_in="$1" addr config key want have problems="" n=0
     shift
+    SSHD_PROBLEMS="" SSHD_FAILED_SPEC=""
     [ -d "$SSHD_RUN_DIR" ] || return 1
     while IFS= read -r addr; do
         n=$((n + 1))
         if ! config="$(sudo "$@" sshd -T -C "$(sshd_login_spec "$addr")" 2>/dev/null < /dev/null)"; then
-            sshd_login_spec "$addr"
+            SSHD_FAILED_SPEC="$(sshd_login_spec "$addr")"
             return 1
         fi
         while read -r key want; do
@@ -192,12 +234,12 @@ sshd_settings_problems() {
             esac
             [ "$have" == "$want" ] || problems+="$key is ${have:-unset}"$'\t'"$addr"$'\n'
         done <<< "$drop_in"
-    done < <(sshd_login_addresses)
+    done < <(sshd_login_addresses "$@")
     # One line per problem, in the order found
-    printf '%s' "$problems" | awk -F '\t' -v n="$n" '
+    SSHD_PROBLEMS="$(printf '%s' "$problems" | awk -F '\t' -v n="$n" '
         !($1 in count) { order[++k] = $1 }
         { count[$1]++; where[$1] = where[$1] (where[$1] == "" ? "" : ", ") $2 }
-        END { for (i = 1; i <= k; i++) print order[i] (count[order[i]] == n ? "" : " for " where[order[i]]) }'
+        END { for (i = 1; i <= k; i++) print order[i] (count[order[i]] == n ? "" : " for " where[order[i]]) }')"
 }
 
 ensure_sshd_run_dir() {
@@ -268,9 +310,9 @@ configure_sshd() {
         echo "  Couldn't activate the SSH settings; restored the previous drop-in. Fix the error and re-run." >&2
         return 1
     fi
-    # Checked only now, since the step leaves other files to you. On a failure, it prints the -C
-    # argument sshd -T failed with.
-    problems="$(sshd_settings_problems "$new")" || checked=false
+    # Checked only now, since the step leaves other files to you
+    sshd_settings_problems "$new" || checked=false
+    problems="$SSHD_PROBLEMS"
     # sshd has reloaded, so the warning holds unless another file keeps password logins on
     if key_only_in "$new" && ! key_only_in "$old" &&
         ! grep -qE '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems"; then
@@ -279,7 +321,7 @@ configure_sshd() {
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
     if ! "$checked"; then
-        echo "  sudo sshd -T -C $problems failed, so whether sshd takes $SSHD_DROP_IN is" >&2
+        echo "  sudo sshd -T -C $SSHD_FAILED_SPEC failed, so whether sshd takes $SSHD_DROP_IN is" >&2
         echo "  unchecked. Run it to see why." >&2
         return 1
     fi
@@ -316,10 +358,9 @@ status_sshd() {
             status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         elif ! sudo_cached; then
             status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
-        elif ! problems="$(sshd_settings_problems "$(current_sshd_drop_in)" -n)"; then
-            status_item unverified "$item (sudo sshd -T -C $problems failed; run it to see why)"
-            problems=""
-        elif [ -z "$problems" ]; then
+        elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
+            status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"
+        elif problems="$SSHD_PROBLEMS" && [ -z "$problems" ]; then
             status_item ok "$item"
         else
             status_item missing "$item ($(join_lines '; ' <<< "$problems"); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"

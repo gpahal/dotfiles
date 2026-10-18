@@ -21,8 +21,12 @@ usage() {
     echo "Turns on Touch ID for sudo in $SUDO_LOCAL, and in tmux with pam-reattach. macOS only."
 }
 
-# Copy Homebrew's module to the root-owned dir. Read-only, like the modules macOS ships.
+# Copy Homebrew's module to the root-owned dir. Read-only, like the modules macOS ships. A link in
+# the copy's place goes first, so install can't write through it.
 install_reattach_module() {
+    if [ -L "$REATTACH_MODULE" ]; then
+        sudo rm -f "$REATTACH_MODULE" || return 1
+    fi
     sudo install -d -o root -g wheel -m 755 "$PAM_LOCAL_MODULES_DIR" &&
         sudo install -o root -g wheel -m 444 "$REATTACH_SOURCE" "$REATTACH_MODULE"
 }
@@ -61,16 +65,27 @@ main() {
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
-    read_reattach_source
-
-    local parent
-    parent="$(reattach_unsafe_parent)"
-    if [ -n "$parent" ] && { [ -f "$REATTACH_MODULE" ] || reattach_source_installed; }; then
-        echo "$parent, above $PAM_LOCAL_MODULES_DIR, isn't root's alone to write, so sudo can't safely load pam-reattach from there. Fix it with sudo chown root $parent && sudo chmod go-w $parent, then re-run this script." >&2
-        return 1
+    local reason
+    # What just touch-id can't put right: it refuses before changing anything, whenever sudo_local
+    # would load the copy
+    if [ -e "$REATTACH_MODULE" ] || [ -L "$REATTACH_MODULE" ] || reattach_source_installed; then
+        if reattach_shadowed; then
+            echo "$REATTACH_MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $REATTACH_MODULE.2, then re-run just touch-id." >&2
+            return 1
+        fi
+        if ! reason="$(pam_path_safe "$PAM_LOCAL_MODULES_DIR")"; then
+            echo "sudo can't safely load pam-reattach from $PAM_LOCAL_MODULES_DIR: $reason, then re-run this script." >&2
+            return 1
+        fi
+        # An owner or mode others can write goes with the copy install replaces, but an ACL is
+        # someone's choice, so it stays theirs to remove
+        if [ -f "$REATTACH_MODULE" ] && ! reattach_module_replaceable && ! reason="$(pam_path_safe "$REATTACH_MODULE")"; then
+            echo "sudo can't safely load $REATTACH_MODULE: $reason, then re-run this script." >&2
+            return 1
+        fi
     fi
     # Without Homebrew's module, a copy others can write can't be put right
-    if [ -f "$REATTACH_MODULE" ] && ! reattach_source_installed && ! reattach_module_safe; then
+    if reattach_module_replaceable && ! reattach_source_installed; then
         echo "$REATTACH_MODULE, which sudo loads, isn't root's alone to write. Run brew install pam-reattach, then re-run this script." >&2
         return 1
     fi
@@ -105,6 +120,11 @@ main() {
             return 1
         fi
         echo "  Installed $REATTACH_MODULE."
+    fi
+    # Checked again after the copy, so sudo_local never names a module others can swap
+    if [ -e "$REATTACH_MODULE" ] && ! reason="$(pam_path_safe "$REATTACH_MODULE")"; then
+        echo "  sudo can't safely load $REATTACH_MODULE: $reason, then re-run this script." >&2
+        return 1
     fi
     if "$write"; then
         # Read-only and owned by root, like the rest of /etc/pam.d

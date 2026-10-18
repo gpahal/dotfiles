@@ -100,7 +100,6 @@ REATTACH="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
 PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 HEADER="# sudo_local: local config file which survives system update and is included for sudo"
 TID_LINE="auth       sufficient     pam_tid.so"
-stub brew '[ "$1" != --prefix ] || echo "$(dirname "$STUB_LOG")/brew"'
 mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
 printf '%s\n' "auth       include        sudo_local" "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
 # macOS ships its own modules with .2, which OpenPAM finds for a bare name

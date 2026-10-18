@@ -156,7 +156,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - [Git](https://git-scm.com/) config with the [delta](https://github.com/dandavison/delta) pager, `zdiff3` and `histogram` diffs, `rerere`, auto-squash and `updateRefs` on rebase, rebase on pull, and object checks on fetch
 - [difftastic](https://github.com/Wilfred/difftastic) as the diff tool: `git dft`, `git dd`, and `git dlog`
 - `git cob` and `git cobr` pick a local or remote branch with fzf and switch to it. `git co` runs `switch`, `git unstage` runs `restore --staged`, and `git del` deletes a merged branch
-- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt path`, `list`, `rm`, and `prune` do the rest; `git wt` alone prints its usage
+- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt base` prints the ref `git wt add` branches from when you give no base. `git wt rm --delete-merged-branch <name>` also deletes the branch when another branch has all its commits. `git wt path`, `list`, and `prune` do the rest; `git wt` alone prints its usage
 - Copied to `~/.config/git/config`, with a global ignore file at `~/.config/git/ignore`
 - Put settings for one machine in `~/.gitconfig.local`. To clone a repo with malformed objects, run `git -c transfer.fsckObjects=false clone <url>`
 

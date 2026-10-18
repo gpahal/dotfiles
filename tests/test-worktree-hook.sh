@@ -278,6 +278,7 @@ remove "$dir/local"
 assert_eq 0 "$status" "remove hook's exit status for a dirty worktree"
 [ ! -e "$dir/local" ] || fail "remove hook left the dirty $dir/local"
 git -C "$repo" show-ref --verify --quiet refs/heads/local || fail "remove hook deleted the local branch, which has a commit"
+assert_contains "$(cat "$SANDBOX/stderr")" "kept branch local" "remove hook's stderr for a branch with a commit"
 
 remove "$dir/feat"
 [ ! -e "$WORKTREES_DIR/x" ] || fail "remove hook left $WORKTREES_DIR/x"

@@ -10,16 +10,20 @@ set -euo pipefail
 # record the main checkout. There, every command fails and says to run it from the main checkout.
 #
 #   git wt path [<name>]       print the worktree path for <name>, or the repo's directory
-#   git wt add <name> [<base>] create branch <name> from <base> (default: origin's default branch,
-#                              else origin/main, origin/master, or HEAD) and a worktree for it,
-#                              then print its path. A branch that exists is checked out instead,
-#                              and one only origin has is checked out tracking it; a worktree
-#                              that exists has its path printed.
+#   git wt base                print the default base for a new branch: origin's default branch,
+#                              else origin/main, origin/master, or HEAD
+#   git wt add <name> [<base>] create branch <name> from <base> (default: git wt base) and a
+#                              worktree for it, then print its path. A branch that exists is
+#                              checked out instead, and one only origin has is checked out
+#                              tracking it; a worktree that exists has its path printed.
 #   git wt list                list the repo's worktrees under that directory
-#   git wt rm [-f] <name>      remove the worktree, then the directories that leaves empty. One
+#   git wt rm [-f] [--delete-merged-branch] <name>
+#                              remove the worktree, then the directories that leaves empty. One
 #                              holding changes, untracked files, or ignored files other than
 #                              build output, such as .env, is listed and needs -f, which
-#                              deletes them all.
+#                              deletes them all. --delete-merged-branch also deletes the
+#                              worktree's branch when another branch, local or remote, has all
+#                              its commits.
 #   git wt prune [--session <id>]
 #                              remove each worktree that Claude Code's worktree hook made a
 #                              branch for, and that branch, when the worktree is clean by
@@ -151,8 +155,22 @@ cmd_path() {
     printf '%s\n' "$repo_dir/$1"
 }
 
+# Print the base for a new branch: origin's default branch, else origin/main or origin/master,
+# else HEAD. The ref stays in full, so a tag named origin/main can't stand in for it.
+cmd_base() {
+    local ref
+    for ref in "$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2> /dev/null || true)" \
+        refs/remotes/origin/main refs/remotes/origin/master; do
+        if [ -n "$ref" ] && git show-ref --verify --quiet "$ref"; then
+            printf '%s\n' "$ref"
+            return
+        fi
+    done
+    echo HEAD
+}
+
 cmd_add() {
-    local name="${1:-}" base="${2:-}" path origin_head ref
+    local name="${1:-}" base="${2:-}" path
     check_name "$name"
     # git reads options after positionals, so --lock or --force here would reach it as one
     case "$base" in
@@ -181,16 +199,7 @@ cmd_add() {
         # Full refs, so a tag or branch named origin/<name> can't stand in for origin's branch
         add=(--track -b "$name" "$path" "refs/remotes/origin/$name")
     else
-        if [ -z "$base" ]; then
-            base=HEAD
-            origin_head="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2> /dev/null || true)"
-            for ref in "$origin_head" refs/remotes/origin/main refs/remotes/origin/master; do
-                if [ -n "$ref" ] && git show-ref --verify --quiet "$ref"; then
-                    base="$ref"
-                    break
-                fi
-            done
-        fi
+        [ -n "$base" ] || base="$(cmd_base)"
         # --no-track: a branch made from origin/main would otherwise push to main
         add=(--no-track -b "$name" "$path" "$base")
     fi
@@ -242,11 +251,12 @@ print_group() {
 }
 
 cmd_rm() {
-    local force=() name="" arg path changes tracked untracked ignored
-    # -f goes before or after the name
+    local force=() delete_branch=false name="" arg path branch changes tracked untracked ignored
+    # Options go before or after the name
     for arg in "$@"; do
         case "$arg" in
             -f | --force) force=(--force) ;;
+            --delete-merged-branch) delete_branch=true ;;
             *)
                 [ -z "$name" ] || usage
                 name="$arg"
@@ -272,8 +282,17 @@ cmd_rm() {
             die "keep what you need, then run git wt rm -f $name, which deletes all of these"
         fi
     fi
+    branch="$(worktree_branch "$path")"
     git worktree remove ${force[@]+"${force[@]}"} "$path"
     prune_empty "$(dirname "$path")"
+    # Not git branch -d, which would keep a branch made from a newer origin/main than HEAD
+    if "$delete_branch" && [ -n "$branch" ]; then
+        if is_merged "$branch"; then
+            git branch -D "$branch" >&2
+        else
+            echo "git wt: kept branch $branch, which has commits no other branch has" >&2
+        fi
+    fi
 }
 
 # Files the worktree hook (ai_tools/claude-code/worktree-hook.sh) writes in a worktree's git dir
@@ -363,6 +382,10 @@ command="$1"
 shift
 case "$command" in
     path) cmd_path "$@" ;;
+    base)
+        [ $# -eq 0 ] || usage
+        cmd_base
+        ;;
     add) cmd_add "$@" ;;
     list) cmd_list ;;
     rm | remove) cmd_rm "$@" ;;

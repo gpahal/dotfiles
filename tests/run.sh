@@ -88,13 +88,16 @@ watchdog() {
 }
 
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
-# 0 would start no test and wait forever
-case "$jobs" in
-    '' | *[!0-9]* | 0*)
-        echo "TEST_JOBS must be a positive integer, not '$jobs'" >&2
-        exit 1
-        ;;
-esac
+# A TEST_JOBS of 0 would start no test and wait forever, and a TEST_TIMEOUT that isn't a number
+# would turn the watchdog off
+for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
+    case "${setting#*=}" in
+        '' | *[!0-9]* | 0*)
+            echo "${setting%%=*} must be a positive integer, not '${setting#*=}'" >&2
+            exit 1
+            ;;
+    esac
+done
 # /tmp, not $TMPDIR, keeps the tests' TMUX_TMPDIR under tmux's socket path length limit on macOS
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 

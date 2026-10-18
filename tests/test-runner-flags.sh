@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Both runners take -h/--help, --status, --quick, --backup, and --no-backup anywhere among the step
-# names, and fail with a usage line on an unknown flag. check_args reads --status and --quick
+# names, and fail with a usage line on an unknown flag, and with the step lists on an unknown step
+# name. check_args reads --status and --quick
 # wherever they are too.
 
 # shellcheck source=lib.sh
@@ -50,6 +51,14 @@ assert_contains "$RUN_OUTPUT" "Unknown option: --foo"
 assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "an unknown flag installed ~/.vimrc"
 
+# A step name with a space or a slash is unknown, even where it matches adjacent steps in the list,
+# and runs nothing
+for name in "git lazygit" "git/" "../setup"; do
+    assert_exit 1 "$BASH" "$setup_sh" --status "$name"
+    assert_contains "$RUN_OUTPUT" "Unknown step: $name." "setup.sh --status '$name'"
+    assert_not_contains "$RUN_OUTPUT" "git config" "setup.sh --status '$name'"
+done
+
 # --quick only shortens a status report, so without --status it fails with the usage, and runs
 # nothing
 assert_exit 2 "$BASH" "$setup_sh" --quick --backup vim
@@ -88,6 +97,11 @@ assert_contains "$RUN_OUTPUT" "missing    ~/.config/git/config"
 [ ! -e "$HOME/.config/git/config" ] || fail "git/install.sh --status installed the git config"
 assert_exit 0 "$BASH" "$REPO_DIR/manual-steps.sh" --status --no-backup
 assert_eq "" "$RUN_OUTPUT" "manual-steps.sh --status"
+# The manual-steps scripts, which aren't named install.sh, name themselves in their usage too
+for step in manual-steps.sh ai_tools/manual-steps.sh; do
+    assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
+    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
+done
 
 # A step run directly prints its usage for -h or --help and fails on an unknown flag or any word,
 # changing nothing either way

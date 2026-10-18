@@ -12,53 +12,79 @@ set -u
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# Whether a cask is outdated: 0 when it is, 1 when it's up to date, and 2, with a message, when
-# `brew outdated` fails. Given a cask, brew outdated exits 1 when it lists it, so only an exit
-# above 1, or an exit 1 that lists nothing, is a failure. An interrupted brew returns its status.
-# Usage: _brew_cask_outdated <cask> [<brew outdated flag>...]
-_brew_cask_outdated() {
-    local cask="$1" output rc=0
-    shift
-    output="$(brew outdated --cask "$@" --quiet "$cask" 2>/dev/null)" || rc=$?
+# Print which of the casks given are outdated, one per line, counting those that update themselves.
+# Fails when `brew outdated` does. Given casks, brew outdated exits 1 when it lists one, so only an
+# exit above 1, or an exit 1 that lists nothing, is a failure. An interrupted brew returns its
+# status.
+# Usage: _brew_casks_outdated <cask>...
+_brew_casks_outdated() {
+    local output rc=0
+    output="$(brew outdated --cask --greedy --quiet "$@" 2>/dev/null)" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
-    if [ "$rc" -le 1 ] && [ -n "$output" ]; then
+    if [ "$rc" -eq 0 ] || { [ "$rc" -eq 1 ] && [ -n "$output" ]; }; then
+        [ -z "$output" ] || printf '%s\n' "$output"
         return 0
-    elif [ "$rc" -eq 0 ]; then
-        return 1
     fi
-    echo "Couldn't check whether $cask is up to date: brew outdated failed." >&2
-    return 2
+    return 1
 }
 
-# Upgrade the outdated casks given, skipping running apps, which replacing would break. Most are
+# Succeeds when the list on stdin, one cask per line, names cask $1, alone or after its tap
+_cask_listed() {
+    awk -F / -v cask="$1" '$NF == cask { found = 1 } END { exit !found }'
+}
+
+# Upgrade the outdated casks given, skipping running apps, which replacing would break. One brew
+# list and one brew outdated cover all of them, rather than two brew queries per cask. Most are
 # apps that update themselves, but only while they run, so this catches up the rest. `brew upgrade`
 # would quit and replace them when the app bundle is behind, so `upgrade` sets
 # HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave them to this. A cask given as <cask>:<process>
 # counts as running when a process has that exact name. For the others, an app's name can gain or
 # lose a suffix in parentheses between releases, so match any running app whose name starts with the
 # cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
-# `brew info` leaves the cask alone and fails, since its output can't say the cask is up to date or
-# what app it has. An interrupted brew command returns its status, so the caller stops. An app that
-# renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
+# `brew info` for a cask leaves it alone and fails, since its output can't say the cask is up to
+# date or what app it has. An interrupted brew command returns its status, so the caller stops. An
+# app that renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
 # under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
 # keeping the app on disk (_readopt_renamed_cask).
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
-    local rerun="$1" entry cask process info path app running outdated status rc exit_status=0
+    local rerun="$1" entry cask process info path app running installed outdated one status rc
+    local exit_status=0 listed=() names=()
     shift
+    rc=0
+    installed="$(brew list --cask -1 2>/dev/null)" || rc=$?
+    ! interrupted_status "$rc" || return "$rc"
     for entry in "$@"; do
+        if _cask_listed "${entry%%:*}" <<< "$installed"; then
+            listed+=("$entry")
+            names+=("${entry%%:*}")
+        fi
+    done
+    [ ${#listed[@]} -gt 0 ] || return 0
+    rc=0
+    outdated="$(_brew_casks_outdated "${names[@]}")" || rc=$?
+    ! interrupted_status "$rc" || return "$rc"
+    if [ "$rc" -ne 0 ]; then
+        # One cask brew can't find, such as one removed upstream, fails the whole query, so each is
+        # asked alone, and only that one is left out
+        outdated=""
+        for cask in "${names[@]}"; do
+            rc=0
+            one="$(_brew_casks_outdated "$cask")" || rc=$?
+            ! interrupted_status "$rc" || return "$rc"
+            if [ "$rc" -eq 0 ]; then
+                outdated+="$one"$'\n'
+            else
+                echo "Couldn't check whether $cask is up to date: brew outdated failed." >&2
+                exit_status=1
+            fi
+        done
+    fi
+    for entry in "${listed[@]}"; do
         cask="${entry%%:*}"
         process=""
         [ "$cask" == "$entry" ] || process="${entry#*:}"
-        rc=0
-        brew list --cask "$cask" &>/dev/null || rc=$?
-        ! interrupted_status "$rc" || return "$rc"
-        [ "$rc" -eq 0 ] || continue
-        outdated=0
-        _brew_cask_outdated "$cask" --greedy || outdated=$?
-        ! interrupted_status "$outdated" || return "$outdated"
-        [ "$outdated" -ne 2 ] || exit_status=1
-        [ "$outdated" -eq 0 ] || continue
+        _cask_listed "$cask" <<< "$outdated" || continue
         running=false
         if [ -n "$process" ]; then
             app="$cask"
@@ -103,28 +129,14 @@ _upgrade_self_updating_casks() {
     return "$exit_status"
 }
 
-# Print the app path brew recorded when it installed cask $1, in the dir of the app path $2 the
-# cask now gives. Fails when brew's install receipt names no app, or the cask's uninstall does
-# more than remove its app, which _readopt_renamed_cask's uninstall would then run.
-_recorded_cask_app() {
-    local receipt name
-    receipt="$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
-    name="$(jq -er '.uninstall_artifacts
-        | if all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))
-          then [.[] | select(has("app")) | .target // (.app[1].target? // .app[0])][0]
-          else empty end
-        | strings' "$receipt" 2>/dev/null)" || return 1
-    case "$name" in
-        /*) echo "$name" ;;
-        *) echo "${2%/*}/$name" ;;
-    esac
-}
-
 # Succeeds when the app brew recorded for cask $1 is gone but the app at $2, which the cask now
-# gives, is there: the app renamed itself as it updated
+# gives, is there: the app renamed itself as it updated. Only for a cask whose uninstall does no
+# more than remove its app, which _readopt_renamed_cask's uninstall would otherwise run.
 _cask_app_renamed() {
     local recorded
-    recorded="$(_recorded_cask_app "$1" "$2")" || return 1
+    jq -e '.uninstall_artifacts | all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))' \
+        "$(cask_receipt "$1")" &>/dev/null || return 1
+    recorded="$(recorded_cask_app "$1" "$2")" || return 1
     [ "$recorded" != "$2" ] && [ ! -e "$recorded" ] && [ -d "$2" ]
 }
 
@@ -142,14 +154,12 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Install the formulae added to this repo's Brewfile since setup last ran. brew bundle check also
-# fails on a missing App Store app, which install can't fix without an App Store sign-in, so both
-# skip the Brewfile's App Store apps, as the homebrew step's check does. The mas stage updates the
-# apps. Sourcing the step only defines its functions, but it also sets -euo pipefail, so this and
-# _install_new_casks run in a subshell.
+# Install the formulae added to this repo's Brewfile since setup last ran. Sourcing the step only
+# defines its functions, but it also sets -euo pipefail, so this and _install_new_casks run in a
+# subshell.
 _install_new_formulae() (
     # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && { bundle_installed_except_mas || bundle_except_mas install; }
+    source "$DOTFILES_DIR/homebrew/install.sh" && install_bundle
 )
 
 # Install the casks added to the homebrew step since setup last ran
@@ -312,7 +322,7 @@ upgrade() {
         # Casks marked as updating themselves that brew upgrade skips. Zed's settings.json turns
         # its updater off, and the others rarely run, so their own updaters rarely catch up.
         _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ || _stage_failed "self-updating casks" "$?"
-        # Every App Store app, not just the Brewfile's. mas asks for your password to update one.
+        # Every App Store app, not just the homebrew step's. mas asks for your password to update one.
         if command -v mas &>/dev/null; then
             mas upgrade || _stage_failed mas "$?"
         fi

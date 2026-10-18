@@ -159,8 +159,42 @@ run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
 assert_file_not_contains "$STUB_LOG" "brew reinstall"
 assert_file_not_contains "$STUB_LOG" "brew install"
-# Without it, the cask's app is gone, and setup reinstalls it
+# A run asks brew about the cask once
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run"
+# Without it, the cask's app is gone, and setup reinstalls it, still asking brew once
 rm -r "$SANDBOX/Applications/T3 Code.app"
+: > "$STUB_LOG"
 run status
 assert_contains "$RUN_OUTPUT" "missing    t3-code (cask): brew lists it, but its app is gone"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in status"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in status"
+: > "$STUB_LOG"
+run main
+assert_file_contains "$STUB_LOG" "brew reinstall"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run that reinstalls"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run that reinstalls"
+# The cask's app in place is installed, and asks brew once too
+mkdir -p "$APP"
+: > "$STUB_LOG"
+run main
+assert_contains "$RUN_OUTPUT" "t3-code already installed."
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run with the app in place"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run with the app in place"
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
+# A renamed app brew doesn't list was installed outside Homebrew
+rm -r "$APP"
+mkdir -p "$SANDBOX/Applications/T3 Code.app"
+# shellcheck disable=SC2016 # expanded by the stub
+stub brew 'case "$1" in
+    list) exit 1 ;;
+    info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
+esac'
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
+: > "$STUB_LOG"
+run main
+assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
+assert_file_not_contains "$STUB_LOG" "brew install"
 test_done

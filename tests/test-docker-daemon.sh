@@ -7,7 +7,7 @@ set -euo pipefail
 # The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind
 # to, and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
 # keeping the file's other keys and mode, restarts a running daemon only when the file changed,
-# and leaves invalid JSON alone. A failed write leaves the old
+# and leaves invalid JSON alone. A file of several JSON values isn't configured. A failed write leaves the old
 # file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
 # the new file.
 
@@ -140,6 +140,10 @@ assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
 assert_file_not_contains "$STUB_LOG" "dockerd"
 assert_file_not_contains "$STUB_LOG" "systemctl"
+
+# Several JSON values aren't configured, even when the last one is
+{ cat "$SANDBOX/before-restart"; sorted /dev/stdin <<< "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
+assert_exit 1 daemon_configured
 
 # A running daemon: the pending item says the restart stops containers
 stub systemctl '[ "$*" == "is-active --quiet docker.service" ]'

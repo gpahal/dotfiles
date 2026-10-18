@@ -147,7 +147,7 @@ docker_sudo_items() {
 daemon_settings_applied() {
     local current
     current="$(cat)"
-    [ -n "$current" ] && jq -e "($DOCKER_DAEMON_SETTINGS) == ." <<< "$current" &> /dev/null
+    [ -n "$current" ] && jq -s -e "length == 1 and (.[0] | ($DOCKER_DAEMON_SETTINGS) == .)" <<< "$current" &> /dev/null
 }
 
 daemon_config_unreadable() {

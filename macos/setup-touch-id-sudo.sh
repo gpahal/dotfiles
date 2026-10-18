@@ -21,10 +21,15 @@ usage() {
     echo "Turns on Touch ID for sudo in $SUDO_LOCAL, and in tmux with pam-reattach. macOS only."
 }
 
-# Copy Homebrew's module to the root-owned dir. Read-only, like the modules macOS ships.
+# Copy Homebrew's module to the root-owned dir, read-only like the modules macOS ships. It goes in
+# under a temp name that mv then renames over the copy, so between the sudo runs sudo_local never
+# names a missing module, which would keep the next sudo from starting PAM. The rename replaces a
+# link in the copy's place rather than writing through it, and -h keeps mv from following one to a
+# dir.
 install_reattach_module() {
     sudo install -d -o root -g wheel -m 755 "$PAM_LOCAL_MODULES_DIR" &&
-        sudo install -o root -g wheel -m 444 "$REATTACH_SOURCE" "$REATTACH_MODULE"
+        sudo install -o root -g wheel -m 444 "$REATTACH_SOURCE" "$REATTACH_MODULE.new" &&
+        sudo mv -fh "$REATTACH_MODULE.new" "$REATTACH_MODULE"
 }
 
 status() {
@@ -61,17 +66,9 @@ main() {
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
-    read_reattach_source
-
-    local parent
-    parent="$(reattach_unsafe_parent)"
-    if [ -n "$parent" ] && { [ -f "$REATTACH_MODULE" ] || reattach_source_installed; }; then
-        echo "$parent, above $PAM_LOCAL_MODULES_DIR, isn't root's alone to write, so sudo can't safely load pam-reattach from there. Fix it with sudo chown root $parent && sudo chmod go-w $parent, then re-run this script." >&2
-        return 1
-    fi
-    # Without Homebrew's module, a copy others can write can't be put right
-    if [ -f "$REATTACH_MODULE" ] && ! reattach_source_installed && ! reattach_module_safe; then
-        echo "$REATTACH_MODULE, which sudo loads, isn't root's alone to write. Run brew install pam-reattach, then re-run this script." >&2
+    local blocker reason
+    if blocker="$(reattach_blocker)"; then
+        echo "Touch ID in tmux: $blocker." >&2
         return 1
     fi
 
@@ -102,6 +99,13 @@ main() {
     if "$copy"; then
         if ! install_reattach_module; then
             echo "  Couldn't install $REATTACH_MODULE." >&2
+            return 1
+        fi
+        # Checked again, so sudo_local never names a copy others can swap. The dir and its parents
+        # passed reattach_blocker.
+        reason="$(pam_entry_unsafe "$REATTACH_MODULE")"
+        if [ -n "$reason" ]; then
+            echo "  sudo can't safely load $REATTACH_MODULE: $reason, then re-run just touch-id." >&2
             return 1
         fi
         echo "  Installed $REATTACH_MODULE."

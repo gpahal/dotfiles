@@ -105,8 +105,8 @@ t3_code_server_filter() {
         .defaultProjectScripts[]?,
         .projectSettingsOverrides[]?.defaultProjectScripts[]?
     ) |= if .runOnWorktreeCreate == true then .async = false else . end
-    | if (.defaultModelSelection.model // "") as $model
-        | $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
+    | (.defaultModelSelection.model // "") as $model
+    | if $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
       then
         (if .defaultModelSelection.instanceId != "claudeAgent"
           then .defaultModelSelection.options = []
@@ -117,13 +117,19 @@ t3_code_server_filter() {
       else .
       end
     # The 1M context window goes with the effort set here, so an effort of your own keeps your
-    # context window too
+    # context window too. A window of your own stays unless this run replaced your model or effort.
     | if .defaultModelSelection.model == "'"$T3_CODE_MODEL"'"
       then .defaultModelSelection.options |= ((. // [])
-          | if (map(select(.id == "effort") | .value) | . == [] or . == ["'"$T3_CODE_EFFORT"'"])
-              or '"$T3_CODE_REPLACE_EFFORT"'
+          | (map(select(.id == "effort") | .value) | . == [] or . == ["'"$T3_CODE_EFFORT"'"])
+            as $effort_is_ours
+          | if $effort_is_ours or '"$T3_CODE_REPLACE_EFFORT"'
             then set_option("effort"; "'"$T3_CODE_EFFORT"'")
-              | set_option("contextWindow"; "1m")
+              | if (any(.[]; .id == "contextWindow") | not)
+                  or $model != "'"$T3_CODE_MODEL"'"
+                  or ($effort_is_ours | not)
+                then set_option("contextWindow"; "1m")
+                else .
+                end
             else .
             end)
       else .
@@ -229,22 +235,21 @@ t3_code_app_path() {
     return 1
 }
 
-# Print the app when brew lists the t3-code cask but the app has a name other than the one the
-# cask now gives, and fail otherwise. T3 Code can rename itself in an update, which can get there
-# before the cask does. The app is then installed, not gone, and
-# brew's record catches up at the next upgrade-ai-tools once the cask does.
-# Usage: t3_code_renamed_app [cask app path], as t3_code_app_path takes it
-t3_code_renamed_app() {
-    local app cask_app
-    if [ $# -gt 0 ]; then
-        cask_app="$1"
-    else
-        cask_app="$(cask_app_path t3-code)"
+# Print how the t3-code cask is installed, a tab, and its app's path, as cask_state does, asking
+# brew once. "renamed" is a cask brew lists whose app has a name other than the one the cask now
+# gives: T3 Code can rename itself in an update, which can get there before the cask does. The app
+# is then installed, not gone, and brew's record catches up at the next upgrade-ai-tools once the
+# cask does. A renamed app brew doesn't list is "other".
+t3_code_cask_state() {
+    local state app found
+    IFS=$'\t' read -r state app <<< "$(cask_state t3-code)"
+    if [ "$state" == gone ] || [ "$state" == missing ]; then
+        if found="$(t3_code_app_path "$app")"; then
+            app="$found"
+            if [ "$state" == gone ]; then state=renamed; else state=other; fi
+        fi
     fi
-    app="$(t3_code_app_path "$cask_app")" || return 1
-    brew list --cask t3-code &>/dev/null || return 1
-    [ "$app" != "$cask_app" ] || return 1
-    echo "$app"
+    printf '%s\t%s\n' "$state" "$app"
 }
 
 # Succeeds when launchd's environment has the variable now
@@ -252,10 +257,11 @@ t3_code_telemetry_off() {
     [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
 }
 
+# Usage: configure_t3_code [cask app path], as t3_code_app_path takes it
 configure_t3_code() {
     echo "Configuring T3 Code..."
     local app_name
-    app_name="$(t3_code_app_path || true)"
+    app_name="$(t3_code_app_path "$@" || true)"
     app_name="${app_name##*/}"
     app_name="${app_name%.app}"
     # The settings below apply even when this fails
@@ -485,7 +491,9 @@ configure_t3_code_ubuntu() {
         if ! "$have_cli"; then
             echo "  Without the t3 CLI there's no service to install; skipping it."
         elif [ "$update_status" -eq 2 ]; then
-            echo "  Without its drop-in, the service would serve on every interface; skipping it." >&2
+            # A running service whose restart was declined is left running, as it was
+            echo "  Without its drop-in, the service would serve on every interface, so setup doesn't" >&2
+            echo "  install, enable, or start it." >&2
         else
             ensure_t3_code_service || step_failed=true
         fi
@@ -499,28 +507,60 @@ configure_t3_code_ubuntu() {
     [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
+# Write the service's drop-in when it isn't current, then have systemd load it. Neither touches the
+# running server, which keeps its environment until it restarts. Fails when either fails.
+t3_code_write_drop_in() {
+    local tmp=""
+    if ! t3_code_drop_in_current; then
+        # Through write_back, since a drop-in cut short without its host line would have the
+        # enabled unit serve on every interface at the next boot
+        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
+            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
+            rm -f "$tmp"
+            return 1
+        fi
+        write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN" || return 1
+    fi
+    t3_code_load_drop_in
+}
+
 # Set the server settings and write the service's drop-in (telemetry, port, and host). The
 # running server writes settings.json too, and keeps its environment until it restarts, so when
-# either needs changing a running service is stopped around the change, after asking once. Fails
-# with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
-# Fails with 1 when only something else failed.
+# either needs changing a running service is stopped around the change, after asking once. A
+# declined restart still writes and loads the drop-in, which applies at the next restart, such as
+# a reboot, and leaves the settings for a later run. Fails with 2 when the drop-in isn't written
+# and loaded, and then doesn't start a service it stopped. Fails with 1 when only something else
+# failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0 drop_in_ok=true tmp=""
+    local settings_set=false stopped=false result=0 drop_in_ok=true drop_in_was_current=false
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
     # server lacks its environment
     if t3_code_drop_in_current; then
+        drop_in_was_current=true
         t3_code_load_drop_in || return 2
     fi
-    if "$settings_set" && t3_code_drop_in_current && ! t3_code_restart_pending; then
+    if "$settings_set" && "$drop_in_was_current" && ! t3_code_restart_pending; then
         echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
         return 0
     fi
     if t3_code_service_active; then
         if ! confirm "  Restart the T3 Code service to apply its settings and drop-in? Threads running on it stop."; then
-            echo "  Left the T3 Code service running, without its new settings and drop-in. Re-run from a"
-            echo "  terminal to restart it and apply them."
+            local lacks=""
+            if ! "$drop_in_was_current"; then
+                if ! t3_code_write_drop_in; then
+                    echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
+                    return 2
+                fi
+                echo "  Wrote the drop-in; it applies at the next restart of the T3 Code service"
+            fi
+            "$settings_set" || lacks="its new settings"
+            ! t3_code_restart_pending || lacks="${lacks:+$lacks and }its drop-in"
+            if [ -n "$lacks" ]; then
+                echo "  Left the T3 Code service running, without $lacks. Re-run from a terminal to"
+                echo "  restart it."
+            fi
             return 0
         fi
         if ! systemctl --user stop t3code.service || t3_code_service_active; then
@@ -533,20 +573,8 @@ update_t3_code_server() {
     if ! "$settings_set"; then
         json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
     fi
-    if ! t3_code_drop_in_current; then
-        # Through write_back, since a drop-in cut short without its host line would have the
-        # enabled unit serve on every interface at the next boot
-        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
-            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
-            rm -f "$tmp"
-            drop_in_ok=false
-        elif ! write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN"; then
-            drop_in_ok=false
-        fi
-    fi
-    if "$drop_in_ok" && ! t3_code_load_drop_in; then
-        drop_in_ok=false
-    fi
+    # A drop-in that was current is loaded above
+    "$drop_in_was_current" || t3_code_write_drop_in || drop_in_ok=false
     if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
         wait_for_t3_code_service || result=1
@@ -702,13 +730,17 @@ status() {
         return
     fi
     if is_macos; then
-        # Asked once, for both the renamed app's check and the app's path
-        local renamed cask_app=""
-        ! command -v brew &>/dev/null || cask_app="$(cask_app_path t3-code || true)"
-        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app "$cask_app")"; then
-            status_item ok "t3-code (cask), as ${renamed##*/}"
+        local state="" app="" listing=""
+        if command -v brew &>/dev/null; then
+            IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
+        fi
+        if [ "$state" == renamed ]; then
+            status_item ok "t3-code (cask), as ${app##*/}"
         else
-            status_cask t3-code "$(t3_code_app_path "$cask_app" || true)"
+            # Whether brew lists the cask goes to status_cask as its listing, so brew isn't asked
+            # again
+            case "$state" in brew | gone) listing="t3-code"$'\t'"$app" ;; esac
+            status_cask t3-code "$app" "$listing"
         fi
         status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
         t3_code_status_custom_values
@@ -768,14 +800,16 @@ apply() {
         require_cmd curl || return 1
     fi
     if is_macos; then
-        # Telemetry and the settings don't need the app
-        local cask_failed=0 renamed
-        if renamed="$(t3_code_renamed_app)"; then
-            echo "  t3-code already installed, as ${renamed##*/}."
+        # Telemetry and the settings don't need the app. brew is asked about the cask once, for
+        # the install and the app's path.
+        local cask_failed=0 state app
+        IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
+        if [ "$state" == renamed ]; then
+            echo "  t3-code already installed, as ${app##*/}."
         else
-            install_cask t3-code "$(t3_code_app_path || true)" || cask_failed=1
+            install_cask t3-code "" "$state" || cask_failed=1
         fi
-        configure_t3_code || return 1
+        configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
         configure_t3_code_ubuntu || return 1

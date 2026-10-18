@@ -5,7 +5,8 @@ set -euo pipefail
 
 # The T3 Code server filter sets the global worktreeCleanup to custom rules, which take precedence
 # over storageCleanup. It sets the writing style without resetting the style's other fields, and
-# keeps a default model and effort of your own, a custom Claude instance's included. Keys a newer
+# keeps a default model and effort of your own, a custom Claude instance's included, and a context
+# window of your own unless it replaces your model or effort. Keys a newer
 # T3 Code adds to an object the filter sets survive. A second run changes nothing.
 
 # shellcheck source=lib.sh
@@ -127,5 +128,22 @@ assert_contains "$RUN_OUTPUT" "ok         T3 Code's default effort (defaultModel
 choose '{"defaultModelSelection": {"instanceId": "claude_work", "model": "claude-opus-5-5"}}'
 assert_eq '{"instanceId":"claude_work","model":"claude-opus-5-5","options":[{"id":"effort","value":"medium"},{"id":"contextWindow","value":"1m"}]}' \
     "$(selection)" "a custom Claude instance's model selection without an effort"
+
+# A context window you picked is kept with the repo's effort, and a missing one gets 1M
+mine='{"instanceId":"claudeAgent","model":"claude-opus-5-5","options":[{"id":"effort","value":"medium"},{"id":"contextWindow","value":"200k"}]}'
+choose "{\"defaultModelSelection\": $mine}"
+assert_eq "$mine" "$(selection)" "a context window of your own"
+choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "medium"}]}}'
+assert_eq "$ours" "$(selection)" "the model selection without a context window"
+# Replacing your effort, with a terminal, sets the 1M context window that goes with the repo's
+is_interactive() { true; }
+confirm() { true; }
+choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}, {"id": "contextWindow", "value": "200k"}]}}'
+assert_eq "$ours" "$(selection)" "the model selection after replacing your effort"
+# So does replacing your model, on Claude's instance, which keeps the options
+choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-sonnet-5", "options": [{"id": "effort", "value": "medium"}, {"id": "contextWindow", "value": "200k"}]}}'
+assert_eq "$ours" "$(selection)" "the model selection after replacing your model"
+is_interactive() { false; }
+confirm() { false; }
 
 test_done

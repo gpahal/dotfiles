@@ -4,6 +4,7 @@ set -euo pipefail
 # install_root_file and write_root_file set the file's group in the same install that writes it,
 # when given one, so a file such as NUT's, which its daemons read through the group, can't be left
 # root:root by a write that succeeded and a chgrp that didn't. Without a group, install gets none.
+# A destination that is a directory fails.
 # confirm_sudo_changes says how to apply what it lists when it couldn't ask.
 
 # shellcheck source=lib.sh
@@ -39,6 +40,21 @@ assert_file_contains "$STUB_LOG" "sudo install -m 640 -g nut "
 assert_exit 0 write_root_file "$SANDBOX/etc/plain.conf" "plain"
 assert_file_contains "$STUB_LOG" "sudo install -m 644 "
 assert_file_not_contains "$STUB_LOG" " -g "
+
+# A destination that is a directory, or a link to one, fails, rather than install moving the new
+# file into it
+for kind in dir link; do
+    dest="$SANDBOX/etc/sleep.conf.d/10-$kind.conf"
+    if [ "$kind" == dir ]; then
+        mkdir -p "$dest"
+    else
+        mkdir -p "$SANDBOX/etc/real-dir"
+        ln -s "$SANDBOX/etc/real-dir" "$dest"
+    fi
+    assert_exit 1 write_root_file "$dest" "x"
+    assert_contains "$RUN_OUTPUT" "$dest is a directory; remove it and re-run." "$kind destination"
+    assert_eq "" "$(/bin/ls -A "$dest/")" "files in a $kind destination"
+done
 
 # confirm_sudo_changes says to run the step from a terminal only when there was none to ask in
 assert_exit 1 confirm_sudo_changes "Write /etc/example"

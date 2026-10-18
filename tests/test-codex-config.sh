@@ -220,6 +220,16 @@ assert_eq '"# Style\nBe brief.\n"' "$(get .developer_instructions)" "a multi-lin
 assert_file_contains "$CODEX_CONFIG" "# real"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
+# A """ or ''' in an end-of-line comment or a one-line string starts no multi-line string, so the
+# comments after it are still kept
+for repro in 'model = "o" # wrap in """ if needed\n# keep me\n' \
+    'note = "it'"'''"'s"\n[tui]\nnotifications = true\n# keep me\n' \
+    "lit = 'say \"\"\"'\n# keep me\n" 'esc = "a\\\\" # """\n# keep me\n'; do
+    # shellcheck disable=SC2059 # the fixture's escapes
+    printf "$repro" > "$CODEX_CONFIG"
+    assert_exit 0 configure_codex
+    assert_file_contains "$CODEX_CONFIG" "# keep me"
+done
 # A rewrite that still drops a comment fails, leaving the file alone
 printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n' > "$CODEX_CONFIG"
 cp "$CODEX_CONFIG" "$SANDBOX/codex-before"

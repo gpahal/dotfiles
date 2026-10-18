@@ -7,10 +7,10 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-main() {
-    step_args "$@"
-    # Nothing to check: the list is what scripts can't do
-    ! status_requested "$@" || return 0
+# Nothing to check: the list is what scripts can't do
+status() { return 0; }
+
+apply() {
     local os=Ubuntu
     is_macos && os=macOS
     echo ""

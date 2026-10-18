@@ -3,10 +3,11 @@
 # codex steps, which source this file. It only defines functions and the table below.
 #
 # Each value is set only when unset, and one of your own is replaced only when
-# replace_custom_value agrees. A step adds its values with keepable, and defines two functions
-# named for its tool: <tool>_keep_current <path> prints the setting's value, and
-# <tool>_keep_wanted <value> prints the repo's value the same way, so the two compare equal when
-# they match. Each prints nothing for unset.
+# replace_custom_value agrees. A step adds its values with keepable, and defines
+# <tool>_keep_current <path>, which prints the setting's value. When the repo's values aren't
+# JSON, it also defines <tool>_keep_wanted <value>, which prints the repo's value the same way, so
+# the two compare equal when they match; keepable_unquote is the default. Each prints nothing for
+# unset.
 
 # One row per value: its tool, its path in the tool's settings, the repo's value in the settings'
 # own syntax, the name prompts and status give it, and whether only Ubuntu gets it.
@@ -67,7 +68,11 @@ keepable_current() {
 
 # Print the repo's value $2 as <tool>_keep_current prints it
 keepable_wanted() {
-    "$1_keep_wanted" "${KEEP_VALUES[$2]}"
+    if declare -F "$1_keep_wanted" > /dev/null; then
+        "$1_keep_wanted" "${KEEP_VALUES[$2]}"
+    else
+        keepable_unquote "${KEEP_VALUES[$2]}"
+    fi
 }
 
 # Decide, asking with a terminal, whether to replace each of a tool's values of your own

@@ -499,28 +499,59 @@ configure_t3_code_ubuntu() {
     [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
+# Write the service's drop-in when it isn't current, then have systemd load it. Neither touches the
+# running server, which keeps its environment until it restarts. Fails when either fails.
+t3_code_write_drop_in() {
+    local tmp=""
+    if ! t3_code_drop_in_current; then
+        # Through write_back, since a drop-in cut short without its host line would have the
+        # enabled unit serve on every interface at the next boot
+        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
+            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
+            rm -f "$tmp"
+            return 1
+        fi
+        write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN" || return 1
+    fi
+    t3_code_load_drop_in
+}
+
 # Set the server settings and write the service's drop-in (telemetry, port, and host). The
 # running server writes settings.json too, and keeps its environment until it restarts, so when
-# either needs changing a running service is stopped around the change, after asking once. Fails
-# with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
-# Fails with 1 when only something else failed.
+# either needs changing a running service is stopped around the change, after asking once. A
+# declined restart still writes and loads the drop-in, which applies at the next restart, such as
+# a reboot, and leaves the settings for a later run. Fails with 2 when the drop-in isn't written
+# and loaded, and then doesn't start a service it stopped. Fails with 1 when only something else
+# failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0 drop_in_ok=true tmp=""
+    local settings_set=false stopped=false result=0 drop_in_ok=true drop_in_was_current=false
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
     # server lacks its environment
     if t3_code_drop_in_current; then
+        drop_in_was_current=true
         t3_code_load_drop_in || return 2
     fi
-    if "$settings_set" && t3_code_drop_in_current && ! t3_code_restart_pending; then
+    if "$settings_set" && "$drop_in_was_current" && ! t3_code_restart_pending; then
         echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
         return 0
     fi
     if t3_code_service_active; then
         if ! confirm "  Restart the T3 Code service to apply its settings and drop-in? Threads running on it stop."; then
-            echo "  Left the T3 Code service running, without its new settings and drop-in. Re-run from a"
-            echo "  terminal to restart it and apply them."
+            if ! t3_code_write_drop_in; then
+                echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
+                return 2
+            fi
+            "$drop_in_was_current" ||
+                echo "  Wrote the drop-in; it applies at the next restart of the T3 Code service"
+            if ! "$settings_set"; then
+                echo "  Left the T3 Code service running, without its new settings. Re-run from a terminal"
+                echo "  to restart it and apply them."
+            elif "$drop_in_was_current"; then
+                echo "  Left the T3 Code service running, without its drop-in. Re-run from a terminal to"
+                echo "  restart it."
+            fi
             return 0
         fi
         if ! systemctl --user stop t3code.service || t3_code_service_active; then
@@ -533,20 +564,7 @@ update_t3_code_server() {
     if ! "$settings_set"; then
         json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
     fi
-    if ! t3_code_drop_in_current; then
-        # Through write_back, since a drop-in cut short without its host line would have the
-        # enabled unit serve on every interface at the next boot
-        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
-            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
-            rm -f "$tmp"
-            drop_in_ok=false
-        elif ! write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN"; then
-            drop_in_ok=false
-        fi
-    fi
-    if "$drop_in_ok" && ! t3_code_load_drop_in; then
-        drop_in_ok=false
-    fi
+    t3_code_write_drop_in || drop_in_ok=false
     if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
         wait_for_t3_code_service || result=1

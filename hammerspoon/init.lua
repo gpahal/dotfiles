@@ -26,8 +26,9 @@ local NEW_TAB_DELAY = 0.15
 -- Microseconds between each keystroke's key down and key up
 local KEY_DELAY = 20000
 
--- Hammerspoon garbage-collects a timer, watcher, or task nothing refers to, so they're kept here
-dotfiles = {}
+-- Hammerspoon garbage-collects a timer, watcher, or task nothing refers to, so they're kept here.
+-- tasks holds each open-in still running, so a second press can't drop the first.
+dotfiles = { tasks = {} }
 
 -- Open Hammerspoon at login, so the hotkeys work from the start
 hs.autoLaunch(true)
@@ -61,10 +62,20 @@ local function modifiersHeld()
     return mods.cmd or mods.alt or mods.ctrl or mods.shift
 end
 
+-- A running Chrome is activated: launchOrFocus would send it a reopen event, which opens a window
+-- when it has none, and the Cmd+T sent below would then add a second tab
+local function focusChrome()
+    local app = hs.application.get(CHROME)
+    return (app ~= nil and app:activate()) or open(CHROME, "Google Chrome")
+end
+
 local function newChromeTab()
-    if not open(CHROME, "Google Chrome") then
+    if not focusChrome() then
         return
     end
+    -- A second press starts over, rather than leaving the first's wait or paste to fire as well
+    if dotfiles.newTab then dotfiles.newTab:stop() end
+    if dotfiles.paste then dotfiles.paste:stop() end
     local deadline = hs.timer.secondsSinceEpoch() + FRONT_TIMEOUT
     dotfiles.newTab = hs.timer.waitUntil(function()
         return (chromeInFront() and not modifiersHeld()) or hs.timer.secondsSinceEpoch() > deadline
@@ -93,7 +104,9 @@ end
 
 -- open-in shows a notification when it fails, so only its log line is left to print
 local function openIn(target)
-    local task = hs.task.new("/bin/bash", function(_, _, stderr)
+    local task
+    task = hs.task.new("/bin/bash", function(_, _, stderr)
+        dotfiles.tasks[task] = nil
         print("open-in: " .. stderr)
     end, { OPEN_IN, target })
     local env = task:environment()
@@ -104,7 +117,7 @@ local function openIn(target)
         hs.alert.show("Couldn't run " .. OPEN_IN)
         return
     end
-    dotfiles.openIn = task
+    dotfiles.tasks[task] = true
 end
 
 hs.hotkey.bind(MODS, "space", function() open(CLAUDE, "Claude") end)

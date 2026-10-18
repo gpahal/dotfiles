@@ -220,7 +220,9 @@ status_smartd_hook() {
     fi
 }
 
-# Print the packages whose updates need a reboot, comma-separated
+# Print the packages whose updates need a reboot, comma-separated. A reboot asked for outside dpkg
+# has no list, and sort failing on it would end status under pipefail.
 reboot_packages() {
+    [ -f "$REBOOT_REQUIRED.pkgs" ] || return 0
     sort -u "$REBOOT_REQUIRED.pkgs" 2>/dev/null | join_lines ', '
 }

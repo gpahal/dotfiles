@@ -308,7 +308,13 @@ touch "$REBOOT_REQUIRED"
 printf '%s\n' linux-image-6.8.0-45-generic linux-base linux-image-6.8.0-45-generic > "$REBOOT_REQUIRED.pkgs"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates: linux-base, linux-image-6.8.0-45-generic; reboot when no agent runs"
-rm "$REBOOT_REQUIRED" "$REBOOT_REQUIRED.pkgs"
+rm "$REBOOT_REQUIRED.pkgs"
+# Without a package list, as when something outside dpkg asks for the reboot, status reports it
+# and goes on to the items after it
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates; reboot when no agent runs"
+assert_contains "$RUN_OUTPUT" "openssh-server"
+rm "$REBOOT_REQUIRED"
 
 # apt's daily timers off: status says so, and how to turn them on
 echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"

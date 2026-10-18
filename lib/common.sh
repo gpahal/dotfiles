@@ -550,15 +550,14 @@ _copy_and_record() {
         new_mode=755
         exec=x
     fi
-    # A rename would replace a file made read-only, which cp never could
-    if [ -e "$dest" ] && [ ! -w "$dest" ]; then
-        echo "  $dest is read-only, so left it unchanged." >&2
+    replace_file "$src" "$dest" "$new_mode" "$exec" || {
+        if [ $? -eq 2 ]; then
+            echo "  $dest is read-only, so left it unchanged." >&2
+        else
+            echo "  Couldn't copy ${src#"$DOTFILES_DIR"/} to $dest, so left it unchanged." >&2
+        fi
         return 1
-    fi
-    if ! replace_file "$src" "$dest" "$new_mode" "$exec"; then
-        echo "  Couldn't copy ${src#"$DOTFILES_DIR"/} to $dest, so left it unchanged." >&2
-        return 1
-    fi
+    }
     # shellcheck disable=SC2034 # callers read it
     COPIED=true
     record_installed "$dest" || return 1
@@ -1068,7 +1067,9 @@ file_mode() {
 # is then moved into place, so a failed or partial write leaves the old file whole, and a script
 # running from the old file reads on unchanged. A symlink's target is replaced the same way, so
 # the link stays. A dangling symlink fails, as json_merge does. The file keeps its mode, plus
-# executable bits where it has read bits with x; a new file gets <new-mode>. Prints nothing.
+# executable bits where it has read bits with x; a new file gets <new-mode>. A file made
+# read-only fails with 2 and stays as it is, as cp would leave it, though its directory would let
+# a rename replace it. Prints nothing.
 replace_file() {
     local src="$1" dest="$2" mode="$3" tmp target
     if [ -L "$dest" ]; then
@@ -1081,6 +1082,7 @@ replace_file() {
     fi
     # mv would move the copy into a directory
     [ ! -d "$dest" ] || return 1
+    [ ! -e "$dest" ] || [ -w "$dest" ] || return 2
     if [ -e "$dest" ]; then
         mode="$(file_mode "$dest")" || return 1
         [ -z "${4:-}" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
@@ -1096,15 +1098,18 @@ replace_file() {
 
 # Replace a file's contents with a temp file's, as replace_file does, then remove the temp file. A
 # new file gets the mode umask gives it. Fails, keeping the temp file and saying where it is, when
-# the write does.
+# the write does or the file is read-only.
 write_back() {
     local new="$1" dest="$2"
-    if replace_file "$new" "$dest" "$(printf '%o' $((0666 & ~0$(umask))))"; then
-        rm -f "$new"
-        return 0
-    fi
-    echo "  Couldn't write $dest. The new contents are in $new." >&2
-    return 1
+    replace_file "$new" "$dest" "$(printf '%o' $((0666 & ~0$(umask))))" || {
+        if [ $? -eq 2 ]; then
+            echo "  $dest is read-only, so left it unchanged. The new contents are in $new." >&2
+        else
+            echo "  Couldn't write $dest. The new contents are in $new." >&2
+        fi
+        return 1
+    }
+    rm -f "$new"
 }
 
 # Merge a jq expression into a JSON file, creating the file if needed. A file the expression

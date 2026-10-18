@@ -230,6 +230,24 @@ assert_not_contains "$RUN_OUTPUT" "Copied"
 assert_file_not_contains "$record" "$ro/edited.yml"
 chmod 755 "$ro"
 
+# A recorded file made read-only is left as it is, as cp would leave it, though its directory
+# would let a rename replace it. So is one a symlink points to.
+if [ "$(id -u)" -ne 0 ]; then
+    locked="$HOME/locked/config.yml"
+    printf 'old\n' > "$SANDBOX/repo/locked.yml"
+    assert_exit 0 copy_file "$SANDBOX/repo/locked.yml" "$locked"
+    chmod 444 "$locked"
+    ln -s config.yml "$HOME/locked/link.yml"
+    printf 'new\n' > "$SANDBOX/repo/locked.yml"
+    for name in config.yml link.yml; do
+        assert_exit 1 copy_file "$SANDBOX/repo/locked.yml" "$HOME/locked/$name"
+        assert_contains "$RUN_OUTPUT" "$HOME/locked/$name is read-only, so left it unchanged."
+        assert_not_contains "$RUN_OUTPUT" "Copied"
+        assert_eq old "$(cat "$locked")" "read-only file after copying to $name"
+    done
+    chmod 644 "$locked"
+fi
+
 # A copy goes to a temp file beside the destination, then moves into place, so a copy that fails
 # partway leaves the old file whole, and a script running from the old file reads on unchanged.
 # Here cp writes part of the file, then fails.

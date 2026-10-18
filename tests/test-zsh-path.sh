@@ -66,7 +66,10 @@ done
 # natively) resolves to the same copy as in login shells. mise's config adds a dir to PATH, the
 # way an installed tool does, and running the hook twice stands in for prompts.
 if [ -n "$REAL_MISE" ]; then
-    MISE_BIN="$REAL_MISE"
+    # Only mise, not the rest of its dir, such as /opt/homebrew/bin, where the real sentinels are
+    MISE_BIN="$SANDBOX/mise-bin"
+    mkdir -p "$MISE_BIN"
+    ln -s "$REAL_MISE" "$MISE_BIN/mise"
     MISE_TOOL="$SANDBOX/mise-tool"
     mkdir -p "$HOME/.config/mise" "$MISE_TOOL" "$HOME/.local/bin"
     printf '[env]\n_.path = ["%s"]\n' "$MISE_TOOL" > "$HOME/.config/mise/config.toml"
@@ -77,7 +80,7 @@ if [ -n "$REAL_MISE" ]; then
     # Usage: mise_shell <zsh flags> <commands>
     mise_shell() {
         env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" \
-            PATH="${MISE_BIN%/*}:/usr/bin:/bin:$BREW/bin:$BREW/sbin" "$ZSH_BIN" "$1" "$2" \
+            PATH="$MISE_BIN:/usr/bin:/bin:$BREW/bin:$BREW/sbin" "$ZSH_BIN" "$1" "$2" \
             < /dev/null 2> /dev/null
     }
     # shellcheck disable=SC2016 # expanded by zsh

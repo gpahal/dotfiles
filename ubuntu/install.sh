@@ -418,7 +418,10 @@ apply() {
     # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
-    if [ "$ufw" -eq 1 ]; then
+    # With ufw on, configure_ufw only adds the allow rules
+    if [ "$ufw" -eq 1 ] && ufw_enabled; then
+        pending+=("Firewall: add the missing ufw rules allowing SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+    elif [ "$ufw" -eq 1 ]; then
         pending+=("Firewall: install and enable ufw, denying incoming connections except SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
     elif [ "$ufw" -eq 2 ] && [ ${#pending[@]} -gt 0 ]; then
         pending+=("Check the ufw rules for SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and add any that are missing")

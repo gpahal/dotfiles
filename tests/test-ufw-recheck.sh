@@ -151,8 +151,14 @@ assert_not_contains "$RUN_OUTPUT" "sudo -v"
 no_prompting_sudo
 rules_missing
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw"
+assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules allowing SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp"
+assert_not_contains "$RUN_OUTPUT" "install and enable ufw"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
+# With ufw off, the step turns it on too
+touch "$SANDBOX/ufw-off"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw, denying incoming connections"
+rm "$SANDBOX/ufw-off"
 
 # Something else pending and approved, credentials not cached: the rules are checked with sudo
 # after the confirm, and set only when they're missing

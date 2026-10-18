@@ -6,8 +6,9 @@ set -euo pipefail
 # https URL, without showing what you type, save the URL in /etc/dotfiles/ntfy-url, which the hooks
 # the ubuntu step installs (ubuntu/smartd-notify.sh and ubuntu/ups-notify.sh) and
 # ubuntu/health-alert.sh read, and send a test push. The topic is the URL's only secret, so it's
-# read from the terminal, or stdin, never taken as an argument, which any user can read, and no
-# message shows it.
+# read from the terminal, or stdin, never taken as an argument, and no message shows it. That keeps
+# it out of ps listings, shell history, and diagnostics; the saved file is readable by every local
+# user (save_url).
 # --test runs the installed smartd hook with a made-up warning, and the UPS notifier, when a UPS is
 # set up, with a test event, which they push to ntfy. The topic is yours to pick, so setup.sh
 # doesn't run this.
@@ -62,8 +63,10 @@ current_url() {
     head -n 1 "$NTFY_URL_FILE" 2> /dev/null || true
 }
 
-# Root owns the file, and every user may read it, so the health alerts, which run as you, can. The
-# machine has one login user, and the topic's secrecy matters off the machine.
+# Root owns the file, and every user may read it, so the health alerts, which run as you, and the
+# UPS notifier, which runs as nut, can. So can any other local account or service, such as a
+# compromised daemon, which could then read or send alerts. The machine has one login user, and
+# the topic's secrecy matters most off the machine.
 save_url() {
     sudo mkdir -p "$(dirname "$NTFY_URL_FILE")" &&
         sudo chmod 755 "$(dirname "$NTFY_URL_FILE")" &&

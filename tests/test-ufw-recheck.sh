@@ -100,11 +100,16 @@ printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
 # lists them, or says it's inactive while its config says ENABLED=no. allow from <range> to any port
 # <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once, and
-# --force enable turns ufw on.
+# --force enable turns ufw on. As in ufw, an IPv6 rule fails while the defaults say IPV6=no.
 stub ufw 'rules="'"$SANDBOX"'/ufw-rules"
 case "$1" in
     status) if grep -qx ENABLED=no "'"$UFW_CONF"'"; then echo "Status: inactive"; else cat "$rules"; fi ;;
     allow) case "$*" in
+            "allow from "*:*) if grep -qx IPV6=no "'"$UFW_DEFAULTS"'"; then
+                    echo "ERROR: IPv6 support not enabled" >&2
+                    exit 1
+                fi
+                rule="$(printf "%-26s ALLOW       %s" "$7/tcp" "$3")" ;;
             "allow from "*) rule="$(printf "%-26s ALLOW       %s" "$7/tcp" "$3")" ;;
             "allow in on tailscale0") rule="Anywhere on tailscale0     ALLOW       Anywhere" ;;
             *) rule="$(printf "%-26s ALLOW       Anywhere" "$2")" ;;
@@ -208,14 +213,29 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
-# ufw on with IPV6=no leaves sshd open on the global IPv6 address: status says so, and the step
-# leaves the file to you
+# With IPV6=no, ufw leaves sshd open on the global IPv6 address and rejects the step's IPv6 rules,
+# so they're missing. Status says why, whether ufw is on or off, and the step fails before it runs
+# any ufw command, leaving the file to you.
 ufw_defaults no
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
-assert_exit 0 main
-assert_file_contains "$UFW_DEFAULTS" IPV6=no
+rules_missing
+export DOTFILES_ASSUME_YES=1
+for state in on off; do
+    "ufw_$state"
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
+    : > "$STUB_LOG"
+    assert_exit 1 main
+    assert_contains "$RUN_OUTPUT" "ufw doesn't filter IPv6, so the firewall is left unchanged: set IPV6=yes in $UFW_DEFAULTS,"
+    if grep '^sudo ufw' "$STUB_LOG" | grep -qv '^sudo ufw status'; then
+        fail "the step changed ufw with IPV6=no ($state):"
+        _show "$(grep '^sudo ufw' "$STUB_LOG")"
+    fi
+    assert_file_contains "$UFW_DEFAULTS" IPV6=no
+done
+unset DOTFILES_ASSUME_YES
+ufw_on
 ufw_defaults yes
+rules_present
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \
     "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-rules"

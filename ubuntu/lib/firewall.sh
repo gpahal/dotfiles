@@ -263,6 +263,13 @@ outside_ssh_peers() {
 # checks its own failure.
 configure_ufw() {
     local ports port range outside="" on=false
+    # ufw rejects every IPv6 rule while IPV6=no, so it would end up half set up. Before ufw is
+    # installed, the file is missing, and the package writes IPV6=yes.
+    if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
+        echo "  ufw doesn't filter IPv6, so the firewall is left unchanged: set IPV6=yes in $UFW_DEFAULTS," >&2
+        echo "  run sudo ufw reload if ufw is on, then re-run the ubuntu step." >&2
+        return 1
+    fi
     ports="$(sshd_ports)" && [ -n "$ports" ] || {
         echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
         return 1
@@ -309,16 +316,16 @@ setup_ufw() {
 status_ufw() {
     local ufw=0 from rule where
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+    # Before the on check, since the step can't turn ufw on while it's set
+    if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
+        status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
+    fi
     if ! ufw_enabled; then
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
         return 0
     fi
     status_item ok "ufw on, denying incoming connections"
-    if ufw_ipv6_on; then
-        status_item ok "ufw filters IPv6"
-    else
-        status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
-    fi
+    ! ufw_ipv6_on || status_item ok "ufw filters IPv6"
     if ! apt_installed openssh-server; then
         status_item missing "$rules: openssh-server isn't installed"
         return 0

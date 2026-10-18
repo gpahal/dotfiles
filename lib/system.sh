@@ -45,6 +45,21 @@ write_root_file() {
     return "$status"
 }
 
+# read_root_file <file> [-n]: print a root-owned file a step installs, through sudo when only root
+# can read it, with -n through sudo -n, which works only while credentials are cached. Prints
+# nothing when it's missing, and fails when it can't be read.
+read_root_file() {
+    if [ ! -e "$1" ]; then
+        return 0
+    elif [ -r "$1" ]; then
+        cat "$1"
+    elif [ "${2:-}" == -n ]; then
+        sudo -n cat "$1" 2>/dev/null
+    else
+        sudo cat "$1"
+    fi
+}
+
 # A step that changes the system with sudo lists each simple item once, with sudo_item, so its
 # confirm_sudo_changes list, its fixes, and its status can't drift apart. An item that branches,
 # such as one with two pending texts, stays custom code. Add the items in a function that status

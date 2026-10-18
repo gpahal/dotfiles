@@ -183,21 +183,6 @@ root_copy_current() {
     cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
 }
 
-# read_root_file <file> [-n]: print a file the step installs as root, through sudo when only root
-# can read it, with -n through sudo -n, which works only while credentials are cached. Prints
-# nothing when it's missing, and fails when it can't be read.
-read_root_file() {
-    if [ ! -e "$1" ]; then
-        return 0
-    elif [ -r "$1" ]; then
-        cat "$1"
-    elif [ "${2:-}" == -n ]; then
-        sudo -n cat "$1" 2>/dev/null
-    else
-        sudo cat "$1"
-    fi
-}
-
 # install_root_copy <src> <dest> <mode>: install a copy of the repo's file as root's, with the
 # mode, unless it's already current
 install_root_copy() {

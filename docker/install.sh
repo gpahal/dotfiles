@@ -161,11 +161,7 @@ daemon_config_unreadable() {
 # Reads without sudo, or with sudo only when it doesn't ask for a password. A file only root can
 # read is otherwise unverified, so apply lists it to check after approval.
 daemon_configured() {
-    if [ -r "$DOCKER_DAEMON_CONFIG" ]; then
-        daemon_settings_applied < "$DOCKER_DAEMON_CONFIG"
-    else
-        sudo -n cat "$DOCKER_DAEMON_CONFIG" 2> /dev/null | daemon_settings_applied
-    fi
+    read_root_file "$DOCKER_DAEMON_CONFIG" -n | daemon_settings_applied
 }
 
 # What applying the daemon settings does to a running daemon, for the pending list

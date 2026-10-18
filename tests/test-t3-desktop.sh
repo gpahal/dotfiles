@@ -44,7 +44,8 @@ DIFFERENT_AGENT='<?xml version="1.0" encoding="UTF-8"?>
     </array>
 </dict>
 </plist>'
-AGENT_ITEM="T3 Code opens at login with telemetry off (LaunchAgent dotfiles.t3code-telemetry-off.plist)"
+AGENT_ITEM="~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
+ENV_ITEM="T3 Code's telemetry off in launchd's environment"
 
 # The LaunchAgent is written, sets the variable and then opens T3 Code by its bundle id, and
 # launchd gets the variable now. The agent isn't loaded, which would open T3 Code, and Login
@@ -61,29 +62,30 @@ assert_file_not_contains "$STUB_LOG" "launchctl load"
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
 assert_file_not_contains "$STUB_LOG" "osascript"
 assert_contains "$RUN_OUTPUT" "Turned off telemetry"
-assert_contains "$RUN_OUTPUT" "set T3 Code to open at login"
+assert_contains "$RUN_OUTPUT" "Copied ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist to $T3_CODE_TELEMETRY_AGENT"
 assert_eq claude-opus-5-5 "$(jq -r .defaultModelSelection.model "$T3_CODE_SETTINGS")" "the default model"
 assert_eq steer "$(jq -r .followUpBehavior "$T3_CODE_CLIENT_SETTINGS")" "the follow-up behavior"
 stub brew
 run status
 assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
+assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
 
 # launchd lost the variable, as after `launchctl unsetenv`: status says so, and a re-run sets it
 # again
 rm "$SANDBOX/launchd-env"
 run status
-assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
+assert_contains "$RUN_OUTPUT" "missing    $ENV_ITEM"
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 
-# A LaunchAgent whose content differs from what the step writes counts as missing, and a re-run
-# replaces it
+# A LaunchAgent edited by hand counts as missing, and a re-run backs it up and replaces it
 printf '%s\n' "$DIFFERENT_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
 run status
-assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM"
+assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM was edited since setup installed it"
 assert_exit 0 configure_t3_code
-assert_eq "$T3_CODE_TELEMETRY_AGENT_CONTENT" "$(cat "$T3_CODE_TELEMETRY_AGENT")" "the replaced LaunchAgent"
+assert_exit 0 cmp -s "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
+assert_eq "$DIFFERENT_AGENT" "$(cat "$T3_CODE_TELEMETRY_AGENT.bak")" "the edited LaunchAgent's backup"
 
 # launchctl can't set the variable: the settings still go on, and the step fails after them, also
 # where a caller's || turns set -e off
@@ -102,9 +104,17 @@ assert_eq false "$(cat "$SANDBOX/launchd-env")" "launchd's T3CODE_TELEMETRY_ENAB
 # A re-run changes nothing
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code
-assert_contains "$RUN_OUTPUT" "T3 Code already opens at login with telemetry off"
+assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
+assert_contains "$RUN_OUTPUT" "Telemetry is already off in launchd's environment"
 assert_contains "$RUN_OUTPUT" "settings are already set"
 assert_file_not_contains "$STUB_LOG" "launchctl setenv"
+# The LaunchAgent an earlier version of the step wrote, with no record of installing it, has the
+# repo file's bytes, so it's recorded without a backup
+rm -f "$INSTALLED_FILES" "$T3_CODE_TELEMETRY_AGENT".bak*
+assert_exit 0 configure_t3_code
+assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
+installed_unedited "$T3_CODE_TELEMETRY_AGENT" || fail "the earlier LaunchAgent wasn't recorded"
+[ ! -e "$T3_CODE_TELEMETRY_AGENT.bak" ] || fail "the earlier LaunchAgent was backed up"
 
 # The app isn't installed: the agent and the settings are still set
 t3_code_app_path() { return 1; }

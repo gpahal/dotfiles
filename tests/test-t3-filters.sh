@@ -20,8 +20,8 @@ settings="$HOME/settings.json"
 # would change nothing, and print the result compactly
 apply() {
     printf '%s\n' "$1" > "$settings"
-    json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
-    json_applied "$settings" "$T3_CODE_SERVER_FILTER" || fail "a second run would change: $1"
+    json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
+    json_applied "$settings" "$(t3_code_server_filter)" || fail "a second run would change: $1"
 }
 
 # Worktree cleanup: a global "off" becomes custom with the five rules
@@ -64,8 +64,8 @@ choose() {
     # Not in a subshell, which would lose the filter it rebuilds
     t3_code_choose_custom_values > "$SANDBOX/choose.out"
     choose_output="$(cat "$SANDBOX/choose.out")"
-    json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
-    json_applied "$settings" "$T3_CODE_SERVER_FILTER" || fail "a second run would change: $1"
+    json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
+    json_applied "$settings" "$(t3_code_server_filter)" || fail "a second run would change: $1"
 }
 # shellcheck disable=SC2034 # the step's functions read it
 T3_CODE_SETTINGS="$settings"
@@ -104,13 +104,13 @@ confirm() {
 }
 printf '%s\n' "{\"defaultModelSelection\": $codex}" > "$settings"
 t3_code_choose_custom_values <<< y > /dev/null
-json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
+json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes"
 # Another instance's effort goes with its options when the model is replaced, so it isn't asked about
 printf '%s\n' '{"defaultModelSelection": {"instanceId": "codex", "model": "gpt-5.5", "options": [{"id": "effort", "value": "high"}]}}' > "$settings"
 t3_code_choose_custom_values <<< y > "$SANDBOX/choose.out"
 assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
-json_merge "$settings" "$T3_CODE_SERVER_FILTER" > /dev/null
+json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
 is_interactive() { false; }
 confirm() { false; }

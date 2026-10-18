@@ -28,6 +28,7 @@ MANUAL_SERVER="304|t3|t3 serve"
 MANUAL_MESSAGE="PID 304, a t3 serve started by hand"
 
 # The service's state lives in files: active and enabled. Its main PID is 4242 while active.
+# start-limit-hit refuses a start until reset-failed.
 # systemd's loaded drop-in is loaded-drop-in, whose Environment= lines it shows.
 STATE="$SANDBOX/state"
 mkdir -p "$STATE"
@@ -37,6 +38,7 @@ case "$2" in
     is-active) [ -f "$state/active" ] ;;
     is-enabled) [ -f "$state/enabled" ] ;;
     start | restart)
+        [ ! -e "$state/start-limit-hit" ] || exit 1
         touch "$state/active"
         rm -f "$state/old-env" "$state/old-env-host"
         ;;
@@ -45,6 +47,7 @@ case "$2" in
         cp "$HOME/.config/systemd/user/t3code.service.d/dotfiles.conf" "$state/loaded-drop-in" 2> /dev/null || true
         ;;
     stop) rm -f "$state/active" ;;
+    reset-failed) rm -f "$state/start-limit-hit" ;;
     enable) touch "$state/enabled" ;;
     show)
         case "$*" in
@@ -56,6 +59,7 @@ case "$2" in
                     echo no
                 fi
                 ;;
+            *Result*) if [ -e "$state/start-limit-hit" ]; then echo start-limit-hit; else echo success; fi ;;
             *Environment*) sed -n "s/^Environment=//p" "$state/loaded-drop-in" 2> /dev/null | tr "\n" " " ;;
             *) if [ -f "$state/active" ]; then echo 4242; else echo 0; fi ;;
         esac
@@ -123,7 +127,7 @@ installed_unit() {
     touch "$T3_CODE_SERVICE_UNIT"
     printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"
     cp "$T3_CODE_SERVICE_DROP_IN" "$STATE/loaded-drop-in"
-    json_merge "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" > /dev/null
+    json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" > /dev/null
     : > "$STUB_LOG"
 }
 
@@ -216,6 +220,16 @@ assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_contains "$RUN_OUTPUT" "Enabled the T3 Code service"
 assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_file_not_contains "$STUB_LOG" "reset-failed"
+
+# A unit that hit its start limit, as when another server held the port, is reset before it starts,
+# since systemd would otherwise refuse the start for 5 minutes
+reset
+installed_unit
+touch "$STATE/enabled" "$STATE/start-limit-hit"
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "systemctl --user reset-failed t3code.service"
+assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
+[ -f "$STATE/active" ] || fail "the service wasn't started after hitting its start limit"
 
 # Running and enabled: nothing changes
 reset

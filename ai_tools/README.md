@@ -138,7 +138,7 @@ In `~/.codex/config.toml` **(script)**:
 
 - **Model.** `gpt-6.1-sol` at high effort, with short answers and concise reasoning summaries. The script sets the model, effort, and footer when they're unset, and a run with a terminal asks before replacing your own. The interrogate skill's Codex reviewer uses the same model, so update its table in `ai_tools/skills/engineering/interrogate/SKILL.md` with the script's.
 - **Permissions.** Codex works in the workspace without asking, and sends anything else, network access included, to a reviewer agent instead of to you. The sandbox has no network unless you turn it on under `[sandbox_workspace_write]`, which the script leaves alone.
-- **Rewritten file.** The step edits `config.toml` with yq 4.54.1 or later, which rewrites the whole file. Values and full-line comments stay, though a comment may move, but end-of-line comments may go, and multi-line strings and dotted keys may change form. When yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
+- **Rewritten file.** The step edits `config.toml` with yq, and needs 4.54.1 or later, which it doesn't check. yq rewrites the whole file. Values and full-line comments stay, though a comment may move, but end-of-line comments may go, and multi-line strings and dotted keys may change form. When yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
 
 Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
@@ -167,11 +167,19 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 ### App settings
 
-The script merges its settings into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**. New threads use Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Projects pull automatically. **Add project** starts in `~/Dev`. A mid-turn message steers the turn, and threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets. Pull requests squash-merge and drop the agent's credits on merge, and T3's commit and PR text follows custom instructions: concise titles and short bullet points. T3 deletes a settled thread's worktree after 15 days, and browser artifacts and logs after 30. Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. T3 Code documents these keys only in its source; they were checked against T3 Code 0.1.0's [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts). The script sets each key on its own, so keys a newer T3 Code adds stay as T3 wrote them.
+The script merges its settings into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**. New threads use Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Projects pull automatically. **Add project** starts in `~/Dev`. A mid-turn message steers the turn, and threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets. Pull requests squash-merge and drop the agent's credits on merge, and T3's commit and PR text follows custom instructions: concise titles and short bullet points. T3 deletes browser artifacts and logs after 30 days. Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. T3 Code documents these keys only in its source; they were checked against T3 Code 0.1.0's [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts). The script sets each key on its own, so keys a newer T3 Code adds stay as T3 wrote them.
 
 The script also makes T3 wait for existing worktree setup actions before it starts the agent. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
 
-Worktree cleanup removes a worktree after its thread is idle 30 days, once its commits are in the remote default branch, or when its last thread is deleted. It keeps the branch, and skips a worktree with uncommitted changes or ignored files other than `node_modules`, such as a `.env`. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
+Worktree cleanup **(script)** removes a worktree T3 made:
+
+- 30 days after its thread was last active.
+- 15 days after its thread settles.
+- Once its pull request is merged into the remote default branch.
+- When its last thread is deleted.
+- When it has no commits beyond the default branch.
+
+It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It does delete ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 
 ## Privacy
 
@@ -214,7 +222,7 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
 - **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
-- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service failed in the meantime, run `systemctl --user reset-failed t3code` first, or systemd refuses to start it for 5 minutes.
+- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service hit systemd's start limit in the meantime, the script resets it before starting it.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.
 - **Browser.** When T3 Code's browser needs an AppArmor profile or libraries, the script prints the command that adds them, and `--status` reports it missing until you run it. The script doesn't run that command, because `~/.local/bin/t3` updates itself and you can write to it. Check it before you run it as root.

@@ -140,9 +140,9 @@ warn() {
     warnings=$((warnings + 1))
 }
 
-check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
+check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
-defaults_check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
+defaults_check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 defaults_check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
 if [ "$errors" -gt 0 ]; then

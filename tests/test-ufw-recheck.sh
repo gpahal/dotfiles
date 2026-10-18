@@ -405,7 +405,7 @@ firewall_run
 unset TMUX SSH_CONNECTION
 assert_eq 1 "$RUN_STATUS" "the step with a session from outside"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
-assert_contains "$RUN_OUTPUT" "Tailscale"
+assert_contains "$RUN_OUTPUT" "the machine, over SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, or over Tailscale."
 assert_contains "$RUN_OUTPUT" "If the Mac connects over IPv6 (e.g. to $(hostname).local), connect to the machine's IPv4"
 assert_contains "$RUN_OUTPUT" "address (ip -4 addr) or, once Tailscale is up, its tailnet name, and re-run."
 assert_file_contains "$STUB_LOG" "loginctl enable-linger"

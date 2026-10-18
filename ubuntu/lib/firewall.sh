@@ -306,7 +306,7 @@ configure_ufw() {
     if [ -n "$outside" ]; then
         echo "  SSH connections come from $(join_lines ', ' <<< "$outside"), outside the private ranges and" >&2
         echo "  the tailnet, and the firewall would cut them off, so it's left unchanged. Re-run the step at" >&2
-        echo "  the machine, from the local network, or over Tailscale." >&2
+        echo "  the machine, over SSH from ${SSH_RANGES[*]}, or over Tailscale." >&2
         echo "  If the Mac connects over IPv6 (e.g. to $(hostname).local), connect to the machine's IPv4" >&2
         echo "  address (ip -4 addr) or, once Tailscale is up, its tailnet name, and re-run." >&2
         return 1

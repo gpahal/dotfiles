@@ -80,7 +80,7 @@ add_docker_repo() {
     add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# main runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
+# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -107,6 +107,31 @@ socket_ready() {
         systemctl is-active --quiet docker.socket 2>/dev/null
 }
 
+enable_docker_service() {
+    sudo systemctl enable --now docker.service
+}
+
+enable_docker_socket() {
+    sudo systemctl enable --now docker.socket
+}
+
+write_docker_auto_updates() {
+    write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
+}
+
+# Add the step's simple sudo items, which status and apply drive by their check functions. Added
+# at run time, since their texts name paths tests point elsewhere.
+docker_sudo_items() {
+    sudo_items_reset
+    sudo_item "Docker starts at boot (docker.service enabled)" \
+        "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
+        starts_at_boot enable_docker_service
+    sudo_item "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    sudo_item "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
+        "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
+        docker_auto_updates_configured write_docker_auto_updates
+}
+
 # Succeeds when the daemon config on stdin already has the settings
 daemon_settings_applied() {
     local current
@@ -119,7 +144,7 @@ daemon_config_unreadable() {
 }
 
 # Reads without sudo, or with sudo only when it doesn't ask for a password. A file only root can
-# read is otherwise unverified, so main lists it to check after approval.
+# read is otherwise unverified, so apply lists it to check after approval.
 daemon_configured() {
     if [ -r "$DOCKER_DAEMON_CONFIG" ]; then
         daemon_settings_applied < "$DOCKER_DAEMON_CONFIG"
@@ -237,12 +262,12 @@ status() {
     fi
     local installed=false
     docker_installed && installed=true
+    docker_sudo_items
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
     status_check "$(id -un) in the docker group" in_docker_group
     if "$installed"; then
-        status_check "Docker starts at boot (docker.service enabled)" starts_at_boot
-        status_check "docker.socket enabled and listening" socket_ready
+        sudo_items_status starts_at_boot socket_ready
     else
         status_item missing "Docker starts at boot (docker.service enabled)"
         status_item missing "docker.socket enabled and listening"
@@ -254,23 +279,25 @@ status() {
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         status_check "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" daemon_configured
     fi
-    status_check "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" docker_auto_updates_configured
+    sudo_items_status docker_auto_updates_configured
     ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
     status_result
 }
 
 # Merge the settings into the file, keeping its other keys. Nothing is written until jq succeeds.
+# When Docker won't restart with the new file, the old content, kept in memory, goes back, so no
+# backup is left in /etc/docker.
 configure_daemon() {
-    local current='{}' exists=false tmp backup="$DOCKER_DAEMON_CONFIG.dotfiles-bak" running=false
+    local original="" current='{}' exists=false tmp running=false
     if sudo test -e "$DOCKER_DAEMON_CONFIG"; then
         exists=true
-        if ! current="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
+        if ! original="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
             echo "  Couldn't read $DOCKER_DAEMON_CONFIG." >&2
             return 1
         fi
         # jq reads an empty file as no input and prints nothing
-        [ -n "${current//[[:space:]]/}" ] || current='{}'
+        [ -z "${original//[[:space:]]/}" ] || current="$original"
     fi
     tmp="$(mktemp)" || return 1
     if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp"; then
@@ -288,50 +315,36 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    # A backup to put back if Docker won't restart with the new file. It goes once Docker does.
-    if "$exists" && ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    # A failed write leaves the old file whole. main runs this as `configure_daemon || ...`, where
+    # A failed write leaves the old file whole. apply runs this as `configure_daemon || ...`, where
     # set -e is off, so each command checks its own failure.
     if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
         rm -f "$tmp"
-        "$exists" && sudo rm -f "$backup"
         return 1
     fi
     rm -f "$tmp"
     # Only a running daemon needs the restart; a stopped one reads the file when it starts
     systemctl is-active --quiet docker.service && running=true
-    if ! sudo systemctl try-restart docker.service; then
-        if "$exists"; then
-            if ! install_root_file "$backup" "$DOCKER_DAEMON_CONFIG"; then
-                echo "  Docker activation failed, and putting the previous configuration back failed too. Copy $backup to $DOCKER_DAEMON_CONFIG by hand." >&2
-                return 1
-            fi
-            echo "  Docker activation failed; restored the previous configuration, which is also in $backup. Fix the error and re-run." >&2
-        else
-            sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
-            echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
-        fi
-        if "$running"; then
-            sudo systemctl start docker.service ||
-                echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
-        fi
-        return 1
-    fi
-    # Docker took the new file
+    sudo systemctl try-restart docker.service && return 0
     if "$exists"; then
-        sudo rm -f "$backup"
+        if ! write_root_file "$DOCKER_DAEMON_CONFIG" "$original"; then
+            echo "  Docker activation failed, and putting the previous configuration back failed too. Write it to" >&2
+            echo "  $DOCKER_DAEMON_CONFIG by hand:" >&2
+            printf '%s\n' "$original" >&2
+            return 1
+        fi
+        echo "  Docker activation failed; restored the previous configuration. Fix the error and re-run." >&2
+    else
+        sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
+        echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
     fi
+    if "$running"; then
+        sudo systemctl start docker.service ||
+            echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
+    fi
+    return 1
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Docker..."
     if is_macos; then
         echo "  OrbStack, from the homebrew step, provides Docker; skipping."
@@ -353,16 +366,12 @@ main() {
         repair_source=true
     fi
     local pending=()
+    docker_sudo_items
     "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
     # Freshly installed packages enable and start both units
-    if "$installed" && ! starts_at_boot; then
-        pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")
-    fi
-    if "$installed" && ! socket_ready; then
-        pending+=("Enable docker.socket")
-    fi
+    ! "$installed" || sudo_items_pending starts_at_boot socket_ready
     if ! "$installed" || ! daemon_configured; then
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
@@ -370,7 +379,7 @@ main() {
             pending+=("Rotate container logs, keep containers up across daemon restarts, and publish ports on 127.0.0.1 unless given an address: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
         fi
     fi
-    docker_auto_updates_configured || pending+=("Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF")
+    sudo_items_pending docker_auto_updates_configured
 
     local result=0
     if [ ${#pending[@]} -eq 0 ]; then
@@ -387,12 +396,10 @@ main() {
             add_docker_repo || result=1
         fi
         # Each part from here on runs whether or not the one before it failed
-        socket_ready || sudo systemctl enable --now docker.socket || result=1
+        sudo_items_apply socket_ready || result=1
         daemon_configured || configure_daemon || result=1
         # After the config, so a daemon this starts reads it rather than restarting for it
-        starts_at_boot || sudo systemctl enable --now docker.service || result=1
-        docker_auto_updates_configured ||
-            write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT" || result=1
+        sudo_items_apply starts_at_boot docker_auto_updates_configured || result=1
         if [ "$result" -ne 0 ]; then
             echo "  Applied the rest. Some changes failed; see the errors above." >&2
         else

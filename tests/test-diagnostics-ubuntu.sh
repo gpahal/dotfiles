@@ -469,6 +469,10 @@ echo 1 > "$SANDBOX/docker-ps.status"
 echo 'Error response from daemon: something broke' > "$SANDBOX/docker-ps"
 assert_exit 3 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: couldn't list the containers (Error response from daemon: something broke)"
+# A daemon that went away during the check, as a restart does, is information
+echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' > "$SANDBOX/docker-ps"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "info       Container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
 # A stopped daemon runs no containers, and isn't started
 touch "$SANDBOX/docker-inactive"

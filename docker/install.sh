@@ -191,6 +191,10 @@ docker_status_run() {
         *"permission denied"*)
             status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
             ;;
+        # Stopped since the caller saw it running, as a restart does
+        *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
+            status_item info "$label: the daemon isn't running"
+            ;;
         *) return 2 ;;
     esac
     return 1
@@ -216,15 +220,8 @@ status_docker_usage() {
     [ "$status" -ne 1 ] || return 0
     out="$DOCKER_OUT"
     if [ "$status" -ne 0 ]; then
-        case "$out" in
-            *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
-                status_item info "$label: the daemon isn't running"
-                ;;
-            *)
-                [ "$DOCKER_STATUS" -ne 124 ] || out="docker system df didn't answer within 30 s"
-                status_item info "$label: couldn't check ($(grep -v '^ *$' <<< "$out" | head -n 1))"
-                ;;
-        esac
+        [ "$DOCKER_STATUS" -ne 124 ] || out="docker system df didn't answer within 30 s"
+        status_item info "$label: couldn't check ($(grep -v '^ *$' <<< "$out" | head -n 1))"
         return 0
     fi
     while IFS=$'\t' read -r type count size reclaimable; do

@@ -38,7 +38,7 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$REMOTES/.insteadOf" GIT_CONFIG_
 commit() {
     echo "$1 $2" > "$REMOTES/$1/README"
     git -C "$REMOTES/$1" add README
-    git -C "$REMOTES/$1" -c user.name=test -c user.email=test@example.com commit -qm "$2"
+    git_commit "$REMOTES/$1" -m "$2"
     git -C "$REMOTES/$1" rev-parse HEAD
 }
 pins() {

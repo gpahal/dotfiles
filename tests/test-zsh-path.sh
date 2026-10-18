@@ -19,9 +19,7 @@ REAL_MISE="$(command -v mise || true)"
 setup_sandbox
 ZSH_BIN="$(command -v zsh)" || skip "zsh isn't installed"
 stub brew 'exit 1'
-stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
-stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
-stub chsh 'exit 1'
+stub_login_shell_zsh
 assert_exit 0 bash "$REPO_DIR/zsh/install.sh"
 
 BREW="$SANDBOX/brew"

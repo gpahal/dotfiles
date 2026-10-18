@@ -306,6 +306,23 @@ test_done() {
     TEST_DONE=true
 }
 
+# Commit in repo $1, as an identity of the test's own, since the sandbox has no git config to give
+# one. The other arguments go to git commit.
+# e.g. git_commit "$SANDBOX/repo" --allow-empty -m one
+git_commit() {
+    local repo="$1"
+    shift
+    git -C "$repo" -c user.name=test -c user.email=test@example.com commit -q "$@"
+}
+
+# Stub what the zsh step reads your login shell with, dscl on macOS and getent on Ubuntu, to say
+# it's zsh already, and chsh to fail, so the step neither asks to change it nor changes it
+stub_login_shell_zsh() {
+    stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
+    stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
+    stub chsh 'exit 1'
+}
+
 # Stand in for GitHub for the tmux plugins in tmux/plugins.lock: give each a local repo with two
 # commits, under $SANDBOX/remotes, which a git url rewrite makes https://github.com/<repo>, and pin
 # each to its first commit, not HEAD, in a lock file the tmux step reads through
@@ -321,7 +338,7 @@ fake_tmux_plugins() {
         for n in 1 2; do
             echo "$repo $n" > "$remote/README"
             git -C "$remote" add README
-            git -C "$remote" -c user.name=test -c user.email=test@example.com commit -qm "$n"
+            git_commit "$remote" -m "$n"
             [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
         done
         echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"

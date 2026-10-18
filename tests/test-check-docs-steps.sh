@@ -18,7 +18,7 @@ git -C "$REPO_DIR" ls-files -z --cached --others --exclude-standard |
     (cd "$REPO_DIR" && tar --null -T - -cf -) | tar -C "$repo" -xf -
 git -C "$repo" init -q
 git -C "$repo" add -A
-git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm base
+git_commit "$repo" -m base
 assert_exit 0 /bin/bash "$repo/scripts/check-docs.sh"
 
 # A step that copies a file the Maintenance list lacks fails the check, untracked or not

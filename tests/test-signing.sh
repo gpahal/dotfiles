@@ -41,8 +41,7 @@ assert_file_contains "$ALLOWED" "$(awk '{print $2}' "$SIGNING.pub")"
 
 # A commit signs with no agent and no terminal
 git init -q "$SANDBOX/repo"
-run git -C "$SANDBOX/repo" -c user.name=Test -c user.email=test@example.com \
-    commit -q --allow-empty -m signed
+run git_commit "$SANDBOX/repo" --allow-empty -m signed
 assert_eq 0 "$RUN_STATUS" "signed commit exit status: $RUN_OUTPUT"
 run git -C "$SANDBOX/repo" log --show-signature -1
 assert_contains "$RUN_OUTPUT" 'Good "git" signature'

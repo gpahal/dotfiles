@@ -15,9 +15,7 @@ command -v zsh &>/dev/null || skip "zsh isn't installed"
 command -v script &>/dev/null || skip "script isn't installed"
 # Under Claude Code, CLAUDECODE would turn off the terminal-only options and reminders
 unset CLAUDECODE
-stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
-stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
-stub chsh 'exit 1'
+stub_login_shell_zsh
 assert_exit 0 bash "$REPO_DIR/zsh/install.sh"
 stub brew 'exit 1'
 # mise is a sentinel, and the config runs mise when it finds one on PATH. /etc/zprofile's

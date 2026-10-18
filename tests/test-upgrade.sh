@@ -266,7 +266,7 @@ assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
 # updated plugin, listed first, doesn't stand in for its version after.
 market="$SANDBOX/market"
 git init -q "$market"
-git -C "$market" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+git_commit "$market" --allow-empty -m one
 old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
 echo 1.0.0 > "$SANDBOX/plugin-version"
 stub claude 'case "$*" in

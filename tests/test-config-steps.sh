@@ -24,10 +24,7 @@ fi
 stub brew 'exit 1'
 # Not logged in to GitHub, so the git step defers login without a terminal
 stub gh 'exit 1'
-# The login shell is already zsh, so the zsh step doesn't ask to run chsh
-stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
-stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
-stub chsh 'exit 1'
+stub_login_shell_zsh
 # The ssh step's LaunchAgent counts as loaded: a temp HOME mustn't load it into your session
 stub launchctl '[ "$1" == print ]'
 # On Ubuntu, continuum's unit that starts tmux at boot counts as enabled: tests/test-tmux-boot.sh

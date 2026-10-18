@@ -121,7 +121,6 @@ Status: active
 To                         Action      From
 --                         ------      ----
 22/tcp                     ALLOW       10.0.0.0/8
-22/tcp                     ALLOW       172.16.0.0/12
 22/tcp                     ALLOW       192.168.0.0/16
 22/tcp                     ALLOW       fd00::/8
 22/tcp                     ALLOW       fe80::/10

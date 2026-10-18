@@ -32,9 +32,10 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, and localhost-only published ports
 # containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
 # 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
 # default-network-opts the user-defined networks, such as Compose's, created after the change.
-# ufw also blocks containers from reaching ports on the host. `sudo ufw allow in on docker0` lets in
-# the default bridge, and each user-defined network's bridge, br-<first 12 characters of the
-# network ID>, needs its own rule. The step adds neither.
+# ufw also blocks containers from reaching ports on the host, SSH included, since the ubuntu step's
+# SSH ranges leave out 172.16.0.0/12, where Docker's bridges are. `sudo ufw allow in on docker0`
+# lets in the default bridge, and each user-defined network's bridge, br-<first 12 characters of
+# the network ID>, needs its own rule. The step adds neither.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"

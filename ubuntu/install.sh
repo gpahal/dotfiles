@@ -127,8 +127,10 @@ Dpkg::Options {
     "--force-confold";
 };'
 # The private address ranges ufw lets SSH in from: RFC 1918's, IPv6's unique local addresses, and
-# link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules.
-SSH_RANGES=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fd00::/8 fe80::/10)
+# link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules. RFC 1918's
+# 172.16.0.0/12 is left out: Docker's bridges take their subnets from it (172.17.0.0/16 and up), so
+# allowing it would let any container try logins on sshd.
+SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
 # Tailscale's port for direct connections. Without it, devices relay through DERP servers.
 TAILSCALE_PORT=41641
 TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu

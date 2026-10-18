@@ -167,8 +167,7 @@ private_address() {
     esac
     IFS=. read -r a b _ <<< "$1"
     [[ "$a" =~ ^[0-9]+$ ]] && [[ "$b" =~ ^[0-9]+$ ]] || return 1
-    [ "$a" -eq 10 ] || { [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ]; } ||
-        { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
+    [ "$a" -eq 10 ] || { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
 }
 
 # Succeeds for an address the firewall would cut off: outside the private ranges, and not reached

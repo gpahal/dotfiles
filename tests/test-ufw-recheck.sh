@@ -107,7 +107,7 @@ esac'
 # The step's rules for SSH on port 22
 range_rules() {
     local range
-    for range in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fd00::/8 fe80::/10; do
+    for range in 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10; do
         printf '%-26s ALLOW       %s\n' "${1:-22}/tcp" "$range"
     done
 }
@@ -202,6 +202,10 @@ assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the privat
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
+# The rule for 172.16.0.0/12 an earlier version added, which lets Docker's containers reach sshd
+printf '%s\n' "22/tcp                     ALLOW       172.16.0.0/12" >> "$SANDBOX/ufw-rules"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 172.16.0.0/12, outside the private ranges: 22/tcp ALLOW 172.16.0.0/12;"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"

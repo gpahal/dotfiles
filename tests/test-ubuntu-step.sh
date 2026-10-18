@@ -162,7 +162,6 @@ stub ufw 'case "$1" in
     --force) touch "'"$SANDBOX"'/ufw-on" ;;
     status) [ -e "'"$SANDBOX"'/ufw-on" ] && printf "%s\n" "Status: active" "" \
         "22/tcp                     ALLOW       10.0.0.0/8" \
-        "22/tcp                     ALLOW       172.16.0.0/12" \
         "22/tcp                     ALLOW       192.168.0.0/16" \
         "22/tcp                     ALLOW       fd00::/8" \
         "22/tcp                     ALLOW       fe80::/10" \

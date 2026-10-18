@@ -45,12 +45,13 @@ stub ip 'case "$3" in
     *) echo "$3 via 192.168.1.1 dev eth0 src 192.168.1.5" ;;
 esac'
 outside() { if outside_address "$1"; then echo outside; else echo inside; fi; }
-for address in 10.1.2.3 172.16.0.9 172.31.255.1 192.168.1.20 fd12:3456::1 fe80::5 fe80::5%wg0 \
+for address in 10.1.2.3 192.168.1.20 fd12:3456::1 fe80::5 fe80::5%wg0 \
     febf::1 100.64.0.2 fd7a:115c:a1e0::2 127.0.0.1 ::1; do
     assert_eq inside "$(outside "$address")" "$address"
 done
-for address in 203.0.113.9 172.32.0.1 172.15.0.1 192.169.1.1 11.0.0.1 2001:db8::7 fc00::1 \
-    fec0::1 fd::1 198.51.100.1; do
+# 172.16.0.0/12 holds Docker's bridges, so it's outside too
+for address in 203.0.113.9 172.16.0.9 172.17.0.2 172.31.255.1 172.32.0.1 172.15.0.1 192.169.1.1 \
+    11.0.0.1 2001:db8::7 fc00::1 fec0::1 fd::1 198.51.100.1; do
     assert_eq outside "$(outside "$address")" "$address"
 done
 
@@ -94,7 +95,8 @@ assert_eq "" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules among the wanted o
         "80,2222/tcp                ALLOW       Anywhere # web" \
         "Anywhere                   ALLOW       203.0.113.9" \
         "22                         ALLOW       10.0.0.0/7" \
-        "192.168.1.5 22/tcp on eth0 ALLOW       Anywhere"
+        "192.168.1.5 22/tcp on eth0 ALLOW       Anywhere" \
+        "22/tcp                     ALLOW       172.16.0.0/12"
 } > "$SANDBOX/ufw-rules"
 assert_eq "22/tcp ALLOW Anywhere
 22/tcp (v6) ALLOW Anywhere (v6)
@@ -103,7 +105,8 @@ OpenSSH LIMIT Anywhere
 80,2222/tcp ALLOW Anywhere # web
 Anywhere ALLOW 203.0.113.9
 22 ALLOW 10.0.0.0/7
-192.168.1.5 22/tcp on eth0 ALLOW Anywhere" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
+192.168.1.5 22/tcp on eth0 ALLOW Anywhere
+22/tcp ALLOW 172.16.0.0/12" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
 # Unreadable rules or SSH ports fail it
 stub ufw 'exit 1'
 assert_exit 1 ufw_broad_ssh_rules -n

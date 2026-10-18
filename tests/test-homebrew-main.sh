@@ -6,10 +6,10 @@ set -euo pipefail
 # The homebrew step's main: the Command Line Tools on macOS and the apt packages on Ubuntu come
 # first, a failed bundle still installs the casks, one failed cask doesn't stop the rest, an app
 # installed outside Homebrew counts as installed, Ctrl-C (exit 130 from brew) stops the step, the
-# App Store hint shows when an App Store app is missing, apt-get update is retried only while
-# another update holds apt's lists lock, Ubuntu refreshes the font cache after a cask install, and
-# a re-run installs nothing. test-homebrew-install.sh covers installing Homebrew
-# itself.
+# App Store hint shows when an App Store app is missing (only a note for the optional Dato),
+# apt-get update is retried only while another update holds apt's lists lock, Ubuntu refreshes the
+# font cache after a cask install, and a re-run installs nothing. test-homebrew-install.sh covers
+# installing Homebrew itself.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -101,6 +101,15 @@ assert_contains "$RUN_OUTPUT" "Everything else in the Brewfile is installed"
 assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "brew bundle install --no-upgrade
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs with only the App Store apps missing"
+
+# Only the optional Dato is missing: the step passes, saying it's optional, without the sign-in steps
+reset
+echo 1 > "$SANDBOX/bundle-status"
+touch "$SANDBOX/rest-ok"
+stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
+assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
 
 # One cask fails: the rest install, and the step fails naming it
 reset

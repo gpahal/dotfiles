@@ -25,7 +25,7 @@ Set up the Mac first, then the Ubuntu machine: Ubuntu's **SSH key** manual step 
 ### macOS
 
 1. Run `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. The first `git` command asks to install the Command Line Tools. Install them, then run the clone again.
-2. Sign in to the App Store and buy [Dato](https://apps.apple.com/app/dato/id1470584107) once, so the `homebrew` step can install it with the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. Buy it only if you want Dato. Without it, the `homebrew` step still passes but warns that the App Store apps aren't installed, and `--status` lists them as missing.
+2. Sign in to the App Store, so the `homebrew` step can install the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional: buy it there once if you want it. Without it, the `homebrew` step notes it isn't installed, and `--status` lists it as `info`, which doesn't need attention.
 3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
 4. Give Ghostty Full Disk Access, then quit and reopen it. The first of the macOS [manual steps](#macos-1) says how.
 5. Do the rest of the macOS [manual steps](#macos-1), commit signing included.
@@ -367,10 +367,10 @@ macOS only. Installed with brew casks:
 - [Elgato Stream Deck](https://www.elgato.com/s/downloads): Stream Deck keys, with the [Stream Deck](#stream-deck) plugin
 - [Hammerspoon](https://www.hammerspoon.org/): the [hotkeys](#hammerspoon) that open Claude, Chrome, Ghostty, T3 Code, and Zed
 
-Installed from the Mac App Store with mas, once you're signed in to the App Store and have bought the paid ones (see [First run](#macos)):
+Installed from the Mac App Store with mas, once you're signed in to the App Store (see [First run](#macos)):
 
 - [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704): keeps the Mac awake
-- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar
+- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar. Paid and optional, so it installs only once you've bought it
 - [Windows App](https://apps.apple.com/app/windows-app/id1295203466): Microsoft's RDP client, to reach the Ubuntu desktop through GNOME's Remote Login
 
 ### macOS defaults
@@ -409,7 +409,7 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 6. Open OrbStack once and finish its setup, so `docker` works.
 7. Open [Raycast](https://www.raycast.com/), grant permissions, and [set its hotkey](https://manual.raycast.com/settings) to `Cmd+Space`, which the `macos` step frees from Spotlight.
 8. Open [Rectangle](https://rectangleapp.com/), grant accessibility permissions, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Dato, and Tailscale.
+9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato if you bought it.
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).

@@ -4,10 +4,7 @@ set -euo pipefail
 
 # Check that the docs list each runner's steps as its STEPS has them, on macOS and on Ubuntu:
 # - README.md "How setup works": the step table, which holds both OSes' steps in order
-# - README.md "Ubuntu": the "Steps." item under "What differs from macOS"
 # - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
-# - ai_tools/README.md "Ubuntu": "Run `bash ai_tools/setup.sh` on the Ubuntu machine too ... It
-#   runs ..."
 # Also check that:
 # - README.md "What's included" lists every formula in homebrew/Brewfile, and every App Store app
 #   in homebrew/install.sh's MAS_APPS and cask in its CASKS, as a list item's link in the section package_section
@@ -100,12 +97,6 @@ while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"
 
-# README.md "Ubuntu": the Steps item names the steps in one backquoted list
-line="$(awk '/^- \*\*Steps\.\*\* Ubuntu runs `/ { print; exit }' "$tmp/ubuntu-section")"
-backquoted "$line" | head -1 | tr ' ' '\n' > "$tmp/ubuntu-list"
-compare "README.md Ubuntu's \"Steps.\" item" "$tmp/setup-ubuntu" "$tmp/ubuntu-list" \
-    '"- **Steps.** Ubuntu runs `<steps>`" under "## Ubuntu"'
-
 # ai_tools/README.md: one sentence lists every step, and the next says which Ubuntu skips
 ai_readme="$REPO_DIR/ai_tools/README.md"
 line="$(grep -m1 '^The steps, in order, are ' "$ai_readme" || true)"
@@ -119,15 +110,6 @@ backquoted "${skips%%[;.]*}" > "$tmp/ai-skips"
 grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
 compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
     '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
-
-# ai_tools/README.md "Ubuntu": the sentence after "Run `bash ai_tools/setup.sh` on the Ubuntu
-# machine too" names Ubuntu's steps
-line="$(grep -m1 '^Run `bash ai_tools/setup.sh` on the Ubuntu machine too' "$ai_readme" || true)"
-sentence="${line#*It runs }"
-[ "$sentence" != "$line" ] || sentence=""
-backquoted "${sentence%%.*}" > "$tmp/ai-ubuntu-section"
-compare "ai_tools/README.md Ubuntu's \"It runs\" list" "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-section" \
-    '"It runs `<step>`, ..." in the line starting "Run `bash ai_tools/setup.sh` on the Ubuntu machine too" in ai_tools/README.md'
 
 # README.md "What's included" against the Brewfile, MAS_APPS, and CASKS. A package and a name in the README
 # match when they're equal lowercased, with all but letters and digits dropped: the README's

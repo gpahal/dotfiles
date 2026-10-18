@@ -26,7 +26,7 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
 - **Docs change with the code**, in the same commit:
   - brew packages → README "What's included"
   - `homebrew/install.sh`'s `UBUNTU_CASKS` and `UBUNTU_PACKAGES`, and the Brewfile's Mac-only formulae → README "Ubuntu"
-  - `setup.sh`'s `MACOS_STEPS` and `UBUNTU_STEPS` → README "How setup works", and `UBUNTU_STEPS` also the step list in README "Ubuntu"
+  - `setup.sh`'s `MACOS_STEPS` and `UBUNTU_STEPS` → README "How setup works"
   - new config files → the step's `*_files` functions and README "Maintenance" copy-back list
   - new keys the `claude-code` step writes → `scripts/claude-settings-keys.txt`, once checked against Claude Code
   - the Claude and Codex models the `claude-code` and `codex` steps set → the reviewer table in `ai_tools/skills/engineering/interrogate/SKILL.md`

@@ -101,11 +101,10 @@ just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in M
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `zed`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs. The `homebrew` step still installs the Zed cask.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported, with the steps the [table](#how-setup-works) doesn't mark macOS only. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `zed`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs. The `homebrew` step still installs the Zed cask.
 
 What differs from macOS:
 
-- **Steps.** Ubuntu runs `homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker chrome logitech manual-steps`. Ghostty and Zed are only for when you sit at the machine.
 - **System packages.** Before Homebrew, the `homebrew` step installs these apt packages, after asking: `build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig`.
 - **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only `macmon`, `terminal-notifier`, `pam-reattach`, and `mas`. zsh comes from apt. Of the casks, Ubuntu gets `zed` and `font-monaspace` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
 - **PATH.** Homebrew comes first, as on macOS, so brew's `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.

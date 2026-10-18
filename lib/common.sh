@@ -1516,8 +1516,9 @@ reraise_interrupt() {
 #
 # With mode --status, run each step's read-only --status report instead, under a header with the
 # step's name. A step whose report has missing or unknown items exits 3; those are listed at the
-# end too, and the run returns 3 (or 1 when a step also failed). A report that exits 3 without
-# such an item failed. An empty mode runs the steps.
+# end too, and the run returns 3 (or 1 when a step also failed). A report with such an item that
+# exits 0 is listed too. A report that exits 3 without such an item failed. An empty mode runs the
+# steps.
 run_steps() {
     local mode="$1" step script status codes interrupted="" failed=() attention=()
     shift
@@ -1555,7 +1556,12 @@ run_steps() {
                 codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
             } || true
             status="${codes% *}"
-            [ "$status" -ne 3 ] || [ "${codes#* }" -eq 0 ] || status=1
+            if [ "${codes#* }" -eq 0 ]; then
+                # A report that forgot status_result exits 0 with an item needing attention
+                [ "$status" -ne 0 ] || status=3
+            elif [ "$status" -eq 3 ]; then
+                status=1
+            fi
         else
             "$BASH" "$script" || status=$?
         fi

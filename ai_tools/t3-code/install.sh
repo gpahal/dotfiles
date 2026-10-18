@@ -234,22 +234,21 @@ t3_code_app_path() {
     return 1
 }
 
-# Print the app when brew lists the t3-code cask but the app has a name other than the one the
-# cask now gives, and fail otherwise. T3 Code can rename itself in an update, which can get there
-# before the cask does. The app is then installed, not gone, and
-# brew's record catches up at the next upgrade-ai-tools once the cask does.
-# Usage: t3_code_renamed_app [cask app path], as t3_code_app_path takes it
-t3_code_renamed_app() {
-    local app cask_app
-    if [ $# -gt 0 ]; then
-        cask_app="$1"
-    else
-        cask_app="$(cask_app_path t3-code)"
+# Print how the t3-code cask is installed, a tab, and its app's path, as cask_state does, asking
+# brew once. "renamed" is a cask brew lists whose app has a name other than the one the cask now
+# gives: T3 Code can rename itself in an update, which can get there before the cask does. The app
+# is then installed, not gone, and brew's record catches up at the next upgrade-ai-tools once the
+# cask does. A renamed app brew doesn't list is "other".
+t3_code_cask_state() {
+    local state app found
+    IFS=$'\t' read -r state app <<< "$(cask_state t3-code)"
+    if [ "$state" == gone ] || [ "$state" == missing ]; then
+        if found="$(t3_code_app_path "$app")"; then
+            app="$found"
+            if [ "$state" == gone ]; then state=renamed; else state=other; fi
+        fi
     fi
-    app="$(t3_code_app_path "$cask_app")" || return 1
-    brew list --cask t3-code &>/dev/null || return 1
-    [ "$app" != "$cask_app" ] || return 1
-    echo "$app"
+    printf '%s\t%s\n' "$state" "$app"
 }
 
 # Succeeds when launchd's environment has the variable now
@@ -726,13 +725,17 @@ status() {
         return
     fi
     if is_macos; then
-        # Asked once, for both the renamed app's check and the app's path
-        local renamed cask_app=""
-        ! command -v brew &>/dev/null || cask_app="$(cask_app_path t3-code || true)"
-        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app "$cask_app")"; then
-            status_item ok "t3-code (cask), as ${renamed##*/}"
+        local state="" app="" listing=""
+        if command -v brew &>/dev/null; then
+            IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
+        fi
+        if [ "$state" == renamed ]; then
+            status_item ok "t3-code (cask), as ${app##*/}"
         else
-            status_cask t3-code "$(t3_code_app_path "$cask_app" || true)"
+            # Whether brew lists the cask goes to status_cask as its listing, so brew isn't asked
+            # again
+            case "$state" in brew | gone) listing="t3-code"$'\t'"$app" ;; esac
+            status_cask t3-code "$app" "$listing"
         fi
         status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
         t3_code_status_custom_values
@@ -792,16 +795,16 @@ apply() {
         require_cmd curl || return 1
     fi
     if is_macos; then
-        # Telemetry and the settings don't need the app. brew is asked for the cask's app once, for
-        # the renamed app's check, the app's path, and the settings.
-        local cask_failed=0 renamed cask_app
-        cask_app="$(cask_app_path t3-code || true)"
-        if renamed="$(t3_code_renamed_app "$cask_app")"; then
-            echo "  t3-code already installed, as ${renamed##*/}."
+        # Telemetry and the settings don't need the app. brew is asked about the cask once, for
+        # the install and the app's path.
+        local cask_failed=0 state app
+        IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
+        if [ "$state" == renamed ]; then
+            echo "  t3-code already installed, as ${app##*/}."
         else
-            install_cask t3-code "$(t3_code_app_path "$cask_app" || true)" || cask_failed=1
+            install_cask t3-code "" "$state" || cask_failed=1
         fi
-        configure_t3_code "$cask_app" || return 1
+        configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
         configure_t3_code_ubuntu || return 1

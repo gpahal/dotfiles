@@ -219,14 +219,20 @@ ups_configured_for() {
     nut_files_current
 }
 
+# Ubuntu's NUT units are wanted by nut.target, which multi-user.target wants once it's enabled. With
+# it disabled, the services run now but not after a reboot.
+nut_target_enabled() {
+    systemctl is-enabled -q nut.target 2>/dev/null
+}
+
 # Succeeds when NUT watches a plugged-in UPS: it's set up for it, upsd answers for it, the services
-# run, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
+# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
 # against it, so a run without cached credentials doesn't ask for sudo only to read them.
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?
     [ "$configured" -ne 1 ] && ups_notifier_installed && ups_rtc_hook_installed &&
-        ups_services_active && upsc_value ups.status > /dev/null
+        ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
 }
 
 # Set UPS_STATE to the UPS part's state: vm, nohwdb (upower's hwdb, which tells a UPS, is
@@ -257,7 +263,7 @@ ups_todo() {
     ups_state
     [ "$UPS_STATE" == plugged ] || return 0
     ids="$(join_lines ', ' <<< "$UPS_PLUGGED")"
-    what="write ${NUT_FILES[*]} in $NUT_DIR, install the notifier $UPS_NOTIFY and the RTC wake hook $UPS_RTC_HOOK, and start nut-server and nut-monitor"
+    what="write ${NUT_FILES[*]} in $NUT_DIR, install the notifier $UPS_NOTIFY and the RTC wake hook $UPS_RTC_HOOK, and start nut-server and nut-monitor, now and at boot"
     if ! nut_installed; then
         echo "UPS: install nut-client and nut-server, and set up NUT for the UPS on USB ($ids): $what"
     elif ! ups_ready "$UPS_PLUGGED"; then
@@ -323,7 +329,7 @@ setup_ups() {
         install_ups_rtc_hook || return 1
         rtc=true
     fi
-    sudo systemctl enable "${NUT_UNITS[@]}" || return 1
+    sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
         echo "  NUT watches the UPS on USB ($vendor:$product) with $driver, and shuts the machine down on"
@@ -377,6 +383,7 @@ status_ups() {
         status_item missing "upsd answers for $UPS_NAME@localhost (upsc $UPS_NAME@localhost)"
     fi
     status_check "nut-server and nut-monitor running" ups_services_active
+    status_check "nut.target enabled, so NUT starts at boot" nut_target_enabled
     if ups_notifier_installed; then
         status_item ok "UPS events pushed to ntfy ($UPS_NOTIFY)"
     else

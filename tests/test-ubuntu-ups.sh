@@ -78,7 +78,8 @@ upsc_answers() {
     printf '%s\n' "ups.status: $1" "battery.charge: 100" "ups.vendorid: $2" "ups.productid: $3" > "$SANDBOX/upsc"
 }
 # A unit is active once systemctl restart or start ran it, until $SANDBOX/active-<unit> is
-# removed. is-active succeeds when any unit given is active, as systemctl's does.
+# removed. is-active succeeds when any unit given is active, as systemctl's does. A unit is enabled
+# unless $SANDBOX/disabled-<unit> exists, which enable removes.
 stub systemctl 'cmd="$1"
 shift
 case "$cmd" in
@@ -87,6 +88,8 @@ case "$cmd" in
         for unit in "$@"; do [ ! -e "'"$SANDBOX"'/active-$unit" ] || exit 0; done
         exit 3 ;;
     restart | start) for unit in "$@"; do touch "'"$SANDBOX"'/active-$unit"; done ;;
+    is-enabled) [ ! -e "'"$SANDBOX"'/disabled-${!#}" ] ;;
+    enable) for unit in "$@"; do rm -f "'"$SANDBOX"'/disabled-$unit"; done ;;
 esac'
 stub systemd-detect-virt 'exit 1'
 
@@ -166,7 +169,7 @@ assert_file_not_contains "$STUB_LOG" "chgrp"
 cmp -s "$REPO_DIR/ubuntu/ups-notify.sh" "$UPS_NOTIFY" || fail "the notifier isn't the repo's"
 [ -x "$UPS_NOTIFY" ] || fail "the notifier isn't executable"
 cmp -s "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NTFY_LIB" || fail "the notifier's ntfy code isn't the repo's"
-assert_file_contains "$STUB_LOG" "sudo systemctl enable nut-server.service nut-monitor.service"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable nut.target nut-server.service nut-monitor.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver-enumerator.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver@ups.service nut-server.service nut-monitor.service"
 assert_contains "$RUN_OUTPUT" "NUT watches the UPS on USB (0764:0501)"
@@ -196,6 +199,7 @@ assert_contains "$RUN_OUTPUT" "ok         UPS on USB (0764:0501) monitored by NU
 assert_contains "$RUN_OUTPUT" "ok         UPS on mains power (ups.status OL CHRG)"
 assert_contains "$RUN_OUTPUT" "info       UPS battery charge: 100%"
 assert_contains "$RUN_OUTPUT" "ok         nut-server and nut-monitor running"
+assert_contains "$RUN_OUTPUT" "ok         nut.target enabled, so NUT starts at boot"
 assert_contains "$RUN_OUTPUT" "ok         UPS events pushed to ntfy ($UPS_NOTIFY)"
 assert_contains "$RUN_OUTPUT" "ok         RTC wake hook ($UPS_RTC_HOOK) installed: asks the board to start the machine 15 minutes after a UPS shutdown if the UPS keeps its power on; check once that your board wakes (see the Power cuts manual step)"
 # On battery: information, not a problem
@@ -281,6 +285,18 @@ assert_contains "$RUN_OUTPUT" "missing    nut-server and nut-monitor running"
 assert_exit 0 setup_ups
 assert_file_contains "$STUB_LOG" "sudo systemctl start nut-server.service nut-monitor.service"
 [ -e "$SANDBOX/active-nut-monitor.service" ] || fail "nut-monitor wasn't started"
+
+# The services running but nut.target disabled, so NUT wouldn't start after a reboot: not ready,
+# and the step enables it
+touch "$SANDBOX/disabled-nut.target"
+assert_contains "$(ups_todo)" "UPS: set up NUT"
+run status_ups
+assert_contains "$RUN_OUTPUT" "missing    nut.target enabled, so NUT starts at boot"
+: > "$STUB_LOG"
+assert_exit 0 setup_ups
+assert_file_contains "$STUB_LOG" "sudo systemctl enable nut.target nut-server.service nut-monitor.service"
+[ ! -e "$SANDBOX/disabled-nut.target" ] || fail "nut.target wasn't enabled"
+assert_exit 0 status_ups
 
 # The files current and the services running, but upsd doesn't answer for the UPS, as when its
 # driver stopped: the step restarts the driver and the services

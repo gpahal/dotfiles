@@ -54,12 +54,13 @@ setup_sandbox() {
     # for the tmux plugins.
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
-    # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps
+    # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps.
+    # macOS's mktemp ignores TMPDIR without a template, so a wrapper below gives it one.
     export TMPDIR="$SANDBOX/tmp"
     # Set, so zsh/main.zsh and ~/.zprofile don't run the real brew's shellenv, and pointing
     # nowhere, so they put no real Homebrew dir ahead of the stubs
     export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
-    # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
+    # The apt sources directory, where tests point the steps' apt sources, and the release
     # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
     # test to override them.
     export APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d" OS_RELEASE="$SANDBOX/os-release"
@@ -68,6 +69,11 @@ setup_sandbox() {
     export STUB_DIR="$SANDBOX/stubs" STUB_LOG="$SANDBOX/stub.log"
     mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$TMPDIR" "$STUB_DIR"
     : > "$STUB_LOG"
+    # Not a stub, so it logs nothing: a bare mktemp or mktemp -d gets a template under $TMPDIR
+    printf '%s\n' '#!/bin/bash' \
+        "case \"\$*\" in '' | -d) exec $(command -v mktemp) \"\$@\" \"\$TMPDIR/tmp.XXXXXXXXXX\" ;; esac" \
+        "exec $(command -v mktemp) \"\$@\"" > "$STUB_DIR/mktemp"
+    chmod +x "$STUB_DIR/mktemp"
     _stubs_first
     # shellcheck disable=SC2086 # a list of names
     _sentinels $SENTINELS

@@ -81,11 +81,6 @@ esac'
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    # A bare mktemp, such as write_root_file's, makes its file under $TMPDIR, in the sandbox. macOS's
-    # would use the user's temp dir (_CS_DARWIN_USER_TEMP_DIR) whatever TMPDIR says, which the sudo
-    # below refuses.
-    stub mktemp "case \"\$*\" in '' | -d) exec $(command -v mktemp) \"\$@\" \"\$TMPDIR/tmp.XXXXXXXXXX\" ;; esac
-    exec $(command -v mktemp) \"\$@\""
     # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without cached
     # credentials.
     not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }

@@ -112,9 +112,24 @@ cp "$SANDBOX/zprofile" "$HOME/.zprofile"
 # Each startup file gets one line, after what other installers (e.g. OrbStack) put there, so
 # their dirs come first. A second run changes nothing.
 load_script zsh/install.sh
+# On macOS, which has no ~/.profile line to source it, profile.sh isn't copied
+# shellcheck disable=SC2329
+macos_profile() {
+    is_ubuntu() { false; }
+    is_macos() { true; }
+    login_zsh_path() { echo "$ZSH_BIN"; }
+    rm -f "$HOME/.zsh/profile.sh"
+    assert_exit 0 apply
+    [ ! -e "$HOME/.zsh/profile.sh" ] || fail "apply copied profile.sh on macOS"
+    run status
+    assert_contains "$RUN_OUTPUT" "skipped    profile.sh in ~/.zsh: Ubuntu only"
+}
+subtest macos_profile
 # Ubuntu's, which apply needs, at the path of the zsh found here
 # shellcheck disable=SC2329
 is_ubuntu() { true; }
+# shellcheck disable=SC2329
+is_macos() { false; }
 # shellcheck disable=SC2329
 login_zsh_path() { echo "$ZSH_BIN"; }
 # shellcheck disable=SC2016 # expanded by sh

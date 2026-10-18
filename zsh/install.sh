@@ -29,9 +29,14 @@ PROFILE_LINE='[ ! -r "$HOME/.zsh/profile.sh" ] || . "$HOME/.zsh/profile.sh"'
 zsh_files() {
     local file status=0
     # File by file: ~/.zsh also holds the completion cache, which a fresh copy would wipe
-    for file in "$DOTFILES_DIR"/zsh/*.zsh "$DOTFILES_DIR/zsh/profile.sh"; do
+    for file in "$DOTFILES_DIR"/zsh/*.zsh; do
         "$1" "$file" "$HOME/.zsh/${file##*/}" || status=1
     done
+    # Only Ubuntu's ~/.profile sources it. Not is_ubuntu, which scripts/check-docs.sh's Linux run
+    # can't fake.
+    if ! is_macos; then
+        "$1" "$DOTFILES_DIR/zsh/profile.sh" "$HOME/.zsh/profile.sh" || status=1
+    fi
     # starship reads ~/.config/starship.toml (or $STARSHIP_CONFIG), even when XDG_CONFIG_HOME is set
     "$1" "$DOTFILES_DIR/zsh/config/starship.toml" "$HOME/.config/starship.toml" || status=1
     return "$status"
@@ -128,6 +133,7 @@ status() {
         status_check "path.zsh sourced in ~/.zshenv" has_line "$PATH_ZSH_LINE" "$HOME/.zshenv"
         status_check "profile.sh sourced in ~/.profile" has_line "$PROFILE_LINE" "$HOME/.profile"
     else
+        status_item skipped "profile.sh in ~/.zsh: Ubuntu only"
         status_item skipped "path.zsh sourced in ~/.zshenv: Ubuntu only"
         status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"
     fi

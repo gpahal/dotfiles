@@ -46,7 +46,8 @@ local function open(bundleID, name)
     return false
 end
 
--- open-in shows a notification when it fails, so only its log line is left to print
+-- open-in shows a notification when it fails, so only its log line is left to print. Returns the
+-- task, or nil when it couldn't start.
 local function openIn(target)
     local task
     task = hs.task.new("/bin/bash", function(_, _, stderr)
@@ -62,11 +63,21 @@ local function openIn(target)
         return
     end
     dotfiles.tasks[task] = true
+    return task
+end
+
+-- A second press while the first's tab is still on its way, as while Chrome starts, would open a
+-- second tab and paste twice, so it's dropped
+local function newTab()
+    if dotfiles.newTab and dotfiles.newTab:isRunning() then
+        return
+    end
+    dotfiles.newTab = openIn("chrome-tab")
 end
 
 hs.hotkey.bind(MODS, "space", function() open(CLAUDE, "Claude") end)
 hs.hotkey.bind(MODS, "b", function() open(CHROME, "Google Chrome") end)
-hs.hotkey.bind(MODS, "n", function() openIn("chrome-tab") end)
+hs.hotkey.bind(MODS, "n", newTab)
 hs.hotkey.bind(MODS, "t", function() openIn("terminal") end)
 hs.hotkey.bind(MODS, "c", function() open(T3_CODE, "T3 Code") end)
 hs.hotkey.bind(MODS, "e", function() openIn("editor") end)

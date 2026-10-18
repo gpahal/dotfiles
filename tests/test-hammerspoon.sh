@@ -3,8 +3,9 @@ set -euo pipefail
 
 # hammerspoon/init.lua, run by lua against a fake hs that records what the config does: it binds
 # Ctrl+Opt+Cmd+Space, B, and C, each opening its app, and T, E, and N, which run open-in terminal,
-# editor, and chrome-tab as Hammerspoon. It keeps each open-in task until it exits, sets
-# Hammerspoon to open at login, and reloads when init.lua changes.
+# editor, and chrome-tab as Hammerspoon, dropping a second N while the first's task runs. It keeps
+# each open-in task until it exits, sets Hammerspoon to open at login, and reloads when init.lua
+# changes.
 # tests/test-config-steps.sh covers the step that copies it, and tests/test-stream-deck-open-in.sh
 # and tests/test-stream-deck-open-in-apps.sh cover open-in, the new tab's keystrokes among it.
 
@@ -35,6 +36,7 @@ hs = {
     alert = { show = function(s) record("alert " .. s) end },
     task = { new = function(path, fn, args)
         local t = { env = { PATH = "/usr/bin" } }
+        function t:isRunning() return self.running == true end
         function t:environment() return self.env end
         function t:setEnvironment(env) self.env = env end
         function t:start()
@@ -42,7 +44,8 @@ hs = {
             record("task " .. path .. " " .. table.concat(args, " ") .. " as " .. self.env.OPEN_IN_CALLER
                 .. ", logging to " .. self.env.OPEN_IN_LOG .. ", PATH " .. self.env.PATH)
             -- The task's exit runs the callback later
-            delayed[#delayed + 1] = { fn = function() fn(0, "", args[2] .. " from com.apple.finder: /tmp") end }
+            self.running = true
+            delayed[#delayed + 1] = { fn = function() self.running = false; fn(0, "", args[2] .. " from com.apple.finder: /tmp") end }
             return self
         end
         return t
@@ -122,6 +125,17 @@ open-in: editor from com.apple.finder: /tmp
 open-in: chrome-tab from com.apple.finder: /tmp
 tasks 0
 alert Couldn't run /home/.hammerspoon/bin/open-in" "$RUN_OUTPUT" "the terminal, the editor, and the new tab"
+
+# A second new tab press while the first's open-in runs, as while Chrome starts, is dropped, so
+# there's one tab and one paste. Once it exits, a press runs open-in again.
+run_lua 'hotkeys["ctrl+alt+cmd+n"](); hotkeys["ctrl+alt+cmd+n"](); print_calls(); print("--"); flush()
+print_calls(); print("--"); hotkeys["ctrl+alt+cmd+n"]()'
+assert_eq "autoLaunch true
+task /bin/bash /home/.hammerspoon/bin/open-in chrome-tab as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
+--
+open-in: chrome-tab from com.apple.finder: /tmp
+--
+task /bin/bash /home/.hammerspoon/bin/open-in chrome-tab as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin" "$RUN_OUTPUT" "a second press"
 
 # A change to init.lua reloads; one to another file doesn't
 run_lua 'print(watchers[1].path)

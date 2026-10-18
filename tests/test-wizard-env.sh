@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # The wizard template's _existing and write_env read and replace whole .env assignments, including
-# quoted values that span several lines. write_env writes through a symlinked .env.
+# quoted values that span several lines. write_env replaces a symlinked .env's target, keeps the
+# file's mode, and leaves the old file whole when a write fails.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -90,6 +91,36 @@ ENV_FILE="$ENV_FILE.link" write_env ADDED 2 > /dev/null
 [ -L "$ENV_FILE.link" ] || fail "write_env replaced the symlinked .env with a file"
 assert_eq "KEEP=1${nl}ADDED=2" "$(cat "$SANDBOX/real.env")" "the symlink's target after write_env"
 assert_eq "$SANDBOX/real.env" "$(find "$SANDBOX/real.env" -perm 600)" "the target's mode after write_env"
+
+# A write that fails partway leaves the old .env whole, and no temp file beside it. awk and mv each
+# stand in for a write that fails.
+printf 'KEEP=1\n' > "$ENV_FILE"
+for broken in awk mv; do
+    eval "$broken() { return 1; }"
+    run write_env ADDED 2
+    unset -f "$broken"
+    assert_eq 1 "$RUN_STATUS" "write_env's status when $broken fails"
+    assert_eq "KEEP=1" "$(cat "$ENV_FILE")" ".env after $broken failed"
+    assert_eq "$ENV_FILE" "$(find "$SANDBOX" -maxdepth 1 -name '.env*' ! -name '*.link')" "files beside .env after $broken failed"
+done
+
+# The symlink's target is replaced, not the link, through a relative link to a relative link, and
+# a dangling link gets its target created
+chmod 640 "$SANDBOX/real.env"
+ENV_FILE="$ENV_FILE.link" write_env ADDED 3 > /dev/null
+[ -L "$ENV_FILE.link" ] || fail "write_env replaced the symlinked .env with a file"
+assert_eq "KEEP=1${nl}ADDED=3" "$(cat "$SANDBOX/real.env")" "the symlink's target after a second write_env"
+assert_eq "$SANDBOX/real.env" "$(find "$SANDBOX/real.env" -perm 640)" "the target's mode after a second write_env"
+mkdir "$SANDBOX/sub"
+ln -s ../.env.link "$SANDBOX/sub/.env"
+ENV_FILE="$SANDBOX/sub/.env" write_env ADDED 4 > /dev/null
+[ -L "$SANDBOX/sub/.env" ] && [ -L "$ENV_FILE.link" ] || fail "write_env replaced a link in a chain"
+assert_eq "KEEP=1${nl}ADDED=4" "$(cat "$SANDBOX/real.env")" "the chain's target after write_env"
+ln -s missing.env "$SANDBOX/dangling.env"
+ENV_FILE="$SANDBOX/dangling.env" write_env NEW 1 > /dev/null
+[ -L "$SANDBOX/dangling.env" ] || fail "write_env replaced a dangling .env link"
+assert_eq "NEW=1" "$(cat "$SANDBOX/missing.env")" "a dangling link's new target"
+assert_eq "$SANDBOX/missing.env" "$(find "$SANDBOX/missing.env" -perm 600)" "a dangling link's new target's mode"
 
 # A new .env is readable only by you; an existing one keeps its mode
 rm -f "$ENV_FILE"

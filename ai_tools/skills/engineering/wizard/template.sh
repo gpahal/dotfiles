@@ -236,21 +236,33 @@ _warn_env_not_ignored() {
 # any existing assignment, even one spanning lines), quoting VALUE with
 # dotenv_encode. Idempotent. Fails on a value dotenv_encode can't quote.
 write_env() {
-  local key="$1" value="$2" encoded tmp
+  local key="$1" value="$2" encoded target="$ENV_FILE" link hops=0 mode=600 tmp=""
   if ! encoded=$(dotenv_encode "$value"); then
     printf '  %s✗ %s has a newline or '"'"' along with a ", \\, or $, which %s can'"'"'t hold; not writing it%s\n' \
       "$RED" "$key" "$ENV_FILE" "$RESET" >&2
     return 1
   fi
   _warn_env_not_ignored
-  # A new .env holds secrets, so only you can read it; an existing one keeps its mode
-  [[ -e "$ENV_FILE" ]] || (umask 077; touch "$ENV_FILE")
-  tmp=$(mktemp)
-  awk -v mode=drop -v key="$key" "$_DOTENV_AWK" "$ENV_FILE" > "$tmp"
-  printf '%s=%s\n' "$key" "$encoded" >> "$tmp"
-  # Write through the file rather than replace it, so a symlinked .env and its mode survive
-  cat "$tmp" > "$ENV_FILE"
-  rm -f "$tmp"
+  # The new file goes beside the file a symlinked .env points at, and is moved onto it, so the link
+  # stays and a failed write leaves the old file whole. A new .env holds secrets, so only you can
+  # read it; an existing one keeps its mode. stat -c is GNU's, and -f BSD's. macOS's readlink -f
+  # fails on a missing or dangling target, so the links are followed one at a time.
+  while [[ -L "$target" ]] && (( hops++ < 40 )); do
+    link=$(readlink -- "$target") || break
+    [[ "$link" == /* ]] || link="$(dirname -- "$target")/$link"
+    target="$link"
+  done
+  if ! { [[ ! -L "$target" ]] &&
+    { [[ ! -e "$target" ]] || mode=$(stat -c %a "$target" 2>/dev/null || stat -f %Lp "$target"); } &&
+    tmp=$(mktemp "$target.XXXXXX") &&
+    { [[ ! -e "$target" ]] || awk -v mode=drop -v key="$key" "$_DOTENV_AWK" "$target"; } > "$tmp" &&
+    printf '%s=%s\n' "$key" "$encoded" >> "$tmp" &&
+    chmod "$mode" "$tmp" &&
+    mv -f "$tmp" "$target"; }; then
+    [[ -z "$tmp" ]] || rm -f "$tmp"
+    printf '  %s✗ couldn'"'"'t write %s to %s; left it unchanged%s\n' "$RED" "$key" "$ENV_FILE" "$RESET" >&2
+    return 1
+  fi
   WRITTEN_ENV+=("$key")
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
 }

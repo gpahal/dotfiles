@@ -76,7 +76,7 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"d@m\", \"scope\": \"managed\"}
 ]"'
 stub codex
-mkdir -p "$HOME/.vim/autoload" "$SANDBOX/tmp"
+mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
 # The tmux plugins are at their pins, from local repos in place of GitHub
 fake_tmux_plugins
@@ -88,15 +88,15 @@ chmod +x "$STUB_DIR/uname"
 echo Darwin > "$SANDBOX/uname-s"
 
 # Run upgrade as if on the given OS, with only the stubs and the system's base commands
-# on PATH, printing what ran, with the repo shown as REPO. TMPDIR puts the temp files in the sandbox on either OS. DOTFILES_DIR points elsewhere, since upgrade finds the Brewfile
-# from its own path.
+# on PATH, printing what ran, with the repo shown as REPO. DOTFILES_DIR points elsewhere, since
+# upgrade finds the Brewfile from its own path.
 upgrade_on() {
     : > "$STUB_LOG"
     case "$1" in
         darwin*) echo Darwin ;;
         *) echo Linux ;;
     esac > "$SANDBOX/uname-s"
-    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" TMPDIR="$SANDBOX/tmp" \
+    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" \
         "$BASH" -c 'source "$2/scripts/upgrade.sh"; OSTYPE=$1; upgrade' bash "$1" "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1 || {
         fail "upgrade failed on $1:"
         _show "$(cat "$SANDBOX/output")"
@@ -175,7 +175,7 @@ stub brew 'case "$*" in
     "list --cask"*) exit 1 ;;
 esac'
 assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with an App Store app missing"
-assert_eq "" "$(ls -A "$SANDBOX/tmp")" "files upgrade leaves in TMPDIR"
+assert_eq "" "$(ls -A "$TMPDIR")" "files upgrade leaves in TMPDIR"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
 # A cask with no app artifact, such as Logi Options+, which installs through an installer and quits

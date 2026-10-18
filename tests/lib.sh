@@ -27,9 +27,9 @@ TEST_DONE=false
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Point HOME, TMUX_TMPDIR, and WORKTREES_DIR at a new temp dir, unset the variables that would
-# send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos, put
-# $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
+# Point HOME, TMUX_TMPDIR, WORKTREES_DIR, and TMPDIR at a new temp dir, unset the variables that
+# would send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos,
+# put $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
 # sudo is stubbed to fail, as it does when not cached, so no test runs it for real, even on a CI
 # runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
 # failing sentinel (see _sentinels). Sets an EXIT trap that removes the
@@ -59,6 +59,11 @@ setup_sandbox() {
     # for the tmux plugins.
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
+    # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps
+    export TMPDIR="$SANDBOX/tmp"
+    # Set, so zsh/main.zsh and ~/.zprofile don't run the real brew's shellenv, and pointing
+    # nowhere, so they put no real Homebrew dir ahead of the stubs
+    export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
     # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
     # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
     # test to override them.
@@ -66,7 +71,7 @@ setup_sandbox() {
     mkdir -p "$APT_SOURCES_DIR"
     printf '%s\n' ID=ubuntu VERSION_ID='"26.04"' VERSION_CODENAME=resolute UBUNTU_CODENAME=resolute > "$OS_RELEASE"
     export STUB_DIR="$SANDBOX/stubs" STUB_LOG="$SANDBOX/stub.log"
-    mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$STUB_DIR"
+    mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$TMPDIR" "$STUB_DIR"
     : > "$STUB_LOG"
     _stubs_first
     # shellcheck disable=SC2086 # a list of names

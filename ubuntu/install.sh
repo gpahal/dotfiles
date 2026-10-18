@@ -204,7 +204,6 @@ ubuntu_sudo_items() {
     sudo_item "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
-    # status says how to turn them on
     sudo_item "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
         apt_timers_enabled enable_apt_timers
 }
@@ -308,11 +307,7 @@ status() {
     status_ups
     sudo_items_status locale_installed unattended_upgrades_running keep_conffiles_written
     status_held_back
-    if apt_timers_enabled; then
-        status_item ok "apt's daily timers enabled and running"
-    else
-        status_item missing "apt's daily timers enabled and running (run sudo systemctl enable --now ${APT_TIMERS[*]})"
-    fi
+    sudo_items_status apt_timers_enabled
     if [ -e "$REBOOT_REQUIRED" ]; then
         packages="$(reboot_packages)"
         status_item missing "Reboot pending for updates${packages:+: $packages}; reboot when no agent runs"
@@ -356,7 +351,7 @@ apply() {
         return 0
     fi
     local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false unchecked=""
+    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
@@ -424,14 +419,16 @@ apply() {
     # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
-    # With ufw on, configure_ufw only adds the allow rules
+    # With ufw on, configure_ufw only adds the rules
     if [ "$ufw" -eq 1 ] && ufw_enabled; then
-        pending+=("Firewall: add the missing ufw rules allowing SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+        ufw_todo="add the missing ufw rules"
     elif [ "$ufw" -eq 1 ]; then
-        pending+=("Firewall: install and enable ufw, denying incoming connections except SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+        ufw_todo="install and turn on ufw"
     elif [ "$ufw" -eq 2 ] && [ ${#pending[@]} -gt 0 ]; then
-        pending+=("Check the ufw rules for SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and add any that are missing")
+        ufw_todo="check the ufw rules, and add any that are missing"
     fi
+    [ -z "$ufw_todo" ] ||
+        pending+=("Firewall: $ufw_todo, so ufw denies incoming connections but SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denies SSH on Docker's bridges")
     while IFS=$'\t' read -r uuid name; do
         wired=true
         wake_on_lan_on "$uuid" && continue
@@ -440,15 +437,11 @@ apply() {
     done < <(wired_connections)
 
     if [ ${#pending[@]} -eq 0 ]; then
-        if [ "$ufw" -eq 0 ]; then
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, Tailscale, and the firewall"
-            echo "  are already set up."
-        else
-            unchecked="Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
-            [ -d "$SSHD_RUN_DIR" ] ||
-                unchecked="Its rules can't be checked until sshd has run, which the first SSH connection does."
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, and Tailscale are already set up."
-            echo "  ufw is on. $unchecked"
+        echo "  Everything it can check is already set up."
+        if [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ]; then
+            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
+        elif [ "$ufw" -ne 0 ]; then
+            echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
         fi
     elif confirm_sudo_changes "${pending[@]}"; then
         # Each part runs whether or not the one before it failed
@@ -480,7 +473,7 @@ apply() {
         fi
         # sudo is in use now, so the rules can be read
         if [ "$ufw" -ne 0 ]; then
-            setup_ufw || result=1
+            ensure_sshd_run_dir && { ufw_configured || configure_ufw; } || result=1
         fi
         for uuid in ${wol_pending[@]+"${wol_pending[@]}"}; do
             sudo nmcli connection modify uuid "$uuid" 802-3-ethernet.wake-on-lan magic || result=1
@@ -498,11 +491,7 @@ apply() {
     if command -v nmcli &>/dev/null && ! "$wired"; then
         echo "  No wired connection, so Wake-on-LAN is left off. It works only over Ethernet."
     fi
-    if [ -n "$key_only_todo" ]; then
-        echo "  Password logins stay on: ${key_only_todo%%. Copy*}. Copy your key over (ssh-copy-id <alias>"
-        echo "  from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale"
-        echo "  is up), SSH in with it, and re-run the step."
-    fi
+    [ -z "$key_only_todo" ] || echo "  Password logins stay on: $key_only_todo."
 
     # Signing in to Tailscale opens a link, so it's yours to do. SSH goes through OpenSSH on the
     # tailnet address: Tailscale SSH (--ssh) drops every session when tailscaled restarts, which

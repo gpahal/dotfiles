@@ -189,13 +189,13 @@ assert_not_contains "$RUN_OUTPUT" "sudo -v"
 no_prompting_sudo
 rules_missing
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules allowing SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp"
-assert_not_contains "$RUN_OUTPUT" "install and enable ufw"
+assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules, so ufw denies incoming connections but SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp, and denies SSH on Docker's bridges"
+assert_not_contains "$RUN_OUTPUT" "install and turn on ufw"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 # With ufw off, the step turns it on too
 ufw_off
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw, denying incoming connections"
+assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw, so ufw denies incoming connections"
 ufw_on
 
 # Something else pending and approved, credentials not cached: the rules are checked with sudo

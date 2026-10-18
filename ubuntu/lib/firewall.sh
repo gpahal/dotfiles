@@ -282,8 +282,8 @@ outside_ssh_peers() {
 # and fails while the SSH ports can't be read, or, to turn ufw on, while an SSH session comes from
 # outside the private ranges and the tailnet, which the firewall would cut off. With ufw already
 # on, it only adds the allow rules that are missing, which can't cut anyone off.
-# setup_ufw runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command
-# checks its own failure.
+# apply runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command checks
+# its own failure.
 configure_ufw() {
     local ports port range bridge outside="" on=false
     # ufw rejects every IPv6 rule while IPV6=no, so it would end up half set up. Before ufw is
@@ -334,12 +334,6 @@ configure_ufw() {
     sudo ufw --force enable > /dev/null || return 1
     # ufw enable loads the rules but leaves a stopped ufw.service stopped, which ufw_enabled checks
     sudo systemctl enable --now -q ufw.service
-}
-
-# Set up the firewall once sudo is in use
-setup_ufw() {
-    ensure_sshd_run_dir || return 1
-    ufw_configured || configure_ufw
 }
 
 # Print the status items for ufw: on, filtering IPv6, its rules, and any other rule that lets SSH

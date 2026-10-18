@@ -759,6 +759,17 @@ regex_escape() {
     printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g'
 }
 
+# wait_until_quit <pgrep option>... <pattern>: wait up to 10 seconds for no process to match, and
+# fail when one still does
+# e.g. wait_until_quit -x "Stream Deck"
+wait_until_quit() {
+    for _ in $(seq 1 20); do
+        pgrep "$@" &>/dev/null || return 0
+        sleep 0.5
+    done
+    return 1
+}
+
 # Quit a running app (after asking). Returns non-zero if it is still running.
 ensure_app_quit() {
     local app="$1" pattern
@@ -782,10 +793,7 @@ ensure_app_quit() {
         return 1
     fi
     osascript -e "quit app \"$app\""
-    for _ in $(seq 1 20); do
-        pgrep -ax "$pattern" &>/dev/null || return 0
-        sleep 0.5
-    done
+    wait_until_quit -ax "$pattern" && return 0
     echo "  $app did not quit; skipping."
     return 1
 }

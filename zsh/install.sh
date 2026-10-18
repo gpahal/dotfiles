@@ -1,51 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the zsh config and starship's config, hook them into ~/.zshrc and ~/.zprofile (and
-# ~/.zshenv and ~/.profile on Ubuntu), and make zsh the login shell.
+# Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and
+# ~/.zprofile (and ~/.zshenv and ~/.profile on Ubuntu), and make zsh the login shell.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+# One line in each startup file sources a file the step copies, so a change to what they set
+# reaches the machine with the copy.
 # shellcheck disable=SC2016 # lines written to files, expanded when zsh reads them
 ZSHRC_LINE='source $HOME/.zsh/main.zsh'
 # zsh/path.zsh sets up PATH for zsh. Login shells, which tools such as editors and agents start
 # (`zsh -lc`), read it from ~/.zprofile, after macOS's path_helper in /etc/zprofile has reordered
-# PATH. main.zsh sources it for interactive shells.
+# PATH. main.zsh sources it for interactive shells. On Ubuntu, ~/.zshenv sources it too, for a
+# command run directly over SSH (`ssh host codex`), which starts a zsh that reads only ~/.zshenv.
 # shellcheck disable=SC2016
-ZPROFILE_LINE='source $HOME/.zsh/path.zsh'
-# T3 Code's SSH connections check for claude and codex with `sh -lc`, which reads ~/.profile.
-# Add Homebrew, where codex lives, Cargo's and Go's dirs, and mise's shims, once mise has made
-# them, for its Node and Go. The desktop session reads it too, so apps opened from the dock, such
-# as Zed's language servers, find these tools. Ubuntu's ~/.profile adds ~/.local/bin before these
-# lines, which would leave it behind Homebrew, so add it again after: the same order as
-# zsh/path.zsh. The comment keeps the line from matching one already in the file, which
-# append_line would skip. Each dir goes in front even when PATH has it, as the PATH systemd gives
-# the desktop session does, since brew shellenv may have put Homebrew ahead of it. A login sh
-# started from another one adds them again, which changes nothing.
+PATH_ZSH_LINE='source $HOME/.zsh/path.zsh'
+# zsh/profile.sh sets up PATH for sh login shells and the desktop session on Ubuntu. It's appended
+# after Ubuntu's own ~/.local/bin lines, and puts ~/.local/bin first again. The check keeps a
+# missing copy from stopping sh, for which a failed . is fatal.
 # shellcheck disable=SC2016
-PROFILE_LINES=(
-    '[ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
-    'PATH="$HOME/go/bin:$PATH"'
-    'PATH="$HOME/.cargo/bin:$PATH"'
-    '[ ! -d "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" ] || PATH="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH"'
-    'PATH="$HOME/.local/bin:$PATH" # ahead of Homebrew'
-)
-# Ubuntu's /etc/zsh/zshrc runs a full compinit before ~/.zshrc reaches the once-a-day one in
-# zsh/basic-settings.zsh, unless ~/.zshenv sets skip_global_compinit. A command run directly over
-# SSH (`ssh host codex`) starts a zsh that reads only ~/.zshenv, so it sources zsh/path.zsh too.
-# shellcheck disable=SC2016
-ZSHENV_LINES=(
-    'skip_global_compinit=1'
-    "$ZPROFILE_LINE"
-)
+PROFILE_LINE='[ ! -r "$HOME/.zsh/profile.sh" ] || . "$HOME/.zsh/profile.sh"'
+
 # Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
 # or status_file to report it
 zsh_files() {
     local file status=0
     # File by file: ~/.zsh also holds the completion cache, which a fresh copy would wipe
-    for file in "$DOTFILES_DIR"/zsh/*.zsh; do
+    for file in "$DOTFILES_DIR"/zsh/*.zsh "$DOTFILES_DIR/zsh/profile.sh"; do
         "$1" "$file" "$HOME/.zsh/${file##*/}" || status=1
     done
     # starship reads ~/.config/starship.toml (or $STARSHIP_CONFIG), even when XDG_CONFIG_HOME is set
@@ -53,101 +37,17 @@ zsh_files() {
     return "$status"
 }
 
-# Succeeds when a file has each line in the given order, with any other lines between them. Only
-# each line's first copy counts. awk reads the lines from the environment, since -v would expand
-# backslashes in them.
-lines_in_order() {
-    local file="$1"
-    shift
-    [ -f "$file" ] || return 1
-    LINES="$(printf '%s\n' "$@")" awk '
-        BEGIN { n = split(ENVIRON["LINES"], want, "\n"); next_line = 1 }
-        {
-            for (i = 1; i <= n; i++) {
-                if ($0 != want[i] || (i in seen)) continue
-                seen[i] = 1
-                if (i != next_line) bad = 1
-                next_line = i + 1
-            }
-        }
-        END { for (i = 1; i <= n; i++) if (!(i in seen)) bad = 1; exit bad }
-    ' "$file"
-}
-
-# Insert a line right after the first copy of another line in a file, keeping its mode. awk reads
-# the lines from the environment, since -v would expand backslashes in them.
-insert_line_after() {
-    local file="$3" tmp
-    tmp="$(mktemp)" || return 1
-    if ! LINE="$1" AFTER="$2" awk '{ print } !done && $0 == ENVIRON["AFTER"] { print ENVIRON["LINE"]; done = 1 }' \
-        "$file" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    write_back "$tmp" "$file"
-}
-
-# Add the lines a file is missing, each right after the line before it in the list, or at the end
-# when that one is missing too, so lines another installer put between them stay where they are
-add_lines_in_order() {
-    local file="$1" line prev=""
-    shift
-    for line in "$@"; do
-        if ! has_line "$line" "$file"; then
-            if [ -n "$prev" ] && has_line "$prev" "$file"; then
-                insert_line_after "$line" "$prev" "$file" || return 1
-            else
-                append_line "$line" "$file" || return 1
-            fi
-        fi
-        prev="$line"
-    done
-}
-
-# Write the given lines in order where the first of them was, and drop their other copies. Every
-# other line stays as it was.
-# e.g. rewrite_lines_in_order ~/.profile "${PROFILE_LINES[@]}"
-rewrite_lines_in_order() {
-    local file="$1" tmp
-    shift
-    tmp="$(mktemp)" || return 1
-    if ! LINES="$(printf '%s\n' "$@")" awk '
-        BEGIN {
-            n = split(ENVIRON["LINES"], want, "\n")
-            for (i = 1; i <= n; i++) managed[want[i]] = 1
-        }
-        $0 in managed { if (!done) for (i = 1; i <= n; i++) print want[i]; done = 1; next }
-        { print }
-    ' "$file" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    write_back "$tmp" "$file"
-}
-
-# Add the lines a file is missing, keeping whatever else installers (e.g. OrbStack) put there,
-# then put the lines back in order where the first one was if they're out of order: appending
-# would leave Homebrew or mise's shims ahead of ~/.local/bin.
-# e.g. merge_lines ~/.profile "${PROFILE_LINES[@]}"
-merge_lines() {
-    local file="$1"
-    shift
-    add_lines_in_order "$file" "$@" || return 1
-    lines_in_order "$file" "$@" || rewrite_lines_in_order "$file" "$@"
-}
-
-# Add the lines a startup file is missing, in order, printing one message when it already had
-# them and another when it changed
-# e.g. setup_lines ~/.zprofile "  Already set up" "  Added the line" "$ZPROFILE_LINE"
-setup_lines() {
-    local file="$1" ok="$2" changed="$3"
-    shift 3
-    if lines_in_order "$file" "$@"; then
-        echo "$ok"
+# Add a line to a startup file unless it has it, and say which
+# e.g. setup_line ~/.zprofile path.zsh "$PATH_ZSH_LINE"
+setup_line() {
+    local file="$1" what="$2" line="$3" name
+    name='~'"${file#"$HOME"}"
+    if has_line "$line" "$file"; then
+        echo "  $name already sources $what"
         return 0
     fi
-    merge_lines "$file" "$@" || return 1
-    echo "$changed"
+    append_line "$line" "$file" || return 1
+    echo "  Added the $what source line to $name"
 }
 
 # Print the zsh to use as the login shell: apt's on Ubuntu and the system's on macOS, so the login
@@ -223,15 +123,13 @@ set_login_shell() {
 status() {
     zsh_files status_file
     status_check "main.zsh sourced in ~/.zshrc" has_line "$ZSHRC_LINE" "$HOME/.zshrc"
-    status_check "path.zsh sourced in ~/.zprofile" has_line "$ZPROFILE_LINE" "$HOME/.zprofile"
+    status_check "path.zsh sourced in ~/.zprofile" has_line "$PATH_ZSH_LINE" "$HOME/.zprofile"
     if is_ubuntu; then
-        status_check "Homebrew, Cargo, Go, mise, and ~/.local/bin in ~/.profile, in order" \
-            lines_in_order "$HOME/.profile" "${PROFILE_LINES[@]}"
-        status_check "skip_global_compinit and path.zsh in ~/.zshenv" \
-            lines_in_order "$HOME/.zshenv" "${ZSHENV_LINES[@]}"
+        status_check "path.zsh sourced in ~/.zshenv" has_line "$PATH_ZSH_LINE" "$HOME/.zshenv"
+        status_check "profile.sh sourced in ~/.profile" has_line "$PROFILE_LINE" "$HOME/.profile"
     else
-        status_item skipped "Homebrew, Cargo, Go, mise, and ~/.local/bin in ~/.profile: Ubuntu only"
-        status_item skipped "skip_global_compinit and path.zsh in ~/.zshenv: Ubuntu only"
+        status_item skipped "path.zsh sourced in ~/.zshenv: Ubuntu only"
+        status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"
     fi
     login_shell_status
     status_result
@@ -251,18 +149,12 @@ apply() {
     local status=0
     echo "Copying zsh and starship config..."
     zsh_files copy_file || status=1
-    echo "Setting up ~/.zshrc and ~/.zprofile..."
-    setup_lines "$HOME/.zshrc" "  ~/.zshrc already sources main.zsh" \
-        "  Added the main.zsh source line to ~/.zshrc" "$ZSHRC_LINE" || status=1
-    setup_lines "$HOME/.zprofile" "  ~/.zprofile already sources path.zsh" \
-        "  Added the path.zsh source line to ~/.zprofile" "$ZPROFILE_LINE" || status=1
+    echo "Setting up the startup files..."
+    setup_line "$HOME/.zshrc" main.zsh "$ZSHRC_LINE" || status=1
+    setup_line "$HOME/.zprofile" path.zsh "$PATH_ZSH_LINE" || status=1
     if is_ubuntu; then
-        setup_lines "$HOME/.profile" "  ~/.profile already sets up Homebrew, Cargo, Go, mise, and ~/.local/bin" \
-            "  Updated the Homebrew, Cargo, Go, mise, and ~/.local/bin lines in ~/.profile" \
-            "${PROFILE_LINES[@]}" || status=1
-        setup_lines "$HOME/.zshenv" "  ~/.zshenv already skips the global compinit and sources path.zsh" \
-            "  Updated the skip_global_compinit and path.zsh lines in ~/.zshenv" "${ZSHENV_LINES[@]}" ||
-            status=1
+        setup_line "$HOME/.zshenv" path.zsh "$PATH_ZSH_LINE" || status=1
+        setup_line "$HOME/.profile" profile.sh "$PROFILE_LINE" || status=1
     fi
     set_login_shell || status=1
     return "$status"

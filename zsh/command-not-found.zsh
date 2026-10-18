@@ -19,8 +19,8 @@ if [[ $OSTYPE == linux* ]]; then
         fi
         return 127
     }
-# Homebrew's handler suggests the formula that provides an unknown command. brew shellenv sets
-# HOMEBREW_REPOSITORY; skip the handler without it.
+# Homebrew's handler suggests the formula that provides an unknown command. path.zsh sets
+# HOMEBREW_REPOSITORY, as brew shellenv does; skip the handler without it.
 elif [[ -n ${HOMEBREW_REPOSITORY:-} ]]; then
     HOMEBREW_COMMAND_NOT_FOUND_HANDLER="$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
     if [ -f "$HOMEBREW_COMMAND_NOT_FOUND_HANDLER" ]; then

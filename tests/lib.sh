@@ -4,9 +4,10 @@
 # the end. Bash 3.2.
 #
 # setup_sandbox gives the test a temp HOME and puts a failing sentinel first on PATH for each
-# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A test that
-# lacks a tool it needs calls skip. tests/run.sh runs each test and says how skips and timeouts
-# count.
+# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
+# runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
+# test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
+# calls skip. tests/run.sh runs each test and says how skips and timeouts count.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

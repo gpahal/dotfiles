@@ -573,7 +573,7 @@ _copy_and_record() {
 # matches, executable bit included, is left alone, and recorded if it isn't yet: a later run would
 # take an unrecorded file for an edit, so failing to record it fails.
 _copy_file() {
-    local mode="$1" src="$2" dest="$3"
+    local mode="$1" src="$2" dest="$3" how
     if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
         installed_unedited "$dest" || record_installed "$dest" || return 1
         echo "  $dest is already up to date"
@@ -582,8 +582,9 @@ _copy_file() {
     # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
     if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
         if [ "$mode" != ask ]; then
-            maybe_backup "$dest" yes \
-                "  $dest was changed since setup installed it, and will be replaced. Back it up to {} first?" ||
+            how="exists and differs from the repo's copy"
+            [ -z "$(recorded_sha256 "$dest")" ] || how="was changed since setup installed it"
+            maybe_backup "$dest" yes "  $dest $how, and will be replaced. Back it up to {} first?" ||
                 return 1
         # An empty file holds nothing to merge, so it's replaced without asking
         elif [ -s "$dest" ]; then

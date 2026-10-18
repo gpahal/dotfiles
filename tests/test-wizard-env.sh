@@ -83,7 +83,7 @@ done
 printf '%s\n' 'TOKEN="old # literal" # note' > "$ENV_FILE"
 assert_eq 'old # literal' "$(_existing TOKEN)" "quoted hash preserved"
 
-# A symlinked .env is written through, so the link and its target's mode stay
+# A symlinked .env's target is replaced, so the link and the target's mode stay
 printf 'KEEP=1\n' > "$SANDBOX/real.env"
 chmod 600 "$SANDBOX/real.env"
 ln -s real.env "$ENV_FILE.link"
@@ -103,6 +103,24 @@ for broken in awk mv; do
     assert_eq "KEEP=1" "$(cat "$ENV_FILE")" ".env after $broken failed"
     assert_eq "$ENV_FILE" "$(find "$SANDBOX" -maxdepth 1 -name '.env*' ! -name '*.link')" "files beside .env after $broken failed"
 done
+
+# A signal during the write removes the temp file, which holds the secrets, and leaves the old
+# .env whole. mv stands in for the write the signal interrupts. A trap of the wizard's own is
+# back in place after a write.
+printf 'KEEP=1\n' > "$ENV_FILE"
+for sig in INT TERM HUP; do
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    run "$BASH" -c 'sig="$3"; source "$1"; ENV_FILE="$2"; mv() { kill -s "$sig" "$$"; }; write_env ADDED 2' \
+        _ "$SANDBOX/wizard-lib.sh" "$ENV_FILE" "$sig"
+    [ "$RUN_STATUS" -gt 128 ] || fail "write_env's status on $sig is $RUN_STATUS"
+    assert_eq "KEEP=1" "$(cat "$ENV_FILE")" ".env after $sig"
+    assert_eq "$ENV_FILE" "$(find "$SANDBOX" -maxdepth 1 -name '.env*' ! -name '*.link')" "files beside .env after $sig"
+done
+trap 'echo own' TERM
+write_env ADDED 2 > /dev/null
+assert_eq "trap -- 'echo own' SIGTERM" "$(trap -p TERM)" "the wizard's own trap after write_env"
+assert_eq "" "$(trap -p INT HUP)" "the INT and HUP traps after write_env"
+trap - TERM
 
 # The symlink's target is replaced, not the link, through a relative link to a relative link, and
 # a dangling link gets its target created

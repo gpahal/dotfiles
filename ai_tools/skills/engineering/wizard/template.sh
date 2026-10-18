@@ -232,11 +232,27 @@ _warn_env_not_ignored() {
   warn "$ENV_FILE isn't gitignored; add it to .gitignore before committing"
 }
 
+# The temp file write_env is writing, and the INT, TERM, and HUP traps it
+# replaced while it does
+_ENV_TMP=""
+_ENV_SAVED_TRAPS=""
+
+# On a signal while write_env writes, remove its temp file, which holds every
+# secret and which a .gitignore entry for .env doesn't cover. Then restore the
+# wizard's own traps and send the signal again, for them or the default.
+_env_tmp_signal() {
+  [[ -z "$_ENV_TMP" ]] || rm -f "$_ENV_TMP"
+  trap - INT TERM HUP
+  eval "$_ENV_SAVED_TRAPS"
+  kill -s "$1" "$$"
+}
+
 # write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it; replaces
 # any existing assignment, even one spanning lines), quoting VALUE with
-# dotenv_encode. Idempotent. Fails on a value dotenv_encode can't quote.
+# dotenv_encode. Idempotent. Fails on a value dotenv_encode can't quote, and
+# when the write fails, leaving ENV_FILE unchanged.
 write_env() {
-  local key="$1" value="$2" encoded target="$ENV_FILE" link hops=0 mode=600 tmp=""
+  local key="$1" value="$2" encoded target="$ENV_FILE" link hops=0 mode=600 status=0
   if ! encoded=$(dotenv_encode "$value"); then
     printf '  %s✗ %s has a newline or '"'"' along with a ", \\, or $, which %s can'"'"'t hold; not writing it%s\n' \
       "$RED" "$key" "$ENV_FILE" "$RESET" >&2
@@ -252,14 +268,24 @@ write_env() {
     [[ "$link" == /* ]] || link="$(dirname -- "$target")/$link"
     target="$link"
   done
-  if ! { [[ ! -L "$target" ]] &&
+  _ENV_SAVED_TRAPS=$(trap -p INT TERM HUP)
+  _ENV_TMP=""
+  trap '_env_tmp_signal INT' INT
+  trap '_env_tmp_signal TERM' TERM
+  trap '_env_tmp_signal HUP' HUP
+  { [[ ! -L "$target" ]] &&
     { [[ ! -e "$target" ]] || mode=$(stat -c %a "$target" 2>/dev/null || stat -f %Lp "$target"); } &&
-    tmp=$(mktemp "$target.XXXXXX") &&
-    { [[ ! -e "$target" ]] || awk -v mode=drop -v key="$key" "$_DOTENV_AWK" "$target"; } > "$tmp" &&
-    printf '%s=%s\n' "$key" "$encoded" >> "$tmp" &&
-    chmod "$mode" "$tmp" &&
-    mv -f "$tmp" "$target"; }; then
-    [[ -z "$tmp" ]] || rm -f "$tmp"
+    _ENV_TMP=$(mktemp "$target.XXXXXX") &&
+    { [[ ! -e "$target" ]] || awk -v mode=drop -v key="$key" "$_DOTENV_AWK" "$target"; } > "$_ENV_TMP" &&
+    printf '%s=%s\n' "$key" "$encoded" >> "$_ENV_TMP" &&
+    chmod "$mode" "$_ENV_TMP" &&
+    mv -f "$_ENV_TMP" "$target" &&
+    _ENV_TMP=""; } || status=1
+  [[ -z "$_ENV_TMP" ]] || rm -f "$_ENV_TMP"
+  _ENV_TMP=""
+  trap - INT TERM HUP
+  eval "$_ENV_SAVED_TRAPS"
+  if [[ "$status" -ne 0 ]]; then
     printf '  %s✗ couldn'"'"'t write %s to %s; left it unchanged%s\n' "$RED" "$key" "$ENV_FILE" "$RESET" >&2
     return 1
   fi

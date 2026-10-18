@@ -106,14 +106,17 @@ watchdog() {
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 
-# Remove test $1's HOME and TMUX_TMPDIR, stopping a tmux server it left running there
+# Remove test $1's HOME, TMUX_TMPDIR, and sandbox, which the test's EXIT trap removes unless the
+# watchdog had to SIGKILL it, stopping any tmux server it left running there
 clean_test_dirs() {
-    local dir="$tmp/$1"
-    if [ -n "$(/bin/ls -A "$dir/tmux" 2>/dev/null)" ] && command -v tmux &>/dev/null; then
-        TMUX_TMPDIR="$dir/tmux" tmux kill-server &>/dev/null
+    local dir="$tmp/$1" sock
+    if command -v tmux &>/dev/null; then
+        for sock in "$dir"/tmux/tmux-*/* "$dir"/dotfiles-test.*/tmux/tmux-*/*; do
+            [ ! -S "$sock" ] || tmux -S "$sock" kill-server &>/dev/null
+        done
     fi
-    chmod -R u+w "$dir/home" "$dir/tmux" 2>/dev/null
-    rm -rf "${dir:?}/home" "${dir:?}/tmux"
+    chmod -R u+w "$dir/home" "$dir/tmux" "$dir"/dotfiles-test.* 2>/dev/null
+    rm -rf "${dir:?}/home" "${dir:?}/tmux" "${dir:?}"/dotfiles-test.*
 }
 
 # Run test $2 as number $1 in $tmp/$1, leaving its output in output and, last, its exit status in
@@ -123,7 +126,8 @@ run_test() {
     # A worker is a subshell, which mustn't run the runner's cleanup when it exits
     trap - EXIT
     mkdir "$dir/home" "$dir/tmux"
-    export HOME="$dir/home" TMUX_TMPDIR="$dir/tmux"
+    # setup_sandbox makes the sandbox in TEST_SANDBOX_PARENT
+    export HOME="$dir/home" TMUX_TMPDIR="$dir/tmux" TEST_SANDBOX_PARENT="$dir"
     if ! "$BASH" -n "$t" > "$dir/output" 2>&1; then
         status=2
     else

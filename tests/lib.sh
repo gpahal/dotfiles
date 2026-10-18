@@ -38,8 +38,10 @@ source "$TESTS_DIR/sentinels.sh"
 setup_sandbox() {
     local var
     # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
-    # /tmp to /private/tmp there, so paths the steps print match $HOME.
-    SANDBOX="$(cd -P "$(mktemp -d /tmp/dotfiles-test.XXXXXX)" && pwd)"
+    # /tmp to /private/tmp there, so paths the steps print match $HOME. tests/run.sh sets
+    # TEST_SANDBOX_PARENT to the test's own dir under /tmp, which it removes even when its
+    # watchdog SIGKILLs the test before the EXIT trap can.
+    SANDBOX="$(cd -P "$(mktemp -d "${TEST_SANDBOX_PARENT:-/tmp}/dotfiles-test.XXXXXX")" && pwd)"
     trap _sandbox_exit EXIT
     # GIT_* covers what a git hook, a worktree, or `git -c` exports: GIT_DIR and GIT_WORK_TREE
     # would point the steps' git at the real repo, and GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT,
@@ -102,7 +104,7 @@ _sandbox_exit() {
     # A tmux server a test started lives on after its socket's directory is gone
     _stop_tmux_servers
     case "${SANDBOX:-}" in
-        /tmp/dotfiles-test.* | /private/tmp/dotfiles-test.*)
+        */dotfiles-test.*)
             chmod -R u+w "$SANDBOX" 2>/dev/null || true
             rm -rf "$SANDBOX"
             ;;

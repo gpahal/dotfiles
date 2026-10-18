@@ -50,14 +50,29 @@ stub eza
 touch "$WORK/main.go" "$WORK/main_test.go"
 checks='echo loaded; print -r -- main^; [[ -o extendedglob ]] && echo extendedglob-on
 print -r -- "mise=$(whence -p mise)"; for a in l la ll lla; do alias $a; done; true'
+# Succeeds when stdin holds an error zsh printed. The shell runs the real starship, atuin, and
+# zoxide, whose stderr once failed the check under a parallel test run, so only zsh's own errors
+# count. zsh starts each with where it ran: "<file or function>:<line>:", as in "zsh:1:",
+# "(eval):2:", "$HOME/.zprofile:1:", or "_cached_init:3:", but "<function>:" alone for a command
+# not found in a function, and "zsh:" alone for one typed at the prompt.
+zsh_errors() {
+    grep -qE -e '^[^ :]+:[0-9]+: ' -e '^[^ :]+: command not found: ' -e '^zsh:' -e "$HOME/\.z"
+}
+for line in "zsh:1: command not found: nocmd" "zsh: command not found: nocmd" \
+    "_cached_init: command not found: nocmd" "_cached_init:4: parse error near \`)'" \
+    "$HOME/.zprofile:1: command not found: nocmd" "(eval):3: command not found: nocmd" \
+    "$HOME/.zsh/main.zsh:12: no such file or directory: x"; do
+    zsh_errors <<< "$line" || fail "zsh_errors missed: $line"
+done
+for line in "Error: database is locked" "[WARN] - (starship::config): bad key" \
+    "thread 'main' panicked at src/main.rs:12:5:" "zoxide: warning: no match found"; do
+    ! zsh_errors <<< "$line" || fail "zsh_errors counted a tool's output: $line"
+done
 for term in xterm-256color dumb; do
     output="$(in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
     assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
-    # The shell runs the real starship, atuin, and zoxide, whose stderr once failed this check
-    # under a parallel test run, so only zsh's own errors fail it: those name the config file, or,
-    # for a command not found, start with "zsh:"
-    if grep -qE -e "^zsh:" -e "$HOME/\.zsh" "$ERR"; then
+    if zsh_errors < "$ERR"; then
         fail "the zsh config printed an error with TERM=$term:"
         _show "$(cat "$ERR")"
     fi

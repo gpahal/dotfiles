@@ -133,27 +133,21 @@ ufw_ports_include() {
     return 1
 }
 
-# Succeeds for a rule's source inside the private ranges: one of $SSH_RANGES, or a private address
-# or a range of them no wider than those, /16 or narrower for IPv4 and /10 for IPv6
+# Succeeds for a rule's source inside the private ranges: an address in one of $SSH_RANGES, or a
+# range of them no wider than the one it's in, such as 10.0.0.0/12 inside 10.0.0.0/8
 private_source() {
-    local range bits
-    for range in "${SSH_RANGES[@]}"; do
-        [ "$1" != "$range" ] || return 0
-    done
+    local bits floor
     case "$1" in
         Anywhere) return 1 ;;
         */*) bits="${1##*/}" ;;
         *) bits=128 ;;
     esac
-    [[ "$bits" =~ ^[0-9]+$ ]] && private_address "${1%/*}" || return 1
-    case "$1" in
-        *:*) [ "$bits" -ge 10 ] ;;
-        *) [ "$bits" -ge 16 ] ;;
-    esac
+    [[ "$bits" =~ ^[0-9]+$ ]] && floor="$(private_prefix "${1%/*}")" && [ "$bits" -ge "$floor" ]
 }
 
-# Succeeds for an IPv4 or IPv6 address in one of the private ranges in $SSH_RANGES
-private_address() {
+# Print the prefix length of the range in $SSH_RANGES that an IPv4 or IPv6 address is in, or fail
+# when it's in none
+private_prefix() {
     local a b hextet
     case "$1" in
         *:*)
@@ -161,13 +155,28 @@ private_address() {
             # fe8 to feb
             hextet="0000${1%%:*}"
             hextet="${hextet:${#hextet}-4}"
-            case "$hextet" in fd?? | fe[89ab]?) return 0 ;; esac
-            return 1
+            case "$hextet" in
+                fd??) echo 8 ;;
+                fe[89ab]?) echo 10 ;;
+                *) return 1 ;;
+            esac
+            return 0
             ;;
     esac
     IFS=. read -r a b _ <<< "$1"
     [[ "$a" =~ ^[0-9]+$ ]] && [[ "$b" =~ ^[0-9]+$ ]] || return 1
-    [ "$a" -eq 10 ] || { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
+    if [ "$a" -eq 10 ]; then
+        echo 8
+    elif [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; then
+        echo 16
+    else
+        return 1
+    fi
+}
+
+# Succeeds for an IPv4 or IPv6 address in one of the private ranges in $SSH_RANGES
+private_address() {
+    private_prefix "$1" > /dev/null
 }
 
 # Succeeds for an address the firewall would cut off: outside the private ranges, and not reached

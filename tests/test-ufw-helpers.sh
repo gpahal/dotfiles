@@ -74,10 +74,14 @@ wanted_rules() {
         "Anywhere (v6) on tailscale0 ALLOW       Anywhere (v6)" \
         "41641/udp (v6)             ALLOW       Anywhere (v6)"
 }
-# Only the wanted rules, a narrower private range, and other ports: none
+# Only the wanted rules, narrower ranges inside each private one, and other ports: none
 {
     wanted_rules
     printf '%s\n' "22/tcp                     ALLOW       192.168.1.0/24" \
+        "22/tcp                     ALLOW       10.0.0.0/12" \
+        "22/tcp                     ALLOW       10.1.2.3" \
+        "22/tcp                     ALLOW       fd00::/9" \
+        "22/tcp                     ALLOW       fe80::/64" \
         "80/tcp                     ALLOW       Anywhere" \
         "22/udp                     ALLOW       Anywhere" \
         "22/tcp                     ALLOW OUT   Anywhere" \
@@ -96,7 +100,10 @@ assert_eq "" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules among the wanted o
         "Anywhere                   ALLOW       203.0.113.9" \
         "22                         ALLOW       10.0.0.0/7" \
         "192.168.1.5 22/tcp on eth0 ALLOW       Anywhere" \
-        "22/tcp                     ALLOW       172.16.0.0/12"
+        "22/tcp                     ALLOW       172.16.0.0/12" \
+        "22/tcp                     ALLOW       192.168.0.0/15" \
+        "22/tcp                     ALLOW       fd00::/7" \
+        "22/tcp                     ALLOW       fe80::/9"
 } > "$SANDBOX/ufw-rules"
 assert_eq "22/tcp ALLOW Anywhere
 22/tcp (v6) ALLOW Anywhere (v6)
@@ -106,7 +113,10 @@ OpenSSH LIMIT Anywhere
 Anywhere ALLOW 203.0.113.9
 22 ALLOW 10.0.0.0/7
 192.168.1.5 22/tcp on eth0 ALLOW Anywhere
-22/tcp ALLOW 172.16.0.0/12" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
+22/tcp ALLOW 172.16.0.0/12
+22/tcp ALLOW 192.168.0.0/15
+22/tcp ALLOW fd00::/7
+22/tcp ALLOW fe80::/9" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
 # Unreadable rules or SSH ports fail it
 stub ufw 'exit 1'
 assert_exit 1 ufw_broad_ssh_rules -n

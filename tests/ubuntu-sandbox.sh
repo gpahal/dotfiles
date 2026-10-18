@@ -14,6 +14,7 @@ ubuntu_sandbox_paths() {
     # sbin_cmd's system dirs, so sysctl, smartctl, and ufw come from the stubs, or are missing
     SBIN_PATH="$STUB_DIR"
     SSHD_DROP_IN="$SANDBOX/sshd_config.d/10-dotfiles.conf"
+    SSHD_CONFIG="$SANDBOX/sshd_config"
     SSHD_RUN_DIR="$SANDBOX/run-sshd"
     SSHD_BIN="$STUB_DIR/sshd"
     SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"

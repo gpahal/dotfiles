@@ -33,6 +33,8 @@ apply() {
         return 0
     fi
     confirm_sudo_changes "Install Solaar from Ubuntu's universe" || return 0
+    # Stale lists can name a version the mirror no longer has
+    apt_get_update || return 1
     apt_get install -y solaar || return 1
     # It installs udev rules that give your desktop session access to Logitech receivers
     echo "  Applied. Solaar starts with your desktop session. Reconnect a receiver to see it there."

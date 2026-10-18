@@ -119,6 +119,10 @@ Status: active
 
 To                         Action      From
 --                         ------      ----
+22/tcp on docker0          DENY        Anywhere
+22/tcp (v6) on docker0     DENY        Anywhere (v6)
+22/tcp on br-+             DENY        Anywhere
+22/tcp (v6) on br-+        DENY        Anywhere (v6)
 22/tcp                     ALLOW       10.0.0.0/8
 22/tcp                     ALLOW       192.168.0.0/16
 22/tcp                     ALLOW       fd00::/8
@@ -198,6 +202,8 @@ chmod 644 "$SSHD_DROP_IN"
 
 # The docker step: a daemon.json only root can read
 load_script docker/install.sh
+# No containerd shim runs, so a stopped daemon runs no containers
+stub pgrep 'exit 1'
 is_macos() { false; }
 # Docker's packages are installed
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'

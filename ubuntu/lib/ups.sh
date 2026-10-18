@@ -31,18 +31,9 @@ ups_plugged() {
         END { flush() }' | sort -u
 }
 
-# Print a file in $NUT_DIR, reading it with sudo -n when only root can read it, which works only
-# while sudo credentials are cached. Prints nothing when it's missing, and fails when it can't be
-# read.
+# Print a file in $NUT_DIR, with sudo -n when only root can read it (read_root_file)
 nut_read() {
-    local file="$NUT_DIR/$1"
-    if [ ! -e "$file" ]; then
-        return 0
-    elif [ -r "$file" ]; then
-        cat "$file"
-    else
-        sudo -n cat "$file" 2>/dev/null
-    fi
+    read_root_file "$NUT_DIR/$1" -n
 }
 
 # Print the value of a key in a section of NUT's ini-style files, without its quotes
@@ -202,11 +193,11 @@ ups_services_active() {
 # The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
 # installed with it
 ups_notifier_installed() {
-    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB"
+    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
 install_ups_notifier() {
-    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB"
+    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
@@ -219,14 +210,20 @@ ups_configured_for() {
     nut_files_current
 }
 
+# Ubuntu's NUT units are wanted by nut.target, which multi-user.target wants once it's enabled. With
+# it disabled, the services run now but not after a reboot.
+nut_target_enabled() {
+    systemctl is-enabled -q nut.target 2>/dev/null
+}
+
 # Succeeds when NUT watches a plugged-in UPS: it's set up for it, upsd answers for it, the services
-# run, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
+# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
 # against it, so a run without cached credentials doesn't ask for sudo only to read them.
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?
     [ "$configured" -ne 1 ] && ups_notifier_installed && ups_rtc_hook_installed &&
-        ups_services_active && upsc_value ups.status > /dev/null
+        ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
 }
 
 # Set UPS_STATE to the UPS part's state: vm, nohwdb (upower's hwdb, which tells a UPS, is
@@ -257,7 +254,7 @@ ups_todo() {
     ups_state
     [ "$UPS_STATE" == plugged ] || return 0
     ids="$(join_lines ', ' <<< "$UPS_PLUGGED")"
-    what="write ${NUT_FILES[*]} in $NUT_DIR, install the notifier $UPS_NOTIFY and the RTC wake hook $UPS_RTC_HOOK, and start nut-server and nut-monitor"
+    what="write ${NUT_FILES[*]} in $NUT_DIR, install the notifier $UPS_NOTIFY and the RTC wake hook $UPS_RTC_HOOK, and start nut-server and nut-monitor, now and at boot"
     if ! nut_installed; then
         echo "UPS: install nut-client and nut-server, and set up NUT for the UPS on USB ($ids): $what"
     elif ! ups_ready "$UPS_PLUGGED"; then
@@ -292,6 +289,7 @@ restart_nut() {
 # differ
 setup_ups() {
     local scan driver vendor product password file content changed=false notifier=false rtc=false
+    local target=false
     if ! nut_installed; then
         apt_get install -y "${NUT_PACKAGES[@]}" || return 1
         # nut-server's udev rules give the nut group the UPS, but its postinst re-runs udev only
@@ -323,7 +321,8 @@ setup_ups() {
         install_ups_rtc_hook || return 1
         rtc=true
     fi
-    sudo systemctl enable "${NUT_UNITS[@]}" || return 1
+    nut_target_enabled || target=true
+    sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
         echo "  NUT watches the UPS on USB ($vendor:$product) with $driver, and shuts the machine down on"
@@ -338,6 +337,8 @@ setup_ups() {
         echo "  Updated the UPS notifier, $UPS_NOTIFY."
     elif "$rtc"; then
         echo "  Installed the RTC wake hook, $UPS_RTC_HOOK."
+    elif "$target"; then
+        echo "  Enabled nut.target, so NUT starts at boot."
     else
         echo "  NUT is already set up for the UPS on USB ($vendor:$product)."
     fi
@@ -349,7 +350,8 @@ status_ups() {
     ups_state
     case "$UPS_STATE" in
         vm) status_item skipped "$label: this is a VM" ;;
-        nohwdb) status_item unknown "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
+        # Information: a machine without upower may have no UPS, and the daily alert would nag
+        nohwdb) status_item info "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
         noudev) status_item unknown "$label: can't tell whether a UPS is on USB, since udevadm info --export-db failed" ;;
         none) status_item skipped "$label: no UPS on USB; plug in the UPS's USB cable and re-run the ubuntu step" ;;
     esac
@@ -377,6 +379,7 @@ status_ups() {
         status_item missing "upsd answers for $UPS_NAME@localhost (upsc $UPS_NAME@localhost)"
     fi
     status_check "nut-server and nut-monitor running" ups_services_active
+    status_check "nut.target enabled, so NUT starts at boot" nut_target_enabled
     if ups_notifier_installed; then
         status_item ok "UPS events pushed to ntfy ($UPS_NOTIFY)"
     else

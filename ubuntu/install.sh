@@ -44,6 +44,8 @@ source "$UBUNTU_LIB_DIR/paths.sh"
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
 # Sorts before 50-cloud-init.conf: sshd keeps the first value it reads for most settings
 SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
+# sshd's own config, whose Match Address lines the step reads, to check sshd's settings for them
+SSHD_CONFIG=/etc/ssh/sshd_config
 # sshd -t and -T need this directory, which ssh.service creates, and Ubuntu only starts that
 # service on the first connection
 SSHD_RUN_DIR=/run/sshd
@@ -132,9 +134,16 @@ Dpkg::Options {
 };'
 # The private address ranges ufw lets SSH in from: RFC 1918's, IPv6's unique local addresses, and
 # link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules. RFC 1918's
-# 172.16.0.0/12 is left out: the docker step limits Docker's address pools to 172.17.0.0/16 to
+# 172.16.0.0/12 is left out: the docker step keeps Docker's address pools in 172.17.0.0/16 to
 # 172.31.0.0/16, so allowing it would let any container try logins on sshd.
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
+# The tailnet's addresses, Tailscale's CGNAT range
+TAILNET_RANGE=100.64.0.0/10
+# Docker's bridges: the default one, and each user-defined network's br-<ID>, which ufw's + matches.
+# A bridge given its own name, or Swarm's docker_gwbridge, isn't among them.
+# ufw denies SSH on them ahead of the allow rules, since a network created with an explicit
+# subnet, or with IPv6, gives containers addresses in $SSH_RANGES.
+DOCKER_BRIDGES=(docker0 br-+)
 # ufw's settings, which anyone may read: whether it's on, and its default policy and IPv6 setting
 UFW_CONF=/etc/ufw/ufw.conf
 UFW_DEFAULTS=/etc/default/ufw
@@ -165,18 +174,32 @@ ubuntu_root_files() {
     "$1" "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
-# root_copy_current <src> <dest>: succeeds when a file installed as root is a copy of the repo's,
-# executable when the repo's is
+# root_copy_current <src> <dest> <mode>: succeeds when a file installed as root is a copy of the
+# repo's, and executable when the mode is 0755. The mode is fixed, not the repo file's, since a
+# checkout can lose its exec bits, and run-parts skips a hook that isn't executable.
 root_copy_current() {
-    cmp -s "$1" "$2" && { [ ! -x "$1" ] || [ -x "$2" ]; }
+    cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
 }
 
-# install_root_copy <src> <dest>: install a copy of the repo's file as root's, 755 when the repo's
-# is executable and 644 otherwise, unless it's already current
+# read_root_file <file> [-n]: print a file the step installs as root, through sudo when only root
+# can read it, with -n through sudo -n, which works only while credentials are cached. Prints
+# nothing when it's missing, and fails when it can't be read.
+read_root_file() {
+    if [ ! -e "$1" ]; then
+        return 0
+    elif [ -r "$1" ]; then
+        cat "$1"
+    elif [ "${2:-}" == -n ]; then
+        sudo -n cat "$1" 2>/dev/null
+    else
+        sudo cat "$1"
+    fi
+}
+
+# install_root_copy <src> <dest> <mode>: install a copy of the repo's file as root's, with the
+# mode, unless it's already current
 install_root_copy() {
-    local mode=0644
-    [ ! -x "$1" ] || mode=0755
-    root_copy_current "$1" "$2" || install_root_file "$1" "$2" "$mode"
+    root_copy_current "$@" || install_root_file "$@"
 }
 
 # Add the step's simple sudo items, which status and apply drive by their check functions. The
@@ -200,7 +223,6 @@ ubuntu_sudo_items() {
     sudo_item "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
-    # status says how to turn them on
     sudo_item "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
         apt_timers_enabled enable_apt_timers
 }
@@ -302,8 +324,11 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    sudo_items_status locale_installed unattended_upgrades_running keep_conffiles_written
+    sudo_items_status locale_installed
+    status_unattended_upgrades
+    sudo_items_status keep_conffiles_written
     status_held_back
+    # The sudo_item's text, with the command that turns them on
     if apt_timers_enabled; then
         status_item ok "apt's daily timers enabled and running"
     else
@@ -352,7 +377,7 @@ apply() {
         return 0
     fi
     local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false unchecked=""
+    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
@@ -389,7 +414,16 @@ apply() {
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    sudo_items_pending locale_installed unattended_upgrades_running keep_conffiles_written apt_timers_enabled
+    # Only root can read the settings, and apt-config skips them as you: checked with sudo only
+    # when other changes need it, as the ufw rules are
+    local auto_upgrades_unchecked=false
+    sudo_items_pending locale_installed
+    if auto_upgrades_unreadable && ! sudo_cached; then
+        auto_upgrades_unchecked=true
+    else
+        sudo_items_pending unattended_upgrades_running
+    fi
+    sudo_items_pending keep_conffiles_written apt_timers_enabled
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
@@ -420,32 +454,34 @@ apply() {
     # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
-    # With ufw on, configure_ufw only adds the allow rules
+    # With ufw on, configure_ufw only adds the rules that are missing or out of place
     if [ "$ufw" -eq 1 ] && ufw_enabled; then
-        pending+=("Firewall: add the missing ufw rules allowing SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+        ufw_todo="add the missing ufw rules"
     elif [ "$ufw" -eq 1 ]; then
-        pending+=("Firewall: install and enable ufw, denying incoming connections except SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+        ufw_todo="install and turn on ufw"
     elif [ "$ufw" -eq 2 ] && [ ${#pending[@]} -gt 0 ]; then
-        pending+=("Check the ufw rules for SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and add any that are missing")
+        ufw_todo="check the ufw rules, and add any that are missing"
     fi
+    [ -z "$ufw_todo" ] ||
+        pending+=("Firewall: $ufw_todo, so ufw denies incoming connections but SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denies SSH on Docker's bridges")
     while IFS=$'\t' read -r uuid name; do
         wired=true
         wake_on_lan_on "$uuid" && continue
         wol_pending+=("$uuid")
         pending+=("Wake-on-LAN: set 802-3-ethernet.wake-on-lan to magic on \"$name\"")
     done < <(wired_connections)
+    ! "$auto_upgrades_unchecked" || [ ${#pending[@]} -eq 0 ] ||
+        pending+=("Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off")
 
     if [ ${#pending[@]} -eq 0 ]; then
-        if [ "$ufw" -eq 0 ]; then
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, Tailscale, and the firewall"
-            echo "  are already set up."
-        else
-            unchecked="Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
-            [ -d "$SSHD_RUN_DIR" ] ||
-                unchecked="Its rules can't be checked until sshd has run, which the first SSH connection does."
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, and Tailscale are already set up."
-            echo "  ufw is on. $unchecked"
+        echo "  Everything it can check is already set up."
+        if [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ]; then
+            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
+        elif [ "$ufw" -ne 0 ]; then
+            echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
         fi
+        ! "$auto_upgrades_unchecked" ||
+            echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
         # Each part runs whether or not the one before it failed
         sudo_items_apply sleep_masked sleep_conf_written || result=1
@@ -476,7 +512,7 @@ apply() {
         fi
         # sudo is in use now, so the rules can be read
         if [ "$ufw" -ne 0 ]; then
-            setup_ufw || result=1
+            ensure_sshd_run_dir && { ufw_configured || configure_ufw; } || result=1
         fi
         for uuid in ${wol_pending[@]+"${wol_pending[@]}"}; do
             sudo nmcli connection modify uuid "$uuid" 802-3-ethernet.wake-on-lan magic || result=1
@@ -494,11 +530,7 @@ apply() {
     if command -v nmcli &>/dev/null && ! "$wired"; then
         echo "  No wired connection, so Wake-on-LAN is left off. It works only over Ethernet."
     fi
-    if [ -n "$key_only_todo" ]; then
-        echo "  Password logins stay on: ${key_only_todo%%. Copy*}. Copy your key over (ssh-copy-id <alias>"
-        echo "  from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale"
-        echo "  is up), SSH in with it, and re-run the step."
-    fi
+    [ -z "$key_only_todo" ] || echo "  Password logins stay on: $key_only_todo."
 
     # Signing in to Tailscale opens a link, so it's yours to do. SSH goes through OpenSSH on the
     # tailnet address: Tailscale SSH (--ssh) drops every session when tailscaled restarts, which

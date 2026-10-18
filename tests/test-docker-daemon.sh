@@ -26,14 +26,8 @@ DOCKER_DAEMON_CONFIG="$SANDBOX/etc/docker/daemon.json"
 SETTINGS='"log-driver": "local", "live-restore": true, "ip": "127.0.0.1",
     "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}},
     "default-address-pools": [
-        {"base": "172.17.0.0/16", "size": 16}, {"base": "172.18.0.0/16", "size": 16},
-        {"base": "172.19.0.0/16", "size": 16}, {"base": "172.20.0.0/16", "size": 16},
-        {"base": "172.21.0.0/16", "size": 16}, {"base": "172.22.0.0/16", "size": 16},
-        {"base": "172.23.0.0/16", "size": 16}, {"base": "172.24.0.0/16", "size": 16},
-        {"base": "172.25.0.0/16", "size": 16}, {"base": "172.26.0.0/16", "size": 16},
-        {"base": "172.27.0.0/16", "size": 16}, {"base": "172.28.0.0/16", "size": 16},
-        {"base": "172.29.0.0/16", "size": 16}, {"base": "172.30.0.0/16", "size": 16},
-        {"base": "172.31.0.0/16", "size": 16}]'
+        {"base": "172.17.0.0/16", "size": 24}, {"base": "172.18.0.0/15", "size": 24},
+        {"base": "172.20.0.0/14", "size": 24}, {"base": "172.24.0.0/13", "size": 24}]'
 # Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file given.
 sorted() {
     jq -S -c . "${1:-$DOCKER_DAEMON_CONFIG}"
@@ -53,6 +47,14 @@ assert_exit 0 configure_daemon
 assert_contains "$RUN_OUTPUT" "already sets log-driver, live-restore, localhost-only published ports, and address pools"
 assert_eq "$before" "$(/bin/ls -li "$DOCKER_DAEMON_CONFIG")" "daemon.json after a re-run"
 assert_file_not_contains "$STUB_LOG" "systemctl"
+
+# The 15 /16 pools of an earlier run need the change to /24s
+jq -c '.["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]' \
+    "$DOCKER_DAEMON_CONFIG" > "$SANDBOX/old-pools.json"
+cp "$SANDBOX/old-pools.json" "$DOCKER_DAEMON_CONFIG"
+assert_exit 1 daemon_configured
+assert_exit 0 configure_daemon
+assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json after the change to /24 pools"
 
 # Driver-specific options don't survive the switch to local; compatible limits and other
 # daemon settings do. No temp file is left beside it.
@@ -126,9 +128,27 @@ assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json from
 echo '{"dns": [' > "$DOCKER_DAEMON_CONFIG"
 : > "$STUB_LOG"
 assert_exit 1 configure_daemon
-assert_contains "$RUN_OUTPUT" "isn't valid JSON"
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_eq '{"dns": [' "$(cat "$DOCKER_DAEMON_CONFIG")" "invalid daemon.json"
 assert_file_not_contains "$STUB_LOG" "systemctl"
+# So is a file with two JSON values, which jq would turn into two
+printf '%s\n' '{"dns": ["1.1.1.1"]}' '{"debug": true}' > "$DOCKER_DAEMON_CONFIG"
+cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+: > "$STUB_LOG"
+assert_exit 1 configure_daemon
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_file_not_contains "$STUB_LOG" "dockerd"
+assert_file_not_contains "$STUB_LOG" "systemctl"
+# Even when the last of them has every setting: it's not configured, and the step leaves it alone
+{ echo '{"debug": true}'; echo "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
+cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_exit 1 daemon_configured
+: > "$STUB_LOG"
+assert_exit 1 configure_daemon
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_file_not_contains "$STUB_LOG" "dockerd"
 
 # Several JSON values aren't configured, even when the last one is
 { cat "$SANDBOX/before-restart"; sorted /dev/stdin <<< "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"

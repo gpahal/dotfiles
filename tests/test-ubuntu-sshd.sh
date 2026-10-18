@@ -133,13 +133,13 @@ printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
 problems="AllowUsers is someone $me; PasswordAuthentication is yes"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item ($problems; another file sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+assert_contains "$RUN_OUTPUT" "missing    $item ($problems; another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
 assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes)"
 # The step checks them once it writes the drop-in
 rm "$SSHD_DROP_IN"
 : > "$STUB_LOG"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_IN, since another file sets them first:
+assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:
     AllowUsers is someone $me
     PasswordAuthentication is yes"
 assert_file_contains "$STUB_LOG" "sudo sshd -T"
@@ -155,12 +155,34 @@ printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd
 : > "$STUB_LOG"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes;"
-assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=localhost,addr=127.0.0.1"
+assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PasswordAuthentication is yes"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
+# So does a Match block for an address: one in a private range, the tailnet's, or one the Match
+# line names, such as a sub-range or an outside address. The problem names the addresses it applies
+# to.
+assert_exit 0 status
+for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.0.113.7" \
+    "192.168.5.0/24 192.168.5.1" "!10.9.9.9,192.168.7.0/24 192.168.7.1"; do
+    addr="${match##* }"
+    printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
+    : > "$STUB_LOG"
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for $addr;"
+    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr)"
+    assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
+done
+assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
+rm "$SANDBOX/sshd_config.d/99-match.conf"
+# This SSH session's client is checked too
+export SSH_CONNECTION="198.51.100.4 51000 192.168.1.5 22"
+: > "$STUB_LOG"
+assert_exit 0 status
+unset SSH_CONNECTION
+assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=198.51.100.4,addr=198.51.100.4"
 # Another setting sshd doesn't take fails the step, but password logins went off when sshd
 # reloaded, so it says so
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/00-local.conf"
@@ -176,7 +198,7 @@ touch "$SANDBOX/sshd-T-fails"
 rm "$SSHD_DROP_IN" "$SANDBOX/ufw-on"
 : > "$STUB_LOG"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=localhost,addr=127.0.0.1 failed, so whether sshd takes $SSHD_DROP_IN is
+assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed, so whether sshd takes $SSHD_DROP_IN is
   unchecked"
 assert_eq "$(DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in when sshd -T fails"
 assert_contains "$RUN_OUTPUT" "Password logins are off now"
@@ -185,7 +207,7 @@ assert_file_not_contains "$STUB_LOG" "ufw default"
 assert_file_not_contains "$STUB_LOG" "ufw allow"
 assert_file_not_contains "$STUB_LOG" "ufw --force enable"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T -C user=$me,host=localhost,addr=127.0.0.1 failed; run it to see why)"
+assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed; run it to see why)"
 rm "$SANDBOX/sshd-T-fails"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_exit 0 status

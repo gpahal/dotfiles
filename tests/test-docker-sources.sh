@@ -13,6 +13,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 # apt-config stays a sentinel: only the ubuntu step checks the daily upgrade schedule
 load_script docker/install.sh
+# No containerd shim runs, so a stopped daemon runs no containers
+stub pgrep 'exit 1'
 is_macos() { false; }
 is_ubuntu() { true; }
 
@@ -211,11 +213,35 @@ assert_contains "$RUN_OUTPUT" "it may not be Docker's source"
 [ -e "$DOCKER_SOURCES" ] || fail "docker.sources was removed after the full update failed"
 assert_file_not_contains "$STUB_LOG" "apt-get install"
 
-# Both updates succeed, and the install waits for dpkg's lock
+# Both updates succeed, and the install waits for dpkg's lock. Then, in this run only, the step
+# asks about the docker group on its own, since it's root-equivalent; you're in it once
+# $SANDBOX/in-group exists, which usermod makes.
 reset
+stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
+stub usermod 'touch "'"$SANDBOX"'/in-group"'
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce"
+assert_contains "$RUN_OUTPUT" "root-equivalent"
+assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
+assert_contains "$RUN_OUTPUT" "Added you to the docker group."
+# Declined in that run: you stay out
+reset
+rm "$SANDBOX/in-group"
+eval "real_$(declare -f confirm)"
+confirm() {
+    if [[ "$1" == *"docker group"* ]]; then
+        echo "$1 n"
+        return 1
+    fi
+    real_confirm "$@"
+}
+export DOTFILES_ASSUME_YES=1
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Left me out of the docker group."
+assert_file_not_contains "$STUB_LOG" "usermod"
+eval "$(declare -f real_confirm | sed 1s/real_confirm/confirm/)"
+stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 
 # Docker has no packages for this release yet: a fresh install says so, and waits without failing
 # or changing anything

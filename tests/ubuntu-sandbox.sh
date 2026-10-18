@@ -3,7 +3,8 @@
 # load_script ubuntu/install.sh, which sets the constants back. It fails the test when a constant
 # that ubuntu/install.sh or ubuntu/lib/*.sh sets still starts with /etc, /var, /usr, /run, or /dev,
 # so a constant added later can't send a test to the real machine. A test may point one elsewhere
-# in the sandbox after it. Bash 3.2.
+# in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it calls, print the
+# ufw rules the step adds, for a ufw stub to list. Bash 3.2.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
 
@@ -56,4 +57,35 @@ _ubuntu_system_paths_left() {
         done
     done < <(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "$REPO_DIR/ubuntu/install.sh" "$REPO_DIR"/ubuntu/lib/*.sh | sort -u)
     [ -z "$left" ] || fail "ubuntu_sandbox_paths left these on the real machine:$left"
+}
+
+# The ufw rules the ubuntu step adds for SSH on a port, 22 by default, as `ufw status` lists them:
+# ufw_deny_rules denies it on Docker's bridges, ufw_range_rules allows it from the private ranges,
+# and ufw_tailscale_rules lets the tailnet in. ufw_status_listing prints all of `ufw status` with
+# every rule in place for port 22, in the order the step adds them.
+ufw_header() {
+    printf '%s\n' "Status: active" "" "To                         Action      From" \
+        "--                         ------      ----"
+}
+ufw_deny_rules() {
+    local bridge
+    for bridge in docker0 br-+; do
+        printf '%-26s DENY        Anywhere\n' "${1:-22}/tcp on $bridge"
+        printf '%-26s DENY        Anywhere (v6)\n' "${1:-22}/tcp (v6) on $bridge"
+    done
+}
+ufw_range_rules() {
+    local range
+    for range in 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10; do
+        printf '%-26s ALLOW       %s\n' "${1:-22}/tcp" "$range"
+    done
+}
+ufw_tailscale_rules() {
+    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere"
+}
+ufw_status_listing() {
+    ufw_header
+    ufw_deny_rules
+    ufw_range_rules
+    ufw_tailscale_rules
 }

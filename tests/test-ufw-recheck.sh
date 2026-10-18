@@ -129,32 +129,8 @@ case "$1" in
         mv "$rules.new" "$rules" ;;
     --force) echo ENABLED=yes > "'"$UFW_CONF"'" ;;
 esac'
-# The step's rules for SSH on port 22
-range_rules() {
-    local range
-    for range in 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10; do
-        printf '%-26s ALLOW       %s\n' "${1:-22}/tcp" "$range"
-    done
-}
-# The step's rules denying SSH on port 22 on Docker's bridges
-deny_rules() {
-    local bridge
-    for bridge in docker0 br-+; do
-        printf '%-26s DENY        Anywhere\n' "${1:-22}/tcp on $bridge"
-        printf '%-26s DENY        Anywhere (v6)\n' "${1:-22}/tcp (v6) on $bridge"
-    done
-}
-ufw_header() {
-    printf '%s\n' "Status: active" "" "To                         Action      From" \
-        "--                         ------      ----"
-}
 rules_present() {
-    {
-        ufw_header
-        deny_rules
-        range_rules
-        printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere"
-    } > "$SANDBOX/ufw-rules"
+    ufw_status_listing > "$SANDBOX/ufw-rules"
 }
 rules_missing() {
     { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-rules"
@@ -264,8 +240,8 @@ ufw_defaults yes
 # rules, or with them after the allow rules, where ufw never reaches them, they're missing, and
 # the step puts them first.
 for misplaced in false true; do
-    { ufw_header; range_rules; ! "$misplaced" || deny_rules; } > "$SANDBOX/ufw-rules"
-    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+    { ufw_header; ufw_range_rules; ! "$misplaced" || ufw_deny_rules; } > "$SANDBOX/ufw-rules"
+    ufw_tailscale_rules >> "$SANDBOX/ufw-rules"
     assert_exit 1 ufw_configured -n
     assert_exit 0 ufw_missing_rules -n
     assert_contains "$RUN_OUTPUT" "22/tcp on docker0 DENY Anywhere"
@@ -284,8 +260,8 @@ for misplaced in false true; do
 done
 # The IPv6 deny rules come after the IPv4 allow rules, as `ufw status` lists them, which is their
 # place
-{ ufw_header; deny_rules | grep -v v6; range_rules | grep -v :; deny_rules | grep v6; range_rules | grep :; } > "$SANDBOX/ufw-rules"
-printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+{ ufw_header; ufw_deny_rules | grep -v v6; ufw_range_rules | grep -v :; ufw_deny_rules | grep v6; ufw_range_rules | grep :; } > "$SANDBOX/ufw-rules"
+ufw_tailscale_rules >> "$SANDBOX/ufw-rules"
 assert_exit 0 ufw_configured -n
 # With the deny rules in place, a run that adds a missing allow rule leaves them alone, so SSH on
 # the bridges is denied throughout
@@ -304,11 +280,11 @@ assert_exit 0 ufw_configured -n
 for rule in "22 ALLOW 192.168.0.0/16" "20:30/tcp ALLOW 10.0.0.0/8" "80,22/tcp ALLOW 10.0.0.0/8" \
     "OpenSSH ALLOW 10.0.0.0/8" "192.168.1.5 ALLOW 10.0.0.0/8" "22/tcp ALLOW fd00::/8 # lan" \
     "Anywhere on br-1a2b3c ALLOW 10.0.0.0/8"; do
-    { ufw_header; echo "$rule"; deny_rules; range_rules; } > "$SANDBOX/ufw-rules"
-    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+    { ufw_header; echo "$rule"; ufw_deny_rules; ufw_range_rules; } > "$SANDBOX/ufw-rules"
+    ufw_tailscale_rules >> "$SANDBOX/ufw-rules"
     assert_exit 1 ufw_configured -n
 done
-{ ufw_header; echo "Anywhere on tailscale0 ALLOW Anywhere"; echo "22/udp ALLOW 10.0.0.0/8"; deny_rules; range_rules; } > "$SANDBOX/ufw-rules"
+{ ufw_header; echo "Anywhere on tailscale0 ALLOW Anywhere"; echo "22/udp ALLOW 10.0.0.0/8"; ufw_deny_rules; ufw_range_rules; } > "$SANDBOX/ufw-rules"
 echo "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
 assert_exit 0 ufw_configured -n
 unset DOTFILES_ASSUME_YES

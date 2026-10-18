@@ -74,7 +74,7 @@ ghostty_overrides_status() {
     is_macos || return 0
     for file in "$support/config" "$support/config.ghostty"; do
         overrides="$(LC_ALL=C comm -12 <(ghostty_settings "$file") \
-            <(ghostty_settings "$DOTFILES_DIR/ghostty/config.ghostty") | paste -sd, - | sed 's/,/, /g')"
+            <(ghostty_settings "$DOTFILES_DIR/ghostty/config.ghostty") | join_lines ', ')"
         # shellcheck disable=SC2088 # shown, not expanded
         [ -z "$overrides" ] ||
             status_item missing "~/${file#"$HOME"/}: Ghostty loads it after config.ghostty, so it overrides the repo's $overrides; merge it into the repo's config or remove it"

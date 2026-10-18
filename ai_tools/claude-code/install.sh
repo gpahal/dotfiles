@@ -48,11 +48,6 @@ claude_code_keep_current() {
     jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Print a JSON value as claude_code_keep_current prints it
-claude_code_keep_wanted() {
-    keepable_unquote "$1"
-}
-
 claude_code_have_git_wt() {
     [ -x "$HOME/.local/bin/git-wt" ]
 }

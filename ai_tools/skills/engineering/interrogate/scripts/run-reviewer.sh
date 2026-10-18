@@ -111,13 +111,14 @@ pid=$!
 set +m
 
 # The watchdog drops this script's stdout and stderr, and kills its sleep when it's stopped, so
-# no leftover process keeps a caller's pipe open until the timeout.
+# no leftover process keeps a caller's pipe open until the timeout. The trap is set before the
+# sleep starts, and finds it with jobs -p rather than a variable, so a stop that arrives as the
+# sleep starts still kills it. wait returns early when the trap's signal arrives.
 (
     exec >/dev/null 2>&1 </dev/null
+    trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
     sleep "$timeout" &
-    sleeper=$!
-    trap 'kill "$sleeper"; exit 0' TERM
-    if wait "$sleeper"; then
+    if wait "$!"; then
         kill -TERM -- "-$pid" 2>/dev/null || true
         sleep 1
         kill -KILL -- "-$pid" 2>/dev/null || true

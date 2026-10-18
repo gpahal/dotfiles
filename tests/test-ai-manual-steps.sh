@@ -47,14 +47,15 @@ apps com.mitchellh.ghostty $((ALLOWED | PERSISTENT | TEMPORARY))
 assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty)" "both styles"
 
 # Everything done: nothing to offer. The extension is installed, so the real Chrome doesn't count.
+# Ghostty's notifications are the main README's manual step, so they don't count here.
 ok=$((ALLOWED | PERSISTENT))
-apps com.mitchellh.ghostty $ok com.anthropic.claudefordesktop $ok com.openai.codex $ok com.t3tools.t3code $ok
+apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY)) com.anthropic.claudefordesktop $ok com.openai.codex $ok com.t3tools.t3code $ok
 mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Extensions/$CLAUDE_CHROME_EXTENSION_ID"
 stub open
 is_macos() { true; }
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on macOS"
-assert_contains "$RUN_OUTPUT" "Notifications for Ghostty, Claude, ChatGPT, and T3 Code are already allowed and Persistent."
+assert_contains "$RUN_OUTPUT" "Notifications for Claude, ChatGPT, and T3 Code are already allowed and Persistent."
 assert_contains "$RUN_OUTPUT" "Claude in Chrome extension already installed."
 assert_not_contains "$RUN_OUTPUT" "Open "
 

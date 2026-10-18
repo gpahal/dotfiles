@@ -311,4 +311,42 @@ assert_file_contains "$STUB_LOG" "--skill grill --yes"
 assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "one isn't lowercase letters, digits, and dashes"
 rm -rf "$FIXTURE/ai_tools/skills/productivity/bad"
+
+# Two skills with one name fail the step, naming both files, and only the first, by path, is
+# installed. Otherwise each run would install one over the other.
+mkdir -p "$FIXTURE/ai_tools/skills/productivity/zz-grill"
+printf -- '---\nname: grill\n---\ncopy\n' > "$FIXTURE/ai_tools/skills/productivity/zz-grill/SKILL.md"
+step
+assert_eq 1 "$RUN_STATUS" "status with two skills named grill"
+assert_contains "$RUN_OUTPUT" "ai_tools/skills/productivity/zz-grill/SKILL.md names the skill 'grill', as ai_tools/skills/productivity/grill/SKILL.md does; skipping it."
+assert_file_not_contains "$STUB_LOG" " add "
+assert_file_not_contains "$AGENTS_DIR/grill/SKILL.md" "copy"
+assert_exit 3 "$BASH" "$STEP" --status
+assert_contains "$RUN_OUTPUT" "Skill names in ai_tools/skills"
+rm -rf "$FIXTURE/ai_tools/skills/productivity/zz-grill"
+
+# Run from inside a project that has its own skills package, at the pinned version, the step runs
+# the skills CLI from a directory of its own, for add and for remove, so npm can't pick the
+# project's package or its .npmrc. That holds even when the temp dir is inside the project, as
+# when /tmp holds one. The directory is gone afterwards.
+PROJECT="$SANDBOX/project"
+mkdir -p "$PROJECT/node_modules/.bin"
+printf '{ "dependencies": { "skills": "%s" } }\n' "$(sed -n 's/^SKILLS_CLI="skills@\(.*\)"$/\1/p' "$STEP")" > "$PROJECT/package.json"
+printf '%s\n' '#!/bin/bash' "touch '$SANDBOX/counterfeit-ran'" > "$PROJECT/node_modules/.bin/skills"
+chmod +x "$PROJECT/node_modules/.bin/skills"
+echo 'registry=http://127.0.0.1:9/' > "$PROJECT/.npmrc"
+echo "drift" >> "$AGENTS_DIR/grill/SKILL.md"
+fake_skill old-skill
+echo "-  old-skill" >> "$STATE"
+: > "$NPX_ENV_LOG"
+mkdir -p "$PROJECT/tmp"
+(cd "$PROJECT" && TMPDIR="$PROJECT/tmp" DOTFILES_ASSUME_YES=1 step)
+assert_file_contains "$STUB_LOG" "--skill grill --yes"
+assert_file_contains "$STUB_LOG" "remove --global --agent claude-code codex --yes old-skill"
+[ ! -e "$SANDBOX/counterfeit-ran" ] || fail "the project's skills package ran"
+assert_eq 2 "$(wc -l < "$NPX_ENV_LOG" | tr -d ' ')" "skills CLI runs"
+while IFS= read -r cwd; do
+    [ "$cwd" != "$PROJECT" ] || fail "the skills CLI ran in the project"
+    [ ! -e "$cwd" ] || fail "the skills CLI's directory $cwd is still there"
+done < "$NPX_ENV_LOG"
 test_done

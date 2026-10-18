@@ -36,7 +36,8 @@ in_terminal() {
     if [[ "$OSTYPE" == darwin* ]]; then
         script -q /dev/null /bin/sh -c "$cmd"
     else
-        script -qec "$cmd" /dev/null
+        # script runs the command with $SHELL, and %q output is bash quoting
+        SHELL=/bin/bash script -qec "$cmd" /dev/null
     fi < /dev/null | tr -d '\r'
 }
 

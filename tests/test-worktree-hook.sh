@@ -303,9 +303,8 @@ git -C "$repo" show-ref --verify --quiet refs/heads/my-feature ||
 # tracked subdir, name a directory, or negate. An ignored dir the include names is copied whole,
 # symlinks kept. Nothing inside an ignored dir it doesn't name is copied, even what a pattern that
 # matches at any depth names: config/a.json for config/*.json, the .pem in certs/, and the .env in
-# node_modules/ and in sub/node_modules/, which git lists as sub/. A symlink is copied as a link,
-# even a broken one. A file that can't be copied, such as an unreadable one, gets a warning, and
-# the worktree is still created and its path printed.
+# node_modules/ and in sub/node_modules/, which git lists as sub/. A file that can't be copied,
+# such as a broken symlink, gets a warning, and the worktree is still created and its path printed.
 mkdir -p "$repo/apps/web" "$repo/.cache/a" "$repo/config" "$repo/node_modules/pkg" "$repo/vendor/lib" \
     "$repo/certs/dev" "$repo/sub/node_modules/x"
 touch "$repo/apps/web/index.js"
@@ -314,8 +313,6 @@ printf '.env*\n.cache/\nconfig/*.json\n*.local\n!keep.local\nvendor\n*.pem\n' >>
 git -C "$repo" add .gitignore .worktreeinclude apps/web/index.js
 git -C "$repo" commit -q -m "more includes"
 ln -s "$SANDBOX/missing" "$repo/.env.local"
-echo unreadable > "$repo/.env.unreadable"
-chmod 000 "$repo/.env.unreadable"
 echo web > "$repo/apps/web/.env"
 echo cached > "$repo/.cache/a/b"
 echo a > "$repo/config/a.json"
@@ -328,10 +325,7 @@ ln -s v.js "$repo/vendor/lib/link.js"
 echo c > "$repo/certs/dev/dev.pem"
 create pat "$repo"
 assert_eq "0 $dir/pat" "$status $out" "create hook with nested, directory, and negated patterns"
-assert_eq "$SANDBOX/missing" "$(readlink "$dir/pat/.env.local")" "the broken symlink copied"
-# root reads the file anyway
-[ -r "$repo/.env.unreadable" ] ||
-    assert_contains "$(cat "$SANDBOX/stderr")" ".env.unreadable" "create hook's stderr with an unreadable file to copy"
+assert_contains "$(cat "$SANDBOX/stderr")" ".env.local" "create hook's stderr with a broken symlink to copy"
 assert_eq "secret" "$(cat "$dir/pat/.env" 2> /dev/null)" "the .env copied"
 assert_eq "web" "$(cat "$dir/pat/apps/web/.env" 2> /dev/null)" "the nested .env copied"
 assert_eq "cached" "$(cat "$dir/pat/.cache/a/b" 2> /dev/null)" "the .cache dir copied"
@@ -342,7 +336,7 @@ for skipped in config keep.local certs node_modules sub; do
     [ ! -e "$dir/pat/$skipped" ] || fail "copied $skipped, which .worktreeinclude leaves out"
 done
 remove "$dir/pat"
-rm -rf "$repo/.env.local" "$repo/.env.unreadable" "$repo/node_modules" "$repo/vendor" "$repo/certs" "$repo/sub"
+rm -rf "$repo/.env.local" "$repo/node_modules" "$repo/vendor" "$repo/certs" "$repo/sub"
 
 # A branch that tracks apps as a symlink to a dir outside the worktree gets nothing copied
 # through it, even though the checkout's ignored apps/web/.env matches the include
@@ -432,13 +426,15 @@ printf '{"session_id":"s2","hook_event_name":"SessionEnd","cwd":"%s"}' "$repo" |
 for name in e-changed e-copy e-committed e-other e-unmarked; do
     git -C "$repo" wt rm -f "$name" 2> /dev/null
 done
-# A .env that's a symlink in the checkout is copied as one, so the worktree still counts as clean
+# A .env that's a symlink in the checkout is copied as the file it points at, so the worktree has
+# its own copy, and the worktree still counts as clean
 mv "$repo/.env" "$repo/env-a"
 ln -s env-a "$repo/.env"
 create e-link "$repo" s3
-assert_eq "env-a" "$(readlink "$dir/e-link/.env")" "the .env symlink copied into e-link"
+[ ! -L "$dir/e-link/.env" ] || fail "the hook copied the .env symlink as a link"
+assert_eq "secret" "$(cat "$dir/e-link/.env" 2> /dev/null)" "the .env copied into e-link"
 end_session s3 "$repo"
-[ ! -e "$dir/e-link" ] || fail "SessionEnd hook kept e-link, whose .env is the checkout's symlink"
+[ ! -e "$dir/e-link" ] || fail "SessionEnd hook kept e-link, whose .env is a copy of the checkout's"
 rm "$repo/.env"
 mv "$repo/env-a" "$repo/.env"
 

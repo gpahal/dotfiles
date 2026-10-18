@@ -179,9 +179,9 @@ copy_worktree_include() {
         { git -C "$tmp" -c core.excludesFile="$include" check-ignore --no-index -z --stdin ||
             true; } |
         while IFS= read -r -d '' entry; do
-            # -P copies a symlink as a link, as -R does in a dir, so git wt prune finds the
-            # checkout's own link and counts the worktree clean
-            flags=-pP
+            # -p copies what a symlink points at, so the worktree gets its own copy, which a link
+            # relative to the checkout or into it wouldn't give
+            flags=-p
             case "$entry" in */) flags=-pR entry="${entry%/}" ;; esac
             # A tracked symlink, even a dangling one, could point cp outside the worktree
             if [ -e "$1/$entry" ] || [ -L "$1/$entry" ]; then
@@ -191,6 +191,7 @@ copy_worktree_include() {
                 echo "worktree-hook: skipped $entry: $link is a symlink in the worktree" >&2
                 continue
             fi
+            # -R keeps the symlinks in a dir
             if ! { mkdir -p "$(dirname "$1/$entry")" && cp "$flags" "$top/$entry" "$1/$entry"; }; then
                 echo "worktree-hook: couldn't copy $entry into the worktree" >&2
             fi

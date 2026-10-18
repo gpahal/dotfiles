@@ -149,18 +149,18 @@ assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On
 
 # The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
 load_script lib/common.sh
+# shellcheck source=../scripts/lib/runners.sh
+source "$REPO_DIR/scripts/lib/runners.sh"
 # Set LISTED to a runner's default steps on an OS (Darwin or Linux)
-runner_steps() {
-    stub uname "[ \"\$1\" != -s ] || echo $2"
-    assert_exit 0 "$BASH" "$REPO_DIR/$1" --help
-    LISTED="$(printf '%s\n' "$RUN_OUTPUT" | sed -n 's/^Steps, run in this order by default: //p')"
+listed() {
+    LISTED="$(runner_steps "$REPO_DIR/$1" "$2")" || fail "$1 --help failed on $2"
     [ -n "$LISTED" ] || fail "no steps read from $1 --help on $2"
 }
 for runner in setup.sh ai_tools/setup.sh; do
-    runner_steps "$runner" Darwin
+    listed "$runner" Darwin
     # shellcheck disable=SC2206 # step names have no spaces
     MACOS_STEPS=($LISTED)
-    runner_steps "$runner" Linux
+    listed "$runner" Linux
     # shellcheck disable=SC2206
     UBUNTU_STEPS=($LISTED)
     # shellcheck disable=SC2034 # step_script reads it

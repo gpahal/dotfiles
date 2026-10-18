@@ -520,7 +520,7 @@ echo needs-root > "$STATE/browser-mode"
 assert_exit 1 t3_code_browser_ready
 # Needing root, the step prints the command for you to run and doesn't fail. ~/.local/bin/t3 is
 # yours to write and updates itself, so the step never runs it under sudo, even when you'd agree.
-stub sudo 'exec "$@"'
+stub_sudo_exec
 confirm() { echo "$1"; }
 : > "$STUB_LOG"
 assert_exit 0 setup_t3_code_browser

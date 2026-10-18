@@ -15,7 +15,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script chrome/install.sh
 APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d"
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 
 # --- apt_source_state and status_apt_source ---
 file="$APT_SOURCES_DIR/example.list"

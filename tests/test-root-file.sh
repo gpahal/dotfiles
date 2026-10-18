@@ -13,15 +13,14 @@ setup_sandbox
 load_script lib/common.sh
 # install runs for real, minus -g, since the sandbox's user can't give a file root's groups
 # shellcheck disable=SC2016 # expanded by the stub
-stub sudo 'if [ "$1" == install ]; then
+stub_sudo_exec 'if [ "${1:-}" == install ]; then
     shift
     args=()
     while [ $# -gt 0 ]; do
         case "$1" in -g) shift 2 ;; *) args+=("$1"); shift ;; esac
     done
-    exec install "${args[@]}"
-fi
-exec "$@"'
+    set -- install "${args[@]}"
+fi'
 
 dest="$SANDBOX/etc/nut/upsd.users"
 assert_exit 0 write_root_file "$dest" "secret" 0640 nut

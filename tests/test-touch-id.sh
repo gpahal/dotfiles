@@ -10,7 +10,7 @@ set -euo pipefail
 # what sudo runs as root. It replaces a sudo_local that differs, dropping any other line.
 # DOTFILES_PAM_DIR and DOTFILES_PAM_LOCAL_MODULES_DIR point it at sandbox copies of /etc/pam.d and
 # /usr/local/lib/pam. sudo and brew are stubs. The sudo stub drops install's -o and -g, which need
-# root, and refuses any path under /etc or /usr/local, so a mistake can't reach the real ones.
+# root, and refuses any path outside the sandbox, so a mistake can't reach the real ones.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -31,15 +31,14 @@ HEADER="# sudo_local: local config file which survives system update and is incl
 TID_LINE="auth       sufficient     pam_tid.so"
 REATTACH_LINE="auth       optional       $MODULE ignore_ssh"
 
-stub sudo 'for a in "$@"; do case "$a" in /etc/* | /private/etc/* | /usr/local/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-args=()
+stub_sudo_exec 'args=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -o | -g) shift 2 ;;
         *) args+=("$1"); shift ;;
     esac
 done
-exec "${args[@]}"'
+set -- "${args[@]}"'
 # brew --prefix is $SANDBOX/brew; the script never installs anything with it
 stub brew '[ "$1" != --prefix ] || echo "$(dirname "$STUB_LOG")/brew"'
 

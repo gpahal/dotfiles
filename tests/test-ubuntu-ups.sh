@@ -53,14 +53,9 @@ unplug() { rm -f "$SANDBOX/udev/$1" "$SANDBOX/udev/$1-hiddev"; }
 usb_device usb1 1d6b 0002
 usb_device 1-2 046d c52b
 
-# sudo runs the command, and refuses a path under /etc, /usr, or /run. sudo -n fails while
+# sudo runs the command, and refuses a path outside the sandbox. sudo -n fails while
 # $SANDBOX/no-sudo exists, as it does without cached credentials.
-stub sudo 'if [ "$1" == -n ]; then
-    [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1
-    shift
-fi
-for a in "$@"; do case "$a" in /etc/* | /usr/* | /run/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-exec env "$@"'
+stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
 # nut-scanner prints $SANDBOX/scan, as nut-scanner -U -q prints what it finds
 stub nut-scanner 'cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
 # NUT 2.8.2 and later name, after the driver, others that could serve the UPS

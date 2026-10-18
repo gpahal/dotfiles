@@ -48,7 +48,7 @@ APT_UPDATE_RETRY_DELAY=0
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.service" | try-restart*) exit 0 ;; *) exit 1 ;; esac'
 stub dockerd
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 # fetch downloads Docker's key, which has the fingerprint the step pins
 fetch() { echo key > "$2"; }
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $DOCKER_KEY_FPR"

@@ -17,7 +17,7 @@ load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 
 # sudo runs the command
-stub sudo '[ "$1" != -n ] || shift; exec "$@"'
+stub_sudo_exec
 mkdir -p "$SSHD_RUN_DIR"
 
 # --- sshd_ports: sshd -T's ports, and ssh.socket's while it's active ---

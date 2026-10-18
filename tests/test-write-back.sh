@@ -150,7 +150,7 @@ assert_exit 1 append_line x "$HOME/dir"
 
 # A root-owned file: a failed write leaves the old file whole and no temp file behind. The file
 # keeps its mode, and a new one gets 644.
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"

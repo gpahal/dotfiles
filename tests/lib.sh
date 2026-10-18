@@ -182,7 +182,8 @@ stub() {
 # leading -n. It refuses a command with an absolute path, alone or after an =, outside the sandbox
 # (which holds $STUB_DIR), other than /dev/null and the repo's files. So a system path the test
 # didn't point into the sandbox fails the command, rather than being written to as you. The
-# optional body runs first, with sudo's arguments as "$@", as a stub's does.
+# optional body runs first, with sudo's arguments as "$@", as a stub's does, and may change them
+# with set --, as to drop options that need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
     # shellcheck disable=SC2016 # expanded by the stub
@@ -191,7 +192,7 @@ $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
 for arg in "$@"; do
     case "$arg" in
-        /dev/null | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox"/* | *="$repo"/*) ;;
+        /dev/null | "$sandbox" | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/* | *="$repo"/*) ;;
         /* | *=/*)
             echo "refused: $arg is outside the sandbox" >&2
             exit 1

@@ -27,7 +27,7 @@ stub systemctl 'case "$*" in
     *docker.socket*) [ "$(cat "'"$SANDBOX"'/socket")" == on ] ;;
     *) exit 1 ;;
 esac'
-stub sudo 'exec "$@"'
+stub_sudo_exec
 # Docker's apt source lists this release
 OS_RELEASE="$SANDBOX/os-release"
 printf '%s\n' ID=ubuntu VERSION_CODENAME=resolute > "$OS_RELEASE"

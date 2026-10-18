@@ -47,15 +47,14 @@ apt_timers_enabled() { true; }
 sshd_enabled() { true; }
 touch "$SANDBOX/linger"
 
-# sudo without -n runs the command, as if you typed your password. sudo -n works only while
-# $SANDBOX/cached exists. sudo install makes $SSHD_RUN_DIR, the only install this test reaches,
-# instead of touching the real /run.
-stub sudo 'if [ "$1" == -n ]; then
+# sudo without -n runs the command, as if you typed your password, and refuses a path outside the
+# sandbox. sudo -n works only while $SANDBOX/cached exists. sudo install makes $SSHD_RUN_DIR, the
+# only install this test reaches, instead of touching the real /run.
+stub_sudo_exec 'if [ "${1:-}" == -n ]; then
     [ -e "'"$SANDBOX"'/cached" ] || exit 1
     shift
 fi
-[ "$1" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }
-exec "$@"'
+[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
 cached() { touch "$SANDBOX/cached"; }
 not_cached() { rm -f "$SANDBOX/cached"; }
 

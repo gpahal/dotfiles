@@ -19,7 +19,7 @@ command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
 is_macos() { false; }
 is_ubuntu() { true; }
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 stub systemctl
 stub dockerd
 DOCKER_DAEMON_CONFIG="$SANDBOX/etc/docker/daemon.json"

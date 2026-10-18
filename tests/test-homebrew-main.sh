@@ -182,7 +182,7 @@ assert_eq "" "$(installs)" "brew installs without the apt packages"
 # apt-get update fails at once while apt-daily holds the lists lock, so it's retried a few times,
 # and only for that. sudo runs apt-get, which fails with the lock error the number of times in
 # $SANDBOX/locked, or with another error while $SANDBOX/apt-broken exists.
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 stub apt-get 'S="'"$SANDBOX"'"
 [ "${*: -1}" == update ] || exit 0
 if [ -e "$S/apt-broken" ]; then

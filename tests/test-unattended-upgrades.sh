@@ -12,7 +12,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 
 # --- chrome ---
 load_script chrome/install.sh

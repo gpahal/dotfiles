@@ -117,7 +117,9 @@ load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 is_ubuntu() { true; }
 in_vm() { false; }
-# sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise
+# sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise.
+# Not stub_sudo_exec, which would refuse the disks' /dev paths; smartctl, the only command it
+# runs here, is a stub.
 stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
 [ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
 shift
@@ -355,10 +357,8 @@ is_macos() { false; }
 # $SANDBOX/sudo-cached exists, and fails without asking otherwise.
 stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
 touch "$SANDBOX/in-group"
-stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
-[ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
-shift
-exec "$@"'
+stub_sudo_exec '[ "${1:-}" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
+[ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }'
 rm -f "$SANDBOX/sudo-cached"
 # docker.service is active unless $SANDBOX/docker-inactive exists; docker.socket always is
 stub systemctl 'case "$*" in

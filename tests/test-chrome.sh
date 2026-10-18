@@ -18,7 +18,7 @@ setup_sandbox
 load_script chrome/install.sh
 is_macos() { false; }
 is_ubuntu() { true; }
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
 URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb

@@ -107,6 +107,18 @@ assert_not_contains "$RUN_OUTPUT" "followUpQueueMode"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
 assert_eq '"queue"' "$(get .desktop.followUpQueueMode)" "a [desktop] key already there on Ubuntu"
+# The MCP tokens Codex keeps in plain text there must be readable only by you. Status says nothing
+# of them before there are any.
+run status
+assert_not_contains "$RUN_OUTPUT" ".credentials.json"
+echo '{}' > "$CODEX_CREDENTIALS"
+chmod 644 "$CODEX_CREDENTIALS"
+run status
+assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you: its mode is 644; run chmod 600 ~/.codex/.credentials.json"
+chmod 600 "$CODEX_CREDENTIALS"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+rm -f "$CODEX_CREDENTIALS"
 
 # yq rewrites the file, keeping every value: inline tables, arrays of tables, dotted keys, quoted
 # table names, multi-line strings, and full-line comments. A table the step sets that's written

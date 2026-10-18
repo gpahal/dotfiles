@@ -13,8 +13,11 @@ set -euo pipefail
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 
-CODEX_CONFIG="$HOME/.codex/config.toml"
-CODEX_INSTRUCTIONS="$HOME/.codex/AGENTS.md"
+CODEX_DIR="$HOME/.codex"
+CODEX_CONFIG="$CODEX_DIR/config.toml"
+CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
+# Where Ubuntu keeps MCP OAuth tokens in plain text (mcp_oauth_credentials_store below)
+CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
 # The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
 # the step rather than leaving Codex reading files setup never wrote
 CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
@@ -333,6 +336,21 @@ codex_status_signed_in() {
     fi
 }
 
+# Print an item for whether only you can read the MCP tokens Codex keeps in plain text on Ubuntu.
+# Prints nothing when there are no tokens yet.
+codex_status_credentials() {
+    local mode name="Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+    [ -e "$CODEX_CREDENTIALS" ] || return 0
+    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
+    if [ "$mode" == 600 ]; then
+        status_item ok "$name"
+    elif [ -z "$mode" ]; then
+        status_item unknown "$name: couldn't read its mode"
+    else
+        status_item missing "$name: its mode is $mode; run chmod 600 ~/.codex/.credentials.json"
+    fi
+}
+
 bwrap_works() {
     bwrap --unshare-all --ro-bind / / /bin/true &>/dev/null
 }
@@ -409,7 +427,7 @@ status() {
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
-    if ! tool_home_is "${CODEX_HOME:-}" "$HOME/.codex"; then
+    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
     else
         if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
@@ -424,6 +442,7 @@ status() {
             done
         fi
         user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+        ! is_ubuntu || codex_status_credentials
     fi
     if is_ubuntu; then
         status_check "Codex's sandbox: bwrap can create one" bwrap_works
@@ -440,7 +459,7 @@ main() {
         return $?
     fi
     echo "Setting up Codex..."
-    if ! tool_home_is "${CODEX_HOME:-}" "$HOME/.codex"; then
+    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2
         return 1
     fi

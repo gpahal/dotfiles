@@ -87,17 +87,7 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md). It needs Node from the `runtimes` step.
 
-After Homebrew is installed, the [justfile](./justfile) wraps these:
-
-```sh
-just setup [step...]      # bash setup.sh
-just setup-ai [step...]   # bash ai_tools/setup.sh
-just status [quick]       # bash setup.sh --status, then bash ai_tools/setup.sh --status; quick adds --quick to both
-just git-signing          # bash git/setup-signing.sh, see "Commit signing"
-just touch-id             # bash macos/setup-touch-id-sudo.sh, see "Touch ID for sudo"
-just ssh-host <alias> [hostname]   # bash ssh/add-host.sh, see "SSH"
-just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in Manual steps for Ubuntu
-```
+After Homebrew is installed, `just` in the repo lists the [justfile](./justfile)'s recipes, which wrap the setup scripts and the ones this README names. `just status` runs both setup scripts with `--status`.
 
 ## Ubuntu
 
@@ -546,14 +536,7 @@ Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. 
 
 **Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+N`, `Ctrl+Opt+Cmd+T`, and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
 
-[AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
-
-```sh
-just check                # shellcheck every script, syntax-check the zsh files, and check the docs, skills, and Claude settings keys against the code
-just test [name...]       # bash tests/run.sh, which runs each test in tests/ in a temp HOME with stub commands
-just test-ubuntu          # bash scripts/test-ubuntu.sh: a full Ubuntu setup in a throwaway OrbStack machine
-just bump-plugins         # bash scripts/bump-plugins.sh, which moves the plugin pins to the latest versions
-```
+[AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to check and test one with `just check`, `just test`, and `just test-ubuntu`.
 
 ## License
 

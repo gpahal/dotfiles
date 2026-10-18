@@ -16,8 +16,6 @@ set -euo pipefail
 #   the step copies it, and nothing else
 # - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps,
 #   and each stage runs what stage_code maps
-# - README.md's just lines, in "How setup works" and "Maintenance", name the justfile's recipes and
-#   the scripts they run
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
@@ -384,22 +382,6 @@ for fn in upgrade upgrade-ai-tools; do
             fail "$doc Updating has an item that describes none of $fn's stages: ${item:0:60}"
     done < "$tmp/items"
 done
-
-# README.md "How setup works" and "Maintenance": the blocks of just lines name each of the
-# justfile's recipes but default, and the script each line's comment says it runs is in that recipe
-{ section "$readme" "## How setup works"; section "$readme" "## Maintenance"; } | { grep '^just [a-z]' || true; } > "$tmp/just-lines"
-awk '{ print $2 }' "$tmp/just-lines" | sort > "$tmp/just-doc"
-sed -nE 's/^([a-z][a-z0-9-]*)( [^:]*)?:( .*)?$/\1/p' "$REPO_DIR/justfile" | grep -vx default | sort > "$tmp/just-recipes" || true
-cmp -s "$tmp/just-recipes" "$tmp/just-doc" ||
-    fail "README.md's just recipes don't match the justfile. The justfile: $(tr '\n' ' ' < "$tmp/just-recipes")
-  The doc: $(doc_words "$tmp/just-doc" 'lines starting "just <recipe>" under "## How setup works" and "## Maintenance"')"
-while IFS= read -r line; do
-    recipe="$(printf '%s\n' "$line" | awk '{ print $2 }')"
-    script="$(printf '%s\n' "${line#*# }" | sed -nE 's/^bash ([^ ,:]+).*/\1/p')"
-    [ -n "$script" ] || continue
-    awk -v r="$recipe" '$0 ~ "^" r "( [^:]*)?:( |$)" { on = 1; next } on && /^[^ ]/ { exit } on' "$REPO_DIR/justfile" |
-        grep -qF -- "$script" || fail "README.md says just $recipe runs $script, which its recipe doesn't"
-done < "$tmp/just-lines"
 
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
 # missing or empty

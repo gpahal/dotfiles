@@ -8,8 +8,11 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
+# Either unit starts sshd at boot: a machine switched back to ssh.service, as Ubuntu's docs
+# describe, has ssh.socket off, and enabling it then couldn't bind sshd's port
 sshd_enabled() {
-    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ]
+    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ] ||
+        [ "$(systemctl is-enabled ssh.service 2>/dev/null)" == enabled ]
 }
 
 # Print the SHA256 fingerprint of each public key in ~/.ssh/authorized_keys, one per line

@@ -72,6 +72,7 @@ case "$1" in
     is-enabled) case "$2" in
         smartmontools.service) cat "'"$SANDBOX"'/smartd" 2> /dev/null || echo disabled ;;
         apt-daily.timer | apt-daily-upgrade.timer | ssh.socket) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo enabled ;;
+        ssh.service) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo disabled ;;
         *) echo masked ;;
     esac ;;
     enable)
@@ -350,6 +351,15 @@ assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.so
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
+# ssh.service enabled in its place, as Ubuntu's docs describe switching back to: sshd starts at
+# boot, so the step leaves ssh.socket off, since it couldn't bind sshd's port
+echo disabled > "$SANDBOX/units/ssh.socket"
+echo enabled > "$SANDBOX/units/ssh.service"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_not_contains "$STUB_LOG" "enable --now ssh.socket"
 rm "$SANDBOX/units/"*
 
 # Re-run: nothing to do, and no sudo but sudo -n to read the ufw rules

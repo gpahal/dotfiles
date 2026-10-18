@@ -655,13 +655,20 @@ running_inside() {
     return 1
 }
 
+# Print a string with every character an extended regex treats as special escaped, so pgrep or
+# grep -E matches it literally
+# e.g. pgrep -ax "$(regex_escape "$app")"
+regex_escape() {
+    # shellcheck disable=SC2016 # a sed pattern, not an expansion
+    printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g'
+}
+
 # Quit a running app (after asking). Returns non-zero if it is still running.
 ensure_app_quit() {
     local app="$1" pattern
-    # pgrep takes a regex, so escape app names. On macOS, -a counts this script's ancestors too;
-    # procps's -a only lists full command lines, which the redirect hides.
-    # shellcheck disable=SC2016 # a sed pattern, not an expansion
-    pattern="$(printf '%s' "$app" | sed 's/[][\.*^$()+?{}|]/\\&/g')"
+    # On macOS, -a counts this script's ancestors too; procps's -a only lists full command lines,
+    # which the redirect hides.
+    pattern="$(regex_escape "$app")"
     pgrep -ax "$pattern" &>/dev/null || return 0
     if running_inside "$app"; then
         echo "  $app is running this script, so it can't be quit; skipping. Re-run this script from"

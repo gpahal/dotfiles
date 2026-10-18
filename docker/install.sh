@@ -184,6 +184,50 @@ status_docker_usage() {
     fi
 }
 
+# Print each port a published port list from docker ps binds on every address, one per line, such
+# as 0.0.0.0:8080->80/tcp. Docker lists IPv6 ones as [::]:<port>, or :::<port> before 26.
+ports_on_every_address() {
+    local nl=$'\n'
+    printf '%s\n' "${1//, /$nl}" | grep -E '^(0\.0\.0\.0|\[::\]|::):[^ ]*->' || true
+}
+
+# Published ports skip ufw, since Docker's iptables rules come first. The daemon settings bind them
+# to 127.0.0.1, but not on a network created before them, or for a port published on 0.0.0.0, so
+# status lists the running containers' ports that every address reaches. docker.socket would start
+# a stopped daemon, which then runs no containers, so a stopped one isn't asked.
+status_docker_ports() {
+    local label="Container ports published on every address, which ufw doesn't filter"
+    local none="No container ports published on every address, which ufw doesn't filter"
+    local out status=0 name ports open="" port
+    if ! systemctl is-active --quiet docker.service 2>/dev/null; then
+        status_item ok "$none: the daemon isn't running"
+        return 0
+    fi
+    out="$(run_bounded 30 docker ps --format '{{.Names}}\t{{.Ports}}' 2>&1)" || status=$?
+    if [ "$status" -ne 0 ]; then
+        case "$out" in
+            *"permission denied"*)
+                status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
+                ;;
+            *)
+                [ "$status" -ne 124 ] || out="docker ps didn't answer within 30 s"
+                status_item unknown "$label: couldn't list the containers ($(grep -v '^ *$' <<< "$out" | head -n 1))"
+                ;;
+        esac
+        return 0
+    fi
+    while IFS=$'\t' read -r name ports; do
+        while IFS= read -r port; do
+            [ -z "$port" ] || open="${open:+$open, }$name $port"
+        done < <(ports_on_every_address "$ports")
+    done <<< "$out"
+    if [ -z "$open" ]; then
+        status_item ok "$none"
+    else
+        status_item missing "$label: $open; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
+    fi
+}
+
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
@@ -211,6 +255,7 @@ status() {
         status_check "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" daemon_configured
     fi
     status_check "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" docker_auto_updates_configured
+    ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
     status_result
 }

@@ -51,19 +51,29 @@ no_sleeps_left() {
     [ -z "$(leftover_sleeps)" ]
 }
 
+# The runner and the reviewer run in their own process groups, which the signal tests/run.sh
+# sends on a timeout or Ctrl-C doesn't reach, and the sleeps would run for days. The runner stops
+# its reviewer when it's stopped, and pkill gets any sleep left.
+RUNNER_PID=""
+# shellcheck disable=SC2016 # expanded at exit
+on_exit '[ -z "$RUNNER_PID" ] || kill -- "-$RUNNER_PID" 2> /dev/null'
+# shellcheck disable=SC2016
+on_exit '"$PKILL" -f "$SLEEP_PATTERN"'
+
 # Start the runner with a reviewer that sleeps, send it a signal, and check its exit status and
 # that nothing it started lives on
 check_signal() {
-    local signal="$1" expected="$2" runner status=0
+    local signal="$1" expected="$2" status=0
     stub claude 'sleep "$REVIEWER_SLEEP"'
     # Job control keeps SIGINT deliverable: without it, a background job ignores SIGINT
     set -m
     (cd "$REPO" && exec bash "$RUNNER" claude model high "$PROMPT" "$OUT") > /dev/null 2>&1 &
-    runner=$!
+    RUNNER_PID=$!
     set +m
     wait_for both_sleeps_started || fail "$signal: the reviewer and the watchdog didn't both start"
-    kill -"$signal" "$runner"
-    wait "$runner" || status=$?
+    kill -"$signal" "$RUNNER_PID"
+    wait "$RUNNER_PID" || status=$?
+    RUNNER_PID=""
     assert_eq "$expected" "$status" "exit status after SIG$signal"
     wait_for no_sleeps_left || fail "$signal: processes left running: $(leftover_sleeps | tr '\n' ' ')"
     "$PKILL" -f "$SLEEP_PATTERN" || true

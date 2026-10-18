@@ -34,7 +34,7 @@ source "$TESTS_DIR/sentinels.sh"
 # runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
 # failing sentinel (see _sentinels). Sets an EXIT trap that removes the
 # temp dir and makes the test exit 1 when an assertion failed or a sentinel ran, so a test mustn't
-# set its own.
+# set its own; on_exit adds to it.
 setup_sandbox() {
     local var
     # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
@@ -88,7 +88,11 @@ for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857
 }
 
 _sandbox_exit() {
-    local status=$?
+    local status=$? hook
+    # Each in a subshell, so one that fails, even under set -u, can't stop the cleanup below
+    for hook in ${_ON_EXIT[@]+"${_ON_EXIT[@]}"}; do
+        (eval "$hook") || true
+    done
     # A sentinel that ran under `|| true` or in a command expected to fail still fails the test
     if [ -s "$SANDBOX/unstubbed.log" ]; then
         echo "Commands ran that the test didn't stub:" >&2
@@ -117,6 +121,17 @@ _sandbox_exit() {
         status=77
     fi
     exit "$status"
+}
+
+# Run a command when the test exits, before the sandbox goes: after test_done, when set -e stops
+# it, or on the SIGTERM tests/run.sh sends on a timeout or Ctrl-C. It's for what the test starts in
+# another process group, which those signals don't reach. The command is a string evaluated then,
+# so its variables have their values at exit. Commands run in the order added; failures are
+# ignored.
+# e.g. on_exit 'kill -- "-$SERVER_PID" 2> /dev/null'
+_ON_EXIT=()
+on_exit() {
+    _ON_EXIT+=("$1")
 }
 
 # Stop every tmux server with a socket under $TMUX_TMPDIR, and wait up to 5 s for it and its

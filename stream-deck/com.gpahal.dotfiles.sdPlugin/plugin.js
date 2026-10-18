@@ -1,8 +1,8 @@
-// Runs bin/open-in or bin/open-app for each key press of the plugin's actions, shows a warning on
-// the key when it fails, and passes what it printed to Stream Deck's log, which Stream Deck writes
-// to ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with
-// -port, -pluginUUID, and -registerEvent, and Node 24's built-in WebSocket talks to it, so the
-// plugin needs no packages.
+// Runs bin/open-in for each key press of the plugin's actions, shows a warning on the key when it
+// fails, and passes what it printed to Stream Deck's log, which Stream Deck writes to
+// ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with -port,
+// -pluginUUID, and -registerEvent, and Node 24's built-in WebSocket talks to it, so the plugin
+// needs no packages.
 //
 // The stat keys, which stats.js draws, update every 2 seconds while one is on screen. Overview
 // switches to profiles/System, the page of stat keys the plugin bundles, and Back returns to the
@@ -13,26 +13,15 @@ const stats = require("./stats.js");
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const pluginUUID = arg("-pluginUUID");
-// Each action's script, by the last part of its UUID
-const scripts = {
-  files: "open-in",
-  editor: "open-in",
-  terminal: "open-in",
-  claude: "open-app",
-  chrome: "open-app",
-  "chrome-tab": "open-app",
-  gmail: "open-app",
-  "t3-code": "open-app",
-  "activity-monitor": "open-app",
-};
+const OPEN_IN = path.join(__dirname, "bin", "open-in");
 const INTERVAL_MS = 2000;
 const socket = new WebSocket(`ws://127.0.0.1:${arg("-port")}`);
 const send = (message) => socket.send(JSON.stringify(message));
 const log = (message) => send({ event: "logMessage", payload: { message } });
 
+// open-in's targets are the actions' names; it fails, so the key shows a warning, for any other
 function runScript(target, context) {
-  const script = path.join(__dirname, "bin", scripts[target]);
-  execFile("/bin/bash", [script, target], (error, stdout, stderr) => {
+  execFile("/bin/bash", [OPEN_IN, target], (error, stdout, stderr) => {
     for (const line of `${stdout}${stderr}`.split("\n").filter(Boolean)) log(line);
     if (error) send({ event: "showAlert", context });
   });

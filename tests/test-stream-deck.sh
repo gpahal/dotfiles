@@ -3,11 +3,11 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# On macOS, the stream-deck step copies the plugin and restarts a running Stream Deck only when
-# the plugin changed, trying again when it doesn't reopen at first, and carries on when Stream
-# Deck isn't running. Each of the manifest's actions is a target plugin.js maps to open-in or open-app,
-# a stat key stats.js draws, or Back. The bundled System profile is built from stream-deck/profile
-# and holds only the plugin's actions.
+# On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
+# longer has, and restarts a running Stream Deck only when the plugin changed, trying again when
+# it doesn't reopen at first, and carries on when Stream Deck isn't running. Each of the
+# manifest's actions is a target of open-in, a stat key stats.js draws, or Back. The bundled
+# System profile is built from stream-deck/profile and holds only the plugin's actions.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -45,6 +45,22 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
 
+# Files the repo's plugin no longer has: status lists them, and the step removes them, and a
+# folder that leaves empty, but nothing outside the plugin, then restarts Stream Deck
+mkdir -p "$PLUGIN_DIR/old" "$PLUGIN_DIR/../other.sdPlugin"
+touch "$PLUGIN_DIR/bin/open-app" "$PLUGIN_DIR/old/x.js" "$PLUGIN_DIR/../other.sdPlugin/x.js"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    bin/open-app in the installed plugin: the repo's plugin no longer has it"
+assert_contains "$RUN_OUTPUT" "missing    old/x.js in the installed plugin"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Removed bin/open-app, which the repo's plugin no longer has"
+assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin."
+[ ! -e "$PLUGIN_DIR/bin/open-app" ] && [ ! -e "$PLUGIN_DIR/old" ] || fail "the stale files weren't removed"
+[ -f "$PLUGIN_DIR/../other.sdPlugin/x.js" ] || fail "a file outside the plugin was removed"
+[ -f "$PLUGIN_DIR/bin/open-in" ] || fail "bin/open-in was removed"
+assert_exit 0 status
+
 # Changed while Stream Deck isn't running: status reports the edit, and the step restores the
 # file and still succeeds
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
@@ -81,12 +97,12 @@ if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
     assert_eq "com.gpahal.dotfiles.overview com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.files com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab com.gpahal.dotfiles.gmail com.gpahal.dotfiles.t3-code com.gpahal.dotfiles.claude com.gpahal.dotfiles.cpu com.gpahal.dotfiles.memory com.gpahal.dotfiles.swap com.gpahal.dotfiles.top com.gpahal.dotfiles.gpu com.gpahal.dotfiles.temperature com.gpahal.dotfiles.power com.gpahal.dotfiles.disk com.gpahal.dotfiles.network com.gpahal.dotfiles.activity-monitor com.gpahal.dotfiles.back " \
         "$actions" "the manifest's actions"
+    open_in_targets="|$(sed -n 's/^# Usage: open-in //p' "$src/bin/open-in")|"
     for action in $actions; do
         target="${action##*.}"
-        [ "$target" == back ] ||
-            grep -qE "^  \"?$target\"?: \"open-(in|app)\",$" "$src/plugin.js" ||
+        [ "$target" == back ] || [[ "$open_in_targets" == *"|$target|"* ]] ||
             grep -qE "^  \"?$target\"?: \[" "$src/stats.js" ||
-            fail "neither plugin.js nor stats.js handles $target"
+            fail "neither open-in nor stats.js handles $target"
     done
     for image in $(jq -r '.Icon, .CategoryIcon, (.Actions[] | .Icon, .States[].Image)' "$src/manifest.json"); do
         [ -f "$src/$image.svg" ] || [ -f "$src/$image.png" ] || fail "the manifest names $image, which isn't in the plugin"

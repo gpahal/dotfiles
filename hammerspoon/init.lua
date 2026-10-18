@@ -12,7 +12,7 @@
 -- bin/open-in, which finds the folder or file, to ~/.hammerspoon/bin/open-in. Hammerspoon needs
 -- Accessibility, a manual step, to send the new tab's keystrokes and read Zed's window title and
 -- T3 Code's page, and macOS asks it for Automation of Ghostty, Finder, and System Events. The
--- Stream Deck plugin's bin/open-app sends the same keystrokes for its New Tab key.
+-- Stream Deck plugin's open-in sends the same keystrokes for its New Tab key.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"

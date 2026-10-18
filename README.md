@@ -235,7 +235,7 @@ The keys of apps show each app's official icon or logo, taken from the app's own
 
 Sometimes there's no path to use: another app is in front, Zed has no file open, T3 Code shows no thread, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. The key shows a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
-The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`, and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
+The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
 
 **Overview** shows CPU and memory use, and a press opens the **System** page of live stats. The plugin bundles the page as a profile, and **Back** returns to the profile you came from:
 
@@ -247,7 +247,7 @@ The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do w
 
 Each stat key updates every 2 seconds while it's on screen, and a press opens Activity Monitor. Green, yellow, and red show how close each stat is to trouble. Memory's color is macOS's memory pressure, as in Activity Monitor, since macOS fills free memory with cache. CPU and GPU draw the last minute as a line. GPU, Temperature, and Power come from [macmon](#cli-tools-installed-via-brew), and show a dash without it. The stat keys are also in the category, to put on any page. The page is laid out for the 15-key Stream Deck. Stream Deck installs it the first time you press **Overview** and keeps its own copy after, so a change to `stream-deck/profile` reaches Stream Deck only once you delete the **System** profile in Stream Deck's settings and press **Overview** again. After editing the page, run `bash stream-deck/build-profile.sh`.
 
-Stream Deck runs the plugin's `bin/open-in` and `bin/open-app`, so macOS asks Stream Deck for the permissions they need. Accessibility lets them read Zed's window title and the thread T3 Code shows, and press the new tab's keys, and Automation lets them control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+Stream Deck runs the plugin's `bin/open-in` for every key, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title and the thread T3 Code shows, and press the new tab's keys, and Automation lets it control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
 
 ### Hammerspoon
 

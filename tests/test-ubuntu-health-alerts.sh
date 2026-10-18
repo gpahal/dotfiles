@@ -5,8 +5,8 @@ set -euo pipefail
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
 # setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy, only when one
 # exits 1 or 3, and again only when the message changed or a week passed, with one all-clear when
-# nothing needs attention any more; boot pushes that the machine started. With no URL saved,
-# neither pushes.
+# nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
+# saved, neither pushes.
 # The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
 # and the two runners are stubs.
 
@@ -14,7 +14,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url"
+export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
 
 # A copy of the script in a repo whose runners print $SANDBOX/out/<runner> and exit with
 # $SANDBOX/exit/<runner>, 0 by default, logging how they were called
@@ -208,11 +208,30 @@ assert_file_not_contains "$STUB_LOG" "Not checked here"
 echo 0 > "$SANDBOX/exit/setup"
 
 # boot pushes that the machine started, retrying while the network comes up
+echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 assert_file_contains "$STUB_LOG" "--data-raw $(hostname) started at "
 assert_file_not_contains "$STUB_LOG" "sleep"
+# Once per boot: the user manager starting it again, as after a restart of user@<uid>, pushes
+# nothing
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_contains "$RUN_OUTPUT" "Already pushed the boot notice for this boot."
+assert_file_not_contains "$STUB_LOG" "curl"
+# A new boot pushes again, as does every start when the boot's ID can't be read
+echo boot-2 > "$DOTFILES_BOOT_ID_FILE"
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
+rm "$DOTFILES_BOOT_ID_FILE"
+for _ in 1 2; do
+    : > "$STUB_LOG"
+    assert_exit 0 "$BASH" "$ALERT" boot
+    assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
+done
+echo boot-3 > "$DOTFILES_BOOT_ID_FILE"
 touch "$SANDBOX/curl-fails"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" boot
@@ -220,6 +239,10 @@ assert_contains "$RUN_OUTPUT" "Couldn't push the boot notice to ntfy after 20 tr
 assert_eq 20 "$(grep -c '^curl -' "$STUB_LOG")" "the boot notice's tries"
 assert_eq 19 "$(grep -c '^sleep 10' "$STUB_LOG")" "the waits between them"
 rm "$SANDBOX/curl-fails"
+# A failed push isn't recorded, so the next start tries again
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 
 # No URL saved: boot pushes nothing. No argument prints the usage and exits 2.
 rm "$DOTFILES_NTFY_URL_FILE"

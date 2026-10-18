@@ -13,7 +13,9 @@ set -euo pipefail
 #           service, so the checks only root can make come back unverified here, which needs no
 #           attention; a push that has them ends with $ROOT_ONLY_NOTE.
 #   boot    push "<host> started at <time>", so an unexpected reboot gets noticed
-#           (dotfiles-boot-notice.service)
+#           (dotfiles-boot-notice.service), once per boot: the user manager also starts it when
+#           it restarts, as after the first login before linger is on, or a restart of
+#           user@<uid>, which the docker step suggests. $BOOT_STATE_FILE records the boot's ID.
 # Ubuntu only. It fails when a runner couldn't run or a push failed, so the unit shows failed.
 
 HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,6 +38,10 @@ REPUSH_SECONDS=604800
 # health_unit in lib/alerts.sh): 20 * (10 + 10) = 400s.
 BOOT_ATTEMPTS=20
 BOOT_RETRY_SECONDS=10
+# The kernel's ID for this boot, and the last boot the notice was pushed for. Tests point the first
+# into their sandbox.
+BOOT_ID_FILE="${DOTFILES_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
     echo "Usage: bash ubuntu/health-alert.sh status | boot"
@@ -146,9 +152,16 @@ status_alert() {
 }
 
 boot_notice() {
-    local url attempt=1 host
+    local url attempt=1 host boot_id="" last=""
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
+    # Without a boot ID, every start pushes, as a boot might have gone unnoticed
+    boot_id="$(cat "$BOOT_ID_FILE" 2>/dev/null)" || boot_id=""
+    last="$(cat "$BOOT_STATE_FILE" 2>/dev/null)" || last=""
+    if [ -n "$boot_id" ] && [ "$boot_id" == "$last" ]; then
+        echo "Already pushed the boot notice for this boot."
+        return 0
+    fi
     host="$(hostname)"
     while ! ntfy_push "$url" "$host started" "$host started at $(date '+%Y-%m-%d %H:%M %Z')." \
         "Tags: arrows_counterclockwise"; do
@@ -159,6 +172,10 @@ boot_notice() {
         attempt=$((attempt + 1))
         sleep "$BOOT_RETRY_SECONDS"
     done
+    # A failed write only warns: the next start of the user manager pushes again
+    [ -z "$boot_id" ] || { mkdir -p "$(dirname "$BOOT_STATE_FILE")" &&
+        printf '%s\n' "$boot_id" > "$BOOT_STATE_FILE"; } 2>/dev/null ||
+        echo "Couldn't save the boot's ID to $BOOT_STATE_FILE." >&2
     echo "Pushed the boot notice to ntfy."
 }
 

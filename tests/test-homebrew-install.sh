@@ -52,7 +52,7 @@ done
 
 # brew catches Ctrl-C and exits 130, so install_cask exits with it, rather than returning a failure
 # that a caller's `|| result=1` would turn into 1. Any other failure returns, so the rest still
-# install.
+# install, including other codes above 128 such as 137, 141 from SIGPIPE, or 255.
 load_script homebrew/install.sh
 is_macos() { false; }
 cask_state() { printf 'missing\t\n'; }
@@ -64,9 +64,9 @@ try_cask() {
 direct() {
     install_cask foo "" || echo "returned $?"
 }
-for code in 130 143 129 1; do
+for code in 130 143 129 1 137 141 255; do
     stub brew "exit $code"
-    if [ "$code" -eq 1 ]; then
+    if ! interrupted_status "$code"; then
         assert_exit 0 try_cask
         assert_contains "$RUN_OUTPUT" "carried on, failed: foo"
     else

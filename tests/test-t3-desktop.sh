@@ -44,6 +44,7 @@ DIFFERENT_AGENT='<?xml version="1.0" encoding="UTF-8"?>
     </array>
 </dict>
 </plist>'
+# shellcheck disable=SC2088 # as status shows it
 AGENT_ITEM="~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 ENV_ITEM="T3 Code's telemetry off in launchd's environment"
 

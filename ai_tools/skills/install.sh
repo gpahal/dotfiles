@@ -152,15 +152,17 @@ problem_skills() {
     done
 }
 
-# Run the pinned skills CLI with the given arguments, which name any path absolutely. It runs from
-# an empty temp dir, with an empty npm user config there, because npm exec prefers a matching
-# skills package in the working directory's project, and reads that project's .npmrc, so running
-# setup from inside a project could run the project's code. DO_NOT_TRACK turns off its telemetry.
+# Run the pinned skills CLI with the given arguments, which name any path absolutely. npm exec
+# prefers a matching skills package in the working directory's project, and reads that project's
+# .npmrc, so running setup from inside a project could run the project's code. So the CLI runs
+# from a temp dir that holds an empty package.json, which makes the dir its own project. Without
+# it, npm would look for the project in the dir's parents, such as a /tmp any user can write to.
+# DO_NOT_TRACK turns off its telemetry.
 skills_cli() {
     local dir result=0
     dir="$(mktemp -d)" || return 1
-    : > "$dir/npmrc" &&
-        (cd "$dir" && DO_NOT_TRACK=1 npm_config_userconfig="$dir/npmrc" npx -y "$SKILLS_CLI" "$@") ||
+    echo '{}' > "$dir/package.json" &&
+        (cd "$dir" && DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" "$@") ||
         result=$?
     rm -rf "$dir"
     return "$result"

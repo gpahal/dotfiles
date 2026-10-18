@@ -344,11 +344,12 @@ assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0463:ffff) monitored by NU
 assert_exit 0 setup_ups
 assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y nut-client nut-server"
 
-# --- no upower hwdb, or no udev database: status can't tell, and the step installs nothing ---
+# --- no upower hwdb, or no udev database: status can't tell, and the step installs nothing. Without
+# upower, that's information, since the machine may have no UPS. ---
 mv "$UPOWER_HWDB" "$UPOWER_HWDB.gone"
 assert_eq "" "$(ups_todo)" "what the UPS part needs without upower's hwdb"
 run status_ups
-assert_contains "$RUN_OUTPUT" "unknown    UPS monitored by NUT: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower"
+assert_contains "$RUN_OUTPUT" "info       UPS monitored by NUT: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower"
 run warn_no_ups
 assert_contains "$RUN_OUTPUT" "$UPOWER_HWDB is missing"
 mv "$UPOWER_HWDB.gone" "$UPOWER_HWDB"

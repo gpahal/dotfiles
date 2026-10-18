@@ -355,7 +355,8 @@ status_ups() {
     ups_state
     case "$UPS_STATE" in
         vm) status_item skipped "$label: this is a VM" ;;
-        nohwdb) status_item unknown "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
+        # Information: a machine without upower may have no UPS, and the daily alert would nag
+        nohwdb) status_item info "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
         noudev) status_item unknown "$label: can't tell whether a UPS is on USB, since udevadm info --export-db failed" ;;
         none) status_item skipped "$label: no UPS on USB; plug in the UPS's USB cable and re-run the ubuntu step" ;;
     esac

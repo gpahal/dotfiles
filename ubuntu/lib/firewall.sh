@@ -16,6 +16,16 @@ ufw_enabled() {
         systemctl is-active -q ufw.service 2>/dev/null
 }
 
+# ufw_stopped <sudo flags>: succeeds when `ufw status` says ufw is inactive, though ufw_enabled may
+# succeed, as after /usr/lib/ufw/ufw-init stop, which unloads the rules and leaves the files and
+# ufw.service as they were. Only root can run it. Fails when ufw is active, or its status can't be
+# read.
+ufw_stopped() {
+    local out
+    out="$(sudo "$@" ufw status 2>/dev/null)" || return 1
+    [ "$(head -n 1 <<< "$out")" == "Status: inactive" ]
+}
+
 # Succeeds when ufw filters IPv6 too. With IPV6=no, it leaves sshd open on the global IPv6
 # address while ufw_enabled still succeeds. The step leaves the file to you, and status reports it.
 ufw_ipv6_on() {
@@ -73,7 +83,8 @@ ufw_rules() {
 # Allow SSH only from the private ranges and the tailnet, so a port forward on the router can't
 # expose sshd. Takes sudo's flags: with -n it never asks for a password. Returns 2 when ufw is on
 # and denies incoming connections, but its rules (`ufw status` needs root) couldn't be read, so
-# they're unverified, and 1 for anything else missing. Rules you added by hand are left to you.
+# they're unverified, and 1 for anything else missing. Stopped (ufw_stopped), ufw lists no rules,
+# so they're missing. Rules you added by hand are left to you.
 # shellcheck disable=SC2120 # apply in install.sh passes sudo's flags
 ufw_configured() {
     local missing
@@ -325,7 +336,9 @@ configure_ufw() {
         echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
         return 1
     }
-    ! ufw_enabled || on=true
+    if ufw_enabled && ! ufw_stopped; then
+        on=true
+    fi
     # shellcheck disable=SC2086 # one port per word
     if ! "$on" && ! outside="$(outside_ssh_peers $ports)"; then
         echo "  Couldn't list the established SSH connections with ss, so the firewall is left unchanged." >&2
@@ -383,6 +396,11 @@ status_ufw() {
     fi
     if ! ufw_enabled; then
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+        return 0
+    fi
+    # Without cached credentials, the rules item below is unverified, which covers this too
+    if sudo_cached && ufw_stopped -n; then
+        status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
         return 0
     fi
     status_item ok "ufw on, denying incoming connections"

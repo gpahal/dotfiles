@@ -457,7 +457,7 @@ apply() {
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
     # With ufw on, configure_ufw only adds the rules that are missing or out of place
-    if [ "$ufw" -eq 1 ] && ufw_enabled; then
+    if [ "$ufw" -eq 1 ] && ufw_enabled && ! ufw_stopped -n; then
         ufw_todo="add the missing ufw rules"
     elif [ "$ufw" -eq 1 ]; then
         ufw_todo="install and turn on ufw"

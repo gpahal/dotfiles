@@ -97,14 +97,19 @@ printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
-# lists them, or says it's inactive while its config says ENABLED=no. allow from <range> to any port
+# lists them, or says it's inactive while its config says ENABLED=no or $SANDBOX/ufw-stopped exists,
+# as after ufw-init stop. allow from <range> to any port
 # <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once.
 # prepend deny in on <bridge> to any port <port> proto tcp adds its IPv4 and IPv6 rules under the
 # header unless it has them, and delete with the same arguments removes them. --force enable turns
 # ufw on. As in ufw, an IPv6 rule fails while the defaults say IPV6=no.
 stub ufw 'rules="'"$SANDBOX"'/ufw-rules"
 case "$1" in
-    status) if grep -qx ENABLED=no "'"$UFW_CONF"'"; then echo "Status: inactive"; else cat "$rules"; fi ;;
+    status) if grep -qx ENABLED=no "'"$UFW_CONF"'" || [ -e "'"$SANDBOX"'/ufw-stopped" ]; then
+            echo "Status: inactive"
+        else
+            cat "$rules"
+        fi ;;
     allow) case "$*" in
             "allow from "*:*) if grep -qx IPV6=no "'"$UFW_DEFAULTS"'"; then
                     echo "ERROR: IPv6 support not enabled" >&2
@@ -127,7 +132,7 @@ case "$1" in
             awk -v a="$v4" -v b="$v6" "{ print } /^--/ { print a; print b }" "$rules" > "$rules.new"
         fi
         mv "$rules.new" "$rules" ;;
-    --force) echo ENABLED=yes > "'"$UFW_CONF"'" ;;
+    --force) echo ENABLED=yes > "'"$UFW_CONF"'"; rm -f "'"$SANDBOX"'/ufw-stopped" ;;
 esac'
 rules_present() {
     ufw_status_listing > "$SANDBOX/ufw-rules"
@@ -387,6 +392,31 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/ufw-unit-disabled" ] || fail "the step left ufw.service disabled"
 assert_exit 0 status
+# Stopped by /usr/lib/ufw/ufw-init stop, ufw has its rules unloaded while its files and
+# ufw.service say it's on, and `ufw status` says inactive: status says it's off, and the step turns
+# it on again rather than only adding rules
+touch "$SANDBOX/ufw-stopped"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections: ufw status says it's inactive"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw"
+assert_file_contains "$STUB_LOG" "sudo ufw default deny incoming"
+assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
+[ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
+assert_exit 0 status
+# Without cached credentials, status can't tell, so the rules are unverified
+touch "$SANDBOX/ufw-stopped"
+not_cached
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
+cached
+rm "$SANDBOX/ufw-stopped"
+# On, a run that has nothing to add never turns ufw on again
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_not_contains "$STUB_LOG" "ufw --force enable"
+assert_file_not_contains "$STUB_LOG" "ufw default deny"
 
 # Sessions from the private ranges or the tailnet, over IPv4, IPv6, and IPv4-mapped IPv6, keep
 # working, so ufw goes on. A link-local one does whatever interface it came in on, such as a VPN's,

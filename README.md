@@ -508,7 +508,7 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
-- Old Homebrew versions: `brew cleanup`, run last so it also removes the versions the cask upgrades above replaced.
+- Old Homebrew versions: `brew cleanup`. It runs last, so it also removes the old versions of the casks upgraded above.
 
 Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
 

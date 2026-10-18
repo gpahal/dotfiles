@@ -138,6 +138,16 @@ assert_file_not_contains "$STUB_LOG" "mise use"
 assert_exit 0 main <<< y
 assert_file_contains "$STUB_LOG" "mise use --global node@lts"
 assert_file_not_contains "$STUB_LOG" "go@latest"
+# A table-form global: one without a version is asked about as "(a table)", and one whose version
+# is the repo's counts as already set
+: > "$STUB_LOG"
+MISE_NODE='version = "lts"
+postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run main <<< n
+assert_eq 0 "$RUN_STATUS" "main's status with table-form globals"
+assert_contains "$RUN_OUTPUT" "mise's global go is (a table), not the repo's latest. Replace it?"
+assert_contains "$RUN_OUTPUT" "mise's global node is already lts."
+assert_not_contains "$RUN_OUTPUT" "postinstall"
+assert_file_not_contains "$STUB_LOG" "mise use"
 # lib/common.sh brings back the real confirm and is_interactive
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"

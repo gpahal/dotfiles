@@ -182,6 +182,7 @@ mkdir "$SANDBOX/units" "$SANDBOX/user-units"
 REBOOT_REQUIRED="$SANDBOX/reboot-required"
 SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"
 SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
+SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
 NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
 NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
@@ -576,6 +577,30 @@ assert_file_not_contains "$STUB_LOG" "tee $SYSCTL_CONF"
 assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
+# Another file raising an inotify limit further, as an IDE's does, leaves it in effect: status is
+# ok, and a run has nothing to apply
+SYSCTL_ITEM="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
+echo "fs.inotify.max_user_watches = 2097152" > "$SANDBOX/sysctl.d/99-idea.conf"
+echo "fs.inotify.max_user_watches=2097152" >> "$SANDBOX/sysctl-live"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_not_contains "$STUB_LOG" "sysctl --system"
+rm "$SANDBOX/sysctl.d/99-idea.conf"
+# One that lowers it wins: the step names the file and fails, and so does status
+echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.d/99-low.conf"
+echo "fs.inotify.max_user_watches=8192" >> "$SANDBOX/sysctl-live"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effect (fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf; change or remove them there, and re-run the ubuntu step)"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:
+    fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf"
+rm "$SANDBOX/sysctl.d/99-low.conf"
+assert_exit 0 main
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
+
 # sysctl is in /usr/sbin, which a user's PATH may lack: the check looks there too
 mkdir -p "$SANDBOX/sbin"
 mv "$STUB_DIR/sysctl" "$SANDBOX/sbin/"
@@ -688,6 +713,8 @@ SSHD_RUN_DIR="$SANDBOX/run-sshd"
 SSHD_BIN="$STUB_DIR/sshd"
 SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"
 SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
+# shellcheck disable=SC2034 # sysctl_overrides reads it
+SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
 AUTO_UPGRADES_CONF="$SANDBOX/apt.conf.d/20auto-upgrades"
 # shellcheck disable=SC2034
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"

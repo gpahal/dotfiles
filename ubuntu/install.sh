@@ -65,6 +65,8 @@ REBOOT_REQUIRED=/var/run/reboot-required
 # The timers that download and install updates, which unattended-upgrades relies on
 APT_TIMERS=(apt-daily.timer apt-daily-upgrade.timer)
 SYSCTL_CONF=/etc/sysctl.d/90-dotfiles.conf
+# Where sysctl --system reads settings from, to name the file that overrides one of the step's
+SYSCTL_SOURCES=(/etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf)
 # The file watchers agents run in many worktrees (dev servers, editors, test watchers) each open
 # inotify instances, so the default 128 instances run out before the watches do
 SYSCTL_CONTENT='# From the dotfiles ubuntu step: reboot 10 seconds after a kernel panic
@@ -224,7 +226,7 @@ lingering() {
 # Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
 # credentials are cached, and is otherwise unverified.
 status() {
-    local ufw=0 uuid name wired=false item packages todo problems="" rule where
+    local ufw=0 uuid name wired=false item packages todo problems="" rule where overrides
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
     if ! is_ubuntu; then
         status_item skipped "Running around the clock: Ubuntu only"
@@ -236,7 +238,8 @@ status() {
     if ! sysctl_file_written; then
         status_item missing "$item"
     elif ! sysctl_in_effect; then
-        status_item missing "$item: written but not in effect (re-run the ubuntu step)"
+        overrides="$(sysctl_overrides | join_lines '; ')"
+        status_item missing "$item: written but not in effect (${overrides:+$overrides; change or remove them there, and }re-run the ubuntu step)"
     else
         status_item ok "$item"
     fi
@@ -479,13 +482,7 @@ main() {
         # Each part runs whether or not the one before it failed
         sleep_masked || sudo systemctl mask "${SLEEP_TARGETS[@]}" || result=1
         sleep_conf_written || write_root_file "$SLEEP_CONF" "$SLEEP_CONF_CONTENT" || result=1
-        # A failed sysctl --system leaves the file written, so the next run applies it. --system
-        # loads every file in boot order, so a later file's value still wins, where -p on the
-        # step's file would override it until the next reboot.
-        if ! sysctl_written; then
-            { sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT"; } &&
-                sudo sysctl --system > /dev/null || result=1
-        fi
+        sysctl_written || apply_sysctl || result=1
         lingering || sudo loginctl enable-linger "$(id -un)" || result=1
         smartd_ready || install_smartd || result=1
         in_vm || smartd_hook_installed || install_smartd_hook || result=1

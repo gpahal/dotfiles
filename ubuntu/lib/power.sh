@@ -17,18 +17,61 @@ sysctl_file_written() {
     file_is "$SYSCTL_CONF" "$SYSCTL_CONTENT"
 }
 
-# Succeeds when the kernel has each setting in $SYSCTL_CONTENT, which a failed sysctl --system
-# leaves undone
-sysctl_in_effect() {
-    local key value sysctl
+# Print each setting in $SYSCTL_CONTENT the kernel doesn't have, as "<key> <value it has>", one
+# per line. Fails when sysctl can't be found. The inotify limits count when at least as high,
+# since another file, such as an IDE's, may raise them further; kernel.panic must match.
+sysctl_differences() {
+    local key value sysctl have
     sysctl="$(sbin_cmd sysctl)" || return 1
     while IFS='=' read -r key value; do
         key="${key//[[:space:]]/}"
         value="${value//[[:space:]]/}"
-        [ "$("$sysctl" -n "$key" 2>/dev/null)" == "$value" ] || return 1
+        have="$("$sysctl" -n "$key" 2>/dev/null)" || have=""
+        case "$key" in
+            fs.inotify.*) [[ "$have" =~ ^[0-9]+$ ]] && [ "$have" -ge "$value" ] && continue ;;
+            *) [ "$have" == "$value" ] && continue ;;
+        esac
+        echo "$key ${have:-unset}"
     done < <(grep -E '^[a-z]' <<< "$SYSCTL_CONTENT")
+}
+
+# Succeeds when the kernel has each setting in $SYSCTL_CONTENT, which a failed sysctl --system
+# leaves undone
+sysctl_in_effect() {
+    local differences
+    differences="$(sysctl_differences)" && [ -z "$differences" ]
 }
 
 sysctl_written() {
     sysctl_file_written && sysctl_in_effect
+}
+
+# Print each setting the kernel lacks that another file sets, which sysctl --system then read
+# after $SYSCTL_CONF, as "<key> is <value>, set by <files>", one per line
+sysctl_overrides() {
+    local key have files
+    while read -r key have; do
+        files="$(grep -rlE "^[[:space:]]*-?${key//./[./]}[[:space:]]*=" "${SYSCTL_SOURCES[@]}" 2>/dev/null |
+            grep -vxF "$SYSCTL_CONF" | sort -u | join_lines ', ')" || true
+        [ -z "$files" ] || echo "$key is $have, set by $files"
+    done < <(sysctl_differences || true)
+}
+
+# Write $SYSCTL_CONF and put it in effect. --system loads every file in boot order, so a later
+# file's value still wins, where -p on the step's file would override it until the next reboot. A
+# failed sysctl --system leaves the file written, so the next run applies it.
+apply_sysctl() {
+    local overrides line
+    sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT" || return 1
+    sudo sysctl --system > /dev/null || return 1
+    sysctl_in_effect && return 0
+    overrides="$(sysctl_overrides)"
+    if [ -n "$overrides" ]; then
+        echo "  sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:" >&2
+        while IFS= read -r line; do echo "    $line"; done <<< "$overrides" >&2
+        echo "  Change or remove them there, and re-run the step." >&2
+    else
+        echo "  sysctl --system didn't put $SYSCTL_CONF in effect; check it with sysctl --system." >&2
+    fi
+    return 1
 }

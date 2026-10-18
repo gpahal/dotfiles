@@ -153,12 +153,17 @@ rm "$STATE"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_not_contains "$STUB_LOG" "curl"
 echo "$first_state" > "$STATE"
+# A runner that crashes checks nothing, so it's pushed, and the unit still fails
+cp "$SANDBOX/out/setup" "$SANDBOX/out/setup.report"
+printf '%s\n' "lib/common.sh: line 12: syntax error near unexpected token \`<<<'" "" > "$SANDBOX/out/setup"
 echo 2 > "$SANDBOX/exit/setup"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "setup.sh --status --quick exited 2"
-assert_file_not_contains "$STUB_LOG" "curl"
+assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
+assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"
 echo 0 > "$SANDBOX/exit/setup"
+mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
 # A failed push fails the service, the output leaves the topic out, and the state stays as it was.
 # A changed message is pushed though the last push was recent.

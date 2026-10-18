@@ -111,6 +111,9 @@ status_alert() {
             *)
                 echo "$runner --status --quick exited $status:" >&2
                 printf '%s\n' "$out" | tail -n 5 >&2
+                # A runner that crashes, such as on a syntax error after a pull, checks nothing,
+                # so it's pushed like a problem
+                message="${message}Health check couldn't run: $runner exited $status: $(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)"$'\n'
                 result=1
                 ;;
         esac

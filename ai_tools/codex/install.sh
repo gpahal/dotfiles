@@ -166,16 +166,56 @@ codex_settings_joined() {
     printf '%s\n' "$joined"
 }
 
-# Print the number of full-line comments in a file
-comment_lines() {
-    grep -c '^[[:space:]]*#' "$1" || true
+# Print a TOML file's full-line comments, trimmed and sorted. Lines inside a multi-line string
+# aren't comments, even when they start with #, so a line with an odd number of """ or ''' starts
+# or ends one.
+codex_comments() {
+    awk -v dq='"""' -v sq="'''" '
+        function count(s, d,   n, i) {
+            while ((i = index(s, d)) > 0) { n++; s = substr(s, i + 3) }
+            return n
+        }
+        str != "" { if (count($0, str) % 2) str = ""; next }
+        /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; next }
+        count($0, dq) % 2 { str = dq; next }
+        count($0, sq) % 2 { str = sq }
+    ' "$1" | LC_ALL=C sort
+}
+
+# Succeeds when the edited copy, given first, still has every full-line comment of the source
+codex_comments_kept() {
+    [ -z "$(LC_ALL=C comm -23 <(codex_comments "$2") <(codex_comments "$1"))" ]
+}
+
+# Add the comments and blank lines after the source's last key back into the edited copy, given
+# first. They go above the first table the edit added, which yq puts after the source's tables,
+# so a commented-out key stays under the table it was written in.
+codex_add_tail() {
+    local edited="$1" tmp
+    tmp="$(mktemp)" || return 1
+    awk -v source="$2" '
+        FILENAME == source {
+            if (/^[[:space:]]*\[/) header[$0] = 1
+            if (/^[[:space:]]*(#|$)/) tail = tail $0 "\n"; else tail = ""
+            next
+        }
+        !done && /^[[:space:]]*\[/ && !($0 in header) {
+            # The edit already left a blank line above this table
+            sub(/^\n+/, "", tail)
+            if (tail != "") printf "%s\n", tail
+            done = 1
+        }
+        { print }
+        END { if (!done) printf "%s", tail }
+    ' "$2" "$edited" > "$tmp" && mv "$tmp" "$edited"
 }
 
 # Write a copy of the Codex config with the settings applied, and print its path. yq rewrites the
 # whole file: values and full-line comments stay, but end-of-line comments may move or go,
 # multi-line strings become one-line strings with \n, and dotted keys such as profile.fast = {...}
 # may become tables. yq 4.54.1 drops the comments after the last key, such as a commented-out
-# table at the end, so they're added back, and the copy must keep every full-line comment. It also
+# table at the end, so they're added back, and the copy must keep every full-line comment the source
+# has. It also
 # moves values in two shapes, a top-level inline table after a top-level dotted key, and top-level
 # keys after a top-level array of inline tables, so the copy is checked against the edit's own
 # result before use.
@@ -199,11 +239,11 @@ codex_config_edited() {
         rm -f "$edited"
         return 1
     fi
-    if [ "$(comment_lines "$edited")" -lt "$(comment_lines "$source")" ]; then
-        awk '/^[[:space:]]*(#|$)/ { tail = tail $0 "\n"; next } { tail = "" } END { printf "%s", tail }' \
-            "$source" >> "$edited"
+    if ! codex_comments_kept "$edited" "$source" && ! codex_add_tail "$edited" "$source"; then
+        rm -f "$edited"
+        return 1
     fi
-    if [ "$(comment_lines "$edited")" -lt "$(comment_lines "$source")" ]; then
+    if ! codex_comments_kept "$edited" "$source"; then
         echo "  yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged." >&2
         rm -f "$edited"
         return 1

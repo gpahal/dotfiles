@@ -181,12 +181,41 @@ printf '# only\n# comments\n' > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_file_contains "$CODEX_CONFIG" "# only"
 assert_file_contains "$CODEX_CONFIG" "# comments"
+# They go back under the table they were written in, above the tables the edit adds, and a second
+# run leaves them there
+printf 'model = "x"\n\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq '# [profiles.fast]|# model = "y"||[analytics]' \
+    "$(grep -A3 -F '# [profiles.fast]' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comments' place"
+first="$(cat "$CODEX_CONFIG")"
+assert_exit 0 configure_codex
+assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run with trailing comments"
+# A # line inside a multi-line string isn't a comment, though yq turns the string into one line
+printf 'developer_instructions = """\n# Style\nBe brief.\n"""\nx = '"'''"'\n# raw\n'"'''"'\n# real\n[tui]\nnotifications = true\n' \
+    > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq '"# Style\nBe brief.\n"' "$(get .developer_instructions)" "a multi-line string holding a heading"
+assert_file_contains "$CODEX_CONFIG" "# real"
+assert_exit 0 configure_codex
+assert_contains "$RUN_OUTPUT" "already set"
 # A rewrite that still drops a comment fails, leaving the file alone
 printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n' > "$CODEX_CONFIG"
 cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
 yq() {
     case "$*" in
         *"-o toml"*) command yq "$@" | grep -v '^# keep me' ;;
+        *) command yq "$@" ;;
+    esac
+}
+assert_exit 1 configure_codex
+assert_contains "$RUN_OUTPUT" "yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged."
+assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+# So does one that changes a comment mid-file, though the count of comments comes out even
+printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n# tail\n' > "$CODEX_CONFIG"
+cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
+yq() {
+    case "$*" in
+        *"-o toml"*) command yq "$@" | sed 's/^# keep me$/# other/' ;;
         *) command yq "$@" ;;
     esac
 }

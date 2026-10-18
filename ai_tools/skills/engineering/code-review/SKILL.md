@@ -144,4 +144,4 @@ With `--comment` on a PR, post one review that holds every finding as an inline 
 gh api repos/{owner}/{repo}/pulls/<n>/reviews --method POST --input <file>
 ```
 
-where `<file>` holds `{"commit_id": "<head>", "event": "COMMENT", "body": "<verdict>", "comments": [{"path": "...", "line": 42, "side": "RIGHT", "body": "..."}]}`. A comment's line must be in the diff. Put a finding whose line isn't into the review body. With no findings, post the verdict alone. For any other scope, `--comment` does nothing: say so.
+where `<file>` holds `{"commit_id": "<head>", "event": "COMMENT", "body": "<verdict>", "comments": [{"path": "...", "line": 42, "side": "RIGHT", "body": "..."}]}`. A comment's line must fall inside a hunk of `gh pr diff <n>`, GitHub's own diff, which carries less context than the review's `-U10` diff; GitHub rejects the whole review over one line outside its hunks. Check each line against `gh pr diff <n>`, and put a finding whose line isn't there into the review body. With no findings, post the verdict alone. For any other scope, `--comment` does nothing: say so.

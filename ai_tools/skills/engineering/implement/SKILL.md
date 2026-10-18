@@ -24,7 +24,7 @@ If the code has no tests yet, ask the user which they want: add a test setup fir
 
 The tickets form a **task graph**: each names the tickets that block it. The **frontier** is every `ready` ticket whose blockers are all `done`. Work the frontier until no ticket is left, setting each ticket's **Status** to `in-progress` when you start it.
 
-Build each ticket in a foreground **implementer sub-agent** in the feature checkout, one at a time, so each ticket gets a fresh context. Give it absolute paths to the ticket, the spec, and any `DESIGN.md`. The implementer builds the ticket with the tdd skill where possible, at the seams the spec agreed, runs typechecking and the tests for the files it touched, commits, and reports what it built, or what blocks it, in a few lines. Then review its commit against the ticket, tick the ticket's acceptance criteria, and set its Status to `done`. Without a sub-agent tool, build each ticket yourself the same way.
+Build each ticket in a foreground **implementer sub-agent** in the feature checkout, one at a time, so each ticket gets a fresh context. Give it the feature checkout's absolute path, to work and commit only there, and absolute paths to the ticket, the spec, and any `DESIGN.md`. The implementer builds the ticket with the tdd skill where possible, at the seams the spec agreed, runs typechecking and the tests for the files it touched, commits, and reports what it built, or what blocks it, in a few lines. Then review its commit against the ticket, tick the ticket's acceptance criteria, and set its Status to `done`. Without a sub-agent tool, build each ticket yourself the same way.
 
 ### Parallel tickets
 
@@ -38,7 +38,7 @@ Done when every ticket is `done` on the integration branch and the full test sui
 
 ## Closing out
 
-1. Run both reviews, one after the other, each with `<base-branch>` as its scope:
+1. Run both reviews, one after the other, each with `<base-branch>...<feature-slug>` as its scope:
    - **The code-review skill**, at the level from _Review level_ below, for bugs.
    - **The code-review-stds-and-spec skill**, with the spec path (plus the ticket files) as its spec source, for conformance. One invocation covers both of its axes.
 

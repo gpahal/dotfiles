@@ -184,12 +184,12 @@ check_skill_paths() {
         path="${path%\`}"
         case "$path" in '${CLAUDE_SKILL_DIR}'*) continue ;; esac
         check_relative_path "$skill" "$md" "$path"
-    done < <(awk '/^[[:space:]]*```/ { fence = !fence; next } !fence' "$md" |
+    done < <(awk -v fence="$MD_FENCE" '$0 ~ fence { in_code = !in_code; next } !in_code' "$md" |
         grep -oE "(\[|skill's )?\`[^\`[:space:]]+\`" || true)
     # The words in code fences, less quotes and trailing punctuation
     while IFS= read -r path; do
         check_relative_path "$skill" "$md" "$path"
-    done < <(awk '/^[[:space:]]*```/ { fence = !fence; next } fence' "$md" | tr -s '[:blank:]' '\n' |
+    done < <(awk -v fence="$MD_FENCE" '$0 ~ fence { in_code = !in_code; next } in_code' "$md" | tr -s '[:blank:]' '\n' |
         sed -E "s/^[\"'(]+//; s/[\"'),;:.]+\$//" | grep -v CLAUDE_SKILL_DIR || true)
     while IFS= read -r path; do
         while :; do

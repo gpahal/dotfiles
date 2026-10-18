@@ -6,6 +6,8 @@ set -euo pipefail
 
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+# shellcheck source=scripts/lib/markdown.sh
+source "$DOTFILES_DIR/scripts/lib/markdown.sh"
 
 # Nothing to check: the list is what scripts can't do
 status() { return 0; }

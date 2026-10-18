@@ -42,14 +42,10 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the section of Markdown file $1 under heading $2, given with its #s, without the heading:
-# each line down to the next heading of the same or a higher level. A # line in a code block, such
-# as a shell comment, isn't a heading.
+# Print the section of a Markdown file under a heading, given with its #s, as md_section does. A
+# missing section prints nothing, which the check that reads it reports.
 section() {
-    awk -v h="$2" 'BEGIN { level = index(h, " ") }
-        /^[[:space:]]*(```|~~~)/ { fence = !fence }
-        !fence && /^#+ / && index($0, " ") <= level { on = ($0 == h); next }
-        on' "$1"
+    md_section "$@" || true
 }
 
 # Print the words in list file $1, or, when it's empty, the text the check looked for in the doc
@@ -281,7 +277,7 @@ fi
 # <repo file> <tab> <home file>, from the repo with the same empty HOME. lazygit answers
 # --print-config-dir as it does on macOS. Each line must be a cp, or a loop around one, and only
 # those lines run.
-section "$readme" "## Maintenance" | awk '/^```/ { fences++; next } fences == 1' > "$tmp/copy-back"
+section "$readme" "## Maintenance" | awk -v fence="$MD_FENCE" '$0 ~ fence { fences++; next } fences == 1' > "$tmp/copy-back"
 while IFS= read -r line; do
     case "$line" in
         "cp "* | "for "*"; do cp "*"; done") printf '%s\n' "$line" ;;
@@ -424,11 +420,10 @@ while IFS= read -r line; do
 done < "$tmp/just-lines"
 
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
-# missing
+# missing or empty
 for doc in README.md ai_tools/README.md; do
     for os in macOS Ubuntu; do
-        "$BASH" -c 'source "$1/lib/common.sh" && print_doc_section "$1/$2" "## Manual steps" "### $3"' \
-            bash "$REPO_DIR" "$doc" "$os" > /dev/null 2>&1 ||
+        md_section "$REPO_DIR/$doc" "## Manual steps" "### $os" > /dev/null ||
             fail "$doc has no \"### $os\" under \"## Manual steps\", which the manual-steps scripts print"
     done
 done

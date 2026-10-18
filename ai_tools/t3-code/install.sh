@@ -490,7 +490,9 @@ configure_t3_code_ubuntu() {
         if ! "$have_cli"; then
             echo "  Without the t3 CLI there's no service to install; skipping it."
         elif [ "$update_status" -eq 2 ]; then
-            echo "  Without its drop-in, the service would serve on every interface; skipping it." >&2
+            # A running service whose restart was declined is left running, as it was
+            echo "  Without its drop-in, the service would serve on every interface, so setup doesn't" >&2
+            echo "  install, enable, or start it." >&2
         else
             ensure_t3_code_service || step_failed=true
         fi
@@ -544,17 +546,18 @@ update_t3_code_server() {
     fi
     if t3_code_service_active; then
         if ! confirm "  Restart the T3 Code service to apply its settings and drop-in? Threads running on it stop."; then
-            if ! t3_code_write_drop_in; then
-                echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
-                return 2
-            fi
-            "$drop_in_was_current" ||
+            local lacks=""
+            if ! "$drop_in_was_current"; then
+                if ! t3_code_write_drop_in; then
+                    echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
+                    return 2
+                fi
                 echo "  Wrote the drop-in; it applies at the next restart of the T3 Code service"
-            if ! "$settings_set"; then
-                echo "  Left the T3 Code service running, without its new settings. Re-run from a terminal"
-                echo "  to restart it and apply them."
-            elif "$drop_in_was_current"; then
-                echo "  Left the T3 Code service running, without its drop-in. Re-run from a terminal to"
+            fi
+            "$settings_set" || lacks="its new settings"
+            ! t3_code_restart_pending || lacks="${lacks:+$lacks and }its drop-in"
+            if [ -n "$lacks" ]; then
+                echo "  Left the T3 Code service running, without $lacks. Re-run from a terminal to"
                 echo "  restart it."
             fi
             return 0
@@ -569,7 +572,8 @@ update_t3_code_server() {
     if ! "$settings_set"; then
         json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
     fi
-    t3_code_write_drop_in || drop_in_ok=false
+    # A drop-in that was current is loaded above
+    "$drop_in_was_current" || t3_code_write_drop_in || drop_in_ok=false
     if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
         wait_for_t3_code_service || result=1

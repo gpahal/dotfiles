@@ -358,13 +358,16 @@ touch "$STATE/old-env" "$STATE/active" "$STATE/enabled"
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq 1 "$(grep -c 'Restart the T3 Code service' <<< "$RUN_OUTPUT")" "restart questions"
 assert_contains "$RUN_OUTPUT" "Wrote the drop-in; it applies at the next restart of the T3 Code service"
-assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its new settings."
+assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its new settings and its drop-in."
 t3_code_drop_in_current || fail "the drop-in wasn't written after a declined restart"
 assert_eq "systemctl --user daemon-reload" "$(grep -E 'systemctl --user (stop|start|restart|daemon-reload)' "$STUB_LOG")" "systemctl after a declined restart"
 assert_eq '{}' "$(cat "$T3_CODE_SETTINGS")" "settings after a declined restart"
+: > "$STUB_LOG"
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq 1 "$(grep -c 'Restart the T3 Code service' <<< "$RUN_OUTPUT")" "restart questions on the next run"
-assert_contains "$RUN_OUTPUT" "Left the T3 Code service running"
+assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its new settings and its drop-in."
+assert_not_contains "$RUN_OUTPUT" "Wrote the drop-in"
+assert_file_not_contains "$STUB_LOG" "systemctl --user daemon-reload"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Telemetry off, port 3773, and host 127.0.0.1 in the service drop-in"
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in: systemctl --user restart t3code"
@@ -383,6 +386,28 @@ assert_contains "$RUN_OUTPUT" "already set"
 assert_file_not_contains "$STUB_LOG" "systemctl --user stop"
 run status
 assert_not_contains "$RUN_OUTPUT" "restarted for its drop-in"
+
+# Declined with only the drop-in changed, the step writes it and says the running service lacks it
+reset
+installed_unit
+different_drop_in
+touch "$STATE/old-env" "$STATE/active" "$STATE/enabled"
+assert_exit 0 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Wrote the drop-in; it applies at the next restart of the T3 Code service"
+assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its drop-in. Re-run from a terminal"
+t3_code_drop_in_current || fail "the drop-in wasn't written after a declined restart"
+# Declined, a drop-in it can't load fails the step, and leaves the running service as it is
+different_drop_in
+stub systemctl '[ "$2" != daemon-reload ] || exit 1
+'"$SYSTEMCTL_STUB"
+: > "$STUB_LOG"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Couldn't write and load $T3_CODE_SERVICE_DROP_IN"
+assert_contains "$RUN_OUTPUT" "install, enable, or start it."
+assert_not_contains "$RUN_OUTPUT" "Left the T3 Code service running"
+assert_eq "systemctl --user daemon-reload" "$(grep -E 'systemctl --user (stop|start|restart|enable|daemon-reload)' "$STUB_LOG")" "systemctl after a declined restart with a failed reload"
+[ -f "$STATE/active" ] || fail "the running service was stopped"
+stub systemctl "$SYSTEMCTL_STUB"
 
 # A service whose process predates the drop-in's environment is pending a restart
 reset
@@ -480,7 +505,7 @@ reset
 mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT.d"
 assert_exit 1 configure_t3_code_ubuntu
-assert_contains "$RUN_OUTPUT" "Without its drop-in, the service would serve on every interface; skipping it."
+assert_contains "$RUN_OUTPUT" "Without its drop-in, the service would serve on every interface, so setup doesn't"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
 assert_file_contains "$STUB_LOG" "t3 browser setup"
 # Nor does a running service it stopped for the change start again without the drop-in

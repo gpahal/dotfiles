@@ -22,10 +22,12 @@ start_block() {
     fi
 }
 
-# Print the lines to add to the Host * block, as they'd be written: "AddKeysToAgent yes" and
-# "UseKeychain yes", each unless a block for * alone already sets it. A block that lists other
-# patterns too, such as Host * !bastion, leaves some host out. Lines above the first Host or Match
-# line apply to every host too, so they count as Host *'s.
+# Print the lines to add to the Host * block, as they'd be written and in the order ssh needs:
+# "IgnoreUnknown UseKeychain", "AddKeysToAgent yes", and "UseKeychain yes", each unless a block
+# for * alone already sets it. Only Apple's ssh knows UseKeychain, and any other, such as
+# Homebrew's openssh, stops at it unless an IgnoreUnknown above every UseKeychain line names it. A
+# block that lists other patterns too, such as Host * !bastion, leaves some host out. Lines above
+# the first Host or Match line apply to every host too, so they count as Host *'s.
 host_star_missing() {
     local found=""
     if [ -f "$SSH_CONFIG" ]; then
@@ -36,12 +38,21 @@ host_star_missing() {
                 star = keyword == "host" && host_patterns($0, p) == 1 && p[1] == "*"
                 next
             }
+            keyword == "ignoreunknown" && star && !keychain_seen {
+                args = tolower($0)
+                sub(/#.*/, "", args)
+                sub(/^[ \t]*[^ \t=]*[ \t]*=?[ \t]*/, "", args)
+                n = split(args, names, /[ \t,]+/)
+                for (i = 1; i <= n; i++) if (names[i] == "usekeychain") print "ignoreunknown-usekeychain"
+            }
+            keyword == "usekeychain" { keychain_seen = 1 }
             # ssh ignores a commented-out setting, such as #UseKeychain yes
             star && keyword !~ /^(#|$)/ { print keyword }
         ' "$SSH_CONFIG")"
     fi
-    case "$found" in *addkeystoagent*) ;; *) echo "  AddKeysToAgent yes" ;; esac
-    case "$found" in *usekeychain*) ;; *) echo "  UseKeychain yes" ;; esac
+    grep -qx ignoreunknown-usekeychain <<< "$found" || echo "  IgnoreUnknown UseKeychain"
+    grep -qx addkeystoagent <<< "$found" || echo "  AddKeysToAgent yes"
+    grep -qx usekeychain <<< "$found" || echo "  UseKeychain yes"
 }
 
 # macOS: a Host * block at the end, so every host loads its key into the agent and the agent
@@ -55,23 +66,26 @@ add_host_star() {
         return 0
     elif host_star_block; then
         echo "  $SSH_CONFIG already has a Host * block, so it's left alone. To have ssh load"
-        echo "  keys into the agent from the keychain, add these lines to it:"
+        echo "  keys into the agent from the keychain, add these lines to the top of it:"
         printf '%s\n' "$missing" | sed 's/^/  /'
         return 0
     fi
-    start_block && printf 'Host *\n  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SSH_CONFIG" || return 1
+    start_block &&
+        printf 'Host *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SSH_CONFIG" ||
+        return 1
     echo "  Added a Host * block that loads keys into the agent from the keychain to $SSH_CONFIG"
 }
 
 # Print the Host * item. The step leaves your own Host * block alone, so the item names the lines
 # to add to it by hand.
 status_host_star() {
-    local text="The Host * block in ~/.ssh/config has AddKeysToAgent and UseKeychain" missing
-    if [ -z "$(host_star_missing)" ]; then
+    local text="The Host * block in ~/.ssh/config has IgnoreUnknown UseKeychain, AddKeysToAgent, and UseKeychain" missing
+    missing="$(host_star_missing)"
+    if [ -z "$missing" ]; then
         status_item ok "$text"
     elif host_star_block; then
-        missing="$(host_star_missing | sed 's/^ *//' | awk 'NR > 1 { printf " and " } { printf "%s", $0 }')"
-        status_item missing "$text; add $missing to it by hand"
+        missing="$(awk '{ sub(/^ +/, "") } NR > 1 { printf " and " } { printf "%s", $0 }' <<< "$missing")"
+        status_item missing "$text; add $missing to the top of it by hand"
     else
         status_item missing "$text"
     fi
@@ -131,12 +145,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Configuring SSH..."
     local status=0
     mkdir -p "$HOME/.ssh" || return 1

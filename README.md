@@ -170,7 +170,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 
 ### SSH
 
-- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
+- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, with `IgnoreUnknown UseKeychain` so an ssh other than Apple's, such as Homebrew's, still reads it, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
 - `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
 
 ### vim

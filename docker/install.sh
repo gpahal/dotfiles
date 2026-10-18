@@ -38,10 +38,11 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps only the
 # 172 ones, so docker0 stays on 172.17.0.0/16, and a network created after the change stays out of
 # the SSH ranges. The trade-off: docker0 takes one of the 15, so a 15th network of your own fails.
-# ufw blocks containers from reaching ports on the host, SSH included, since the ubuntu step's SSH
-# ranges leave out 172.16.0.0/12. `sudo ufw allow in on docker0` lets in the default bridge, and
-# each user-defined network's bridge, br-<first 12 characters of the network ID>, needs its own
-# rule. The step adds neither.
+# ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
+# 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
+# a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
+# other ports, and each user-defined network's bridge, br-<first 12 characters of the network ID>,
+# needs its own rule. The step adds neither.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"

@@ -99,8 +99,10 @@ printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
 # lists them, or says it's inactive while its config says ENABLED=no. allow from <range> to any port
-# <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once, and
-# --force enable turns ufw on. As in ufw, an IPv6 rule fails while the defaults say IPV6=no.
+# <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once.
+# prepend deny in on <bridge> to any port <port> proto tcp adds its IPv4 and IPv6 rules under the
+# header unless it has them, and delete with the same arguments removes them. --force enable turns
+# ufw on. As in ufw, an IPv6 rule fails while the defaults say IPV6=no.
 stub ufw 'rules="'"$SANDBOX"'/ufw-rules"
 case "$1" in
     status) if grep -qx ENABLED=no "'"$UFW_CONF"'"; then echo "Status: inactive"; else cat "$rules"; fi ;;
@@ -115,6 +117,17 @@ case "$1" in
             *) rule="$(printf "%-26s ALLOW       Anywhere" "$2")" ;;
         esac
         grep -qxF "$rule" "$rules" || echo "$rule" >> "$rules" ;;
+    prepend | delete)
+        v4="$(printf "%-26s DENY        Anywhere" "$9/tcp on $5")"
+        v6="$(printf "%-26s DENY        Anywhere (v6)" "$9/tcp (v6) on $5")"
+        if [ "$1" == delete ]; then
+            grep -vxF -e "$v4" -e "$v6" "$rules" > "$rules.new" || true
+        elif grep -qxF "$v4" "$rules"; then
+            exit 0
+        else
+            awk -v a="$v4" -v b="$v6" "{ print } /^--/ { print a; print b }" "$rules" > "$rules.new"
+        fi
+        mv "$rules.new" "$rules" ;;
     --force) echo ENABLED=yes > "'"$UFW_CONF"'" ;;
 esac'
 # The step's rules for SSH on port 22
@@ -124,16 +137,28 @@ range_rules() {
         printf '%-26s ALLOW       %s\n' "${1:-22}/tcp" "$range"
     done
 }
+# The step's rules denying SSH on port 22 on Docker's bridges
+deny_rules() {
+    local bridge
+    for bridge in docker0 br-+; do
+        printf '%-26s DENY        Anywhere\n' "${1:-22}/tcp on $bridge"
+        printf '%-26s DENY        Anywhere (v6)\n' "${1:-22}/tcp (v6) on $bridge"
+    done
+}
+ufw_header() {
+    printf '%s\n' "Status: active" "" "To                         Action      From" \
+        "--                         ------      ----"
+}
 rules_present() {
     {
-        printf '%s\n' "Status: active" "" "To                         Action      From" \
-            "--                         ------      ----"
+        ufw_header
+        deny_rules
         range_rules
         printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere"
     } > "$SANDBOX/ufw-rules"
 }
 rules_missing() {
-    printf 'Status: active\n\nAnywhere on tailscale0     ALLOW       Anywhere\n' > "$SANDBOX/ufw-rules"
+    { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-rules"
 }
 
 # Only sudo -n ran, so nothing asked for a password
@@ -232,9 +257,34 @@ for state in on off; do
     fi
     assert_file_contains "$UFW_DEFAULTS" IPV6=no
 done
-unset DOTFILES_ASSUME_YES
 ufw_on
 ufw_defaults yes
+
+# Containers on a network with IPv6, or with a subnet in the private ranges, would reach sshd
+# through the allow rules, so SSH is denied on Docker's bridges ahead of them. Without those
+# rules, or with them after the allow rules, where ufw never reaches them, they're missing, and
+# the step puts them first.
+for misplaced in false true; do
+    { ufw_header; range_rules; ! "$misplaced" || deny_rules; } > "$SANDBOX/ufw-rules"
+    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+    assert_exit 1 ufw_configured -n
+    assert_exit 0 ufw_missing_rules -n
+    assert_contains "$RUN_OUTPUT" "22/tcp on docker0 DENY Anywhere"
+    assert_contains "$RUN_OUTPUT" "22/tcp (v6) on br-+ DENY Anywhere (v6)"
+    assert_not_contains "$RUN_OUTPUT" "ALLOW"
+    : > "$STUB_LOG"
+    assert_exit 0 main
+    assert_file_contains "$STUB_LOG" "sudo ufw delete deny in on docker0 to any port 22 proto tcp"
+    assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on docker0 to any port 22 proto tcp"
+    assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
+    assert_exit 0 ufw_configured -n
+done
+# The IPv6 deny rules come after the IPv4 allow rules, as `ufw status` lists them, which is their
+# place
+{ ufw_header; deny_rules | grep -v v6; range_rules | grep -v :; deny_rules | grep v6; range_rules | grep :; } > "$SANDBOX/ufw-rules"
+printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+assert_exit 0 ufw_configured -n
+unset DOTFILES_ASSUME_YES
 rules_present
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \

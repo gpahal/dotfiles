@@ -153,6 +153,10 @@ ubuntu_step_setup() {
     stub ufw 'case "$1" in
         --force) touch "'"$SANDBOX"'/ufw-on" ;;
         status) [ -e "'"$SANDBOX"'/ufw-on" ] && printf "%s\n" "Status: active" "" \
+            "22/tcp on docker0          DENY        Anywhere" \
+            "22/tcp (v6) on docker0     DENY        Anywhere (v6)" \
+            "22/tcp on br-+             DENY        Anywhere" \
+            "22/tcp (v6) on br-+        DENY        Anywhere (v6)" \
             "22/tcp                     ALLOW       10.0.0.0/8" \
             "22/tcp                     ALLOW       192.168.0.0/16" \
             "22/tcp                     ALLOW       fd00::/8" \

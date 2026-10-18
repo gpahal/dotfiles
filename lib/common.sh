@@ -92,6 +92,11 @@ install_root_file() {
     local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
     dir="$(dirname "$dest")"
     sudo mkdir -p "$dir" || return 1
+    # mv would move the new file into a directory, and succeed
+    if sudo test -d "$dest"; then
+        echo "  $dest is a directory; remove it and re-run." >&2
+        return 1
+    fi
     # Through sudo, since the file or its directory may be root-only
     if [ -z "$mode" ]; then
         mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||

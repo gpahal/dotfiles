@@ -12,43 +12,26 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 
-# without <cmd> <command...>: run a command with a PATH that lacks <cmd>, unlike hide, which drops
-# it for the rest of the test. Each PATH dir that has <cmd> is swapped for a dir of links to its
-# other commands, so only the dirs with it cost links. load_script puts $STUB_DIR first again, so
-# its stub or sentinel moves aside meanwhile. Without brew, DOTFILES_NO_LOAD_BREW stops
-# lib/common.sh from putting Homebrew's dirs back on PATH.
+# without <cmd> <command...>: run a command with <cmd> hidden, in a subshell, so the rest of the
+# test still has it
 without() {
-    local name="$1" entry dirs path="" links status=0
+    local name="$1"
     shift
-    [ ! -e "$STUB_DIR/$name" ] || mv "$STUB_DIR/$name" "$SANDBOX/aside-$name"
-    IFS=: read -ra dirs <<< "$PATH"
-    for entry in ${dirs[@]+"${dirs[@]}"}; do
-        if [ -e "$entry/$name" ]; then
-            links="$SANDBOX/without-$name${entry//\//_}"
-            if [ ! -d "$links" ]; then
-                mkdir -p "$links"
-                ln -s "$entry"/* "$links"/ 2> /dev/null || true
-                rm -f "$links/$name"
-            fi
-            entry="$links"
-        fi
-        path="${path:+$path:}$entry"
-    done
-    if [ "$name" == brew ]; then
-        PATH="$path" DOTFILES_NO_LOAD_BREW=1 "$@" || status=$?
-    else
-        PATH="$path" "$@" || status=$?
-    fi
-    [ ! -e "$SANDBOX/aside-$name" ] || mv "$SANDBOX/aside-$name" "$STUB_DIR/$name"
-    return "$status"
+    (
+        hide "$name"
+        "$@"
+    )
 }
 
-# check_untouched <step>: fail when the step logged an install or wrote to $HOME
+# check_untouched <step>: fail when the step logged an install or a sudo, or wrote to $HOME
 check_untouched() {
     assert_file_not_contains "$STUB_LOG" "install"
+    assert_file_not_contains "$STUB_LOG" "sudo"
     assert_eq "" "$(/bin/ls -A "$HOME")" "files in \$HOME after $1 failed up front"
 }
 
@@ -92,6 +75,7 @@ git_step() {
 }
 ubuntu_step() {
     load_script ubuntu/install.sh
+    ubuntu_sandbox_paths
     is_ubuntu() { true; }
     main
 }

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # interrogate's run-reviewer.sh stops the reviewer and its watchdog when cancelled, reports the
-# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory, and
-# ignores CDPATH. A stub claude stands in for the reviewer.
+# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory or the
+# repo, and ignores CDPATH. A stub claude stands in for the reviewer.
 # code-review's materialize-head.sh puts a reviewed head where that reviewer can read it.
 
 # shellcheck source=lib.sh
@@ -145,13 +145,22 @@ assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for a refused out-file"
 mkdir -p "$SANDBOX/prompts-answers"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$SANDBOX/prompts-answers/answer.md"
 
-# A CDPATH with a dir of the same name doesn't redirect a relative prompt or out-file path
-mkdir -p "$REPO/rel" "$REPO/ans" "$SANDBOX/decoy/rel" "$SANDBOX/decoy/ans"
+# An out-file under the repo root is refused too, since both reviewers can read the repo
+mkdir -p "$REPO/ans"
+: > "$STUB_LOG"
+assert_exit 2 bash "$RUNNER" claude model high "$PROMPT" "$REPO/ans/answer.md"
+assert_contains "$RUN_OUTPUT" "is inside the repo under review"
+assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for an out-file in the repo"
+
+# A CDPATH with a dir of the same name doesn't redirect a relative prompt or out-file path. The
+# decoy is outside the repo, so a redirected out-file would be accepted rather than refused.
+mkdir -p "$REPO/rel" "$SANDBOX/decoy/rel" "$SANDBOX/decoy/ans"
 echo "Review this." > "$REPO/rel/prompt.md"
 : > "$STUB_LOG"
-CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md
-assert_file_contains "$REPO/ans/answer.md" "No findings."
+CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md "$OUT"
 assert_file_contains "$STUB_LOG" "--add-dir $(pwd -P)/rel "
+CDPATH="$SANDBOX/decoy" assert_exit 2 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md
+assert_contains "$RUN_OUTPUT" "'$(pwd)/ans/answer.md' is inside the repo under review"
 
 # code-review's materialize-head.sh writes a commit's tracked files, or the staged files, under the
 # review's temp dir, so a reviewer reads the reviewed head rather than the working tree. The

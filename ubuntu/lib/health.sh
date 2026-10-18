@@ -138,7 +138,7 @@ status_firmware() {
         status_item skipped "$label: fwupd isn't installed"
         return 0
     fi
-    if [ -n "${DOTFILES_STATUS_QUICK:-}" ]; then
+    if status_quick; then
         status_item unverified "$label: skipped by --quick"
         return 0
     fi

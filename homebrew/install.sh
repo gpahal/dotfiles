@@ -268,7 +268,7 @@ status() {
     status_item ok "Homebrew"
     bundle="Brewfile brew formulae"
     # brew bundle check is the slowest check of any step
-    if [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; then
+    if status_quick; then
         status_item unverified "$bundle (skipped by --quick; run status without it to check)"
     else
         status_check "$bundle" bundle_installed_except_mas

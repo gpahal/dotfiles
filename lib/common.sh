@@ -174,22 +174,6 @@ fi
 export HOMEBREW_NO_ASK=1
 export HOMEBREW_NO_ENV_HINTS=1
 
-# Flags given to a runner or a step, anywhere among its arguments. Scripts source this file
-# without arguments, so "$@" is the script's. What's set here is exported, so the steps a runner
-# starts get it too.
-# - --status: a status report changes nothing, and that includes Homebrew's own update.
-# - --quick: a status report skips its slowest checks (DOTFILES_STATUS_QUICK).
-# - --backup or --no-backup answers every backup question yes or no (backup_edited, maybe_backup).
-for arg in "$@"; do
-    case "$arg" in
-        --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
-        --quick) export DOTFILES_STATUS_QUICK=1 ;;
-        --backup) export DOTFILES_BACKUP=yes ;;
-        --no-backup) export DOTFILES_BACKUP=no ;;
-    esac
-done
-unset arg
-
 # has_arg <flag> [arg...]: succeeds when <flag> is among the arguments
 # e.g. has_arg --quick "$@"
 has_arg() {
@@ -206,10 +190,17 @@ has_arg() {
 # e.g. if status_requested "$@"; then status; return $?; fi
 status_requested() { has_arg --status "$@"; }
 
+# Succeeds when a status report runs under --quick, which skips its slowest checks
+# e.g. if status_quick; then status_item unverified "...: skipped by --quick"; fi
+status_quick() { [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; }
+
 # check_args <usage function> <word function> [arg...]: check a step's or runner's arguments. -h or
-# --help prints the usage and exits 0. --status, --quick, --backup, and --no-backup pass, any
-# other flag exits 2, and each other argument goes to the word function. --quick without --status
-# exits 2 too, since it would otherwise run the steps instead of reporting.
+# --help prints the usage and exits 0. Any flag but these exits 2, and each other argument goes to
+# the word function. --quick without --status exits 2 too, since it would otherwise run the steps
+# instead of reporting. What the flags set is exported, so the steps a runner starts get it too.
+# - --status: a status report changes nothing, and that includes Homebrew's own update.
+# - --quick: a status report skips its slowest checks (status_quick).
+# - --backup or --no-backup answers every backup question yes or no (maybe_backup).
 check_args() {
     local usage_fn="$1" word_fn="$2" arg
     shift 2
@@ -223,7 +214,10 @@ check_args() {
     done
     for arg in "$@"; do
         case "$arg" in
-            --status | --quick | --backup | --no-backup) ;;
+            --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
+            --quick) export DOTFILES_STATUS_QUICK=1 ;;
+            --backup) export DOTFILES_BACKUP=yes ;;
+            --no-backup) export DOTFILES_BACKUP=no ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 "$usage_fn" >&2

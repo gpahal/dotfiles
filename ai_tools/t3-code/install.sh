@@ -668,7 +668,7 @@ setup_t3_code_browser() {
 # Status's check that the service runs. --quick checks once that it's active, instead of
 # watching it for up to 10 s for a server that crashes on start.
 t3_code_service_running_now() {
-    if [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; then
+    if status_quick; then
         t3_code_service_active
     else
         wait_for_t3_code_service 2>/dev/null

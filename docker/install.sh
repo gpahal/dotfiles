@@ -141,7 +141,7 @@ daemon_restart_note() {
 # It prunes nothing.
 status_docker_usage() {
     local label="Docker disk usage" out status=0 type count size reclaimable summary=""
-    if [ -n "${DOTFILES_STATUS_QUICK:-}" ]; then
+    if status_quick; then
         status_item unverified "$label: skipped by --quick"
         return 0
     fi

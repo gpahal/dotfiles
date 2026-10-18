@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Both runners take -h/--help, --status, --quick, --backup, and --no-backup anywhere among the step
-# names, and fail with a usage line on an unknown flag. lib/common.sh reads --status and --quick
+# names, and fail with a usage line on an unknown flag. check_args reads --status and --quick
 # wherever they are too.
 
 # shellcheck source=lib.sh
@@ -66,11 +66,12 @@ assert_exit 0 "$BASH" "$setup_sh" vim --no-backup
 assert_contains "$RUN_OUTPUT" "=== dotfiles setup ==="
 assert_file_contains "$HOME/.vimrc" "$(head -1 "$REPO_DIR/vim/vimrc")"
 
-# lib/common.sh: --status anywhere stops Homebrew's auto-update, and --quick sets
+# check_args: --status anywhere stops Homebrew's auto-update, and --quick sets
 # DOTFILES_STATUS_QUICK, for the runner and the steps it starts
 read_flags() {
     env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
-        . "$0/lib/common.sh" "$@"
+        . "$0/lib/common.sh"
+        check_args : : "$@"
         echo "${HOMEBREW_NO_AUTO_UPDATE:-unset} ${DOTFILES_STATUS_QUICK:-unset}"' "$REPO_DIR" "$@"
 }
 run read_flags vim --status

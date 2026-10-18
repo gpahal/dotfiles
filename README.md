@@ -75,13 +75,13 @@ bash setup.sh
 
 Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, and the run ends by listing the failed steps and the command that re-runs them.
 
-**Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, and Docker's disk usage. `--quick` skips the slowest checks, Docker's disk usage among them.
+**Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 
 **Files you also edit.** Setup copies most configs over the installed ones, and backs up a file you edited first, after asking when there's a terminal. `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
-**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs or trusts them without a pinned checksum or key fingerprint, as each vendor's instructions do, so a vendor's HTTPS server decides what runs.
+**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's first `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs the installers and the `.deb` without a pinned checksum, as each vendor's instructions do, so the vendor's HTTPS server decides what runs. An apt key must match the fingerprint its step pins. The skills CLI comes from npm through `npx`, pinned by version but not by checksum, and the Ghostty snap from the Snap Store.
 
 **XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
 
@@ -101,7 +101,7 @@ just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in M
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `zed`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs. The `homebrew` step still installs the Zed cask.
 
 What differs from macOS:
 
@@ -201,7 +201,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 ### Ghostty
 
 - [Ghostty](https://ghostty.org/) with the GitHub Dark theme and Monaspace, a native tab bar, copy-on-select, and SSH integration, which installs Ghostty's terminfo on remote hosts
-- Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), and `Cmd+Shift+Enter` zooms a split
+- Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), `Cmd+Ctrl+arrows` resize a split, `Cmd+Shift+=` makes the splits equal, and Ghostty's own `Cmd+Shift+Enter` zooms one
 - `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME. It takes over macOS's `` Cmd+` ``, which switches between an app's windows. That's intended
 - A notification when a command that ran over 10 seconds finishes while Ghostty is unfocused
 - Copied to `~/.config/ghostty/config.ghostty`
@@ -217,6 +217,7 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
 - Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
+- In Zed's terminal, `Shift+Enter` adds a newline in the Claude Code and Codex CLIs
 - The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` read
 
 ### Stream Deck
@@ -229,25 +230,17 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 | **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, the selected file's folder, or the window's folder | Opens a Ghostty window at the thread's folder |
 | **Files** | Opens the tab's folder in Finder | Reveals the open file in Finder | Opens the selected folder or reveals the selected file, or opens the window's folder | Opens the thread's folder in Finder |
 
-A T3 Code thread's folder is its worktree, or its project's folder when it has none.
+A T3 Code thread's folder is its worktree, or its project's folder when it has none. With no folder to use, such as when another app is in front or the folder is on another machine over SSH, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** keys do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. App keys show each app's own icon, and [`stream-deck/icons`](stream-deck/icons/README.md) lists where each came from.
 
-The keys of apps show each app's official icon or logo, taken from the app's own repo or the brand's published logo. [`stream-deck/icons`](stream-deck/icons/README.md) keeps the originals and lists where each came from.
-
-Sometimes there's no path to use: another app is in front, Zed has no file open, T3 Code shows no thread, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. The key shows a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
-
-The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
-
-**Overview** shows CPU and memory use, and a press opens the **System** page of live stats. The plugin bundles the page as a profile, and **Back** returns to the profile you came from:
+**Overview** shows CPU and memory use, and a press opens the **System** page of live stats, laid out for the 15-key Stream Deck:
 
 | | | | | |
 | :- | :- | :- | :- | :- |
 | Back | CPU | Memory | Swap | Activity Monitor |
-| Top CPU | GPU | Temperature | Power | Disk |
+| Top Process | GPU | Temperature | Power | Disk |
 | Network | | | | |
 
-Each stat key updates every 2 seconds while it's on screen, and a press opens Activity Monitor. Green, yellow, and red show how close each stat is to trouble. Memory's color is macOS's memory pressure, as in Activity Monitor, since macOS fills free memory with cache. CPU and GPU draw the last minute as a line. GPU, Temperature, and Power come from [macmon](#cli-tools-installed-via-brew), and show a dash without it. The stat keys are also in the category, to put on any page. The page is laid out for the 15-key Stream Deck. Stream Deck installs it the first time you press **Overview** and keeps its own copy after, so a change to `stream-deck/profile` reaches Stream Deck only once you delete the **System** profile in Stream Deck's settings and press **Overview** again. After editing the page, run `bash stream-deck/build-profile.sh`.
-
-Stream Deck runs the plugin's `bin/open-in` for every key, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title and the thread T3 Code shows, and press the new tab's keys. Automation lets it control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+Each stat key updates every 2 seconds while it's on screen, and turns yellow or red as the stat nears trouble. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need [macmon](#cli-tools-installed-via-brew). A press opens Activity Monitor, and **Back** returns to the profile you came from. The stat keys are also in the category, to put on any page.
 
 ### Hammerspoon
 
@@ -262,7 +255,7 @@ macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets 
 | `Ctrl+Opt+Cmd+C` | Opens T3 Code |
 | `Ctrl+Opt+Cmd+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
 
-The [Stream Deck](#stream-deck) has keys for the same six. `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` run a copy of the plugin's `bin/open-in`, which the step puts in `~/.hammerspoon/bin`, and print its log line to Hammerspoon's console. A running Hammerspoon reloads the config when the step changes it, and the config sets Hammerspoon to open at login. The new tab's keystrokes, and reading Zed's window title and T3 Code's thread, need Accessibility, a [manual step](#macos-1). The hotkeys use `Ctrl+Opt+Cmd` because [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`.
+The hotkeys use `Ctrl+Opt+Cmd` because [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`.
 
 ### tmux
 
@@ -384,8 +377,6 @@ The `macos` step sets these:
 - **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
 - **Misc:** no `.DS_Store` on network or USB volumes, expanded save and print dialogs, new documents saved to disk rather than iCloud, plain-text TextEdit, all processes in Activity Monitor
 
-The TextEdit setting needs [Full Disk Access](#macos-1) for the terminal.
-
 ### Touch ID for sudo
 
 `just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
@@ -479,9 +470,8 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - In a scratch repo, `git commit --allow-empty -m test`, then `git log --show-signature -1`, shows `Good "git" signature`.
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
-- With a file open in Zed, the Stream Deck **Files** key reveals it in Finder, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed. With a thread open in T3 Code, **Editor**, **Terminal**, and **Files** open its worktree.
-- With a URL copied, `Ctrl+Opt+Cmd+N` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Cmd+Space` and the **Claude** key bring Claude to the front, and `Ctrl+Opt+Cmd+C` and the **T3 Code** key bring T3 Code to the front. With a file open in Zed, `Ctrl+Opt+Cmd+T` opens Ghostty at its folder, and in that Ghostty tab, `Ctrl+Opt+Cmd+E` opens the folder in Zed. With a thread open in T3 Code, `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` open its worktree. With Gmail open in a background tab, the **Gmail** key switches Chrome to that tab instead of opening another.
-- The Stream Deck **Overview** key shows CPU and memory. Pressing it opens the **System** page, where every key shows a number within a few seconds, a stat key opens Activity Monitor, and **Back** returns to your keys.
+- With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder. **Overview** opens the **System** page, where every key shows a number within a few seconds.
+- With a URL copied, `Ctrl+Opt+Cmd+N` opens a new Chrome tab with the URL selected in the address bar.
 
 ### Ubuntu
 
@@ -553,6 +543,8 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
 Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
+
+**Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
 
 [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 

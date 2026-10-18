@@ -80,9 +80,10 @@ file_is() {
 # write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
 # setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
 # *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
-# Usage: install_root_file <src> <dest> [mode]
+# A group, when given, is set by the same install, so no write can leave the file without it.
+# Usage: install_root_file <src> <dest> [mode] [group]
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" dir tmp
+    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
     dir="$(dirname "$dest")"
     sudo mkdir -p "$dir" || return 1
     # Through sudo, since the file or its directory may be root-only
@@ -91,7 +92,9 @@ install_root_file() {
             return 1
     fi
     tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
-    if sudo install -m "${mode:-644}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
+    opts=(-m "${mode:-644}")
+    [ -z "$group" ] || opts+=(-g "$group")
+    if sudo install "${opts[@]}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
         return 0
     fi
     sudo rm -f "$tmp"
@@ -99,11 +102,11 @@ install_root_file() {
 }
 
 # Write content, plus a newline, to a root-owned file, as install_root_file does
-# Usage: write_root_file <dest> <content> [mode]
+# Usage: write_root_file <dest> <content> [mode] [group]
 write_root_file() {
     local src status=0
     src="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" || status=1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" "${4:-}" || status=1
     rm -f "$src"
     return "$status"
 }

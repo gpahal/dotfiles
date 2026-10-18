@@ -363,6 +363,8 @@ apply() {
     fi
     if ! command -v tailscale &>/dev/null || [ -n "$tailscale_source" ]; then
         require_cmd curl || return 1
+        # add_apt_repo needs it, after other changes
+        require_cmd gpg || return 1
         ! apt_repo_published Tailscale "$(tailscale_release_url)" || tailscale_repo=true
     fi
     cache_checks

@@ -386,6 +386,8 @@ apply() {
     require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
+    # add_apt_repo needs it, after other changes
+    require_cmd gpg || return 1
 
     # Installed Docker updates only while its source is the one this step writes. A release upgrade
     # turns third-party sources off, and a re-run rewrites this one for the new release once Docker

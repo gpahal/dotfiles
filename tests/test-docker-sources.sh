@@ -233,7 +233,7 @@ assert_file_not_contains "$STUB_LOG" "usermod"
 set_up_docker() {
     reset
     printf '%s\n' docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > "$SANDBOX/installed"
-    echo '{"log-driver": "local", "live-restore": true, "ip": "127.0.0.1", "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}}' > "$DOCKER_DAEMON_CONFIG"
+    jq "$DOCKER_DAEMON_SETTINGS" <<< '{}' > "$DOCKER_DAEMON_CONFIG"
     printf '%s\n' "$DOCKER_UNATTENDED_CONTENT" > "$DOCKER_UNATTENDED_CONF"
     docker_sources > "$DOCKER_SOURCES"
 }

@@ -132,8 +132,8 @@ Dpkg::Options {
 };'
 # The private address ranges ufw lets SSH in from: RFC 1918's, IPv6's unique local addresses, and
 # link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules. RFC 1918's
-# 172.16.0.0/12 is left out: Docker's bridges take their subnets from it (172.17.0.0/16 and up), so
-# allowing it would let any container try logins on sshd.
+# 172.16.0.0/12 is left out: the docker step limits Docker's address pools to 172.17.0.0/16 to
+# 172.31.0.0/16, so allowing it would let any container try logins on sshd.
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
 # ufw's settings, which anyone may read: whether it's on, and its default policy and IPv6 setting
 UFW_CONF=/etc/ufw/ufw.conf

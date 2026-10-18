@@ -26,19 +26,24 @@ DOCKER_UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-docker
 DOCKER_UNATTENDED_CONTENT='// From the dotfiles docker step: install Docker updates with the daily security updates
 Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
 DOCKER_DAEMON_CONFIG=/etc/docker/daemon.json
-DOCKER_DAEMON_KEYS="log-driver, live-restore, and localhost-only published ports"
+DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, and address pools"
 # The local log driver rotates each container's logs (5 files of 20 MB); json-file, the default,
 # grows without limit. It applies to containers created after the change. live-restore keeps
 # containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
 # 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
 # default-network-opts the user-defined networks, such as Compose's, created after the change.
-# ufw also blocks containers from reaching ports on the host, SSH included, since the ubuntu step's
-# SSH ranges leave out 172.16.0.0/12, where Docker's bridges are. `sudo ufw allow in on docker0`
-# lets in the default bridge, and each user-defined network's bridge, br-<first 12 characters of
-# the network ID>, needs its own rule. The step adds neither.
+# Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
+# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps only the
+# 172 ones, so docker0 stays on 172.17.0.0/16, and a network created after the change stays out of
+# the SSH ranges. The trade-off: docker0 takes one of the 15, so a 15th network of your own fails.
+# ufw blocks containers from reaching ports on the host, SSH included, since the ubuntu step's SSH
+# ranges leave out 172.16.0.0/12. `sudo ufw allow in on docker0` lets in the default bridge, and
+# each user-defined network's bridge, br-<first 12 characters of the network ID>, needs its own
+# rule. The step adds neither.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
+    | .["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]
     | if has("log-opts") then .["log-opts"] |= with_entries(select(
         .key | IN("max-size", "max-file", "compress", "labels", "labels-regex",
                   "env", "env-regex", "tag", "mode", "max-buffer-size")
@@ -376,7 +381,7 @@ apply() {
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
         else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, and publish ports on 127.0.0.1 unless given an address: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
+            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and keep new networks out of 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
         fi
     fi
     sudo_items_pending docker_auto_updates_configured

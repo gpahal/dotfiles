@@ -212,23 +212,23 @@ mkdir -p "$APT_SOURCES_DIR"
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 docker_sources > "$DOCKER_SOURCES"
 DOCKER_DAEMON_CONFIG="$SANDBOX/daemon.json"
-echo '{"log-driver": "local", "live-restore": true, "ip": "127.0.0.1", "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}}' > "$DOCKER_DAEMON_CONFIG"
+jq "$DOCKER_DAEMON_SETTINGS" <<< '{}' > "$DOCKER_DAEMON_CONFIG"
 cp "$DOCKER_DAEMON_CONFIG" "$DOCKER_DAEMON_CONFIG.root"
 chmod 000 "$DOCKER_DAEMON_CONFIG"
 if [ ! -r "$DOCKER_DAEMON_CONFIG" ]; then
     : > "$STUB_LOG"
     sudo_not_cached
     run status
-    assert_contains "$RUN_OUTPUT" "unverified log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "unverified log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     assert_not_contains "$RUN_OUTPUT" "unknown"
     no_prompting_sudo
     sudo_cached_stub
     run status
-    assert_contains "$RUN_OUTPUT" "ok         log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "ok         log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     no_prompting_sudo
     echo '{}' > "$DOCKER_DAEMON_CONFIG.root"
     run status
-    assert_contains "$RUN_OUTPUT" "missing    log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "missing    log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     no_prompting_sudo
 fi
 chmod 644 "$DOCKER_DAEMON_CONFIG"

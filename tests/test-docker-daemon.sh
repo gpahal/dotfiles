@@ -4,9 +4,10 @@
 set -euo pipefail
 # os: ubuntu
 
-# The docker step merges log-driver, live-restore, and 127.0.0.1 as the address published ports
-# bind to into /etc/docker/daemon.json, keeping the file's other keys and mode, restarts a running
-# daemon only when the file changed, and leaves invalid JSON alone. A failed write leaves the old
+# The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind
+# to, and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
+# keeping the file's other keys and mode, restarts a running daemon only when the file changed,
+# and leaves invalid JSON alone. A failed write leaves the old
 # file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
 # the new file.
 
@@ -23,15 +24,24 @@ stub systemctl
 stub dockerd
 DOCKER_DAEMON_CONFIG="$SANDBOX/etc/docker/daemon.json"
 SETTINGS='"log-driver": "local", "live-restore": true, "ip": "127.0.0.1",
-    "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}'
-# Compact, with sorted keys, to compare with the expected JSON
+    "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}},
+    "default-address-pools": [
+        {"base": "172.17.0.0/16", "size": 16}, {"base": "172.18.0.0/16", "size": 16},
+        {"base": "172.19.0.0/16", "size": 16}, {"base": "172.20.0.0/16", "size": 16},
+        {"base": "172.21.0.0/16", "size": 16}, {"base": "172.22.0.0/16", "size": 16},
+        {"base": "172.23.0.0/16", "size": 16}, {"base": "172.24.0.0/16", "size": 16},
+        {"base": "172.25.0.0/16", "size": 16}, {"base": "172.26.0.0/16", "size": 16},
+        {"base": "172.27.0.0/16", "size": 16}, {"base": "172.28.0.0/16", "size": 16},
+        {"base": "172.29.0.0/16", "size": 16}, {"base": "172.30.0.0/16", "size": 16},
+        {"base": "172.31.0.0/16", "size": 16}]'
+# Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file given.
 sorted() {
     jq -S -c . "${1:-$DOCKER_DAEMON_CONFIG}"
 }
 
 # No file: it's created, world-readable, and the daemon restarted if it runs
 assert_exit 0 configure_daemon
-assert_eq "$(sorted <<< "{$SETTINGS}")" "$(sorted)" "a new daemon.json"
+assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "a new daemon.json"
 assert_eq "-rw-r--r--" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a new daemon.json"
 assert_file_contains "$STUB_LOG" "systemctl try-restart docker.service"
 assert_exit 0 daemon_configured
@@ -40,7 +50,7 @@ assert_exit 0 daemon_configured
 : > "$STUB_LOG"
 before="$(/bin/ls -li "$DOCKER_DAEMON_CONFIG")"
 assert_exit 0 configure_daemon
-assert_contains "$RUN_OUTPUT" "already sets log-driver, live-restore, and localhost-only published ports"
+assert_contains "$RUN_OUTPUT" "already sets log-driver, live-restore, localhost-only published ports, and address pools"
 assert_eq "$before" "$(/bin/ls -li "$DOCKER_DAEMON_CONFIG")" "daemon.json after a re-run"
 assert_file_not_contains "$STUB_LOG" "systemctl"
 
@@ -103,13 +113,14 @@ echo '{"dns": ["1.1.1.1"], "log-driver": "json-file", "ip": "0.0.0.0"}' > "$DOCK
 chmod 640 "$DOCKER_DAEMON_CONFIG"
 assert_exit 1 daemon_configured
 assert_exit 0 configure_daemon
-assert_eq "$(sorted <<< "{\"dns\": [\"1.1.1.1\"], $SETTINGS}")" "$(sorted)" "a merged daemon.json"
+merged='{"dns": ["1.1.1.1"], '"$SETTINGS}"
+assert_eq "$(sorted /dev/stdin <<< "$merged")" "$(sorted)" "a merged daemon.json"
 assert_eq "-rw-r-----" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a merged daemon.json"
 
 # An empty file counts as {}
 : > "$DOCKER_DAEMON_CONFIG"
 assert_exit 0 configure_daemon
-assert_eq "$(sorted <<< "{$SETTINGS}")" "$(sorted)" "daemon.json from an empty file"
+assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json from an empty file"
 
 # Invalid JSON: left as it is, and the step fails
 echo '{"dns": [' > "$DOCKER_DAEMON_CONFIG"

@@ -37,7 +37,7 @@ mkdir -p "$APT_SOURCES_DIR"
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 docker_sources > "$DOCKER_SOURCES"
 DOCKER_DAEMON_CONFIG="$SANDBOX/daemon.json"
-echo '{"log-driver": "local", "live-restore": true, "ip": "127.0.0.1", "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}}' > "$DOCKER_DAEMON_CONFIG"
+jq "$DOCKER_DAEMON_SETTINGS" <<< '{}' > "$DOCKER_DAEMON_CONFIG"
 DOCKER_UNATTENDED_CONF="$SANDBOX/52dotfiles-docker"
 printf '%s\n' "$DOCKER_UNATTENDED_CONTENT" > "$DOCKER_UNATTENDED_CONF"
 unit() {

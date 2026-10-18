@@ -120,12 +120,13 @@ t3_code_server_filter() {
     # context window too. A window of your own stays unless this run replaced your model or effort.
     | if .defaultModelSelection.model == "'"$T3_CODE_MODEL"'"
       then .defaultModelSelection.options |= ((. // [])
-          | (map(select(.id == "effort") | .value)) as $efforts
-          | if $efforts == [] or $efforts == ["'"$T3_CODE_EFFORT"'"] or '"$T3_CODE_REPLACE_EFFORT"'
+          | (map(select(.id == "effort") | .value) | . == [] or . == ["'"$T3_CODE_EFFORT"'"])
+            as $effort_is_ours
+          | if $effort_is_ours or '"$T3_CODE_REPLACE_EFFORT"'
             then set_option("effort"; "'"$T3_CODE_EFFORT"'")
               | if (any(.[]; .id == "contextWindow") | not)
                   or $model != "'"$T3_CODE_MODEL"'"
-                  or ($efforts != [] and $efforts != ["'"$T3_CODE_EFFORT"'"])
+                  or ($effort_is_ours | not)
                 then set_option("contextWindow"; "1m")
                 else .
                 end

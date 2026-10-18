@@ -13,9 +13,9 @@ set -u
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 # Print which of the casks given are outdated, one per line, counting those that update themselves.
-# Fails, with a message, when `brew outdated` does. Given casks, brew outdated exits 1 when it lists
-# one, so only an exit above 1, or an exit 1 that lists nothing, is a failure. An interrupted brew
-# returns its status.
+# Fails when `brew outdated` does. Given casks, brew outdated exits 1 when it lists one, so only an
+# exit above 1, or an exit 1 that lists nothing, is a failure. An interrupted brew returns its
+# status.
 # Usage: _brew_casks_outdated <cask>...
 _brew_casks_outdated() {
     local output rc=0
@@ -25,7 +25,6 @@ _brew_casks_outdated() {
         [ -z "$output" ] || printf '%s\n' "$output"
         return 0
     fi
-    echo "Couldn't check whether $* are up to date: brew outdated failed." >&2
     return 1
 }
 
@@ -41,15 +40,15 @@ _cask_listed() {
 # HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave them to this. A cask given as <cask>:<process>
 # counts as running when a process has that exact name. For the others, an app's name can gain or
 # lose a suffix in parentheses between releases, so match any running app whose name starts with the
-# cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` leaves
-# every cask given alone, and a failed `brew info` its cask, and either fails, since its output
-# can't say a cask is up to date or what app it has. An interrupted brew command returns its status, so the caller stops. An app that
-# renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
+# cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
+# `brew info` for a cask leaves it alone and fails, since its output can't say the cask is up to
+# date or what app it has. An interrupted brew command returns its status, so the caller stops. An
+# app that renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
 # under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
 # keeping the app on disk (_readopt_renamed_cask).
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
-    local rerun="$1" entry cask process info path app running installed outdated status rc
+    local rerun="$1" entry cask process info path app running installed outdated one status rc
     local exit_status=0 listed=() names=()
     shift
     rc=0
@@ -65,7 +64,22 @@ _upgrade_self_updating_casks() {
     rc=0
     outdated="$(_brew_casks_outdated "${names[@]}")" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
-    [ "$rc" -eq 0 ] || return 1
+    if [ "$rc" -ne 0 ]; then
+        # One cask brew can't find, such as one removed upstream, fails the whole query, so each is
+        # asked alone, and only that one is left out
+        outdated=""
+        for cask in "${names[@]}"; do
+            rc=0
+            one="$(_brew_casks_outdated "$cask")" || rc=$?
+            ! interrupted_status "$rc" || return "$rc"
+            if [ "$rc" -eq 0 ]; then
+                outdated+="$one"$'\n'
+            else
+                echo "Couldn't check whether $cask is up to date: brew outdated failed." >&2
+                exit_status=1
+            fi
+        done
+    fi
     for entry in "${listed[@]}"; do
         cask="${entry%%:*}"
         process=""

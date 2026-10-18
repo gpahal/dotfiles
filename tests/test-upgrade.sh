@@ -377,6 +377,21 @@ brew outdated --cask --greedy --quiet zed appcleaner the-unarchiver
 brew upgrade --cask --greedy zed
 brew upgrade --cask --greedy the-unarchiver" "$(grep -E '^brew (list|outdated|upgrade)' "$STUB_LOG")" "brew calls for a stage's casks"
 
+# A cask brew can't find, such as one removed upstream, fails a query that names it. Each cask is
+# then asked alone: the others still upgrade, and the stage fails naming that one.
+stub brew 'case "$*" in
+    "list --cask -1") printf "zed\ngone-cask\nthe-unarchiver\n" ;;
+    "outdated "*gone-cask*) echo "Error: Cask '\''gone-cask'\'' is unavailable" >&2; exit 1 ;;
+    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
+    "info --json=v2 --cask "*) echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"$4.app\"]}]}]}" ;;
+esac'
+: > "$STUB_LOG"
+assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Couldn't check whether gone-cask is up to date"
+assert_eq "brew upgrade --cask --greedy zed
+brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades beside a cask brew can't find"
+
 # A cask whose metadata can't be read, since brew info fails or prints what jq can't parse, isn't
 # taken for a cask with no app: it's left alone, with no running check, and the stage fails
 for info in 'exit 1' 'echo "{}"'; do

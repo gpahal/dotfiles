@@ -6,7 +6,10 @@
 # Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
 # operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
 # anything else running as you, and `tailscale funnel` too, which puts a port on the internet, when
-# the tailnet policy grants the funnel attribute.
+# the tailnet policy grants the funnel attribute. It can also run `tailscale set --ssh`, which
+# turns on Tailscale SSH: that skips sshd, with its AllowUsers and key-only settings, and the
+# default tailnet policy lets it log in as root (in check mode). The README's Tailscale manual step
+# says to keep root out of the policy's ssh users.
 tailscale_configured() {
     local prefs
     prefs="$(tailscale debug prefs 2>/dev/null)" || return 1

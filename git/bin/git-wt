@@ -154,6 +154,10 @@ cmd_path() {
 cmd_add() {
     local name="${1:-}" base="${2:-}" path origin_head ref
     check_name "$name"
+    # git reads options after positionals, so --lock or --force here would reach it as one
+    case "$base" in
+        -*) die "'$base' isn't a valid base" ;;
+    esac
     path="$repo_dir/$name"
     if is_repo_worktree "$path"; then
         [ "$(worktree_branch "$path")" = "$name" ] ||

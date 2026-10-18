@@ -149,6 +149,13 @@ assert_exit 1 git wt add nested/broken no-such-base
 [ ! -e "$dir/nested" ] || fail "a failed git wt add left $dir/nested"
 [ -d "$dir/nohead" ] || fail "a failed git wt add removed another worktree"
 
+# A base that looks like an option fails, rather than reaching git worktree add as one: --lock
+# would make a worktree git wt rm -f can't remove
+assert_exit 1 git wt add opt --lock
+assert_contains "$RUN_OUTPUT" "'--lock' isn't a valid base"
+[ ! -e "$dir/opt" ] || fail "git wt add with an option as its base made $dir/opt"
+git show-ref --verify --quiet refs/heads/opt && fail "git wt add with an option as its base made branch opt"
+
 # A worktree deleted by hand is pruned, so adding it again works
 out="$(git wt add gone 2> /dev/null)" || fail "git wt add gone failed"
 rm -rf "$out"

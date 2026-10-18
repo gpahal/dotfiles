@@ -120,7 +120,7 @@ The Ubuntu machine stays on so the Mac and the phone can reach its agents at any
 - **Power cuts.** With a UPS on USB, the machine shuts down on a low battery and starts again when mains returns. If the UPS keeps its power on, a fallback starts the machine 15 minutes later, but only on a motherboard that wakes from an RTC alarm. The **Power cuts** manual step tests both.
 - **Kernel panics.** The machine reboots 10 seconds after one.
 - **Disk health.** smartd watches the drives and pushes its warnings to your phone. It may not repeat a warning, so act on the first one.
-- **Health alerts.** A daily check pushes what needs attention to your phone when it changes, again each week while it lasts, and once more when it's all clear. Each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
+- **Health alerts.** A daily check pushes what needs attention to your phone when it changes, again each week while it lasts, and once more when it's all clear. It runs without root, so it skips the checks that need it: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. A push says so, and `sudo -v`, then `just status`, checks them. Each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
 - **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.

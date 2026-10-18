@@ -55,7 +55,7 @@ ubuntu:
   unknown    Free space on /: df couldn't read it
   missing    Free space on /home: 8.3 GiB of 100.0 GiB (8%)
   info       ntfy URL set
-  unverified Disk health (SMART): reading it needs root
+  unverified Disk health (SMART): reading it needs root; run sudo -v, then status, to check it
 
 Needs attention: ubuntu. Run: bash setup.sh ubuntu
 EOF
@@ -89,6 +89,8 @@ assert_file_not_contains "$STUB_LOG" "Sleep masked"
 assert_file_not_contains "$STUB_LOG" "ntfy URL set"
 assert_file_not_contains "$STUB_LOG" "Disk health"
 assert_file_not_contains "$STUB_LOG" "Claude Code"
+# An item only root could check comes back unverified, so the push says what wasn't checked
+assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
 fi
@@ -201,6 +203,8 @@ assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "ubuntu: Item number 1 with"
 assert_file_not_contains "$STUB_LOG" "Item number 200 "
 assert_file_contains "$STUB_LOG" "more lines; bash setup.sh --status lists them"
+# Without such an item, the push doesn't say so
+assert_file_not_contains "$STUB_LOG" "Not checked here"
 echo 0 > "$SANDBOX/exit/setup"
 
 # boot pushes that the machine started, retrying while the network comes up

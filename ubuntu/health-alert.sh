@@ -9,7 +9,9 @@ set -euo pipefail
 #           attention" and "Failed steps" lines and its missing and unknown items
 #           (dotfiles-health.timer, daily). It pushes again when the message changes (ignoring
 #           digits) or a week has passed, and pushes "All clear" once when nothing needs attention;
-#           $HEALTH_STATE_FILE records the last push.
+#           $HEALTH_STATE_FILE records the last push. sudo's cached credentials don't reach a user
+#           service, so the checks only root can make come back unverified here, which needs no
+#           attention; a push that has them ends with $ROOT_ONLY_NOTE.
 #   boot    push "<host> started at <time>", so an unexpected reboot gets noticed
 #           (dotfiles-boot-notice.service)
 # Ubuntu only. It fails when a runner couldn't run or a push failed, so the unit shows failed.
@@ -20,8 +22,11 @@ source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
 
 # Tests point this into their sandbox
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-/etc/dotfiles/ntfy-url}"
-# ntfy turns a longer message into an attachment
+# ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
+# How a status item only root could check says so, and the line a push then ends with
+ROOT_ONLY_PATTERN='^  unverified .*run sudo -v, then status'
+ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
 # "<epoch seconds of the last push> <cksum of the message pushed, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
 # An unchanged message is pushed again after this many seconds (a week)
@@ -86,12 +91,13 @@ save_push() {
 }
 
 status_alert() {
-    local url runner out status result=0 message="" now last_time="" last_hash="" hash
+    local url runner out status result=0 message="" now last_time="" last_hash="" hash root_only=false
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
         out="$("$BASH" "$HEALTH_REPO_DIR/$runner" --status --quick < /dev/null 2>&1)" || status=$?
+        ! grep -qE "$ROOT_ONLY_PATTERN" <<< "$out" || root_only=true
         case "$status" in
             0) ;;
             1 | 3) message="$message$(attention_lines <<< "$out")"$'\n' ;;
@@ -123,6 +129,7 @@ status_alert() {
         return 0
     fi
     message="$(truncate_message <<< "$message")"
+    ! "$root_only" || message="$message"$'\n'"$ROOT_ONLY_NOTE"
     # Without the digits, so a measured value that moves, such as free disk space, isn't a change
     hash="$(printf '%s' "$message" | tr -d '0-9' | cksum | awk '{ print $1 }')"
     if [ "$hash" == "$last_hash" ] && [ $((now - last_time)) -lt "$REPUSH_SECONDS" ]; then

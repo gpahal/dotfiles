@@ -38,8 +38,10 @@ function runScript(target, context) {
   });
 }
 
-// The stat keys on screen, by context, with what each shows
+// The stat keys on screen, by context, with what each shows, and the image each was last sent.
+// Most keys, such as Disk and Swap, rarely change, so an unchanged image isn't sent again.
 const visible = new Map();
+const shown = new Map();
 const sampler = stats.createSampler({ log });
 let timer = null;
 let busy = false;
@@ -51,6 +53,8 @@ async function update() {
     const sample = await sampler.sample([...new Set(visible.values())]);
     for (const [context, kind] of visible) {
       const image = `data:image/svg+xml;charset=utf8,${encodeURIComponent(stats.render(kind, sample))}`;
+      if (shown.get(context) === image) continue;
+      shown.set(context, image);
       send({ event: "setImage", context, payload: { image } });
     }
   } catch (error) {
@@ -80,10 +84,20 @@ socket.onclose = () => {
   process.exit(0);
 };
 socket.onmessage = ({ data }) => {
-  const { event, action, context, device } = JSON.parse(data);
+  // An exception here would end the plugin, every key with it
+  let message;
+  try {
+    message = JSON.parse(data);
+  } catch (error) {
+    log(`ERROR couldn't read a message from Stream Deck: ${error.message}`);
+    return;
+  }
+  const { event, action, context, device } = message;
   if (!action) return;
   // com.gpahal.dotfiles.files is files
   const target = action.slice(action.lastIndexOf(".") + 1);
+  // Stream Deck shows a key's default image when it reappears, so it needs the stat again
+  if (event === "willAppear" || event === "willDisappear") shown.delete(context);
   if (event === "willAppear" && stats.isStat(target)) {
     visible.set(context, target);
     startUpdates();

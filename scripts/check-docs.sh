@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # Check that the docs list each runner's steps as its STEPS has them, on macOS and on Ubuntu:
-# - README.md "How setup works": the step table, which holds both OSes' steps in order
+# - README.md "How setup works": the step table, which holds both OSes' steps in order, and marks
+#   a step "macOS only" or "Ubuntu only" when the other OS's STEPS lacks it
 # - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
 # Also check that:
 # - README.md "What's included" lists every formula in homebrew/Brewfile, and every App Store app
@@ -81,8 +82,8 @@ done
 # README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"
 section "$readme" "## Ubuntu" > "$tmp/ubuntu-section"
-section "$readme" "## How setup works" | { grep '^| `' || true; } |
-    sed 's/^| `\([^`]*\)`.*/\1/' > "$tmp/table"
+section "$readme" "## How setup works" | { grep '^| `' || true; } > "$tmp/table-rows"
+sed 's/^| `\([^`]*\)`.*/\1/' "$tmp/table-rows" > "$tmp/table"
 for os in macos ubuntu; do
     in_both "$tmp/table" "$tmp/setup-$os" > "$tmp/table-$os"
     compare "README.md How setup works's step table, for $os," "$tmp/setup-$os" "$tmp/table-$os" \
@@ -92,6 +93,27 @@ cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"
+# Each row says "macOS only" or "Ubuntu only" when one OS's STEPS lacks the step, which is how an
+# Ubuntu user learns which steps run there
+while IFS= read -r row; do
+    step="${row#'| `'}"
+    step="${step%%'`'*}"
+    mark=both
+    case "$row" in
+        *"macOS only"*) mark=macOS ;;
+        *"Ubuntu only"*) mark=Ubuntu ;;
+    esac
+    runs=""
+    ! grep -qxF "$step" "$tmp/setup-macos" || runs=macOS
+    if grep -qxF "$step" "$tmp/setup-ubuntu"; then
+        [ -z "$runs" ] && runs=Ubuntu || runs=both
+    fi
+    [ -n "$runs" ] && [ "$runs" != "$mark" ] || continue
+    case "$runs" in
+        both) fail "README.md How setup works's step table marks $step \"$mark only\", but both OSes' STEPS have it" ;;
+        *) fail "README.md How setup works's step table should mark $step \"$runs only\", the only OS whose STEPS have it" ;;
+    esac
+done < "$tmp/table-rows"
 
 # ai_tools/README.md: one sentence lists every step, and the next says which Ubuntu skips
 ai_readme="$REPO_DIR/ai_tools/README.md"

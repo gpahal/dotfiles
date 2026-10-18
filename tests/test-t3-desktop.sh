@@ -159,8 +159,15 @@ run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
 assert_file_not_contains "$STUB_LOG" "brew reinstall"
 assert_file_not_contains "$STUB_LOG" "brew install"
+# A run asks brew for the cask's app once
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run"
 # Without it, the cask's app is gone, and setup reinstalls it
 rm -r "$SANDBOX/Applications/T3 Code.app"
 run status
 assert_contains "$RUN_OUTPUT" "missing    t3-code (cask): brew lists it, but its app is gone"
+: > "$STUB_LOG"
+run main
+assert_file_contains "$STUB_LOG" "brew reinstall"
+# install_cask asks brew about the cask again, since it's listed
+assert_eq 2 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run that reinstalls"
 test_done

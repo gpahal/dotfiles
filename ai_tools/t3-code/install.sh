@@ -257,10 +257,11 @@ t3_code_telemetry_off() {
     [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
 }
 
+# Usage: configure_t3_code [cask app path], as t3_code_app_path takes it
 configure_t3_code() {
     echo "Configuring T3 Code..."
     local app_name
-    app_name="$(t3_code_app_path || true)"
+    app_name="$(t3_code_app_path "$@" || true)"
     app_name="${app_name##*/}"
     app_name="${app_name%.app}"
     # The settings below apply even when this fails
@@ -791,14 +792,16 @@ apply() {
         require_cmd curl || return 1
     fi
     if is_macos; then
-        # Telemetry and the settings don't need the app
-        local cask_failed=0 renamed
-        if renamed="$(t3_code_renamed_app)"; then
+        # Telemetry and the settings don't need the app. brew is asked for the cask's app once, for
+        # the renamed app's check, the app's path, and the settings.
+        local cask_failed=0 renamed cask_app
+        cask_app="$(cask_app_path t3-code || true)"
+        if renamed="$(t3_code_renamed_app "$cask_app")"; then
             echo "  t3-code already installed, as ${renamed##*/}."
         else
-            install_cask t3-code "$(t3_code_app_path || true)" || cask_failed=1
+            install_cask t3-code "$(t3_code_app_path "$cask_app" || true)" || cask_failed=1
         fi
-        configure_t3_code || return 1
+        configure_t3_code "$cask_app" || return 1
         return "$cask_failed"
     else
         configure_t3_code_ubuntu || return 1

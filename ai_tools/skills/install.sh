@@ -68,10 +68,11 @@ SKILL_DIRS=()
 SKILL_HASHES=()
 SKILL_PROBLEM=()
 
-# Fill the arrays above. Fails, naming it, for a skill whose name valid_skill_name rejects; that
-# skill is left out.
+# Fill the arrays above. Fails, naming it, for a skill whose name valid_skill_name rejects, or
+# that an earlier skill, by path, already has; that skill is left out, so a name never installs
+# one skill over another on alternate runs.
 load_repo_skills() {
-    local file name result=0
+    local file name result=0 i
     SKILL_NAMES=()
     SKILL_DIRS=()
     SKILL_HASHES=()
@@ -83,6 +84,12 @@ load_repo_skills() {
             result=1
             continue
         fi
+        for i in ${SKILL_NAMES[@]+"${!SKILL_NAMES[@]}"}; do
+            [ "${SKILL_NAMES[i]}" == "$name" ] || continue
+            echo "  ${file#"$DOTFILES_DIR"/} names the skill '$name', as ${SKILL_DIRS[i]#"$DOTFILES_DIR"/}/SKILL.md does; skipping it." >&2
+            result=1
+            continue 2
+        done
         SKILL_NAMES+=("$name")
         SKILL_DIRS+=("$(dirname "$file")")
         SKILL_HASHES+=("")
@@ -143,6 +150,22 @@ problem_skills() {
     for i in ${SKILL_NAMES[@]+"${!SKILL_NAMES[@]}"}; do
         [ -z "${SKILL_PROBLEM[i]}" ] || echo "$i"
     done
+}
+
+# Run the pinned skills CLI with the given arguments, which name any path absolutely. npm exec
+# prefers a matching skills package in the working directory's project, and reads that project's
+# .npmrc, so running setup from inside a project could run the project's code. So the CLI runs
+# from a temp dir that holds an empty package.json, which makes the dir its own project. Without
+# it, npm would look for the project in the dir's parents, such as a /tmp any user can write to.
+# DO_NOT_TRACK turns off its telemetry.
+skills_cli() {
+    local dir result=0
+    dir="$(mktemp -d)" || return 1
+    echo '{}' > "$dir/package.json" &&
+        (cd "$dir" && DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" "$@") ||
+        result=$?
+    rm -rf "$dir"
+    return "$result"
 }
 
 # Succeeds when node is at least SKILLS_CLI_NODE_MAJOR
@@ -243,8 +266,8 @@ add_skills() {
     fi
     [ "${#add[@]}" -gt 0 ] || return "$result"
     # The skills CLI (https://skills.sh) copies the skills into ~/.agents/skills (Codex) and
-    # symlinks them into ~/.claude/skills (Claude Code). DO_NOT_TRACK turns off its telemetry.
-    if ! DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" add "$DOTFILES_DIR/ai_tools/skills" \
+    # symlinks them into ~/.claude/skills (Claude Code).
+    if ! skills_cli add "$DOTFILES_DIR/ai_tools/skills" \
         --global --agent "${agents[@]}" --skill "${add[@]}" --yes; then
         echo "  The skills CLI failed to add the skills." >&2
         result=1
@@ -321,7 +344,7 @@ stale_skill_names() {
 remove_skill() {
     local name="$1" agent agents=()
     while IFS= read -r agent; do agents+=("$agent"); done < <(skill_agents)
-    if ! DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" remove --global --agent "${agents[@]}" --yes "$name"; then
+    if ! skills_cli remove --global --agent "${agents[@]}" --yes "$name"; then
         # Left as the CLI left it, so its lock file still agrees and the next run retries
         echo "  The skills CLI failed to remove the $name skill." >&2
         return 1
@@ -416,7 +439,7 @@ status() {
     fi
     local i name problems
     load_repo_skills 2>/dev/null ||
-        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes; run the step to see which"
+        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
     claude_skills_on || status_item skipped "Skills for Claude Code: CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude"
     check_skills
     problems="$(problem_skills)"

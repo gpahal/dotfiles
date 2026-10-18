@@ -151,18 +151,35 @@ codex_settings_joined() {
 }
 
 # Print a TOML file's full-line comments, trimmed and sorted. Lines inside a multi-line string
-# aren't comments, even when they start with #, so a line with an odd number of """ or ''' starts
-# or ends one.
+# aren't comments, even when they start with #. scan walks a line from the multi-line string it
+# starts in, if any, and returns the one it ends in, so a """ or ''' inside a one-line string or
+# a comment opens none.
 codex_comments() {
-    awk -v dq='"""' -v sq="'''" '
-        function count(s, d,   n, i) {
-            while ((i = index(s, d)) > 0) { n++; s = substr(s, i + 3) }
-            return n
+    awk -v dq='"""' -v sq="'''" -v q="'" '
+        function scan(s, open,   i, c, d, n) {
+            n = length(s)
+            for (i = 1; i <= n; i++) {
+                c = substr(s, i, 1)
+                d = substr(s, i, 3)
+                if (open != "") {
+                    if (open == dq && c == "\\") i++
+                    else if (d == open) { open = ""; i += 2 }
+                } else if (c == "#") {
+                    break
+                } else if (d == dq || d == sq) {
+                    open = d
+                    i += 2
+                } else if (c == "\"") {
+                    for (i++; i <= n && substr(s, i, 1) != "\""; i++) if (substr(s, i, 1) == "\\") i++
+                } else if (c == q) {
+                    for (i++; i <= n && substr(s, i, 1) != q; i++) ;
+                }
+            }
+            return open
         }
-        str != "" { if (count($0, str) % 2) str = ""; next }
+        str != "" { str = scan($0, str); next }
         /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; next }
-        count($0, dq) % 2 { str = dq; next }
-        count($0, sq) % 2 { str = sq }
+        { str = scan($0, "") }
     ' "$1" | LC_ALL=C sort
 }
 

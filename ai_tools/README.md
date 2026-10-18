@@ -169,7 +169,7 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 The script merges these into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
-- **New threads.** Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks.
+- **New threads.** Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. A context window you pick is kept too, unless the script replaces your model or effort.
 - **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
 - **Projects.** They pull automatically, and **Add project** starts in `~/Dev`.
 - **Threads.** A mid-turn message steers the turn. Threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets.

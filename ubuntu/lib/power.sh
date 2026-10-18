@@ -54,13 +54,40 @@ sysctl_written() {
     sysctl_file_written && sysctl_in_effect
 }
 
-# Print each setting the kernel lacks that another file sets, which sysctl --system then read
-# after $SYSCTL_CONF, as "<key> is <value>, set by <files>", one per line
+# Print the files sysctl --system reads after $SYSCTL_CONF, whose values win over it, one per line
+# in the order it reads them. It reads the *.conf files in the SYSCTL_SOURCES dirs sorted by name,
+# only the first of each name in the dirs' order, then a source that's a file, /etc/sysctl.conf.
+sysctl_later_files() {
+    local LC_ALL=C source file name ours seen=" "
+    ours="${SYSCTL_CONF##*/}"
+    for source in "${SYSCTL_SOURCES[@]}"; do
+        if [ -d "$source" ]; then
+            for file in "$source"/*.conf; do
+                [ -e "$file" ] || continue
+                name="${file##*/}"
+                case "$seen" in *" $name "*) continue ;; esac
+                seen="$seen$name "
+                if [[ "$name" > "$ours" ]]; then printf '%s\t%s\n' "$name" "$file"; fi
+            done
+        fi
+    done | LC_ALL=C sort -t $'\t' -k1,1 | cut -f2-
+    for source in "${SYSCTL_SOURCES[@]}"; do
+        if [ -f "$source" ]; then echo "$source"; fi
+    done
+}
+
+# Print each setting the kernel lacks that a file sysctl --system reads after $SYSCTL_CONF sets,
+# as "<key> is <value>, set by <files>", one per line
 sysctl_overrides() {
-    local key have files
+    local key have files file later=()
+    while IFS= read -r file; do later+=("$file"); done < <(sysctl_later_files)
+    [ ${#later[@]} -gt 0 ] || return 0
     while read -r key have; do
-        files="$(grep -rlE "^[[:space:]]*-?${key//./[./]}[[:space:]]*=" "${SYSCTL_SOURCES[@]}" 2>/dev/null |
-            grep -vxF "$SYSCTL_CONF" | sort -u | join_lines ', ')" || true
+        files=""
+        for file in "${later[@]}"; do
+            ! grep -qE "^[[:space:]]*-?${key//./[./]}[[:space:]]*=" "$file" 2>/dev/null ||
+                files="${files:+$files, }$file"
+        done
         [ -z "$files" ] || echo "$key is $have, set by $files"
     done < <(sysctl_differences || true)
 }

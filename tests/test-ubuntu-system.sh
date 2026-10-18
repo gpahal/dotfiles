@@ -163,6 +163,19 @@ assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effec
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:
     fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf"
+# Only the files sysctl --system reads after the step's are named: those named after it, sorted by
+# name across the dirs, each the first of its name in their order, then sysctl.conf, read last
+mkdir -p "$SANDBOX/lib-sysctl.d"
+SYSCTL_SOURCES=("$SANDBOX/sysctl.d" "$SANDBOX/lib-sysctl.d" "$SANDBOX/sysctl.conf")
+echo "fs.inotify.max_user_watches = 4096" > "$SANDBOX/sysctl.d/10-early.conf"
+echo "fs.inotify.max_user_watches = 4096" > "$SANDBOX/lib-sysctl.d/99-low.conf"
+echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/lib-sysctl.d/95-lib.conf"
+echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.conf"
+assert_eq "fs.inotify.max_user_watches is 8192, set by $SANDBOX/lib-sysctl.d/95-lib.conf, $SANDBOX/sysctl.d/99-low.conf, $SANDBOX/sysctl.conf" \
+    "$(sysctl_overrides)" "the files that override the step's"
+rm -r "$SANDBOX/lib-sysctl.d" "$SANDBOX/sysctl.d/10-early.conf" "$SANDBOX/sysctl.conf"
+# shellcheck disable=SC2034 # sysctl_overrides reads it
+SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
 rm "$SANDBOX/sysctl.d/99-low.conf"
 assert_exit 0 main
 assert_exit 0 status

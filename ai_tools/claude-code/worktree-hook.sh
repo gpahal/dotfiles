@@ -21,8 +21,8 @@ set -euo pipefail
 # and worktree.sparsePaths. Nothing in it may wait for input.
 
 # Claude Code started from the Dock or a launcher may have only the system's PATH. git wt is in
-# ~/.local/bin. Homebrew's dirs go last, for a jq the system lacks, so the hook runs the same git
-# as the session.
+# ~/.local/bin. Homebrew's dirs go last, for the jq Ubuntu lacks (macOS ships /usr/bin/jq), so the
+# hook runs the same git as the session.
 for dir in /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin; do
     if [ -d "$dir" ]; then
         PATH="$PATH:$dir"

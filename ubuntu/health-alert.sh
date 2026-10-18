@@ -6,8 +6,9 @@ set -euo pipefail
 # nothing.
 #   status  run bash setup.sh --status --quick and bash ai_tools/setup.sh --status --quick, and
 #           when one exits 1 (a step failed) or 3 (something needs attention), push its "Needs
-#           attention" and "Failed steps" lines and its missing and unknown items
-#           (dotfiles-health.timer, daily). It pushes again when the message changes (ignoring
+#           attention" and "Failed steps" lines and its missing and unknown items, and when one
+#           exits with any other status, as on a syntax error or a kill, push that it couldn't run
+#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the message changes (ignoring
 #           digits) or a week has passed, and pushes "All clear" once when nothing needs attention;
 #           $HEALTH_STATE_FILE records the last push. sudo's cached credentials don't reach a user
 #           service, so the checks only root can make come back unverified here, which needs no
@@ -98,7 +99,8 @@ save_push() {
 }
 
 status_alert() {
-    local url runner out status result=0 message="" now last_time="" last_hash="" hash root_only=false
+    local url runner out status result=0 message="" details="" last now last_time="" last_hash="" hash
+    local root_only=false
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
     for runner in setup.sh ai_tools/setup.sh; do
@@ -112,8 +114,12 @@ status_alert() {
                 echo "$runner --status --quick exited $status:" >&2
                 printf '%s\n' "$out" | tail -n 5 >&2
                 # A runner that crashes, such as on a syntax error after a pull, checks nothing,
-                # so it's pushed like a problem
-                message="${message}Health check couldn't run: $runner exited $status: $(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)"$'\n'
+                # so it's pushed like a problem. Its last line goes in the push, not the hash,
+                # since it can name something that changes each run, such as a temp file. A
+                # runner killed with no output has none.
+                message="${message}Health check couldn't run: $runner exited $status"$'\n'
+                last="$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" || last=""
+                [ -z "$last" ] || details="$details"$'\n'"$runner's last output: $last"
                 result=1
                 ;;
         esac
@@ -146,6 +152,7 @@ status_alert() {
         echo "Unchanged since the last push on $(format_epoch "$last_time"); not pushing again until $(format_epoch $((last_time + REPUSH_SECONDS)))."
         return "$result"
     fi
+    [ -z "$details" ] || message="$message"$'\n'"$details"
     if ! ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning"; then
         echo "Couldn't push the health alert to ntfy." >&2
         return 1

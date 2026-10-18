@@ -3,9 +3,9 @@ set -euo pipefail
 # os: ubuntu
 
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
-# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy, only when one
-# exits 1 or 3, and again only when the message changed or a week passed, with one all-clear when
-# nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
+# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy when one exits
+# 1 or 3, and that one couldn't run when it exits otherwise, and again only when the message
+# changed or a week passed, with one all-clear when nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
 # saved, neither pushes.
 # The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
 # and the two runners are stubs.
@@ -161,7 +161,23 @@ echo 2 > "$SANDBOX/exit/setup"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "setup.sh --status --quick exited 2"
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
-assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"
+assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2"
+assert_file_contains "$STUB_LOG" "setup.sh's last output: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"
+# Its last line stays out of the hash, so a line that changes each run, such as one naming a temp
+# file, isn't pushed again
+printf '%s\n' "mktemp: /tmp/tmp.Xyz: something else" > "$SANDBOX/out/setup"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "Unchanged since the last push"
+assert_file_not_contains "$STUB_LOG" "curl"
+# A runner killed with no output, as by the OOM killer, still gets its push
+echo "$first_state" > "$STATE"
+: > "$SANDBOX/out/setup"
+echo 137 > "$SANDBOX/exit/setup"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 137"
+assert_file_not_contains "$STUB_LOG" "last output"
 echo 0 > "$SANDBOX/exit/setup"
 mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 

@@ -443,10 +443,10 @@ assert_eq '{"SessionEnd":1,"Stop":1,"WorktreeCreate":1,"WorktreeRemove":1}' \
     "$(jq -cS '.hooks | map_values([.[].hooks[]] | length)' "$settings")" "hooks per event"
 assert_eq '["other"]' "$(jq -c '[.hooks.Stop[].hooks[].command]' "$settings")" "Stop hooks"
 json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied after json_merge"
-# A timeout you set stays
+# A timeout you set goes back to the step's, since a short one kills the hook mid-fetch (#37)
 jq '.hooks.WorktreeRemove[0].hooks[0].timeout = 30' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
 json_merge "$settings" "$(claude_code_settings)" > /dev/null
-assert_eq '[30]' "$(jq -c '[.hooks.WorktreeRemove[].hooks[].timeout]' "$settings")" \
+assert_eq '[120]' "$(jq -c '[.hooks.WorktreeRemove[].hooks[].timeout]' "$settings")" \
     "a WorktreeRemove timeout you set"
 run status
 assert_contains "$RUN_OUTPUT" "worktree-hook.sh"

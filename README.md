@@ -542,6 +542,7 @@ cp ~/.hammerspoon/init.lua hammerspoon/init.lua   # macOS
 cp ~/.hammerspoon/bin/open-in stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in   # macOS
 cp ~/Library/LaunchAgents/dotfiles.ssh-add.plist ssh/dotfiles.ssh-add.plist   # macOS
 cp ~/Library/LaunchAgents/dotfiles.claude-desktop.plist ai_tools/claude-desktop/dotfiles.claude-desktop.plist   # macOS
+cp ~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist   # macOS
 cp ~/.config/environment.d/99-homebrew.conf ubuntu/environment.d/99-homebrew.conf   # Ubuntu
 cp ~/.claude/CLAUDE.md ai_tools/user-instructions.md   # or ~/.codex/AGENTS.md
 cp /etc/smartmontools/run.d/50dotfiles-notify ubuntu/smartd-notify.sh   # Ubuntu

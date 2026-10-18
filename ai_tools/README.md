@@ -107,7 +107,7 @@ The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Op
 - **General.** No menu bar icon, so the app doesn't keep running once its window is closed. Option+Space opens quick entry.
 - **Cowork.** Browser tools, in Chrome, web search, and scheduled tasks are on. The browser tools drive your own Chrome, signed in to your accounts, so a Cowork task can act on any site you're logged in to. A scheduled task runs without you watching. Turning either off in the app lasts only until the step runs again. To keep it off, set `coworkBrowserToolsEnabled` or `coworkScheduledTasksEnabled` to `false` in `ai_tools/claude-desktop/install.sh`, then re-run the step.
 
-Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
+Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Cmd+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
 
 ## Codex
 

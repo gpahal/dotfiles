@@ -246,7 +246,7 @@ done
 # Only the repo's own steps, so an untracked install.sh, such as one under .scratch, isn't sourced,
 # and only those with such a function, since sourcing one takes a while
 git -C "$REPO_DIR" ls-files -- '*/install.sh' | awk -F/ -v repo="$REPO_DIR" 'NF <= 3 && !/\/skills\// { print repo "/" $0 }' |
-    tr '\n' '\0' | xargs -0 grep -lE '^[a-z_]+_files\(\) \{' | sort > "$tmp/installs"
+    tr '\n' '\0' | xargs -0 grep -lE '^[a-z0-9_]+_files\(\) \{' | sort > "$tmp/installs"
 for os in Darwin Linux; do
     os_uname_shim "$tmp/$os" "$os"
     env -i HOME="$copy_home" PATH="$tmp/$os:$tmp/sentinels:/usr/bin:/bin" REPO_DIR="$REPO_DIR" "$BASH" -c '

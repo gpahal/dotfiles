@@ -12,6 +12,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script lib/common.sh
+load_script lib/system.sh
 # install runs for real, minus -g, since the sandbox's user can't give a file root's groups
 stub_sudo_exec 'if [ "${1:-}" == install ]; then
     shift

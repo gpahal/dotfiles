@@ -347,24 +347,28 @@ fake_tmux_plugins() {
     export GIT_CONFIG_VALUE_0=https://github.com/
 }
 
-# Source lib/common.sh or a step script, given relative to the repo, so the test can call its
-# functions. Remaining arguments become the script's "$@". A step runs main only when run
-# directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
-# A syntax error in the script or in lib/common.sh, which steps source, ends the test with status
-# 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
+# Source lib/common.sh, lib/system.sh, or a step script, given relative to the repo, so the test
+# can call its functions. Remaining arguments become the script's "$@". A step runs main only when
+# run directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
+# A syntax error in the script or in lib/common.sh or lib/system.sh, which steps source, ends the
+# test with status 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
 # e.g. load_script vim/install.sh
 load_script() {
     local script="$REPO_DIR/$1" f
     shift
-    for f in "$script" "$REPO_DIR/lib/common.sh"; do
+    for f in "$script" "$REPO_DIR/lib/common.sh" "$REPO_DIR/lib/system.sh"; do
         if ! "$BASH" -n "$f"; then
             echo "Syntax error in $f" >&2
             exit 2
         fi
     done
     # lib/common.sh defines its default main only when none exists, so a step loaded earlier with
-    # its own main would hide a later step's default one. Reloading lib/common.sh alone keeps main.
-    [ "$script" == "$REPO_DIR/lib/common.sh" ] || unset -f main
+    # its own main would hide a later step's default one. Loading lib/common.sh or lib/system.sh
+    # alone keeps main.
+    case "$script" in
+        "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
+        *) unset -f main ;;
+    esac
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first

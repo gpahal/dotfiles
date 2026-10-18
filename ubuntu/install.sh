@@ -19,6 +19,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 UBUNTU_LIB_DIR="$DOTFILES_DIR/ubuntu/lib"
 # shellcheck source=lib/ssh.sh
 source "$UBUNTU_LIB_DIR/ssh.sh"

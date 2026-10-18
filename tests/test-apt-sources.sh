@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
+# lib/system.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off
 # all count. apt_repo_published says to wait while the repo's Release file for this release is a
 # 404. add_apt_repo keeps the old key and source when the key's download fails or its fingerprint

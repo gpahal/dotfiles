@@ -4,8 +4,8 @@ set -euo pipefail
 # Claude Code's WorktreeCreate, WorktreeRemove, and SessionEnd hook puts worktrees where git wt
 # does, honors worktree.baseRef, copies the files .worktreeinclude names, and prints only the path
 # on create. The claude-code step registers it once for all three. The fetch is skipped after a
-# recent one and can't hang, a name another worktree has checked out becomes worktree-<name>, and a
-# merged branch is deleted however many branches contain it.
+# recent fetch of the same branch and can't hang, a name another worktree has checked out becomes
+# worktree-<name>, and a merged branch is deleted however many branches contain it.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -47,6 +47,8 @@ git -C "$SANDBOX/seed" commit -q --allow-empty -m "pushed later"
 git -C "$SANDBOX/seed" push -q origin main
 fresh="$(git -C "$SANDBOX/seed" rev-parse HEAD)"
 dir="$WORKTREES_DIR/x/y"
+# What the hook leaves after its own fetch of origin's main succeeds
+stamp="$repo/.git/dotfiles-worktree-hook/fetched-main"
 
 # Ignored files the new worktree should get: those .worktreeinclude names and .gitignore ignores
 printf '.env\nbuild/\n' > "$repo/.gitignore"
@@ -94,25 +96,36 @@ create recent "$repo"
 assert_eq "0 $dir/recent" "$status $out" "create hook after a recent fetch"
 assert_eq "" "$(cat "$SANDBOX/fetch.log")" "fetches after a recent one"
 assert_eq "$fresh" "$(git -C "$dir/recent" rev-parse HEAD)" "recent's base"
+# Only the hook's own fetch of that branch counts. After 10 minutes, or after a recent fetch of
+# another branch, origin's main is fetched again.
+git -C "$SANDBOX/seed" push -q origin main:refs/heads/side
+touch -t 202001010000 "$stamp"
+git -C "$repo" fetch -q origin side
+: > "$SANDBOX/fetch.log"
+create unrelated "$repo"
+assert_eq "0 $dir/unrelated" "$status $out" "create hook after an unrelated fetch"
+assert_file_contains "$SANDBOX/fetch.log" "fetch --quiet origin main"
+assert_eq "$(git -C "$SANDBOX/seed" rev-parse HEAD)" "$(git -C "$dir/unrelated" rev-parse HEAD)" \
+    "unrelated's base"
 # A fetch that fails warns, and the worktree branches from the local copy
-touch -t 202001010000 "$repo/.git/FETCH_HEAD"
+touch -t 202001010000 "$stamp"
 git -C "$repo" remote set-url origin "$SANDBOX/missing.git"
 create offline "$repo"
 assert_eq "0 $dir/offline" "$status $out" "create hook when the fetch fails"
 assert_contains "$(cat "$SANDBOX/stderr")" "couldn't fetch origin/main" "create hook's stderr"
 git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
-# The failed fetch left an empty FETCH_HEAD, which doesn't count as a recent fetch
+# The failed fetch left the stamp as old as it was, so the next create fetches
 : > "$SANDBOX/fetch.log"
 create retry "$repo"
 assert_eq "0 $dir/retry" "$status $out" "create hook after a failed fetch"
 assert_file_contains "$SANDBOX/fetch.log" "fetch"
-for wt in recent offline retry; do
+for wt in recent unrelated offline retry; do
     remove "$dir/$wt"
 done
 
 # An origin added by hand has no origin/HEAD, but an origin/main: that's what the hook fetches
 git -C "$repo" remote set-head origin -d
-touch -t 202001010000 "$repo/.git/FETCH_HEAD"
+touch -t 202001010000 "$stamp"
 : > "$SANDBOX/fetch.log"
 create nohead "$repo"
 assert_eq "0 $dir/nohead" "$status $out" "create hook without origin/HEAD"
@@ -131,7 +144,7 @@ EOF
 chmod +x "$SANDBOX/logssh"
 git -C "$repo" config core.sshCommand "$SANDBOX/logssh"
 git -C "$repo" remote set-url origin example.invalid:origin.git
-touch -t 202001010000 "$repo/.git/FETCH_HEAD"
+touch -t 202001010000 "$stamp"
 GIT_ALLOW_PROTOCOL=file:ssh create sshcmd "$repo"
 assert_eq "0 $dir/sshcmd" "$status $out" "create hook with core.sshCommand"
 remove "$dir/sshcmd"
@@ -166,7 +179,7 @@ esac
 exec "$real_git" "\$@"
 EOF
 chmod +x "$HOME/.local/bin/git"
-rm -f "$repo/.git/FETCH_HEAD"
+rm -f "$stamp"
 started=$SECONDS
 WORKTREE_HOOK_FETCH_DEADLINE=2 create stalled "$repo"
 elapsed=$((SECONDS - started))

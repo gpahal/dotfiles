@@ -59,32 +59,37 @@ base_ref() {
     echo fresh
 }
 
-# Succeeds when the repo fetched in the last 10 minutes. FETCH_HEAD is per worktree, so check the
-# current worktree's and the main one's. A failed fetch leaves it empty, so that doesn't count.
-fetched_recently() {
-    local dir
-    for dir in "$(git rev-parse --absolute-git-dir)" \
-        "$(git rev-parse --path-format=absolute --git-common-dir)"; do
-        [ -n "$(find "$dir/FETCH_HEAD" -size +0 -mmin -10 2> /dev/null)" ] && return 0
-    done
-    return 1
+# Print the file whose mtime records the hook's last successful fetch of origin's branch $1, one
+# per branch in the repo's common git dir, so every worktree shares it. FETCH_HEAD can't stand in:
+# any fetch, of another branch or remote, rewrites it, and the user's own fetches don't count.
+# % and / are encoded, so each branch gets its own file name.
+fetch_stamp() {
+    printf '%s/dotfiles-worktree-hook/fetched-%s\n' \
+        "$(git rev-parse --path-format=absolute --git-common-dir)" \
+        "$(printf '%s' "$1" | sed 's/%/%25/g; s|/|%2F|g')"
 }
 
 # Bring the branch fresh_base picks up to date, so the worktree branches from what's on the
-# remote. Every `claude -w` and isolated subagent waits for this, so skip it after a recent fetch,
-# and stop the fetch 15 s after it starts (WORKTREE_HOOK_FETCH_DEADLINE, which the test shortens).
-# That's a deadline for the whole fetch, not a stall timeout, so a slow fetch that's still
-# downloading stops too. A failed fetch leaves the local copy, as Claude Code does.
+# remote. Every `claude -w` and isolated subagent waits for this, so skip it within 10 minutes of
+# the hook's last fetch of that branch, and stop the fetch 15 s after it starts
+# (WORKTREE_HOOK_FETCH_DEADLINE, which the test shortens). That's a deadline for the whole fetch,
+# not a stall timeout, so a slow fetch that's still downloading stops too. A failed fetch leaves
+# the local copy, as Claude Code does, and no stamp.
 fetch_default_branch() {
-    local base
+    local base branch stamp
     base="$(fresh_base)"
     case "$base" in
         refs/remotes/origin/*) ;;
         *) return 0 ;;
     esac
-    fetched_recently && return 0
-    fetch_with_timeout "${base#refs/remotes/origin/}" ||
+    branch="${base#refs/remotes/origin/}"
+    stamp="$(fetch_stamp "$branch")"
+    [ -z "$(find "$stamp" -mmin -10 2> /dev/null)" ] || return 0
+    if fetch_with_timeout "$branch"; then
+        mkdir -p "$(dirname "$stamp")" && touch "$stamp" || true
+    else
         echo "worktree-hook: couldn't fetch ${base#refs/remotes/}; branching from the local copy" >&2
+    fi
 }
 
 # Job control gives the fetch and watchdog separate process groups, including their children.

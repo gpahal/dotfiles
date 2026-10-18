@@ -40,6 +40,9 @@ start_vim() {
 rm "$PLUG"
 assert_exit 0 start_vim
 assert_not_contains "$RUN_OUTPUT" "E117" "vim output without vim-plug"
+# It still highlights syntax, which vim-sensible would otherwise turn on
+vim -Nes -u "$HOME/.vimrc" -c "call writefile([exists('g:syntax_on')], '$SANDBOX/syntax')" -c 'qa!' || true
+assert_eq 1 "$(cat "$SANDBOX/syntax" 2> /dev/null)" "syntax highlighting without vim-plug"
 
 # Inside tmux, the mouse works past column 223 and reports drags: Vim uses SGR mouse codes there.
 # Vim 9.2 leaves ttymouse at xterm under tmux's TERM, so the vimrc sets it. A tmux server on the

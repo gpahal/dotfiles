@@ -43,15 +43,9 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     local status=0
-    echo "Copying vim config..."
-    vim_files copy_file || status=1
+    copy_step "Copying vim config..." vim_files || status=1
     install_plug_vim || status=1
     return "$status"
 }

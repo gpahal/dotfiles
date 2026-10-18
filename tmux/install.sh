@@ -21,21 +21,18 @@ PLUGIN_DIR="$HOME/.tmux/plugins"
 # pins live here, not in tmux.conf. The tests point DOTFILES_TMUX_PLUGINS_LOCK at their own pins.
 PLUGINS_LOCK="${DOTFILES_TMUX_PLUGINS_LOCK:-$DOTFILES_DIR/tmux/plugins.lock}"
 
-# Print the pinned plugins, tpm among them, e.g. tmux-plugins/tmux-yank
+# Print each pinned plugin, tpm among them, and its commit, e.g.
+# tmux-plugins/tmux-yank acfd36e4fcba99f8310a7dfb432111c242fe7392
 tmux_plugins() {
-    awk '!/^#/ && NF { print $1 }' "$PLUGINS_LOCK"
+    awk '!/^#/ && NF { print $1, $2 }' "$PLUGINS_LOCK"
 }
 
-# Print a plugin's pinned commit
-tmux_plugin_pin() {
-    awk -v repo="$1" '$1 == repo { print $2 }' "$PLUGINS_LOCK"
-}
-
-# Succeeds when the plugin's dir is a git checkout of its pinned commit. The .git check stops git
+# Succeeds when a plugin's dir is a git checkout of the given commit. The .git check stops git
 # from finding a repo above a plain dir.
+# e.g. plugin_installed tmux-plugins/tmux-yank acfd36e4fcba99f8310a7dfb432111c242fe7392
 plugin_installed() {
     local dir="$PLUGIN_DIR/${1##*/}"
-    [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$(tmux_plugin_pin "$1")" ]
+    [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$2" ]
 }
 
 # Check out a plugin at a commit, fetching only that commit. A missing dir or a plain one becomes
@@ -55,11 +52,11 @@ install_tmux_plugin() {
 # Install each plugin that isn't at its pin. Fails when one fails, after trying the rest.
 # upgrade.sh runs it too.
 sync_tmux_plugins() {
-    local plugin status=0 changed=false
-    while IFS= read -r plugin; do
-        plugin_installed "$plugin" && continue
+    local repo sha status=0 changed=false
+    while read -r repo sha; do
+        plugin_installed "$repo" "$sha" && continue
         changed=true
-        install_tmux_plugin "$plugin" "$(tmux_plugin_pin "$plugin")" || status=1
+        install_tmux_plugin "$repo" "$sha" || status=1
     done < <(tmux_plugins)
     "$changed" || echo "  tmux plugins already at their pinned commits."
     return "$status"
@@ -110,10 +107,10 @@ setup_tmux_boot() {
 }
 
 status() {
-    local plugin
+    local repo sha
     tmux_files status_file
-    while IFS= read -r plugin; do
-        status_check "tmux plugin $plugin at $(tmux_plugin_pin "$plugin" | cut -c1-7)" plugin_installed "$plugin"
+    while read -r repo sha; do
+        status_check "tmux plugin $repo at ${sha:0:7}" plugin_installed "$repo" "$sha"
     done < <(tmux_plugins)
     if is_ubuntu; then
         status_check "tmux starts at boot (continuum's systemd user unit, $TMUX_BOOT_UNIT)" tmux_boot_enabled
@@ -123,12 +120,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     local status=0
     require_cmd git || return 1
     require_cmd tmux || return 1

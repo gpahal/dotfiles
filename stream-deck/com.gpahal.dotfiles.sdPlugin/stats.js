@@ -13,6 +13,8 @@ const HISTORY = 30;
 // Failed macmon runs in a row before the next start waits, and the longest wait
 const MACMON_RETRIES = 3;
 const MACMON_MAX_WAIT_MS = 10 * 60 * 1000;
+// How long a macmon run must last before its exit starts the count of failures afresh
+const MACMON_HEALTHY_MS = 60 * 1000;
 const GIB = 1024 ** 3;
 
 // Activity Monitor's Memory Used: app memory (anonymous pages less purgeable ones), wired, and
@@ -81,8 +83,13 @@ const NEEDS = {
   network: ["network"],
 };
 
-// macmonPath and spawnProcess stand in for macmon and child_process.spawn in tests
-function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spawn } = {}) {
+// macmonPath, spawnProcess, and clock stand in for macmon, child_process.spawn, and Date.now in tests
+function createSampler({
+  log = () => {},
+  macmonPath = MACMON,
+  spawnProcess = spawn,
+  clock = Date.now,
+} = {}) {
   let cpuPrev = cpuTimes();
   let netPrev = null;
   const cpuHistory = [];
@@ -90,44 +97,50 @@ function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spa
   let macmon = null;
   let macmonLatest = null;
   let macmonMissing = false;
+  let startedAt = 0;
   let failures = 0;
   let retryAt = 0;
 
-  // A run of child that failed to start or exited. After MACMON_RETRIES in a row, each
-  // start waits twice as long as the one before, so a macmon that keeps crashing isn't restarted,
-  // and logged, every 2 seconds.
-  function macmonFailed(child, message) {
-    if (macmon !== child) return;
+  // A macmon run that failed to start or exited. After MACMON_RETRIES in a row, each start waits
+  // twice as long as the one before, so a macmon that keeps crashing isn't restarted, and logged,
+  // every 2 seconds. A run that lasted MACMON_HEALTHY_MS ends the row, but one that printed a
+  // sample or two before exiting doesn't.
+  function recordFailure(message) {
     macmon = null;
     macmonLatest = null;
+    if (clock() - startedAt >= MACMON_HEALTHY_MS) failures = 0;
     failures++;
     let wait = "";
     if (failures >= MACMON_RETRIES) {
       const ms = Math.min(2000 * 2 ** (failures - MACMON_RETRIES + 1), MACMON_MAX_WAIT_MS);
-      retryAt = Date.now() + ms;
+      retryAt = clock() + ms;
       wait = `; trying again in ${Math.round(ms / 1000)} s`;
     }
     log(`${message}${wait}`);
+  }
+
+  // A failure of child, counted only while it's the current run
+  function macmonFailed(child, message) {
+    if (macmon === child) recordFailure(message);
   }
 
   // Runs macmon only while a key needs it; it prints a JSON line every 2 seconds. Each callback
   // changes state only while its process is still the current one: a process stopped and
   // replaced can still exit, or print, after its replacement started.
   function startMacmon() {
-    if (macmon || Date.now() < retryAt) return;
+    if (macmon || clock() < retryAt) return;
     // Checked on each start, so installing macmon takes effect without restarting the plugin
     const missing = !fs.existsSync(macmonPath);
     if (missing && !macmonMissing) log("macmon isn't installed; GPU, temperature, and power keys show nothing");
     macmonMissing = missing;
     if (missing) return;
     let child;
+    startedAt = clock();
     try {
       child = spawnProcess(macmonPath, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
     } catch (error) {
-      // spawn throws some errors, such as ENOEXEC and EPERM, rather than emitting them. A
-      // placeholder stands in as the current run, so the failure counts toward the backoff.
-      macmon = {};
-      macmonFailed(macmon, `couldn't run macmon: ${error.message}`);
+      // spawn throws some errors, such as ENOEXEC and EPERM, rather than emitting them
+      recordFailure(`couldn't run macmon: ${error.message}`);
       return;
     }
     macmon = child;
@@ -143,14 +156,14 @@ function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spa
       for (const line of lines) {
         try {
           macmonLatest = JSON.parse(line);
-          failures = 0;
         } catch {
           // A partial line from a macmon that's quitting
         }
       }
     });
     // macmon runs until stopped, so any exit of the current run, even with 0 or by a signal,
-    // is a failure. stopMacmon replaces macmon first, so its kill isn't counted.
+    // is a failure. The exit stopMacmon's kill causes comes later, once macmon no longer names
+    // child, so it isn't counted.
     child.on("exit", (code, signal) => macmonFailed(child, `macmon exited (${signal ?? code})`));
   }
 

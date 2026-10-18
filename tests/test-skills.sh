@@ -311,4 +311,28 @@ assert_file_contains "$STUB_LOG" "--skill grill --yes"
 assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "one isn't lowercase letters, digits, and dashes"
 rm -rf "$FIXTURE/ai_tools/skills/productivity/bad"
+
+# Run from inside a project that has its own skills package, at the pinned version, the step runs
+# the skills CLI from an empty directory of its own, for add and for remove, so npm can't pick the
+# project's package or its .npmrc. The directory is gone afterwards.
+PROJECT="$SANDBOX/project"
+mkdir -p "$PROJECT/node_modules/.bin"
+printf '{ "dependencies": { "skills": "%s" } }\n' "$(sed -n 's/^SKILLS_CLI="skills@\(.*\)"$/\1/p' "$STEP")" > "$PROJECT/package.json"
+printf '%s\n' '#!/bin/bash' "touch '$SANDBOX/counterfeit-ran'" > "$PROJECT/node_modules/.bin/skills"
+chmod +x "$PROJECT/node_modules/.bin/skills"
+echo 'registry=http://127.0.0.1:9/' > "$PROJECT/.npmrc"
+echo "drift" >> "$AGENTS_DIR/grill/SKILL.md"
+fake_skill old-skill
+echo "-  old-skill" >> "$STATE"
+: > "$NPX_ENV_LOG"
+(cd "$PROJECT" && DOTFILES_ASSUME_YES=1 step)
+assert_file_contains "$STUB_LOG" "--skill grill --yes"
+assert_file_contains "$STUB_LOG" "remove --global --agent claude-code codex --yes old-skill"
+[ ! -e "$SANDBOX/counterfeit-ran" ] || fail "the project's skills package ran"
+assert_eq 2 "$(wc -l < "$NPX_ENV_LOG" | tr -d ' ')" "skills CLI runs"
+while IFS='|' read -r cwd userconfig; do
+    case "$cwd/" in "$PROJECT"/*) fail "the skills CLI ran in the project, $cwd" ;; esac
+    [ "$(dirname "$userconfig")" = "$cwd" ] || fail "npm_config_userconfig is $userconfig, outside $cwd"
+    [ ! -e "$cwd" ] || fail "the skills CLI's directory $cwd is still there"
+done < "$NPX_ENV_LOG"
 test_done

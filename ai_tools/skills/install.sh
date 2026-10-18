@@ -145,6 +145,20 @@ problem_skills() {
     done
 }
 
+# Run the pinned skills CLI with the given arguments, which name any path absolutely. It runs from
+# an empty temp dir, with an empty npm user config there, because npm exec prefers a matching
+# skills package in the working directory's project, and reads that project's .npmrc, so running
+# setup from inside a project could run the project's code. DO_NOT_TRACK turns off its telemetry.
+skills_cli() {
+    local dir result=0
+    dir="$(mktemp -d)" || return 1
+    : > "$dir/npmrc" &&
+        (cd "$dir" && DO_NOT_TRACK=1 npm_config_userconfig="$dir/npmrc" npx -y "$SKILLS_CLI" "$@") ||
+        result=$?
+    rm -rf "$dir"
+    return "$result"
+}
+
 # Succeeds when node is at least SKILLS_CLI_NODE_MAJOR
 node_new_enough() {
     local major
@@ -243,8 +257,8 @@ add_skills() {
     fi
     [ "${#add[@]}" -gt 0 ] || return "$result"
     # The skills CLI (https://skills.sh) copies the skills into ~/.agents/skills (Codex) and
-    # symlinks them into ~/.claude/skills (Claude Code). DO_NOT_TRACK turns off its telemetry.
-    if ! DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" add "$DOTFILES_DIR/ai_tools/skills" \
+    # symlinks them into ~/.claude/skills (Claude Code).
+    if ! skills_cli add "$DOTFILES_DIR/ai_tools/skills" \
         --global --agent "${agents[@]}" --skill "${add[@]}" --yes; then
         echo "  The skills CLI failed to add the skills." >&2
         result=1
@@ -321,7 +335,7 @@ stale_skill_names() {
 remove_skill() {
     local name="$1" agent agents=()
     while IFS= read -r agent; do agents+=("$agent"); done < <(skill_agents)
-    if ! DO_NOT_TRACK=1 npx -y "$SKILLS_CLI" remove --global --agent "${agents[@]}" --yes "$name"; then
+    if ! skills_cli remove --global --agent "${agents[@]}" --yes "$name"; then
         # Left as the CLI left it, so its lock file still agrees and the next run retries
         echo "  The skills CLI failed to remove the $name skill." >&2
         return 1

@@ -21,8 +21,13 @@ stub node 'echo "${NODE_VERSION:-v24.0.0}"'
 # remove, like the real one with --agent claude-code codex, deletes the Claude Code link, and the
 # shared copy only when no other agent that reads ~/.agents/skills is installed. NPX_FAIL=1 makes
 # add fail; NPX_REMOVE_FAIL=1 makes remove fail, changing nothing. NPX_SKIP=<name> makes add skip
-# that skill but exit zero.
+# that skill but exit zero. Like npm exec, it runs a skills package in its working directory
+# instead, when there is one, and it records that directory and npm_config_userconfig in
+# $NPX_ENV_LOG.
+NPX_ENV_LOG="$SANDBOX/npx-env.log"
 stub npx '
+printf "%s|%s\n" "$PWD" "${npm_config_userconfig:-}" >> "'"$NPX_ENV_LOG"'"
+[ ! -x node_modules/.bin/skills ] || exec node_modules/.bin/skills "$@"
 case "$3" in
     add)
         [ "${NPX_FAIL:-}" != 1 ] || exit 1

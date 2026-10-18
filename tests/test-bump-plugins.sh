@@ -11,6 +11,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+command -v git &>/dev/null || skip "git isn't installed"
 
 # The files the script edits, whose copies in the repo must stay as they are
 real_sums() {

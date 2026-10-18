@@ -52,9 +52,15 @@ eval "real_$(declare -f in_git_worktree)"
 in_git_worktree() { false; }
 
 # --- the rest runs main and status on a machine set up through sandbox paths ---
-# sudo runs the command, and refuses a path under /etc, /run, or /dev
-stub sudo 'for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-exec env "$@"'
+# A bare mktemp, such as write_root_file's, makes its file under $TMPDIR, in the sandbox. macOS's
+# would use the user's temp dir (_CS_DARWIN_USER_TEMP_DIR) whatever TMPDIR says, which the sudo
+# below refuses.
+stub mktemp "case \"\$*\" in '' | -d) exec $(command -v mktemp) \"\$@\" \"\$TMPDIR/tmp.XXXXXXXXXX\" ;; esac
+exec $(command -v mktemp) \"\$@\""
+# sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without cached
+# credentials.
+not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
+not_cached_sudo
 stub dpkg-query 'echo "install ok installed"'
 # systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
 # unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled.
@@ -908,9 +914,7 @@ rm "$SANDBOX/apt.conf.d/99off"
 # step writes the drop-in, it reads sshd -T and fails, naming each setting sshd doesn't take, and
 # leaves the other file alone. Status reads sshd -T too, with sudo -n.
 # sudo -n works here, as with cached credentials
-stub sudo '[ "$1" != -n ] || shift
-for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-exec env "$@"'
+stub_sudo_exec
 unset SSH_USER_AUTH
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 item="sshd's effective settings match $SSHD_DROP_IN"
@@ -982,21 +986,18 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 # Without cached sudo credentials, sshd -T can't run: unverified
-stub sudo '[ "$1" != -n ] || exit 1
-exec env "$@"'
+not_cached_sudo
 : > "$STUB_LOG"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified $item (the effective values need sudo -v; run sudo -v, then status, to check them)"
 assert_file_not_contains "$STUB_LOG" "sshd -T"
 # Nor before sshd first ran, which creates $SSHD_RUN_DIR
-stub sudo '[ "$1" != -n ] || shift
-exec env "$@"'
+stub_sudo_exec
 rmdir "$SSHD_RUN_DIR"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified $item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
 mkdir "$SSHD_RUN_DIR"
-stub sudo 'for a in "$@"; do case "$a" in /etc/* | /run/* | /dev/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-exec env "$@"'
+not_cached_sudo
 
 # Software & Updates writes other APT::Periodic keys into 20auto-upgrades: turning
 # unattended-upgrades on sets only the step's keys, keeps the rest, and a re-run writes nothing

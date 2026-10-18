@@ -176,6 +176,21 @@ root_copy_current() {
     cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
 }
 
+# read_root_file <file> [-n]: print a file the step installs as root, through sudo when only root
+# can read it, with -n through sudo -n, which works only while credentials are cached. Prints
+# nothing when it's missing, and fails when it can't be read.
+read_root_file() {
+    if [ ! -e "$1" ]; then
+        return 0
+    elif [ -r "$1" ]; then
+        cat "$1"
+    elif [ "${2:-}" == -n ]; then
+        sudo -n cat "$1" 2>/dev/null
+    else
+        sudo cat "$1"
+    fi
+}
+
 # install_root_copy <src> <dest> <mode>: install a copy of the repo's file as root's, with the
 # mode, unless it's already current
 install_root_copy() {
@@ -389,7 +404,16 @@ apply() {
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    sudo_items_pending locale_installed unattended_upgrades_running keep_conffiles_written apt_timers_enabled
+    # Only root can read the settings, and apt-config skips them as you: checked with sudo only
+    # when other changes need it, as the ufw rules are
+    local auto_upgrades_unchecked=false
+    sudo_items_pending locale_installed
+    if auto_upgrades_unreadable && ! sudo_cached; then
+        auto_upgrades_unchecked=true
+    else
+        sudo_items_pending unattended_upgrades_running
+    fi
+    sudo_items_pending keep_conffiles_written apt_timers_enabled
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
@@ -436,6 +460,8 @@ apply() {
         wol_pending+=("$uuid")
         pending+=("Wake-on-LAN: set 802-3-ethernet.wake-on-lan to magic on \"$name\"")
     done < <(wired_connections)
+    ! "$auto_upgrades_unchecked" || [ ${#pending[@]} -eq 0 ] ||
+        pending+=("Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off")
 
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Everything it can check is already set up."
@@ -444,6 +470,8 @@ apply() {
         elif [ "$ufw" -ne 0 ]; then
             echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
         fi
+        ! "$auto_upgrades_unchecked" ||
+            echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
         # Each part runs whether or not the one before it failed
         sudo_items_apply sleep_masked sleep_conf_written || result=1

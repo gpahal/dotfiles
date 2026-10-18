@@ -92,7 +92,7 @@ assert_file_not_contains "$STUB_LOG" "ntfy URL set"
 assert_file_not_contains "$STUB_LOG" "Disk health"
 assert_file_not_contains "$STUB_LOG" "Claude Code"
 # An item only root could check comes back unverified, so the push says what wasn't checked
-assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
+assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
 fi

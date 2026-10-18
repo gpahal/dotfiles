@@ -31,18 +31,9 @@ ups_plugged() {
         END { flush() }' | sort -u
 }
 
-# Print a file in $NUT_DIR, reading it with sudo -n when only root can read it, which works only
-# while sudo credentials are cached. Prints nothing when it's missing, and fails when it can't be
-# read.
+# Print a file in $NUT_DIR, with sudo -n when only root can read it (read_root_file)
 nut_read() {
-    local file="$NUT_DIR/$1"
-    if [ ! -e "$file" ]; then
-        return 0
-    elif [ -r "$file" ]; then
-        cat "$file"
-    else
-        sudo -n cat "$file" 2>/dev/null
-    fi
+    read_root_file "$NUT_DIR/$1" -n
 }
 
 # Print the value of a key in a section of NUT's ini-style files, without its quotes

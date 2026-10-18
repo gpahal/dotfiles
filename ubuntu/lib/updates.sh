@@ -68,16 +68,6 @@ enable_apt_timers() {
     sudo systemctl enable --now "${APT_TIMERS[@]}"
 }
 
-# Print $AUTO_UPGRADES_CONF, reading it with sudo when only root can, or nothing when it's missing.
-# Fails when it can't be read, so the merge never starts from nothing.
-current_auto_upgrades() {
-    if auto_upgrades_unreadable; then
-        sudo cat "$AUTO_UPGRADES_CONF"
-    elif [ -e "$AUTO_UPGRADES_CONF" ]; then
-        cat "$AUTO_UPGRADES_CONF"
-    fi
-}
-
 # Print the content of $AUTO_UPGRADES_CONF, given as $1, with each line of $AUTO_UPGRADES_CONTENT in
 # place of the lines that set its key, or appended when none does. Software & Updates keeps other
 # APT::Periodic keys there, such as AutocleanInterval, so every other line stays, as
@@ -116,11 +106,12 @@ turn_on_unattended_upgrades() {
         apt_get install -y unattended-upgrades || return 1
     fi
     if ! unattended_upgrades_on; then
-        if ! current="$(current_auto_upgrades)"; then
+        # A failed read fails, so the merge never starts from nothing
+        if ! current="$(read_root_file "$AUTO_UPGRADES_CONF")"; then
             echo "  Couldn't read $AUTO_UPGRADES_CONF, so it was left as it is." >&2
             return 1
         fi
-        merged="$(merged_auto_upgrades "$current")"
+        merged="$(merged_auto_upgrades "$current")" || return 1
         # Unchanged, the keys are already set here, and another file overrides them
         [ "$merged" == "$current" ] || write_root_file "$AUTO_UPGRADES_CONF" "$merged" || return 1
     fi

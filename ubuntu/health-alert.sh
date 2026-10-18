@@ -31,7 +31,7 @@ NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 MESSAGE_MAX_BYTES=3500
 # How a status item only root could check says so, and the line a push then ends with
 ROOT_ONLY_PATTERN='^  unverified .*run sudo -v, then status'
-ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
+ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 # "<epoch seconds of the last push> <cksum of the message pushed, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
 # An unchanged message is pushed again after this many seconds (a week)

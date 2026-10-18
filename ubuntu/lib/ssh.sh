@@ -71,15 +71,9 @@ read_key_login() {
     return 1
 }
 
-# Print the drop-in as it is, reading it with sudo -n when only root can read it, which works
-# only while sudo credentials are cached. Prints nothing when there's none, and fails when it
-# can't be read.
+# Print the drop-in as it is, with sudo -n when only root can read it (read_root_file)
 current_sshd_drop_in() {
-    if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ]; then
-        sudo -n cat "$SSHD_DROP_IN" 2>/dev/null
-    else
-        cat "$SSHD_DROP_IN" 2>/dev/null || true
-    fi
+    read_root_file "$SSHD_DROP_IN" -n
 }
 
 # Succeeds when the drop-in already turns password logins off, given its content

@@ -288,15 +288,25 @@ printf '%s\n' 'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended
 chmod 200 "$AUTO_UPGRADES_CONF"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
-# sudo can't read it either: the step fails and writes nothing
+# With nothing else to change, a re-run doesn't ask for sudo only to read it, and says how to check
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_not_contains "$RUN_OUTPUT" "These need sudo"
+assert_contains "$RUN_OUTPUT" "Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
+assert_file_not_contains "$STUB_LOG" "sudo cat"
+# With another change pending, checking it joins the list. sudo can't read it either: the step
+# fails and writes nothing.
+rm "$SANDBOX/locale"
 touch "$SANDBOX/sudo-cat-fails"
 assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off"
 assert_contains "$RUN_OUTPUT" "Couldn't read $AUTO_UPGRADES_CONF, so it was left as it is."
 rm "$SANDBOX/sudo-cat-fails"
 chmod 600 "$AUTO_UPGRADES_CONF"
 assert_eq 'APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "0";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after a failed read"
 chmod 200 "$AUTO_UPGRADES_CONF"
+rm -f "$SANDBOX/locale"
 assert_exit 0 main
 chmod 600 "$AUTO_UPGRADES_CONF"
 assert_eq 'APT::Periodic::AutocleanInterval "7";

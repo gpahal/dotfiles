@@ -1423,10 +1423,13 @@ status_result() {
 }
 
 # Print the script of a step in the caller's MACOS_STEPS or UBUNTU_STEPS: $STEPS_DIR/manual-steps.sh
-# for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name. Either OS's
-# steps resolve, so a step named on the other OS reaches its own skip message.
+# for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name, such as
+# "git lazygit", which the list check alone would take. Either OS's steps resolve, so a step named
+# on the other OS reaches its own skip message.
 step_script() {
-    [ -n "$1" ] || return 1
+    case "$1" in
+        '' | *[[:space:]/]*) return 1 ;;
+    esac
     case " ${MACOS_STEPS[*]-} ${UBUNTU_STEPS[*]-} " in
         *" $1 "*) ;;
         *) return 1 ;;

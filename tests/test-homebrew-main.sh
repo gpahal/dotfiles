@@ -6,8 +6,8 @@ set -euo pipefail
 # The homebrew step's main: the Command Line Tools on macOS and the apt packages on Ubuntu come
 # first, a failed bundle still installs the App Store apps and casks, one failed cask doesn't stop
 # the rest, an app installed outside Homebrew counts as installed, Ctrl-C (exit 130 from brew or
-# mas) stops the step, the App Store apps install with mas install, then mas get, and only warn
-# when they fail, with the optional Dato only a note and never installed,
+# mas) stops the step, the App Store apps install with mas install, then mas get for the required
+# ones, and only warn when they fail, with the optional Dato only a note,
 # apt-get update is retried only while another update holds apt's lists lock, Ubuntu refreshes the
 # font cache after a cask install, and a re-run installs nothing. test-homebrew-install.sh covers
 # installing Homebrew itself.
@@ -75,12 +75,12 @@ AMPHETAMINE=937984704 DATO=1470584107 WINDOWS_APP=1295203466
 stub xcode-select
 stub fc-cache
 stub sudo 'exit 0'
-# reset: nothing installed but the App Store apps other than the optional Dato
+# reset: nothing installed but the App Store apps
 reset() {
     rm -rf "$SANDBOX/bundle-ok" "$SANDBOX/bundle-status" "$SANDBOX/apps" "$FONTS" "$SANDBOX/mas-status"
     : > "$SANDBOX/casks"
     : > "$SANDBOX/cask-status"
-    printf '%s\n' "$AMPHETAMINE" "$WINDOWS_APP" > "$SANDBOX/mas-installed"
+    printf '%s\n' "$AMPHETAMINE" "$DATO" "$WINDOWS_APP" > "$SANDBOX/mas-installed"
     : > "$SANDBOX/mas-owned"
     : > "$SANDBOX/mas-free"
     : > "$STUB_LOG"
@@ -103,9 +103,9 @@ assert_file_contains "$STUB_LOG" "xcode-select --install"
 assert_eq "" "$(installs)" "brew installs without the Command Line Tools"
 stub xcode-select
 
-# A new Mac, not signed in to the App Store: mas install, then mas get, fail for each App Store app
-# but the optional Dato. The step warns with the sign-in steps, naming sudo, which mas 7 installs
-# with, installs the casks, and passes.
+# A new Mac, not signed in to the App Store: mas install, then mas get, fail for each required App
+# Store app, and mas install for the optional Dato. The step warns with the sign-in steps, naming
+# sudo, which mas 7 installs with, notes Dato, installs the casks, and passes.
 reset
 touch "$SANDBOX/bundle-ok"
 : > "$SANDBOX/mas-installed"
@@ -116,28 +116,38 @@ assert_contains "$RUN_OUTPUT" "sudo -v"
 assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 assert_eq "mas install $AMPHETAMINE
 mas get $AMPHETAMINE
+mas install $DATO
 mas install $WINDOWS_APP
 mas get $WINDOWS_APP
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs on a new Mac"
-assert_not_contains "$(installs)" "$DATO" "installs on a new Mac"
 
 # Signed in: a free app the Apple Account doesn't have comes from mas get, and one it has from mas
-# install. A re-run installs nothing.
+# install, the optional Dato too once it's been bought. A re-run installs nothing.
 reset
 touch "$SANDBOX/bundle-ok"
 : > "$SANDBOX/mas-installed"
-echo "$AMPHETAMINE" > "$SANDBOX/mas-owned"
+printf '%s\n' "$AMPHETAMINE" "$DATO" > "$SANDBOX/mas-owned"
 echo "$WINDOWS_APP" > "$SANDBOX/mas-free"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
+assert_not_contains "$RUN_OUTPUT" "optional"
 assert_eq "mas install $AMPHETAMINE
+mas install $DATO
 mas install $WINDOWS_APP
 mas get $WINDOWS_APP" "$(installs | grep '^mas')" "App Store installs when signed in"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "App Store apps already installed."
-assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 assert_eq "" "$(installs)" "installs on a re-run"
+assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on a re-run"
+# Dato never bought: tried with mas install alone each run, and only noted
+grep -vxF "$DATO" "$SANDBOX/mas-installed" > "$SANDBOX/mas-left" && mv "$SANDBOX/mas-left" "$SANDBOX/mas-installed"
+: > "$SANDBOX/mas-owned"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
+assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
+assert_eq "mas install $DATO" "$(installs)" "installs with Dato not bought"
 
 # The bundle fails, and the App Store apps too: the App Store apps and casks are tried anyway, and
 # the step fails with the bundle's status
@@ -149,6 +159,7 @@ assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "brew bundle install --no-upgrade
 mas install $AMPHETAMINE
 mas get $AMPHETAMINE
+mas install $DATO
 mas install $WINDOWS_APP
 mas get $WINDOWS_APP
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs after a failed bundle"

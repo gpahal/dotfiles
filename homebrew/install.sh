@@ -20,8 +20,8 @@ BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
 # The App Store apps macOS gets, as "<id> <name>", and "optional" after a paid app you may not
 # buy. An optional app that isn't installed is information in status and the step's output, not
-# something to fix, and the step doesn't install it: buying it in the App Store installs it. Once
-# you're signed in to the App Store, mas get takes a free app the Apple Account doesn't have yet.
+# something to fix. Once you're signed in to the App Store, mas get takes a free app the Apple
+# Account doesn't have yet, and mas install one it has, such as a paid app bought once.
 # scripts/check-docs.sh reads the list, one app per line.
 MAS_APPS=(
     "937984704 Amphetamine"
@@ -162,8 +162,8 @@ install_bundle() {
     brew bundle install --file="$BREWFILE" --no-upgrade
 }
 
-# missing_mas_apps <required|optional>: print "<id> <name>" for each of MAS_APPS of that kind that
-# isn't installed, one per line. Without mas, that's all of them.
+# Print "<required|optional> <id> <name>" for each of MAS_APPS that isn't installed, one per line,
+# with one mas list for them all. Without mas, that's all of them.
 missing_mas_apps() {
     local installed entry id name kind
     installed="$(mas list 2>/dev/null | awk '{ print $1 }')" || installed=""
@@ -172,45 +172,51 @@ missing_mas_apps() {
         if [[ "$name" == *" optional" ]]; then
             name="${name% optional}" kind=optional
         fi
-        [ "$kind" == "$1" ] || continue
-        printf '%s\n' "$installed" | grep -qxF "$id" || printf '%s %s\n' "$id" "$name"
+        printf '%s\n' "$installed" | grep -qxF "$id" || printf '%s %s %s\n' "$kind" "$id" "$name"
     done
 }
 
-# Install the App Store apps that aren't, other than the optional ones, as brew bundle would: mas
-# install for an app the Apple Account has, then mas get for a free one it doesn't. A new Mac isn't
-# signed in to the App Store yet, so an app that fails only warns (see the header). Returns the
-# status of an interrupted mas, so main stops.
+# Install the App Store apps that aren't, as brew bundle would: mas install for an app the Apple
+# Account has, then, for a required one, mas get for a free one it doesn't. A new Mac isn't signed
+# in to the App Store yet, so a required app that fails only warns (see the header), and an
+# optional one that fails, as when it's never been bought, is only a note. Returns the status of an
+# interrupted mas, so main stops.
 install_mas_apps() {
-    local missing optional id name status failed=()
-    missing="$(missing_mas_apps required)"
-    optional="$(missing_mas_apps optional | cut -d' ' -f2- | join_lines ', ')"
+    local missing kind id name status failed=() optional=()
+    missing="$(missing_mas_apps)"
     if [ -z "$missing" ]; then
         echo "App Store apps already installed."
-    elif ! command -v mas &>/dev/null; then
+        return 0
+    fi
+    if ! command -v mas &>/dev/null; then
         echo "  mas isn't installed, so the App Store apps can't be. Install the Brewfile, then re-run." >&2
         return 1
-    else
-        echo "Installing App Store apps..."
-        # fd 3, so mas keeps the terminal as stdin for sudo's password prompt
-        while read -r -u 3 id name; do
-            status=0
-            mas install "$id" || status=$?
-            if [ "$status" -ne 0 ] && ! interrupted_status "$status"; then
-                status=0
-                mas get "$id" || status=$?
-            fi
-            ! interrupted_status "$status" || return "$status"
-            [ "$status" -eq 0 ] || failed+=("$name")
-        done 3<<< "$missing"
-        if [ ${#failed[@]} -gt 0 ]; then
-            echo "  Couldn't install from the App Store: $(printf '%s\n' "${failed[@]}" | join_lines ', ')." >&2
-            echo "  Sign in to the App Store, buy any paid app MAS_APPS in homebrew/install.sh lists there once, then re-run." >&2
-            echo "  mas installs with sudo, so re-run from a terminal, or after sudo -v." >&2
-        fi
     fi
-    [ -z "$optional" ] ||
-        echo "  Not installed, and optional: $optional. To add one, buy it in the App Store, then re-run."
+    echo "Installing App Store apps..."
+    # fd 3, so mas keeps the terminal as stdin for sudo's password prompt
+    while read -r -u 3 kind id name; do
+        status=0
+        mas install "$id" || status=$?
+        if [ "$status" -ne 0 ] && [ "$kind" == required ] && ! interrupted_status "$status"; then
+            status=0
+            mas get "$id" || status=$?
+        fi
+        ! interrupted_status "$status" || return "$status"
+        [ "$status" -eq 0 ] && continue
+        if [ "$kind" == required ]; then
+            failed+=("$name")
+        else
+            optional+=("$name")
+        fi
+    done 3<<< "$missing"
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "  Couldn't install from the App Store: $(printf '%s\n' "${failed[@]}" | join_lines ', ')." >&2
+        echo "  Sign in to the App Store, buy any paid app MAS_APPS in homebrew/install.sh lists there once, then re-run." >&2
+        echo "  mas installs with sudo, so re-run from a terminal, or after sudo -v." >&2
+    fi
+    if [ ${#optional[@]} -gt 0 ]; then
+        echo "  Not installed, and optional: $(printf '%s\n' "${optional[@]}" | join_lines ', '). To add one, buy it in the App Store, then re-run."
+    fi
 }
 
 # try_install_cask <cask> <app> <state>: install a cask, adding it to the caller's failed array
@@ -259,7 +265,7 @@ install_casks() {
 }
 
 status() {
-    local missing cask bundle apps app
+    local missing cask bundle apps app mas_missing kind
     if is_macos; then
         status_check "Xcode Command Line Tools" command_line_tools_installed
         status_item skipped "apt packages Homebrew needs: Ubuntu only"
@@ -287,14 +293,16 @@ status() {
         status_check "$bundle" bundle_installed
     fi
     if is_macos; then
-        if [ -n "$(missing_mas_apps required)" ]; then
+        mas_missing="$(missing_mas_apps)"
+        if grep -q '^required ' <<< "$mas_missing"; then
             status_item missing "App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
         else
             status_item ok "App Store apps"
         fi
-        while read -r _ app; do
-            status_item info "$app (App Store) isn't installed. It's optional: to add it, buy it in the App Store, then re-run the homebrew step"
-        done < <(missing_mas_apps optional)
+        while read -r kind _ app; do
+            [ "$kind" != optional ] ||
+                status_item info "$app (App Store) isn't installed. It's optional: to add it, buy it in the App Store, then re-run the homebrew step"
+        done <<< "$mas_missing"
     else
         status_item skipped "App Store apps: macOS only"
     fi

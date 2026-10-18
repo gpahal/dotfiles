@@ -51,6 +51,7 @@ stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 run status
 # One for every cask, and one for raycast's install receipt, since its app is gone
 assert_eq 2 "$(brew_calls)" "brew calls on macOS"
+assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on macOS"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
 assert_contains "$RUN_OUTPUT" "unverified Brewfile brew formulae (skipped by --quick"
 assert_contains "$RUN_OUTPUT" "ok         ghostty (cask)"

@@ -13,9 +13,9 @@
 #   smartctl, fwupdmgr, fdesetup, socketfilterfw, nmcli, apt-config, apt-mark, and journalctl,
 #   which read the real disks, firmware, security settings, network, apt config, holds, and logs,
 #   the ubuntu step's nut-scanner and upsc, which read a real UPS, udevadm, which reads the real
-#   devices, lsblk, which reads the real disks' encryption, lsappinfo, which reads the running
-#   macOS apps, scutil, which reads and sets the real hostname, and pbpaste, which reads the real
-#   clipboard
+#   devices, lsblk, which reads the real disks' encryption, lsappinfo and pgrep, which read the
+#   running apps and processes, scutil, which reads and sets the real hostname, and pbpaste, which
+#   reads the real clipboard
 # Other read-only commands the tests rely on, such as dscl, dpkg, uname, and id, stay real. A test
 # that needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs
 # that.
@@ -23,4 +23,4 @@ SENTINELS="brew apt apt-get add-apt-repository snap systemctl launchctl defaults
 osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill open xdg-open
 locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss
 smartctl fwupdmgr fdesetup socketfilterfw notify-send runuser logger nmcli apt-config journalctl
-orb nut-scanner upsc udevadm activateSettings apt-mark lsblk lsappinfo scutil pbpaste"
+orb nut-scanner upsc udevadm activateSettings apt-mark lsblk lsappinfo pgrep scutil pbpaste"

@@ -8,8 +8,9 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# The sandbox's pkill is a sentinel. This test's own pkill only stops the sleeps it started.
-PKILL="$(command -v pkill)"
+# The sandbox's pkill and pgrep are sentinels. This test's own only find and stop the sleeps it
+# started.
+PKILL="$(command -v pkill)" PGREP="$(command -v pgrep)"
 setup_sandbox
 
 RUNNER="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
@@ -30,7 +31,7 @@ SLEEP_PATTERN="^([^ ]*/)?sleep (sleep )?($REVIEWER_SLEEP|$REVIEWER_TIMEOUT)\$"
 
 # Print the PIDs of any sleep this test started, the reviewer's or the watchdog's
 leftover_sleeps() {
-    pgrep -f "$SLEEP_PATTERN" || true
+    "$PGREP" -f "$SLEEP_PATTERN" || true
 }
 
 # Wait up to 10 seconds for a command to succeed

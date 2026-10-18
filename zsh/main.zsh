@@ -1,11 +1,11 @@
-# Drop duplicate entries, e.g. when nested shells or tmux panes re-run brew shellenv
-typeset -U path fpath
+# Drop duplicate entries, e.g. when nested shells or tmux panes re-run brew shellenv. path.zsh
+# does the same for path.
+typeset -U fpath
 
 ZSH_DIR=${${(%):-%x}:A:h}
 
-srcif() {
-    [ -f "$1" ] && source "$1"
-}
+# A shell started without ~/.zprofile, such as `zsh -i` from an app, still gets the full PATH
+source "$ZSH_DIR/path.zsh"
 
 # Source a tool's shell init script, cached in ~/.cache/zsh to save running the tool on every
 # start. Usage: _cached_init [-f <file>] <tool> <init args...>. Regenerates the cache when the
@@ -43,20 +43,6 @@ _cached_init() {
     source $cache
 }
 
-# ~/.zprofile sets up Homebrew for login shells; cover shells started without it, as it does.
-# shellenv prints nothing when PATH already starts with Homebrew's dirs, as in a pane of the tmux
-# server systemd starts at boot, so it gets a PATH without them. The eval still prepends to the
-# real PATH, and typeset -U drops the second copy.
-if [[ -z ${HOMEBREW_PREFIX:-} ]]; then
-    for _brew in /opt/homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
-        [[ -x $_brew ]] && { eval "$(PATH=/usr/bin:/bin "$_brew" shellenv zsh)"; break }
-    done
-    unset _brew
-fi
-# A nested shell (a tmux pane) skips shellenv, and macOS's path_helper in /etc/zprofile has moved
-# /usr/bin ahead of Homebrew. typeset -U keeps the first copy, so this moves Homebrew to the front.
-[[ -n ${HOMEBREW_PREFIX:-} ]] && path=("$HOMEBREW_PREFIX/bin" "$HOMEBREW_PREFIX/sbin" $path)
-
 # command-not-found comes before plugins, whose mise activation wraps the handler it defines.
 # Defined after, it would replace mise's, which installs a missing tool from the mise config.
 for _f in basic-settings functions aliases options history key-bindings completions title hooks \
@@ -71,7 +57,7 @@ _cached_init zoxide init zsh
 [[ $TERM == dumb ]] || _cached_init starship init zsh
 
 # Per-machine settings, secrets and work-only aliases. Not part of the dotfiles repo.
-srcif "$HOME/.zshrc.local"
+[[ -f $HOME/.zshrc.local ]] && source "$HOME/.zshrc.local"
 
 # Load last, so it wraps the widgets every plugin above defines
 _source_plugin zsh-syntax-highlighting

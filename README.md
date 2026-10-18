@@ -170,7 +170,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 
 ### SSH
 
-- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, with `IgnoreUnknown UseKeychain` so an ssh other than Apple's, such as Homebrew's, still reads it, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
+- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot. The block starts with `IgnoreUnknown UseKeychain`, so an ssh other than Apple's, such as Homebrew's, still reads the file
 - `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
 
 ### vim
@@ -196,7 +196,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - Aliases and functions include `g` (`git`, or `git status -sb`), `c` (`bat -pp`), `t` (`eza --tree`), `port <n>` and `killport <n>`, `o [path]`, `scratch` (a shell in a temp dir), `reload`, and `ts` (`tmux-sessionizer`)
 - `rm` deletes immediately. On macOS, use `trash` for a delete you can undo
 - `~/.zshrc.local`, if it exists, is sourced near the end. Put secrets and settings for one machine there
-- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. Starship reads `~/.config/starship.toml`
+- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. `~/.zprofile`, `main.zsh`, and on Ubuntu `~/.zshenv` source `path.zsh`, which sets PATH. Starship reads `~/.config/starship.toml`
 
 ### Ghostty
 

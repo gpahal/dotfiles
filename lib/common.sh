@@ -117,7 +117,11 @@ confirm_sudo_changes() {
     echo "  These need sudo:"
     printf '    - %s\n' "$@"
     confirm "  Apply them?" && return 0
-    echo "  Left unchanged. Run this step from a terminal to apply them."
+    if is_interactive; then
+        echo "  Left unchanged."
+    else
+        echo "  Left unchanged. Run this step from a terminal to apply them."
+    fi
     return 1
 }
 
@@ -813,9 +817,10 @@ tool_home_is() {
     [ "$home" == "$default" ]
 }
 
-# Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there
+# Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there.
+# The newline ends a comment on the expression's last line, which would swallow the comparison.
 json_applied() {
-    [ -s "$1" ] && jq -e "($2) == ." "$1" &>/dev/null
+    [ -s "$1" ] && jq -e "($2"$'\n'") == ." "$1" &>/dev/null
 }
 
 # Print the HTTP status of a HEAD request for a URL: 200 when it's there, 404 when it isn't, and

@@ -8,9 +8,10 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Lint shell scripts (including */bin/*), syntax-check zsh files, check the docs against the code they describe, check the skills' metadata, links, and paths, and check the keys the claude-code step writes against the known Claude Code settings
+# Lint shell scripts (including */bin/*), and check they use no bash 4 features, since they target /bin/bash 3.2, syntax-check zsh files, check the docs against the code they describe, check the skills' metadata, links, and paths, and check the keys the claude-code step writes against the known Claude Code settings
 check:
-    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck
+    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done | xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck
+    bad="$(git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done | xargs -0 grep -nE 'mapfile|declare -A|\$\{[^}]*,,|\[\[ -v' /dev/null)" || true; [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
     for f in zsh/*.zsh; do zsh -n "$f"; done
     bash scripts/check-docs.sh
     bash scripts/check-skills.sh

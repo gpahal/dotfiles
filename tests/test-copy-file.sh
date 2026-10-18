@@ -332,6 +332,12 @@ assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_contains "$RUN_OUTPUT" "Back up $settings"
 assert_eq '{"mine": 1}' "$(cat "$settings.bak")" "backup after json_merge"
 assert_eq 1 "$(jq .a "$settings")" "settings after json_merge"
+# A filter whose last line is a comment is still checked as a whole: the comparison json_applied
+# adds goes on a line of its own
+assert_exit 0 json_applied "$settings" '.a = 1
+# a comment on the last line'
+assert_exit 1 json_applied "$settings" '.a = 2
+# a comment on the last line'
 # A filter that changes nothing leaves the file as it is, and asks nothing
 printf '{"a":1,  "mine":1}\n' > "$settings"
 assert_exit 0 json_merge "$settings" '.a = 1' <<< y

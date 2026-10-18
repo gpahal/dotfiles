@@ -88,9 +88,13 @@ $REATTACH_LINE
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local"
 assert_eq "-r--r--r--" "$(/bin/ls -l "$SUDO_LOCAL" | cut -c 1-10)" "sudo_local's mode"
 assert_file_not_contains "$STUB_LOG" "brew install"
+# Status asks brew for its prefix once, however often it needs the module's source
+REATTACH_SOURCE_READ=false
+: > "$STUB_LOG"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
+assert_eq 1 "$(grep -c '^brew --prefix' "$STUB_LOG")" "brew --prefix calls in a status run"
 
 # Re-run: already set up, and no sudo
 : > "$STUB_LOG"

@@ -16,6 +16,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script homebrew/install.sh
+[ -n "$(mas_app_ids "$BREWFILE")" ] || fail "mas_app_ids found no App Store apps in the Brewfile"
 # No app path for a cask brew doesn't list, so nothing asks brew info or finds the real Mac's apps
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
@@ -32,7 +33,7 @@ app_json() { printf "{\"token\": \"%s\", \"artifacts\": [{\"app\": [\"x.app\"], 
 case "$1 $2" in
     "bundle check")
         [ -e "$S/bundle-ok" ] || { [ -e "$S/rest-ok" ] &&
-            [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "937984704 1470584107 1295203466 " ]; } ;;
+            [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "'"$(mas_app_ids "$BREWFILE" | tr '\n' ' ')"'" ]; } ;;
     "bundle install") exit "$(cat "$S/bundle-status" 2>/dev/null || echo 0)" ;;
     "list --cask") if [ "$3" == -1 ]; then cat "$S/casks"; else grep -qxF "$3" "$S/casks"; fi ;;
     "info --json=v2")

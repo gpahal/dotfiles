@@ -89,12 +89,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Installing language runtimes via mise..."
     require_cmd mise || return 1
     # The rustup installer is downloaded with curl

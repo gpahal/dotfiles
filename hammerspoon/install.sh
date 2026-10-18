@@ -30,12 +30,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Copying Hammerspoon config..."
     if ! is_macos; then
         echo "  Hammerspoon has no Linux app; skipping."

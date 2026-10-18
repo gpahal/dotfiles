@@ -292,12 +292,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting macOS defaults..."
     if ! is_macos; then
         echo "  Not macOS; skipping."

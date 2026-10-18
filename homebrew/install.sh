@@ -164,18 +164,12 @@ bundle_installed_except_mas() {
 
 # Formulae and App Store apps from the Brewfile
 install_bundle() {
+    local what=formulae
+    ! is_macos || what="formulae and App Store apps"
     if bundle_installed; then
-        if is_macos; then
-            echo "Brew formulae and App Store apps already installed."
-        else
-            echo "Brew formulae already installed."
-        fi
+        echo "Brew $what already installed."
     else
-        if is_macos; then
-            echo "Installing brew formulae and App Store apps..."
-        else
-            echo "Installing brew formulae..."
-        fi
+        echo "Installing brew $what..."
         # Keeps brew's status, so main sees 130 from Ctrl-C
         local status=0
         brew bundle install --file="$BREWFILE" --no-upgrade || status=$?
@@ -221,7 +215,8 @@ comma_list() {
     paste -sd, - | sed 's/,/, /g'
 }
 
-# Install a cask, adding it to the caller's failed array when that fails
+# try_install_cask <cask> <app> <state>: install a cask, adding it to the caller's failed array
+# when that fails. The state is cask_state's, which spares install_cask asking brew again.
 try_install_cask() {
     install_cask "$@" || failed+=("$1")
 }
@@ -254,7 +249,7 @@ install_casks() {
         case "$state" in brew | other) continue ;; esac
         "$installing" || echo "Installing brew casks..."
         installing=true
-        try_install_cask "$cask" "$app"
+        try_install_cask "$cask" "$app" "$state"
     done
     if ! "$installing"; then
         echo "Brew casks already installed."
@@ -314,12 +309,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     require_supported_os || return 1
     if is_macos; then
         install_command_line_tools

@@ -1430,7 +1430,7 @@ step_script() {
 # <quick> ends the usage's --status sentence, saying what --quick skips. The caller sets
 # MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Sets RUNNER_STEPS to the steps named. Exits with the
 # --status result (3 when something needs attention, 1 when a step failed) and when a step fails;
-# returns after a successful run.
+# returns after a successful run. An interrupted run dies of the signal that stopped it.
 runner_main() {
     local name="$1" quick="$2" script status=0
     shift 2
@@ -1445,10 +1445,13 @@ runner_main() {
     if status_requested "$@"; then
         echo "=== $name status ==="
         run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
+        reraise_interrupt "$status"
         exit "$status"
     fi
     echo "=== $name setup ==="
-    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || exit $?
+    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
+    reraise_interrupt "$status"
+    [ "$status" -eq 0 ] || exit "$status"
     echo ""
     echo "=== $name setup complete! ==="
 }
@@ -1472,6 +1475,23 @@ _runner_usage() {
 # `|| result=1` turns its 130 into 1.
 interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
+}
+
+# Kill this shell with the signal an interrupted status stands for, with the signal's default
+# action, so whatever ran it stops too: bash carries on after a command that exited 130, but not
+# after one SIGINT killed. Returns for any other status. run_steps returns the status instead,
+# since $$ is the top shell's PID even in a subshell.
+reraise_interrupt() {
+    local sig
+    case "$1" in
+        129) sig=HUP ;;
+        130) sig=INT ;;
+        143) sig=TERM ;;
+        *) return 0 ;;
+    esac
+    trap - INT TERM HUP
+    kill -s "$sig" $$
+    exit "$1"
 }
 
 # run_steps <mode> [step...]

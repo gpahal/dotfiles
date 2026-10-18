@@ -1396,9 +1396,10 @@ interrupted_status() {
 #
 # With mode --status, run each step's read-only --status report instead, under a header with the
 # step's name. A step whose report has missing or unknown items exits 3; those are listed at the
-# end too, and the run returns 3 (or 1 when a step also failed). An empty mode runs the steps.
+# end too, and the run returns 3 (or 1 when a step also failed). A report that exits 3 without
+# such an item failed. An empty mode runs the steps.
 run_steps() {
-    local mode="$1" step script status interrupted="" failed=() attention=()
+    local mode="$1" step script status codes interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
     for step in "$@"; do
@@ -1420,10 +1421,20 @@ run_steps() {
         status=0
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
-            # as manual-steps) prints nothing. fflush streams each line as it comes. The runners'
-            # set -o pipefail keeps the step's status, such as 3, rather than awk's 0.
-            "$BASH" "$script" --status | awk -v header="$step:" 'NR == 1 { print header } { print; fflush() }' ||
-                status=$?
+            # as manual-steps) prints nothing. fflush streams each line as it comes. awk exits 0
+            # when it saw an item status_item marks as needing attention, since a report that set
+            # -e cut short at a command that exited 3, such as jq on a filter that doesn't
+            # compile, exits 3 too. -e is off in the group, so PIPESTATUS is read.
+            {
+                "$BASH" "$script" --status | awk -v header="$step:" '
+                    NR == 1 { print header }
+                    /^  (missing|unknown)    / { attention = 1 }
+                    { print; fflush() }
+                    END { exit !attention }'
+                codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
+            } || true
+            status="${codes% *}"
+            [ "$status" -ne 3 ] || [ "${codes#* }" -eq 0 ] || status=1
         else
             "$BASH" "$script" || status=$?
         fi

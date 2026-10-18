@@ -7,7 +7,7 @@ set -euo pipefail
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
 # Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
 # step that carries on runs. With --status, a step that exits 3 is listed as needing
-# attention. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
+# attention when its report has a missing or unknown item, and as failed otherwise. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
 # macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
 # both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
 # report the OS.
@@ -29,7 +29,11 @@ fake_step broken 'echo "broken output" >&2; exit 1'
 fake_step last 'echo "last ran"'
 # Signals itself, as a step does when Ctrl-C reaches it
 fake_step interrupted 'kill -INT $$'
-fake_step attention '[ "${1:-}" != --status ] || exit 3'
+fake_step attention '[ "${1:-}" != --status ] || { echo "  missing    something"; exit 3; }'
+fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; exit 3; }'
+# Exits 3 with no item needing attention, as a report that set -e cut short at a command that
+# exited 3, such as jq on a filter that doesn't compile
+fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
 # Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
 # Ctrl-C reaches the runner too, but the step carries on and fails, as one does when brew catches
@@ -108,6 +112,14 @@ assert_exit 3 run_steps --status first attention
 assert_contains "$RUN_OUTPUT" "Needs attention: attention. Run: bash $0 attention"
 assert_eq "first --status
 attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
+# An unknown item needs attention too
+assert_exit 3 run_steps --status unknown
+assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
+# A report that exits 3 without a missing or unknown item failed
+assert_exit 1 run_steps --status cut-short
+assert_contains "$RUN_OUTPUT" "The cut-short step failed."
+assert_contains "$RUN_OUTPUT" "Failed steps: cut-short"
+assert_not_contains "$RUN_OUTPUT" "Needs attention"
 # A failure outranks needing attention, and the hint to re-run a failed report keeps --status
 assert_exit 1 run_steps --status attention broken
 assert_contains "$RUN_OUTPUT" "Needs attention: attention."

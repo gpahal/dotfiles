@@ -76,16 +76,9 @@ if OS.mac?
   brew "terminal-notifier"
   # The PAM module Touch ID for sudo needs inside tmux (macos/setup-touch-id-sudo.sh)
   brew "pam-reattach"
-  # Mac App Store CLI
+  # Mac App Store CLI, which installs the homebrew step's MAS_APPS
   brew "mas"
 
   # Apple Silicon sensors: power, temperatures, and memory
   brew "macmon"
-
-  # brew bundle runs mas install, then mas get, which takes a free app the Apple Account doesn't
-  # have yet. So once you're signed in to the App Store, the free apps install by themselves, while
-  # a paid app such as Dato needs buying there once.
-  mas "Amphetamine", id: 937984704
-  mas "Dato", id: 1470584107
-  mas "Windows App", id: 1295203466
 end

@@ -31,6 +31,7 @@ cask_app_path() { zed_outside_homebrew "$1"; }
 # brew list names the casks without their apps, for Ubuntu
 stub brew 'S="'"$SANDBOX"'"
 [ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nraycast\n"; exit; }
+[ "$*" != --caskroom ] || { echo "$S/caskroom"; exit; }
 [ "$*" == "info --json=v2 --installed --cask" ] || exit 1
 cat << JSON
 {"casks": [
@@ -48,8 +49,10 @@ is_macos() { true; }
 # One App Store app isn't installed, as on a Mac not yet signed in to the App Store
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 run status
-assert_eq 1 "$(brew_calls)" "brew calls on macOS"
-assert_contains "$RUN_OUTPUT" "missing    Brewfile App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
+# One for every cask, and one for raycast's install receipt, since its app is gone
+assert_eq 2 "$(brew_calls)" "brew calls on macOS"
+assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on macOS"
+assert_contains "$RUN_OUTPUT" "missing    App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
 assert_contains "$RUN_OUTPUT" "unverified Brewfile brew formulae (skipped by --quick"
 assert_contains "$RUN_OUTPUT" "ok         ghostty (cask)"
 assert_not_contains "$RUN_OUTPUT" "ghostty (cask), installed outside Homebrew"
@@ -59,10 +62,22 @@ assert_contains "$RUN_OUTPUT" "missing    raycast (cask): brew lists it, but its
 assert_contains "$RUN_OUTPUT" "missing    rectangle (cask)"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
+# An app the cask now names differently, as T3 Code (Alpha) became T3 Code (Beta), isn't gone while
+# the app brew's install receipt recorded is there. Only when neither is there is it gone.
+mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/T3 Code (Alpha).app"
+echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+listing="t3-code	$SANDBOX/T3 Code (Beta).app"
+assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a cask whose app was renamed"
+# A receipt whose uninstall also quits the app and removes a binary, as most apps' do, is read too
+echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}, {"binary": ["t3"]}, {"uninstall": [{"quit": "com.t3"}]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose uninstall does more"
+rm -r "$SANDBOX/T3 Code (Alpha).app"
+assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose app is gone"
+
 # Only Dato, which is optional, isn't installed: information, not something missing
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
 run status
-assert_contains "$RUN_OUTPUT" "ok         Brewfile App Store apps"
+assert_contains "$RUN_OUTPUT" "ok         App Store apps"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
 # brew info fails for a cask it doesn't list when offline with no API cache, or when the cask was

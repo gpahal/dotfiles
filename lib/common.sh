@@ -759,6 +759,17 @@ regex_escape() {
     printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g'
 }
 
+# wait_until_quit <pgrep option>... <pattern>: wait up to 10 seconds for no process to match, and
+# fail when one still does
+# e.g. wait_until_quit -x "Stream Deck"
+wait_until_quit() {
+    for _ in $(seq 1 20); do
+        pgrep "$@" &>/dev/null || return 0
+        sleep 0.5
+    done
+    return 1
+}
+
 # Quit a running app (after asking). Returns non-zero if it is still running.
 ensure_app_quit() {
     local app="$1" pattern
@@ -782,10 +793,7 @@ ensure_app_quit() {
         return 1
     fi
     osascript -e "quit app \"$app\""
-    for _ in $(seq 1 20); do
-        pgrep -ax "$pattern" &>/dev/null || return 0
-        sleep 0.5
-    done
+    wait_until_quit -ax "$pattern" && return 0
     echo "  $app did not quit; skipping."
     return 1
 }
@@ -831,6 +839,23 @@ cask_app_path() {
 CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
     "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
+# Print the path of brew's install receipt for cask $1, which records what brew installed for it
+cask_receipt() {
+    echo "$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
+}
+
+# recorded_cask_app <cask> <app>: print the app path brew recorded when it installed <cask>, in
+# the dir of <app>, the path the cask now gives. Fails when the install receipt names no app.
+recorded_cask_app() {
+    local name
+    name="$(jq -er '[.uninstall_artifacts[] | objects | select(has("app"))
+        | .target // (.app[1].target? // .app[0])][0] | strings' "$(cask_receipt "$1")" 2>/dev/null)" || return 1
+    case "$name" in
+        /*) echo "$name" ;;
+        *) echo "${2%/*}/$name" ;;
+    esac
+}
+
 # cask_state <cask> [<app>] [<listing>]: print how a Homebrew cask is installed, a tab, and the
 # path of the app it installs: "brew" when brew lists it, "gone" when brew lists it but its app was
 # deleted (macOS only), "other" when brew doesn't list it but the app is there, as when an app
@@ -840,7 +865,7 @@ CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Appli
 # a listed cask is never gone.
 # e.g. IFS=$'\t' read -r state app <<< "$(cask_state raycast "" "$apps")"
 cask_state() {
-    local cask="$1" app="" listed=false entry state
+    local cask="$1" app="" listed=false entry state recorded
     if [ $# -ge 3 ]; then
         if app="$(printf '%s\n' "$3" |
             awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
@@ -864,7 +889,17 @@ cask_state() {
         fi
     fi
     if "$listed"; then
-        if [ -n "$app" ] && [ ! -e "$app" ]; then state=gone; else state=brew; fi
+        state=brew
+        # The cask's current definition can name the app differently from the one brew installed,
+        # as when T3 Code (Alpha) became T3 Code (Beta), so the app is gone only when the one the
+        # install receipt recorded is gone too
+        if [ -n "$app" ] && [ ! -e "$app" ]; then
+            if recorded="$(recorded_cask_app "$cask" "$app")" && [ -e "$recorded" ]; then
+                app="$recorded"
+            else
+                state=gone
+            fi
+        fi
     elif [ -n "$app" ] && [ -e "$app" ]; then
         state=other
     else

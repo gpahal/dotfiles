@@ -891,9 +891,11 @@ tool_home_is() {
 }
 
 # Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there.
-# The newline ends a comment on the expression's last line, which would swallow the comparison.
+# The file must hold one value: jq -e takes its status from the last of several, so a file whose
+# last value had the settings would pass. The newline ends a comment on the expression's last
+# line, which would swallow the comparison.
 json_applied() {
-    [ -s "$1" ] && jq -e "($2"$'\n'") == ." "$1" &>/dev/null
+    [ -s "$1" ] && jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" "$1" &>/dev/null
 }
 
 # Print the HTTP status of a HEAD request for a URL: 200 when it's there, 404 when it isn't, and
@@ -1124,9 +1126,10 @@ json_merge() {
     require_cmd jq || return 1
     ! json_applied "$file" "$filter" || return 0
     # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
-    # dangling symlink, fails rather than start from {} and lose what it holds. Back up and write
-    # nothing until jq succeeds with one JSON value, so a filter that fails, or yields no value or
-    # several, leaves the file as it was and asks nothing.
+    # dangling symlink, fails rather than start from {} and lose what it holds, and so does one
+    # that isn't one JSON value. Back up and write nothing until jq succeeds with one JSON value, so
+    # a filter that fails, or yields no value or several, leaves the file as it was and asks
+    # nothing.
     if [ -e "$file" ] || [ -L "$file" ]; then
         if ! input="$(cat -- "$file")"; then
             echo "  Couldn't read $file, so it was left as it is." >&2
@@ -1134,6 +1137,10 @@ json_merge() {
         fi
     fi
     [[ "$input" =~ [^[:space:]] ]] || input='{}'
+    if [ "$(printf '%s\n' "$input" | jq -s length 2>/dev/null)" != 1 ]; then
+        echo "  $file isn't valid JSON, or holds more than one value, so it was left as it is." >&2
+        return 1
+    fi
     tmp="$(mktemp)"
     if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         echo "  Couldn't update $file with jq." >&2

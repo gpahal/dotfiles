@@ -345,6 +345,19 @@ for filter in 'error("bad")' '.a, .b'; do
     assert_eq "settings.json" "$(/bin/ls "$HOME/badfilter")" "files after json_merge $filter"
     assert_eq '{"mine": 1}' "$(cat "$settings")" "settings after json_merge $filter"
 done
+# A file that holds several JSON values isn't configured, even when the last one is, and
+# json_merge leaves it as it is, as it does invalid JSON
+for bad in '{"a": 0}
+{"a": 1}' '{"a": 1'; do
+    printf '%s\n' "$bad" > "$settings"
+    ! json_applied "$settings" '.a = 1' || fail "json_applied passed $bad"
+    assert_exit 1 json_merge "$settings" '.a = 1' <<< y
+    assert_contains "$RUN_OUTPUT" "$settings isn't valid JSON, or holds more than one value, so it was left as it is." \
+        "json_merge on $bad"
+    assert_not_contains "$RUN_OUTPUT" "Back up" "json_merge on $bad"
+    assert_eq "$bad" "$(cat "$settings")" "settings after json_merge on $bad"
+done
+printf '{"mine": 1}\n' > "$settings"
 # A good filter still offers the backup, then writes
 assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_contains "$RUN_OUTPUT" "Back up $settings"

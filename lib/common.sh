@@ -982,7 +982,7 @@ add_apt_repo() {
         rm -f "$key"
         return 1
     fi
-    fingerprint="$(apt_key_fingerprint "$key" | paste -sd, - | sed 's/,/, /g')"
+    fingerprint="$(apt_key_fingerprint "$key" | join_lines ', ')"
     if [ "$fingerprint" != "$fpr" ]; then
         echo "  $name's apt key from $key_url has the fingerprint ${fingerprint:-(none)}, not $fpr, so" >&2
         echo "  nothing was changed. If $name has published a new key, check its fingerprint against" >&2

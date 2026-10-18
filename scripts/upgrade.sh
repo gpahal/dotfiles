@@ -177,6 +177,44 @@ _upgrade_report() {
     return 1
 }
 
+# Print each Claude Code marketplace, a tab, and the commit its checkout is at, or - when it isn't
+# a git checkout. Prints nothing when the list fails, since the versions are only shown.
+_claude_marketplace_versions() {
+    local name dir
+    claude plugin marketplace list --json 2>/dev/null |
+        jq -r '.[]? | [.name, .installLocation // ""] | @tsv' 2>/dev/null |
+        while IFS=$'\t' read -r name dir; do
+            # -C "" would run git in the current directory
+            if [ -n "$dir" ] && [ -e "$dir/.git" ]; then
+                printf '%s\t%s\n' "$name" "$(git -C "$dir" rev-parse --short=12 HEAD 2>/dev/null || echo -)"
+            else
+                printf '%s\t-\n' "$name"
+            fi
+        done
+}
+
+# Print each installed Claude Code plugin, a tab, and its version, or nothing when the list fails
+_claude_plugin_versions() {
+    claude plugin list --json 2>/dev/null | jq -r '.[]? | [.id, (.version // "-" | tostring)] | @tsv' 2>/dev/null
+}
+
+# Print heading $1, then each "<name><tab><version>" line of $2 with its version in the same kind
+# of list $3, after an update: one version when it didn't change, or the old one -> the new one
+_print_versions() {
+    local name old new
+    [ -n "$2" ] || return 0
+    echo "$1"
+    while IFS=$'\t' read -r name old; do
+        [ -n "$name" ] || continue
+        new="$(awk -F '\t' -v n="$name" '$1 == n { print $2; exit }' <<< "$3")"
+        if [ "$old" == "$new" ]; then
+            echo "  $name: $old"
+        else
+            echo "  $name: $old -> ${new:-?}"
+        fi
+    done <<< "$2"
+}
+
 # Update AI tools that the package manager upgrades miss
 upgrade_ai_tools() {
     local failed=()
@@ -197,21 +235,29 @@ upgrade_ai_tools() {
 
     # Plugins are separate from the CLIs above. Claude Code has no update-all, so update
     # each installed plugin in the scope it was installed in. Updates apply on next start.
+    # Plugins can add hooks that run as you, so each marketplace's and plugin's version is shown
+    # before and after, for review.
     if command -v claude &>/dev/null; then
+        local id scope version plugins rows before=""
+        before="$(_claude_marketplace_versions)"
         claude plugin marketplace update || _stage_failed "claude marketplaces" "$?"
-        local id scope plugins rows
+        _print_versions "Claude Code marketplaces:" "$before" "$(_claude_marketplace_versions)"
         # Read the list on fd 3 so `claude plugin update` keeps the terminal as stdin for its
         # prompts. Skip project and local plugins, which would update against the current directory,
         # and managed ones, which your organization's settings control.
         if plugins="$(claude plugin list --json)" && rows="$(jq -er '
             if type != "array" then error("expected a plugin list") else . end |
             map(if (.id | type) != "string" or (.scope | type) != "string" then error("invalid plugin") else . end) |
-            map(select(.scope != "project" and .scope != "local" and .scope != "managed") | "\(.id)\t\(.scope)") |
+            map(select(.scope != "project" and .scope != "local" and .scope != "managed") |
+                "\(.id)\t\(.scope)\t\(.version // "-")") |
             join("\n")' <<< "$plugins")"; then
-            while IFS=$'\t' read -r -u 3 id scope; do
+            before=""
+            while IFS=$'\t' read -r -u 3 id scope version; do
                 [ -n "$id" ] || continue
+                before+="$id"$'\t'"$version"$'\n'
                 claude plugin update "$id" --scope "$scope" || _stage_failed "claude plugin $id" "$?"
             done 3<<< "$rows"
+            _print_versions "Claude Code plugins:" "$before" "$(_claude_plugin_versions)"
         else
             _stage_failed "claude plugin list" "$?"
         fi

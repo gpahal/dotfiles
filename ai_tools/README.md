@@ -56,7 +56,7 @@ The `upgrade` shell function updates the AI tools with everything else, through 
 - **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
 - **Desktop apps installed with brew:** `brew upgrade --cask --greedy`, skipping running apps. An app that renamed itself as it updated would fail that upgrade, so its cask is re-recorded instead with `brew uninstall --cask --force` and `brew install --cask --adopt`, which keep the app on disk.
 - **Codex CLI installed with brew:** `brew upgrade --cask --greedy codex`, even while it runs.
-- **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. A running session keeps the old version until `/reload-plugins`.
+- **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. Plugins can add hooks that run as you, so it prints each marketplace's commit and each plugin's version before and after, for you to review. A running session keeps the old version until `/reload-plugins`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
 ## Claude Code

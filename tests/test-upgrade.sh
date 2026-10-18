@@ -6,7 +6,8 @@ set -euo pipefail
 # formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
 # ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
 # even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
-# managed scopes, and the t3 CLI only from ~/.local/bin. A self-updating app that renamed itself is
+# managed scopes, with each marketplace's and plugin's version shown before and after, the t3 CLI
+# only from ~/.local/bin, and brew cleanup last. A self-updating app that renamed itself is
 # re-recorded in Homebrew. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
 # alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
@@ -145,9 +146,12 @@ pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
+claude plugin marketplace list --json
 claude plugin marketplace update
+claude plugin marketplace list --json
 claude plugin list --json
 claude plugin update a@m --scope user
+claude plugin list --json
 t3 update
 codex plugin marketplace upgrade
 brew cleanup" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
@@ -230,9 +234,12 @@ brew list --cask claude
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
+claude plugin marketplace list --json
 claude plugin marketplace update
+claude plugin marketplace list --json
 claude plugin list --json
 claude plugin update a@m --scope user
+claude plugin list --json
 t3 update
 codex plugin marketplace upgrade
 brew cleanup" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
@@ -268,6 +275,32 @@ assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" 'claude plugin list'
 assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
+
+# Since plugins can add hooks that run as you, each Claude Code marketplace's commit and each
+# updated plugin's version show before and after the update. A marketplace that isn't a git
+# checkout has no version, and a plugin that isn't updated isn't shown.
+market="$SANDBOX/market"
+git init -q "$market"
+git -C "$market" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
+echo 1.0.0 > "$SANDBOX/plugin-version"
+stub claude 'case "$*" in
+    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"'"$SANDBOX"'\"}]" ;;
+    "plugin marketplace update") git -C "'"$market"'" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ;;
+    "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
+        {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
+    "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
+esac'
+assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
+  m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
+  dir: -
+"
+assert_contains "$RUN_OUTPUT" "Claude Code plugins:
+  a@m: 1.0.0 -> 1.1.0
+  b@m: 2.0.0"
+assert_not_contains "$RUN_OUTPUT" "c@m"
 
 # Ctrl-C during claude plugin list stops upgrade-ai-tools, running nothing after it
 stub claude '[ "$*" != "plugin list --json" ] || exit 130'

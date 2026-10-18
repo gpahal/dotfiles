@@ -3,70 +3,22 @@ set -euo pipefail
 
 # The skills step adds the skills only when an installed copy is missing or differs, backs up a
 # copy edited by hand before replacing it, keeps or removes skills the repo no longer has, removes
-# them even when adding fails, and names the problem skills in --status. A stub npx stands in for
-# the skills CLI. It runs the step about 40 times, so it runs on a copy of the repo with three skills.
+# them even when adding fails, and names the problem skills in --status.
+# tests/skills-cli-stub.sh stands in for the skills CLI. It runs the step about 40 times, so it runs on a copy of the repo with three skills.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 
+# shellcheck source=skills-cli-stub.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skills-cli-stub.sh"
 # The step hashes every skill on each run, so a copy with only the skills the checks name keeps it fast
-FIXTURE="$SANDBOX/repo"
-mkdir -p "$FIXTURE/ai_tools/skills/engineering" "$FIXTURE/ai_tools/skills/productivity"
-cp -R "$REPO_DIR/lib" "$FIXTURE/lib"
-cp -R "$REPO_DIR/ai_tools/skills/install.sh" "$REPO_DIR/ai_tools/skills/lib" "$FIXTURE/ai_tools/skills/"
-cp -R "$REPO_DIR/ai_tools/skills/engineering/tdd" "$REPO_DIR/ai_tools/skills/engineering/interrogate" \
-    "$FIXTURE/ai_tools/skills/engineering/"
-cp -R "$REPO_DIR/ai_tools/skills/productivity/grill" "$FIXTURE/ai_tools/skills/productivity/"
-STEP="$FIXTURE/ai_tools/skills/install.sh"
-AGENTS_DIR="$HOME/.agents/skills"
-CLAUDE_DIR="$HOME/.claude/skills"
-STATE="$HOME/.agents/.dotfiles-installed-skills"
+skills_fixture engineering/tdd engineering/interrogate productivity/grill
+STATE="$HOME/.local/state/dotfiles/installed-skills"
 
-# Found on PATH, so lib/common.sh doesn't put the real Homebrew, and its npx, first
-stub brew
-stub node 'echo "${NODE_VERSION:-v24.0.0}"'
-# The skills CLI: add copies every skill into ~/.agents/skills and, for --agent claude-code, links
-# it from ~/.claude/skills.
-# remove, like the real one with --agent claude-code codex, deletes the Claude Code link, and the
-# shared copy only when no other agent that reads ~/.agents/skills is installed. NPX_FAIL=1 makes
-# add fail; NPX_REMOVE_FAIL=1 makes remove fail, changing nothing.
-stub npx '
-case "$3" in
-    add)
-        [ "${NPX_FAIL:-}" != 1 ] || exit 1
-        # The names after --skill, or * for every skill
-        only=" $(printf "%s\n" "$@" | sed -n "/^--skill$/,/^--/p" | sed "/^--/d" | tr "\n" " ")"
-        claude=false
-        [[ " $* " != *" claude-code "* ]] || { claude=true; mkdir -p "$HOME/.claude/skills"; }
-        mkdir -p "$HOME/.agents/skills"
-        find "$4" -name SKILL.md | while IFS= read -r f; do
-            d="$(dirname "$f")"
-            n="$(basename "$d")"
-            [ "$only" = " * " ] || [[ "$only" == *" $n "* ]] || continue
-            [ "$n" != "${NPX_SKIP:-}" ] || continue
-            rm -rf "$HOME/.agents/skills/$n"
-            cp -Rp "$d" "$HOME/.agents/skills/$n"
-            # What skills@1.7.1 leaves out of the copy
-            find "$HOME/.agents/skills/$n" \( -name metadata.json -o -type d \( -name .git -o -name __pycache__ -o -name __pypackages__ \) \) \
-                -prune -exec rm -rf {} +
-            "$claude" || continue
-            rm -rf "$HOME/.claude/skills/$n"
-            ln -s "$HOME/.agents/skills/$n" "$HOME/.claude/skills/$n"
-        done
-        ;;
-    remove)
-        [ "${NPX_REMOVE_FAIL:-}" != 1 ] || exit 1
-        for n; do :; done
-        rm -rf "$HOME/.claude/skills/$n"
-        [ -d "$HOME/.config/zed" ] || [ -d "$HOME/.cursor" ] || rm -rf "$HOME/.agents/skills/$n"
-        ;;
-esac'
-
-# Run the step, after clearing the stub log
-step() {
-    : > "$STUB_LOG"
-    run "$BASH" "$STEP"
+# Succeeds when the record holds a hash for the named skill
+hashed() {
+    grep -qE "^[0-9a-f]{64}  $1\$" "$STATE"
 }
 
 # Install a skill by hand, as if another source had added it
@@ -96,7 +48,8 @@ assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "tdd skill"
 assert_not_contains "$RUN_OUTPUT" "grill skill"
 step
-assert_file_contains "$STUB_LOG" " add "
+# Only the skill that changed is added again
+assert_file_contains "$STUB_LOG" "--skill tdd --yes"
 assert_exit 0 "$BASH" "$STEP" --status
 
 # So is a lost exec bit
@@ -120,7 +73,7 @@ assert_file_contains "$STUB_LOG" " add "
 
 # A stale skill is kept without a terminal, and offered again next time
 fake_skill old-skill
-echo old-skill >> "$STATE"
+echo "-  old-skill" >> "$STATE"
 assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "old-skill skill"
 step
@@ -146,22 +99,23 @@ assert_file_not_contains "$STUB_LOG" " remove "
 assert_file_not_contains "$STATE" "mine"
 
 # A failed add still removes stale skills, then fails the step. The record loses the removed
-# skill, but gains no repo skill the add may not have installed.
+# skill, and gains the repo skills whose copies match, but not tdd, which the add may not have
+# installed.
 fake_skill old-skill
-printf '%s\n' grill old-skill > "$STATE"
+printf -- '-  %s\n' grill old-skill > "$STATE"
 echo "drift" >> "$AGENTS_DIR/tdd/SKILL.md"
 NPX_FAIL=1 DOTFILES_ASSUME_YES=1 step
 assert_eq 1 "$RUN_STATUS" "status after a failed add"
 assert_file_contains "$STUB_LOG" "remove --global --agent claude-code codex --yes old-skill"
 [ ! -e "$AGENTS_DIR/old-skill" ] || fail "a failed add left the stale skill installed"
-assert_eq grill "$(cat "$STATE")" "the record after a failed add"
+assert_eq "grill interrogate" "$(awk '{ print $2 }' "$STATE" | paste -sd ' ' -)" "the record after a failed add"
 step
 
 # Another agent that shares ~/.agents/skills (Zed): the CLI leaves the shared copy, and the step
 # removes it too
 mkdir -p "$HOME/.config/zed"
 fake_skill old-skill
-echo old-skill >> "$STATE"
+echo "-  old-skill" >> "$STATE"
 DOTFILES_ASSUME_YES=1 step
 assert_eq 0 "$RUN_STATUS" "status after removing a stale skill Zed shares"
 [ ! -e "$AGENTS_DIR/old-skill" ] || fail "the shared copy of the stale skill is still there"
@@ -171,7 +125,7 @@ rm -rf "$HOME/.config/zed"
 
 # A failed remove fails the step, leaves the skill, and keeps it in the record for the next run
 fake_skill old-skill
-echo old-skill >> "$STATE"
+echo "-  old-skill" >> "$STATE"
 NPX_REMOVE_FAIL=1 DOTFILES_ASSUME_YES=1 step
 assert_eq 1 "$RUN_STATUS" "status after a failed remove"
 assert_contains "$RUN_OUTPUT" "old-skill"
@@ -181,27 +135,23 @@ assert_eq 0 "$RUN_STATUS" "status after removing it again"
 assert_file_not_contains "$STATE" "old-skill"
 
 # A failed write of the record fails the step and leaves the old record whole
+echo "-  old-skill" >> "$STATE"
 cp "$STATE" "$SANDBOX/state"
-mkdir "$STATE.tmp"
+chmod 500 "$(dirname "$STATE")"
 step
+chmod 700 "$(dirname "$STATE")"
 assert_eq 1 "$RUN_STATUS" "status after a failed record write"
 assert_contains "$RUN_OUTPUT" "Couldn't record the installed skills"
 assert_eq "$(cat "$SANDBOX/state")" "$(cat "$STATE")" "the record after a failed write"
-rmdir "$STATE.tmp"
 step
 
 # Edited copies. The backups go under the state dir, not into a skills dir.
-BACKUPS="$HOME/.local/state/dotfiles/skills-backup"
-HASHES="$STATE.sha256"
+HASHES="$STATE"
 rm -rf "$BACKUPS"
-# The installed copies match the repo, so each has a record
+# The installed copies match the repo, so each has a hash
 for name in tdd grill interrogate; do
-    assert_file_contains "$HASHES" "  $name"
+    hashed "$name" || fail "no hash recorded for $name"
 done
-# backups <label>: print the backups made of a skill's copy, one per line
-backups() {
-    find "$BACKUPS" -maxdepth 1 -name "$1.2*" 2> /dev/null | sort
-}
 
 # An edited copy is backed up without a terminal, then replaced
 echo "my edit" >> "$AGENTS_DIR/tdd/SKILL.md"
@@ -278,16 +228,17 @@ mkdir -p "$(dirname "$BACKUPS")"
 DOTFILES_BACKUP=no step
 assert_eq 0 "$RUN_STATUS" "status with --no-backup and an unwritable backup dir"
 echo "my edit" >> "$AGENTS_DIR/tdd/SKILL.md"
+# A repo change to grill, whose copy is what setup installed, is still added
+echo "drift" >> "$FIXTURE/ai_tools/skills/productivity/grill/SKILL.md"
 step
 assert_eq 1 "$RUN_STATUS" "status after a failed backup"
 assert_contains "$RUN_OUTPUT" "Couldn't back up $AGENTS_DIR/tdd"
-assert_file_contains "$STUB_LOG" "--skill "
-assert_file_not_contains "$STUB_LOG" " tdd "
+assert_file_contains "$STUB_LOG" "--skill grill --yes"
 assert_file_contains "$AGENTS_DIR/tdd/SKILL.md" "my edit"
 rm -f "$BACKUPS"
 step
 assert_eq 0 "$RUN_STATUS" "status once the backup works"
-assert_file_contains "$STUB_LOG" "--skill *"
+assert_file_contains "$STUB_LOG" "--skill tdd --yes"
 assert_file_contains "$(backups tdd)/SKILL.md" "my edit"
 rm -rf "$BACKUPS"
 
@@ -296,7 +247,7 @@ rm "$HASHES"
 echo "drift" >> "$AGENTS_DIR/grill/SKILL.md"
 step
 assert_eq "" "$(backups tdd)" "backups of a matching copy with no record"
-assert_file_contains "$HASHES" "  tdd"
+hashed tdd || fail "a matching copy with no record wasn't recorded"
 
 # Too old a Node.js fails the step, and --status points at the runtimes step. 22.20 is old enough
 # for the skills CLI's engines field, but not for the step.
@@ -307,7 +258,7 @@ NODE_VERSION=v22.20.0 assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "bash setup.sh runtimes"
 
 # CLAUDE_CONFIG_DIR elsewhere: the skills are for Codex only, and ~/.claude/skills is left alone
-rm -rf "$AGENTS_DIR" "$CLAUDE_DIR" "$STATE" "$STATE.sha256"
+rm -rf "$AGENTS_DIR" "$CLAUDE_DIR" "$STATE"
 export CLAUDE_CONFIG_DIR="$SANDBOX/claude-config"
 step
 assert_eq 0 "$RUN_STATUS" "status with CLAUDE_CONFIG_DIR set"
@@ -336,4 +287,28 @@ chmod 600 "$AGENTS_DIR/tdd/SKILL.md"
 assert_eq 1 "$RUN_STATUS" "unreadable installed skill's status"
 assert_file_contains "$AGENTS_DIR/tdd/SKILL.md" 'unreadable edit'
 assert_contains "$RUN_OUTPUT" "couldn't be backed up"
+chmod 644 "$AGENTS_DIR/tdd/SKILL.md"
+step
+
+# A recorded name that isn't a plain skill name is never offered or removed, since the step removes
+# a stale skill's dirs with rm -rf
+mkdir -p "$HOME/Documents/keep"
+echo "-  ../../Documents" >> "$STATE"
+DOTFILES_ASSUME_YES=1 step
+assert_eq 0 "$RUN_STATUS" "status with a bad name in the record"
+assert_file_not_contains "$STUB_LOG" " remove "
+[ -d "$HOME/Documents/keep" ] || fail "a bad recorded name removed a directory"
+assert_file_not_contains "$STATE" "Documents"
+
+# A repo skill whose name isn't one is skipped, failing the step, and the rest are still added
+mkdir -p "$FIXTURE/ai_tools/skills/productivity/bad"
+printf -- '---\nname: ../bad\n---\n' > "$FIXTURE/ai_tools/skills/productivity/bad/SKILL.md"
+echo "drift" >> "$AGENTS_DIR/grill/SKILL.md"
+step
+assert_eq 1 "$RUN_STATUS" "status with a bad skill name"
+assert_contains "$RUN_OUTPUT" "names its skill '../bad'"
+assert_file_contains "$STUB_LOG" "--skill grill --yes"
+assert_exit 3 "$BASH" "$STEP" --status
+assert_contains "$RUN_OUTPUT" "one isn't lowercase letters, digits, and dashes"
+rm -rf "$FIXTURE/ai_tools/skills/productivity/bad"
 test_done

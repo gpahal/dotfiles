@@ -294,7 +294,7 @@ Run these over SSH from the Mac.
 
 ## Maintenance
 
-**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step backs up edited skills to `${XDG_STATE_HOME:-~/.local/state}/dotfiles/skills-backup/`.
+**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step records the skills it installed in `${XDG_STATE_HOME:-~/.local/state}/dotfiles/installed-skills`, and backs up edited skills to `skills-backup/` beside it.
 
 **When an app updates.** Some keys the script writes aren't documented, so each section that sets them names the version they were checked against. After an update, check those keys against the app's settings file or schema, fix the script if they changed, and update the version. Then check that the app still does what setup configured:
 

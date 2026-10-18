@@ -3,75 +3,19 @@ set -euo pipefail
 
 # The skills step's checks leave out what the skills CLI doesn't copy (metadata.json, .git,
 # __pycache__, __pypackages__), and still see a real content change. test-skills.sh covers a mode
-# change. A stub npx stands in for the skills CLI.
+# change. tests/skills-cli-stub.sh stands in for the skills CLI.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 
-AGENTS_DIR="$HOME/.agents/skills"
-
-# Found on PATH, so lib/common.sh doesn't put the real Homebrew, and its npx, first
-stub brew
-stub node 'echo "${NODE_VERSION:-v24.0.0}"'
-# The skills CLI: add copies every skill into ~/.agents/skills and, for --agent claude-code, links
-# it from ~/.claude/skills.
-# remove, like the real one with --agent claude-code codex, deletes the Claude Code link, and the
-# shared copy only when no other agent that reads ~/.agents/skills is installed. NPX_FAIL=1 makes
-# add fail; NPX_REMOVE_FAIL=1 makes remove fail, changing nothing.
-stub npx '
-case "$3" in
-    add)
-        [ "${NPX_FAIL:-}" != 1 ] || exit 1
-        # The names after --skill, or * for every skill
-        only=" $(printf "%s\n" "$@" | sed -n "/^--skill$/,/^--/p" | sed "/^--/d" | tr "\n" " ")"
-        claude=false
-        [[ " $* " != *" claude-code "* ]] || { claude=true; mkdir -p "$HOME/.claude/skills"; }
-        mkdir -p "$HOME/.agents/skills"
-        find "$4" -name SKILL.md | while IFS= read -r f; do
-            d="$(dirname "$f")"
-            n="$(basename "$d")"
-            [ "$only" = " * " ] || [[ "$only" == *" $n "* ]] || continue
-            [ "$n" != "${NPX_SKIP:-}" ] || continue
-            rm -rf "$HOME/.agents/skills/$n"
-            cp -Rp "$d" "$HOME/.agents/skills/$n"
-            # What skills@1.7.1 leaves out of the copy
-            find "$HOME/.agents/skills/$n" \( -name metadata.json -o -type d \( -name .git -o -name __pycache__ -o -name __pypackages__ \) \) \
-                -prune -exec rm -rf {} +
-            "$claude" || continue
-            rm -rf "$HOME/.claude/skills/$n"
-            ln -s "$HOME/.agents/skills/$n" "$HOME/.claude/skills/$n"
-        done
-        ;;
-    remove)
-        [ "${NPX_REMOVE_FAIL:-}" != 1 ] || exit 1
-        for n; do :; done
-        rm -rf "$HOME/.claude/skills/$n"
-        [ -d "$HOME/.config/zed" ] || [ -d "$HOME/.cursor" ] || rm -rf "$HOME/.agents/skills/$n"
-        ;;
-esac'
-
-# Run the step, after clearing the stub log
-step() {
-    : > "$STUB_LOG"
-    run "$BASH" "$STEP"
-}
-
-BACKUPS="$HOME/.local/state/dotfiles/skills-backup"
-backups() {
-    find "$BACKUPS" -maxdepth 1 -name "$1.2*" 2> /dev/null | sort
-}
+# shellcheck source=skills-cli-stub.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skills-cli-stub.sh"
 
 # The CLI leaves metadata.json, .git, __pycache__, and __pypackages__ out of its copies, so the
 # step leaves them out of its checks too. A fixture copy of the repo, with only the interrogate
-# skill, gets them, so the real skills stay untouched.
-FIXTURE="$SANDBOX/dot files"
-mkdir -p "$FIXTURE/ai_tools"
-cp -R "$REPO_DIR/lib" "$FIXTURE/lib"
-mkdir -p "$FIXTURE/ai_tools/skills/engineering"
-cp -R "$REPO_DIR/ai_tools/skills/install.sh" "$REPO_DIR/ai_tools/skills/lib" "$FIXTURE/ai_tools/skills/"
-cp -R "$REPO_DIR/ai_tools/skills/engineering/interrogate" "$FIXTURE/ai_tools/skills/engineering/"
-STEP="$FIXTURE/ai_tools/skills/install.sh"
+# skill, gets them.
+skills_fixture engineering/interrogate
 SRC="$FIXTURE/ai_tools/skills/engineering/interrogate"
 step
 assert_eq 0 "$RUN_STATUS" "the fixture's first run"

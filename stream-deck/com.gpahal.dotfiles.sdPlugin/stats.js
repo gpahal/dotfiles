@@ -93,7 +93,7 @@ function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spa
   let failures = 0;
   let retryAt = 0;
 
-  // A run of child that failed to start or exited non-zero. After MACMON_RETRIES in a row, each
+  // A run of child that failed to start or exited. After MACMON_RETRIES in a row, each
   // start waits twice as long as the one before, so a macmon that keeps crashing isn't restarted,
   // and logged, every 2 seconds.
   function macmonFailed(child, message) {
@@ -120,7 +120,16 @@ function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spa
     if (missing && !macmonMissing) log("macmon isn't installed; GPU, temperature, and power keys show nothing");
     macmonMissing = missing;
     if (missing) return;
-    const child = spawnProcess(macmonPath, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
+    let child;
+    try {
+      child = spawnProcess(macmonPath, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
+    } catch (error) {
+      // spawn throws some errors, such as ENOEXEC and EPERM, rather than emitting them. A
+      // placeholder stands in as the current run, so the failure counts toward the backoff.
+      macmon = {};
+      macmonFailed(macmon, `couldn't run macmon: ${error.message}`);
+      return;
+    }
     macmon = child;
     // Without a listener, a spawn error, such as from a macmon that isn't executable or that an
     // upgrade removed since the check above, would crash the whole plugin
@@ -140,14 +149,9 @@ function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spa
         }
       }
     });
-    child.on("exit", (code) => {
-      if (code) {
-        macmonFailed(child, `macmon exited with status ${code}`);
-      } else if (macmon === child) {
-        macmon = null;
-        macmonLatest = null;
-      }
-    });
+    // macmon runs until stopped, so any exit of the current run, even with 0 or by a signal,
+    // is a failure. stopMacmon replaces macmon first, so its kill isn't counted.
+    child.on("exit", (code, signal) => macmonFailed(child, `macmon exited (${signal ?? code})`));
   }
 
   function stopMacmon() {

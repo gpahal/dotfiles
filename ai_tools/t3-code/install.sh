@@ -505,7 +505,7 @@ configure_t3_code_ubuntu() {
 # with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
 # Fails with 1 when only something else failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0 drop_in_ok=true
+    local settings_set=false stopped=false result=0 drop_in_ok=true tmp=""
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
@@ -534,8 +534,15 @@ update_t3_code_server() {
         json_merge "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" || result=1
     fi
     if ! t3_code_drop_in_current; then
-        { mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")" &&
-            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || drop_in_ok=false
+        # Through write_back, since a drop-in cut short without its host line would have the
+        # enabled unit serve on every interface at the next boot
+        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
+            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
+            rm -f "$tmp"
+            drop_in_ok=false
+        elif ! write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN"; then
+            drop_in_ok=false
+        fi
     fi
     if "$drop_in_ok" && ! t3_code_load_drop_in; then
         drop_in_ok=false

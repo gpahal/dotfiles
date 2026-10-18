@@ -472,6 +472,22 @@ assert_contains "$RUN_OUTPUT" "Left the T3 Code service stopped, since it would 
 assert_file_not_contains "$STUB_LOG" "systemctl --user start"
 confirm() { echo "$1"; false; }
 stub systemctl "$SYSTEMCTL_STUB"
+# A write cut short, as by a full disk, leaves the old drop-in whole, so the enabled unit can't
+# start at boot with a drop-in that lacks the host line
+reset
+installed_unit
+different_drop_in
+printf() {
+    if [ "${2:-}" = "$T3_CODE_SERVICE_DROP_IN_CONTENT" ]; then
+        builtin printf '%s\n' "${2%%$'\n'*}"
+        return 1
+    fi
+    # shellcheck disable=SC2059 # pass the caller's format through
+    builtin printf "$@"
+}
+assert_exit 1 configure_t3_code_ubuntu
+unset -f printf
+assert_eq "# different" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in after a failed write"
 
 # A failed t3 browser setup fails the step
 cat > "$HOME/.local/bin/t3" << 'EOF'

@@ -279,7 +279,8 @@ assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
 
 # Since plugins can add hooks that run as you, each Claude Code marketplace's commit and each
 # updated plugin's version show before and after the update. A marketplace that isn't a git
-# checkout has no version, and a plugin that isn't updated isn't shown.
+# checkout has no version, and a plugin that isn't updated isn't shown. A project's copy of an
+# updated plugin, listed first, doesn't stand in for its version after.
 market="$SANDBOX/market"
 git init -q "$market"
 git -C "$market" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
@@ -288,7 +289,8 @@ echo 1.0.0 > "$SANDBOX/plugin-version"
 stub claude 'case "$*" in
     "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"'"$SANDBOX"'\"}]" ;;
     "plugin marketplace update") git -C "'"$market"'" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ;;
-    "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
+    "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"project\", \"version\": \"0.9.0\"},
+        {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
         {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
     "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
 esac'

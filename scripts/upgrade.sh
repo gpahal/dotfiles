@@ -193,9 +193,17 @@ _claude_marketplace_versions() {
         done
 }
 
-# Print each installed Claude Code plugin, a tab, and its version, or nothing when the list fails
+# jq that defines updated, which keeps the Claude Code plugins upgrade_ai_tools updates: not project
+# and local plugins, which would update against the current directory, nor managed ones, which
+# your organization's settings control. The versions before and after both use it, since a plugin
+# can be listed once per scope, and _print_versions takes the first row for each.
+_CLAUDE_UPDATED_PLUGINS_JQ='def updated: select(.scope != "project" and .scope != "local" and .scope != "managed");'
+
+# Print each Claude Code plugin upgrade_ai_tools updates, a tab, and its version, or nothing when
+# the list fails
 _claude_plugin_versions() {
-    claude plugin list --json 2>/dev/null | jq -r '.[]? | [.id, (.version // "-" | tostring)] | @tsv' 2>/dev/null
+    claude plugin list --json 2>/dev/null |
+        jq -r "$_CLAUDE_UPDATED_PLUGINS_JQ"' .[]? | updated | [.id, (.version // "-" | tostring)] | @tsv' 2>/dev/null
 }
 
 # Print heading $1, then each "<name><tab><version>" line of $2 with its version in the same kind
@@ -243,13 +251,11 @@ upgrade_ai_tools() {
         claude plugin marketplace update || _stage_failed "claude marketplaces" "$?"
         _print_versions "Claude Code marketplaces:" "$before" "$(_claude_marketplace_versions)"
         # Read the list on fd 3 so `claude plugin update` keeps the terminal as stdin for its
-        # prompts. Skip project and local plugins, which would update against the current directory,
-        # and managed ones, which your organization's settings control.
-        if plugins="$(claude plugin list --json)" && rows="$(jq -er '
+        # prompts
+        if plugins="$(claude plugin list --json)" && rows="$(jq -er "$_CLAUDE_UPDATED_PLUGINS_JQ"'
             if type != "array" then error("expected a plugin list") else . end |
             map(if (.id | type) != "string" or (.scope | type) != "string" then error("invalid plugin") else . end) |
-            map(select(.scope != "project" and .scope != "local" and .scope != "managed") |
-                "\(.id)\t\(.scope)\t\(.version // "-")") |
+            map(updated | "\(.id)\t\(.scope)\t\(.version // "-")") |
             join("\n")' <<< "$plugins")"; then
             before=""
             while IFS=$'\t' read -r -u 3 id scope version; do

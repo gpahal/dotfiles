@@ -98,8 +98,8 @@ confirm() {
     real_confirm "$@"
 }
 unset DOTFILES_ASSUME_YES
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    me in the docker group"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "info       me not in the docker group, which is optional: sudo docker works without it"
 # Only the group is missing: no list of sudo changes, just its own question, declined without a
 # terminal
 : > "$STUB_LOG"

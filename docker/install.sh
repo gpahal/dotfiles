@@ -270,7 +270,12 @@ status() {
     docker_sudo_items
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
-    status_check "$(id -un) in the docker group" in_docker_group
+    # The step asks about the group on its own, and you may say no, so its absence isn't missing
+    if in_docker_group; then
+        status_item ok "$(id -un) in the docker group"
+    else
+        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it"
+    fi
     if "$installed"; then
         sudo_items_status starts_at_boot socket_ready
     else

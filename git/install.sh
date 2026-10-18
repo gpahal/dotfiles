@@ -181,7 +181,6 @@ main() {
     local status=0
     echo "Copying git config..."
     git_files copy_file || status=1
-    chmod 755 "$HOME/.local/bin/git-wt" || status=1
     # git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and
     # the next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
     [ -e "$LOCAL_CONFIG" ] || touch "$LOCAL_CONFIG" || status=1

@@ -241,10 +241,7 @@ user_instructions_files() {
 
 install_scripts() {
     echo "  Status line script and worktree hook:"
-    local status=0
-    script_files copy_file || status=1
-    chmod 755 "$CLAUDE_CODE_STATUSLINE" "$CLAUDE_CODE_WORKTREE_HOOK" || status=1
-    return "$status"
+    script_files copy_file
 }
 
 status() {

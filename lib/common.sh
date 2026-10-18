@@ -423,18 +423,32 @@ installed_unedited() {
 # unrecorded file for an edit.
 _copy_up_to_date() {
     local src="$1" dest="$2"
-    if [ ! -e "$dest" ] || ! cmp -s "$src" "$dest"; then
+    if [ ! -e "$dest" ] || ! cmp -s "$src" "$dest" || { [ -x "$src" ] && [ ! -x "$dest" ]; }; then
         return 1
     fi
     installed_unedited "$dest" || record_installed "$dest" || return 2
     echo "  $dest is already up to date"
 }
 
-# Each command is checked, since a caller may run this under || or if, where set -e is off
+# Each command is checked, since a caller may run this under || or if, where set -e is off. A
+# new file gets 644, or 755 when the source is executable, the two modes the repo holds. An
+# existing one keeps its mode, plus the executable bits an executable source needs.
 _copy_and_record() {
-    local src="$1" dest="$2"
+    local src="$1" dest="$2" new_mode=644 exec=""
     mkdir -p "$(dirname "$dest")" || return 1
-    cp "$src" "$dest" || return 1
+    if [ -x "$src" ]; then
+        new_mode=755
+        exec=x
+    fi
+    # A rename would replace a file made read-only, which cp never could
+    if [ -e "$dest" ] && [ ! -w "$dest" ]; then
+        echo "  $dest is read-only, so left it unchanged." >&2
+        return 1
+    fi
+    if ! replace_file "$src" "$dest" "$new_mode" "$exec"; then
+        echo "  Couldn't copy ${src#"$DOTFILES_DIR"/} to $dest, so left it unchanged." >&2
+        return 1
+    fi
     record_installed "$dest" || return 1
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
 }
@@ -449,7 +463,8 @@ copy_file() {
         0) return 0 ;;
         2) return 1 ;;
     esac
-    if [ -e "$dest" ] && ! installed_unedited "$dest"; then
+    # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
+    if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
         backup_edited "$dest" || return 1
     fi
     _copy_and_record "$src" "$dest"
@@ -542,7 +557,7 @@ copy_file_ask() {
         0) return 0 ;;
         2) return 1 ;;
     esac
-    if [ -s "$dest" ] && ! installed_unedited "$dest"; then
+    if [ -s "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
         if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
             echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
             return 0
@@ -960,34 +975,46 @@ file_mode() {
     fi
 }
 
-# Replace a file's contents with a temp file's, then remove the temp file. The contents go to a new
-# file in the same directory, given the old one's mode, which is then moved into place, so a full
-# disk can't leave the file cut short. A symlink's target is replaced the same way, so the link
-# stays. A dangling symlink fails, as json_merge does. Fails, keeping the temp file and saying
-# where it is, when the write does.
-write_back() {
-    local new="$1" dest="$2" tmp mode="" target
+# replace_file <src> <dest> <new-mode> [x]
+# Replace a file with a copy of another. The copy goes to a new file in the same directory, which
+# is then moved into place, so a failed or partial write leaves the old file whole, and a script
+# running from the old file reads on unchanged. A symlink's target is replaced the same way, so
+# the link stays. A dangling symlink fails, as json_merge does. The file keeps its mode, plus
+# executable bits where it has read bits with x; a new file gets <new-mode>. Prints nothing.
+replace_file() {
+    local src="$1" dest="$2" mode="$3" tmp target
     if [ -L "$dest" ]; then
         # macOS's readlink and GNU's both take -f, and follow every link in the chain. On a dangling
         # link macOS's prints the path and fails, and GNU's succeeds, so check the target exists.
         if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
-            echo "  Couldn't write $dest. The new contents are in $new." >&2
             return 1
         fi
         dest="$target"
     fi
+    # mv would move the copy into a directory
+    [ ! -d "$dest" ] || return 1
     if [ -e "$dest" ]; then
-        mode="$(file_mode "$dest")" || mode=""
+        mode="$(file_mode "$dest")" || return 1
+        [ -z "${4:-}" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
     fi
-    if tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" &&
-        cat "$new" > "$tmp" &&
-        # mktemp makes it 600. A new file gets the mode umask gives it.
-        chmod "${mode:-$(printf '%o' $((0666 & ~0$(umask))))}" "$tmp" &&
-        mv -f "$tmp" "$dest"; then
+    tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
+    # cp onto the existing temp file keeps mktemp's 600 until chmod
+    if cp "$src" "$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$dest"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+# Replace a file's contents with a temp file's, as replace_file does, then remove the temp file. A
+# new file gets the mode umask gives it. Fails, keeping the temp file and saying where it is, when
+# the write does.
+write_back() {
+    local new="$1" dest="$2"
+    if replace_file "$new" "$dest" "$(printf '%o' $((0666 & ~0$(umask))))"; then
         rm -f "$new"
         return 0
     fi
-    [ -z "${tmp:-}" ] || rm -f "$tmp"
     echo "  Couldn't write $dest. The new contents are in $new." >&2
     return 1
 }

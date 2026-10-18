@@ -134,7 +134,6 @@ main() {
     require_cmd tmux || return 1
     echo "Copying tmux config..."
     tmux_files copy_file || status=1
-    chmod 755 "$HOME/.local/bin/tmux-sessionizer" || status=1
     echo "Installing tmux plugins..."
     sync_tmux_plugins || status=1
     if is_ubuntu; then

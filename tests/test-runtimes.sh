@@ -116,6 +116,13 @@ assert_file_not_contains "$STUB_LOG" "mise use"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
 assert_contains "$RUN_OUTPUT" "ok         mise's global go: latest"
+# A global in table form, which mise config get prints as several lines of TOML, shows as its
+# version, or as "(a table)" without one
+MISE_NODE='version = "22"
+postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
+assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
+assert_contains "$RUN_OUTPUT" "ok         mise's global go: yours, (a table) (the repo's is latest)"
+assert_not_contains "$RUN_OUTPUT" "postinstall"
 # Asked with a terminal: no keeps it, yes replaces only that tool
 is_interactive() { true; }
 confirm() {

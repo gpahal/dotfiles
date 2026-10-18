@@ -28,6 +28,8 @@ stub systemctl 'case "$*" in
     *) exit 1 ;;
 esac'
 stub_sudo_exec
+# The step requires gpg, which a bare ubuntu:26.04 lacks; its key has the pinned fingerprint
+stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $DOCKER_KEY_FPR"
 # Docker's apt source lists this release
 OS_RELEASE="$SANDBOX/os-release"
 printf '%s\n' ID=ubuntu VERSION_CODENAME=resolute > "$OS_RELEASE"

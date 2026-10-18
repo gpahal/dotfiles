@@ -496,15 +496,13 @@ Run these over SSH from the Mac.
 
 The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which updates everything installed. A stage that fails doesn't stop the rest, and `upgrade` lists the failed stages and returns 1:
 
-- Ubuntu's apt packages: `sudo apt-get update && sudo apt upgrade`.
-- Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step. On Ubuntu it then refreshes the font cache.
-- Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
+- Ubuntu's apt packages: `sudo apt upgrade`.
+- Homebrew: `brew upgrade`, then the formulae added to the Brewfile and the casks added to the homebrew step. On Ubuntu it then refreshes the font cache.
+- Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+), when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
-- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `~/.vimrc` pins. The vim step copies that file from `vim/vimrc`.
-- tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
+- vim and tmux plugins, each to the commit the repo pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
-- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips `npm update -g`, which would run the old Node.
-- Global npm packages: `npm update -g`
+- Global npm packages: `npm update -g`, run with the Node `mise upgrade` installed. When `upgrade` can't switch to that Node, it skips this.
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)

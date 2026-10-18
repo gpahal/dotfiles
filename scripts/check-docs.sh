@@ -17,7 +17,8 @@ set -euo pipefail
 #   homebrew/install.sh's UBUNTU_PACKAGES
 # - README.md "Maintenance" copies back each file the steps' *_files functions copy, from where
 #   the step copies it, and nothing else
-# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps
+# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps,
+#   and each stage runs what stage_code maps
 # - README.md's just lines, in "How setup works" and "Maintenance", name the justfile's recipes and
 #   the scripts they run
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
@@ -319,30 +320,31 @@ done < "$tmp/copied-back"
 
 # README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools in
 # scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds to
-# failed, directly or through _stage_failed, must map to text its Updating section has, and the
-# command that text quotes must be in the function's body. Each item of the section's first list
-# must describe a stage. A new stage goes in the map.
+# failed, directly or through _stage_failed, must map to text its Updating section has (stage_doc),
+# and to code the function's body has (stage_code). Each item of the section's first list must
+# describe a stage. A new stage goes in the map.
+# stage_doc's text is what a user sees, such as the command they'd run or what the stage updates,
+# so the docs can leave out how the script runs it.
 stage_doc() {
     case "$1:$2" in
-        upgrade:apt) echo 'sudo apt-get update && sudo apt upgrade' ;;
-        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
-        "upgrade:brew bundle") echo 'brew bundle install --no-upgrade' ;;
-        upgrade:casks) echo 'brew install --cask' ;;
+        upgrade:apt) echo 'apt packages' ;;
+        upgrade:brew) echo 'brew upgrade' ;;
+        "upgrade:brew bundle") echo 'formulae added to the Brewfile' ;;
+        upgrade:casks) echo 'casks added to the homebrew step' ;;
         "upgrade:brew cleanup") echo 'brew cleanup' ;;
         upgrade:fc-cache) echo 'font cache' ;;
-        "upgrade:self-updating casks") echo 'brew upgrade --cask --greedy <cask>' ;;
+        "upgrade:self-updating casks") echo 'Casks that update themselves' ;;
         upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins") echo PlugUpdate ;;
-        "upgrade:tmux plugins") echo 'tmux/plugins.lock' ;;
+        "upgrade:vim plugins" | "upgrade:tmux plugins") echo 'vim and tmux plugins' ;;
         upgrade:mise) echo 'mise upgrade' ;;
-        "upgrade:mise hook-env") echo 'mise hook-env' ;;
+        "upgrade:mise hook-env") echo 'the Node `mise upgrade` installed' ;;
         upgrade:npm) echo 'npm update -g' ;;
         upgrade:uv) echo 'uv tool upgrade --all' ;;
         upgrade:rustup) echo 'rustup update' ;;
         upgrade:upgrade-ai-tools) echo 'upgrade-ai-tools' ;;
         "upgrade-ai-tools:claude update") echo 'claude update' ;;
-        "upgrade-ai-tools:desktop apps") echo 'brew upgrade --cask --greedy' ;;
-        "upgrade-ai-tools:codex cask") echo 'brew upgrade --cask --greedy codex' ;;
+        "upgrade-ai-tools:desktop apps") echo 'Desktop apps' ;;
+        "upgrade-ai-tools:codex cask") echo 'Codex CLI' ;;
         "upgrade-ai-tools:claude marketplaces") echo 'claude plugin marketplace update' ;;
         'upgrade-ai-tools:claude plugin $id') echo 'claude plugin update' ;;
         "upgrade-ai-tools:claude plugin list") echo 'claude plugin list' ;;
@@ -356,13 +358,16 @@ stage_doc() {
 stage_code() {
     case "$1:$2" in
         upgrade:apt) echo 'apt_get_update && sudo apt' ;;
+        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
         "upgrade:brew bundle") echo '_install_new_formulae' ;;
         upgrade:casks) echo '_install_new_casks' ;;
         upgrade:fc-cache) echo 'fc-cache -f' ;;
         upgrade:rustup) echo '.cargo/bin/rustup update' ;;
         "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
+        "upgrade:vim plugins") echo 'PlugUpdate' ;;
         "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
-        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools ' ;;
+        "upgrade:mise hook-env") echo 'mise hook-env' ;;
+        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools claude ' ;;
         "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;
         *) stage_doc "$1" "$2" ;;
     esac

@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's UPS part (ubuntu/lib/ups.sh): no UPS on USB, which installs nothing, a UPS
 # plugged in on a later run, which installs NUT and sets it up, an unchanged second run, a stale

@@ -7,28 +7,25 @@ set -uo pipefail
 # skipped test's output, and exits 1 when any fails. A test skips by exiting 77, and with
 # TEST_FAIL_ON_SKIP=1, as CI sets, a skip fails. A test that runs longer than $TEST_TIMEOUT seconds
 # (120 by default) is killed and fails. A slow test can raise its own limit with a
-# "# timeout: <seconds>" line in its first 20 lines. A test of code only one OS runs has an
-# "# os: macos" or "# os: ubuntu" line there, and a run of every test leaves it out on the other
-# OS, whose CI leg runs it; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR,
-# with XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It
-# syntax-checks the repo's other shell scripts and each selected test before running it, since a
-# syntax error in a sourced script can let a test pass.
+# "# timeout: <seconds>" line in its first 20 lines. A test that needs a command only macOS ships,
+# such as ls -e or sqlite3, has an "# os: macos" line there, and a run of every test leaves it out
+# on Ubuntu; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR, with XDG_* and
+# DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It syntax-checks the repo's
+# other shell scripts and each selected test before running it, since a syntax error in a sourced
+# script can let a test pass.
 
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
 
-case "$(uname -s)" in
-    Darwin) host_os=macos ;;
-    *) host_os=ubuntu ;;
-esac
+on_macos=false
+[ "$(uname -s)" != Darwin ] || on_macos=true
 tests=()
-other_os=0
+macos_only=0
 if [ $# -eq 0 ]; then
     for t in test-*.sh; do
         [ -e "$t" ] || continue
-        os="$(sed -n '1,20s/^# os: \([a-z]*\)$/\1/p' "$t" | head -1)"
-        if [ -n "$os" ] && [ "$os" != "$host_os" ]; then
-            other_os=$((other_os + 1))
+        if ! "$on_macos" && sed -n '1,20p' "$t" | grep -qx '# os: macos'; then
+            macos_only=$((macos_only + 1))
             continue
         fi
         tests+=("$t")
@@ -248,6 +245,6 @@ done
 
 echo ""
 echo "$((${#tests[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"
-[ "$other_os" -eq 0 ] || echo "$other_os left out, as tests of code only the other OS runs"
+[ "$macos_only" -eq 0 ] || echo "$macos_only left out, as they need commands only macOS ships"
 [ "$broken" -eq 0 ] || echo "$broken script(s) with a syntax error"
 [ ${#failed[@]} -eq 0 ] && [ "$broken" -eq 0 ]

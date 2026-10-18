@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: macos
 
 # The T3 Code desktop app's setup on macOS. configure_t3_code writes the LaunchAgent that sets
 # telemetry off in launchd's environment and then opens T3 Code at login, runs launchctl setenv

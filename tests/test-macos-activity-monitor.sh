@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: macos
 
 # The macos step sets Activity Monitor's View to All Processes, whose menu tag is 100. Activity
 # Monitor saves its own value when it quits, so the step offers to quit it first, and skips that

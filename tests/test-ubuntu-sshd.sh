@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's sshd drop-in on a set-up machine (tests/ubuntu-step-fixture.sh): replacing it
 # without removing a working one, rolling it back when sshd rejects it or won't reload, not blaming

@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The Ubuntu side of the t3-code step. Another T3 Code server keeps setup from changing the
 # server's settings or installing the service. An existing service is enabled and started without

@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
 # sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves

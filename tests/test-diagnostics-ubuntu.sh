@@ -2,7 +2,6 @@
 # The steps' functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The read-only diagnostics in the ubuntu and docker steps' status reports: free space, SMART
 # health, firmware updates, and Docker's disk usage, and run_bounded with timeout(1). Failing SMART

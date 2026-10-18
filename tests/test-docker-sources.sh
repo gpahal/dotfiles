@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
 # The docker step writes Docker's own source, rolling it back when apt can't use it, and lets
 # unattended-upgrades install Docker's updates. With Docker installed, it rewrites a source for an

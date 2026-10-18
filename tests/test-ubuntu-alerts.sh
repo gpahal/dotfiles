@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
 # smartd's warning hook (ubuntu/smartd-notify.sh) pushes the warning to ntfy when a URL is set,
 # through the installed ntfy code it sources, logging what fails and always exiting 0. It runs as

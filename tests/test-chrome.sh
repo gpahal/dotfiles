@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The chrome step on Ubuntu (amd64): it installs Chrome from Google's .deb, readable by apt's
 # sandbox user, removes the download, and writes the unattended-upgrades file once. A missing

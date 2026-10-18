@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale waiting for its
 # first login, its apt source for an older release or a release it has no packages for, and its

@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh): what status
 # lists, a declined run, an approved one, then apt's daily timers, the packages apt holds back, a

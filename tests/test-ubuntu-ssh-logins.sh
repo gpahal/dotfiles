@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's SSH logins on a set-up machine (tests/ubuntu-step-fixture.sh): the drop-in's
 # settings, turning password logins off only on a key login's evidence (or the VM opt-in), and never

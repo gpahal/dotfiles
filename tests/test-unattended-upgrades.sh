@@ -2,7 +2,6 @@
 # The steps' functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The chrome step's status checks Google's apt source and allowed origins for unattended upgrades.
 # The ubuntu step checks the daily schedule: unattended_upgrades_on reads apt's periodic settings

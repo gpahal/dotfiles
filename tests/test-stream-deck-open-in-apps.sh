@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: macos
 
 # The Stream Deck plugin's open-in opens Claude, Chrome, T3 Code, or Activity Monitor. For a new
 # tab it brings Chrome to the front, telling a running Chrome to activate rather than reopening it,

@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
 # lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off

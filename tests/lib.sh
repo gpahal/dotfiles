@@ -289,6 +289,21 @@ skip_rest() {
     TEST_SKIPPED=true
 }
 
+# Run a command, usually a function the test defines, in a subshell, so what it changes, such as
+# the commands it hides or the functions it replaces, stays there. Its failed checks count as the
+# test's.
+# e.g. subtest firmware_without_jq
+# shellcheck disable=SC2030,SC2031 # the subshell counts its own failures
+subtest() {
+    local failed=0
+    (
+        TEST_FAILURES=0
+        "$@"
+        exit "$TEST_FAILURES"
+    ) || failed=$?
+    TEST_FAILURES=$((TEST_FAILURES + failed))
+}
+
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
 test_done() {
     TEST_DONE=true

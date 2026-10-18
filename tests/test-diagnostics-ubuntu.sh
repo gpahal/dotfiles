@@ -50,13 +50,13 @@ assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
 assert_eq out "$RUN_OUTPUT" "run_bounded's output"
 # timeout(1) gets -k 5. It exits 137 when it sent SIGKILL, which run_bounded reports as 124, but a
 # command killed before the deadline keeps its 137.
-(
+run_bounded_killed() {
     stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; [ "$3" -lt 2 ] || exit 137; sleep "$3"; exit 137'
     assert_exit 124 run_bounded 1 sleep 10
     assert_exit 137 run_bounded 5 sleep 10
     rm "$STUB_DIR/timeout"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest run_bounded_killed
 
 # --- free space (status_disk_space) ---
 # df_lines <line>...: df -P -k prints the header, then the first line whose mount point is the path
@@ -280,13 +280,13 @@ else
     skip_rest "jq isn't installed, so fwupdmgr's JSON can't be read"
 fi
 # Without jq it says it can't list them
-(
+firmware_without_jq() {
     hide jq
     fwupd '{ "Devices" : [ { "Name" : "Disk", "Version" : "1", "Releases" : [ { "Version" : "2" } ] } ] }\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: couldn't read fwupdmgr's JSON without jq"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest firmware_without_jq
 # No device fwupd supports
 fwupd 'No updatable devices\n' 2
 assert_exit 0 diag status_firmware
@@ -316,18 +316,18 @@ DOTFILES_STATUS_QUICK=1 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "unverified Firmware updates: skipped by --quick"
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"
 # Without fwupd it's skipped
-(
+firmware_without_fwupd() {
     hide fwupdmgr
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "skipped    Firmware updates: fwupd isn't installed"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest firmware_without_fwupd
 read_only
 
 # The ubuntu step's report has free space for /, ~, and /var, SMART, and firmware. apt-get -s
 # upgrade, for the packages apt holds back, holds none back.
 stub apt-get
-(
+ubuntu_report() {
     hide tailscale nmcli
     ufw_enabled() { false; }
     run status
@@ -346,8 +346,8 @@ stub apt-get
     assert_contains "$RUN_OUTPUT" "Disk health (SMART)"
     assert_contains "$RUN_OUTPUT" "ufw rules allowing SSH"
     read_only
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest ubuntu_report
 
 # --- the docker step: disk usage ---
 load_script docker/install.sh

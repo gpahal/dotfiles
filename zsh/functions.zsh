@@ -16,8 +16,10 @@ mcd() {
 }
 
 # Run the last command in history as root, showing it first. With hist_ignore_space, a line typed
-# with a leading space never reaches history, so that may not be the last command typed.
-please() {
+# with a leading space never reaches history, so that may not be the last command typed. The
+# function keyword, since please was once an alias: a shell that still has it would expand
+# `please()` into a parse error on re-sourcing, and stop loading this file.
+function please {
     local c
     c="$(fc -ln -1)"
     print -r -- "sudo: $c"

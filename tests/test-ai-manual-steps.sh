@@ -13,24 +13,26 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ai_tools/manual-steps.sh
 
-# plutil reads the notification settings from $SANDBOX/ncprefs, as lines of <key>=<value>. With
-# no file, it fails, as it does without Full Disk Access.
+# plutil -extract apps xml1 prints $SANDBOX/ncprefs, the apps list as macOS's plutil prints it.
+# With no file, it fails, as it does without Full Disk Access.
 NCPREFS="$SANDBOX/ncprefs"
-stub plutil '[ "$1" == -extract ] && [ -f "'"$NCPREFS"'" ] || exit 1
-value="$(grep -F "$2=" "'"$NCPREFS"'" | head -1)"
-[ -n "$value" ] || exit 1
-echo "${value#*=}"'
+stub plutil '[ "$*" == "-extract apps xml1 -o - $NOTIFICATION_SETTINGS" ] && [ -f "'"$NCPREFS"'" ] || exit 1
+cat "'"$NCPREFS"'"'
+export NOTIFICATION_SETTINGS
 ALLOWED=$((1 << 25)) TEMPORARY=$((1 << 3)) PERSISTENT=$((1 << 4))
-# Usage: apps <bundle id> <flags> ...
+# Usage: apps <bundle id> <flags> ... After its own keys, each app holds a nested dict whose keys of
+# the same names, with flags that would pass, don't count.
 apps() {
-    local i=0
-    : > "$NCPREFS"
-    while [ $# -gt 0 ]; do
-        printf 'apps.%s.bundle-id=%s\napps.%s.flags=%s\n' "$i" "$1" "$i" "$2" >> "$NCPREFS"
-        i=$((i + 1))
-        shift 2
-    done
-    echo "apps=$i" >> "$NCPREFS"
+    {
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<array>\n'
+        while [ $# -gt 0 ]; do
+            printf '\t<dict>\n\t\t<key>bundle-id</key>\n\t\t<string>%s</string>\n\t\t<key>flags</key>\n\t\t<integer>%s</integer>\n' "$1" "$2"
+            printf '\t\t<key>sub</key>\n\t\t<dict>\n\t\t\t<key>bundle-id</key>\n\t\t\t<string>%s</string>\n' "$1"
+            printf '\t\t\t<key>flags</key>\n\t\t\t<integer>%s</integer>\n\t\t</dict>\n\t</dict>\n' "$((ALLOWED | PERSISTENT))"
+            shift 2
+        done
+        printf '</array>\n</plist>\n'
+    } > "$NCPREFS"
 }
 
 # notifications_pending

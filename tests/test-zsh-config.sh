@@ -58,7 +58,13 @@ for term in xterm-256color dumb; do
     output="$(in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
     assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
-    assert_eq "" "$(cat "$ERR")" "stderr with TERM=$term"
+    # The shell runs the real starship, atuin, and zoxide, whose stderr once failed this check
+    # under a parallel test run, so only zsh's own errors fail it: those name the config file, or,
+    # for a command not found, start with "zsh:"
+    if grep -qE -e "^zsh:" -e "$HOME/\.zsh" "$ERR"; then
+        fail "the zsh config printed an error with TERM=$term:"
+        _show "$(cat "$ERR")"
+    fi
 done
 assert_contains "$output" "main^" "main^ in a terminal"
 assert_not_contains "$output" "extendedglob-on" "options in a terminal"

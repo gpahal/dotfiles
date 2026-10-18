@@ -85,7 +85,7 @@ status_firmware() { :; }
 ups_todo() { :; }
 status_ups() { :; }
 warn_no_ups() { :; }
-# The kernel has the sysctl settings, which test-ubuntu-step.sh covers
+# The kernel has the sysctl settings, which test-ubuntu-system.sh covers
 sysctl_in_effect() { true; }
 locale_installed() { true; }
 unattended_upgrades_running() { true; }

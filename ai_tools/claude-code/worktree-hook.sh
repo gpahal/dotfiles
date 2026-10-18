@@ -21,10 +21,11 @@ set -euo pipefail
 # and worktree.sparsePaths. Nothing in it may wait for input.
 
 # Claude Code started from the Dock or a launcher may have only the system's PATH. git wt is in
-# ~/.local/bin, and jq may be only in Homebrew's.
+# ~/.local/bin. Homebrew's dirs go last, for a jq the system lacks, so the hook runs the same git
+# as the session.
 for dir in /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin; do
     if [ -d "$dir" ]; then
-        PATH="$dir:$PATH"
+        PATH="$PATH:$dir"
     fi
 done
 export PATH="$HOME/.local/bin:$PATH"
@@ -178,6 +179,8 @@ copy_worktree_include() {
         { git -C "$tmp" -c core.excludesFile="$include" check-ignore --no-index -z --stdin ||
             true; } |
         while IFS= read -r -d '' entry; do
+            # -p copies what a symlink points at, so the worktree gets its own copy, which a link
+            # relative to the checkout or into it wouldn't give
             flags=-p
             case "$entry" in */) flags=-pR entry="${entry%/}" ;; esac
             # A tracked symlink, even a dangling one, could point cp outside the worktree

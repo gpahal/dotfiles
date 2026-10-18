@@ -316,11 +316,13 @@ is_clean() {
     done <<< "$files"
 }
 
-# Succeeds when $1 is a copy of $2. cmp follows symlinks, so two links to different files with the
-# same bytes would match: a link matches only a link to the same place.
+# Succeeds when $1, in the worktree, is a copy of $2, in the main checkout. cmp follows symlinks,
+# so two links to different files with the same bytes would match: a link matches only a link to
+# the same place. A file matches a link whose target has the same bytes, since the worktree hook
+# copies what an included link points at.
 same_file() {
-    if [ -L "$1" ] || [ -L "$2" ]; then
-        [ -L "$1" ] && [ -L "$2" ] && [ "$(readlink "$1")" = "$(readlink "$2")" ]
+    if [ -L "$1" ]; then
+        [ -L "$2" ] && [ "$(readlink "$1")" = "$(readlink "$2")" ]
     else
         cmp -s "$1" "$2"
     fi

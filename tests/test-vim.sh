@@ -9,9 +9,11 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+load_script lib/common.sh
 PLUG="$HOME/.vim/autoload/plug.vim"
 
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
+assert_eq 644 "$(file_mode "$PLUG")" "plug.vim's mode"
 
 # A copy that differs, such as one vim-plug's PlugUpgrade wrote, is missing until a re-run
 echo '" changed' >> "$PLUG"
@@ -19,6 +21,15 @@ assert_exit 3 bash "$REPO_DIR/vim/install.sh" --status
 assert_contains "$RUN_OUTPUT" "missing    vim-plug at the pinned version (~/.vim/autoload/plug.vim)"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 cmp -s "$REPO_DIR/vim/plug.vim" "$PLUG" || fail "a re-run didn't restore $PLUG"
+# One that can't be written, in a dir you can't write to, fails the step. root writes it anyway.
+rm "$PLUG"
+chmod 555 "$HOME/.vim/autoload"
+if [ ! -w "$HOME/.vim/autoload" ]; then
+    assert_exit 1 bash "$REPO_DIR/vim/install.sh"
+    assert_contains "$RUN_OUTPUT" "Couldn't write $PLUG"
+fi
+chmod 755 "$HOME/.vim/autoload"
+assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 
 # vim-plug ships with the repo, so the vimrc never downloads it, and vims starting at once can't
 # race to write it

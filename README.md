@@ -196,7 +196,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - Aliases and functions include `g` (`git`, or `git status -sb`), `c` (`bat -pp`), `t` (`eza --tree`), `port <n>` and `killport <n>`, `o [path]`, `scratch` (a shell in a temp dir), `reload`, and `ts` (`tmux-sessionizer`)
 - `rm` deletes immediately. On macOS, use `trash` for a delete you can undo
 - `~/.zshrc.local`, if it exists, is sourced near the end. Put secrets and settings for one machine there
-- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. `~/.zprofile`, `main.zsh`, and on Ubuntu `~/.zshenv` source `path.zsh`, which sets PATH. Starship reads `~/.config/starship.toml`
+- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. `~/.zprofile`, `main.zsh`, and on Ubuntu `~/.zshenv` source `path.zsh`, which sets PATH. On Ubuntu, `~/.profile` sources `profile.sh`, which sets PATH for `sh` login shells and the desktop session. Starship reads `~/.config/starship.toml`
 
 ### Ghostty
 
@@ -517,6 +517,7 @@ cp ~/.config/git/fsmonitor git/fsmonitor
 cp "$(lazygit --print-config-dir)/config.yml" lazygit/config.yml
 cp ~/.vimrc vim/vimrc
 for file in zsh/*.zsh; do cp "$HOME/.zsh/${file##*/}" "$file"; done
+cp ~/.zsh/profile.sh zsh/profile.sh   # Ubuntu
 cp ~/.config/starship.toml zsh/config/starship.toml
 cp ~/.config/ghostty/config.ghostty ghostty/config.ghostty
 cp ~/.config/tmux/tmux.conf tmux/tmux.conf

@@ -35,13 +35,15 @@ plugin_installed() {
     [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$2" ]
 }
 
-# Check out a plugin at a commit, fetching only that commit. A missing dir or a plain one becomes
-# a new checkout, and an existing checkout moves to the commit, whatever branch it was on.
+# Check out a plugin at a commit, fetching only that commit, and only when the checkout lacks it,
+# so a re-run works offline. A missing dir or a plain one becomes a new checkout, and an existing
+# checkout moves to the commit, whatever branch it was on.
 install_tmux_plugin() {
     local repo="$1" sha="$2" dir="$PLUGIN_DIR/${1##*/}"
     if { [ -d "$dir/.git" ] || git init -q "$dir"; } &&
-        GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha" &&
-        git -C "$dir" checkout -q --detach FETCH_HEAD; then
+        { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
+            GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha"; } &&
+        git -C "$dir" checkout -q --detach "$sha"; then
         echo "  Installed tmux plugin $repo at ${sha:0:7}"
         return 0
     fi

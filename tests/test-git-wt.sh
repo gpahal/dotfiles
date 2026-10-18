@@ -192,11 +192,12 @@ mark() {
     touch "$gitdir/worktree-hook-created-branch"
     printf '%s\n' "$2" > "$gitdir/worktree-hook-session"
 }
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-other p-unmarked \
-    p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-linkcopy p-linkdiff \
+    p-other p-unmarked p-here; do
     git wt add "$name" > /dev/null 2>&1 || fail "git wt add $name failed"
 done
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-linkcopy p-linkdiff \
+    p-here; do
     mark "$name" s1
 done
 mark p-other s2
@@ -217,24 +218,27 @@ echo draft > "$dir/p-draft/Draft notes.txt"
 echo same > "$repo/zz.local"
 echo same > "$dir/p-draft/zz.local"
 # An ignored symlink is a copy of the main checkout's only when it points at the same place, even
-# when what each points at holds the same bytes
+# when what each points at holds the same bytes. A file is a copy of a link in the main checkout
+# when it holds what the link points at, as the worktree hook copies it.
 printf '/env-a\n/env-b\n' >> "$repo/.git/info/exclude"
-for path in "$repo" "$dir/p-link" "$dir/p-samelink"; do
+for path in "$repo" "$dir/p-link" "$dir/p-samelink" "$dir/p-linkcopy" "$dir/p-linkdiff"; do
     echo same > "$path/env-a"
     echo same > "$path/env-b"
 done
 ln -s env-a "$repo/.env"
 ln -s env-b "$dir/p-link/.env"
 ln -s env-a "$dir/p-samelink/.env"
+echo same > "$dir/p-linkcopy/.env"
+echo other > "$dir/p-linkdiff/.env"
 commit_in "$dir/p-committed" mine
 # The worktree prune runs from stays, as git can't remove it
 out="$(cd "$dir/p-here" && git wt prune --session s1 2>&1)" || fail "git wt prune --session s1 failed: $out"
-for name in p-clean p-built p-cache p-samelink; do
+for name in p-clean p-built p-cache p-samelink p-linkcopy; do
     [ ! -e "$dir/$name" ] || fail "git wt prune --session s1 kept $name"
     git show-ref --verify --quiet "refs/heads/$name" && fail "git wt prune --session s1 kept branch $name"
 done
 assert_contains "$out" "git wt: removed $(cd -P "$dir" && pwd)/p-clean and branch p-clean"
-for name in p-changed p-committed p-draft p-link p-other p-unmarked p-here; do
+for name in p-changed p-committed p-draft p-link p-linkdiff p-other p-unmarked p-here; do
     [ -d "$dir/$name" ] || fail "git wt prune --session s1 removed $name"
     git show-ref --verify --quiet "refs/heads/$name" || fail "git wt prune --session s1 deleted branch $name"
 done

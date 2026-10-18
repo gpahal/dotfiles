@@ -168,18 +168,13 @@ mv "$HOME/.cargo/bin/rustup" "$STUB_DIR/rustup"
 assert_not_contains "$(upgrade_on darwin25.0)" "rustup" "commands upgrade runs with rustup only on PATH"
 mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 
-# brew bundle check fails on a missing App Store app, which brew bundle install can't fix without
-# an App Store sign-in, so upgrade has it skip the Brewfile's App Store apps by id. Here only those
-# apps would fail the check, so bundle install doesn't run.
-# shellcheck disable=SC2016 # expanded by the inner bash
-mas_skip="$("$BASH" -c 'source "$1/homebrew/install.sh"; mas_app_ids "$1/homebrew/Brewfile" | tr "\n" " "' bash "$REPO_DIR")"
-[ -n "$mas_skip" ] || fail "the Brewfile has no App Store app ids"
+# A Brewfile that's all installed: bundle install doesn't run
 cp "$STUB_DIR/brew" "$SANDBOX/brew"
 stub brew 'case "$*" in
-    "bundle check"*) [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "'"$mas_skip"'" ] ;;
+    "bundle check"*) ;;
     "list --cask"*) exit 1 ;;
 esac'
-assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with an App Store app missing"
+assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with the Brewfile installed"
 assert_eq "" "$(ls -A "$TMPDIR")" "files upgrade leaves in TMPDIR"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 

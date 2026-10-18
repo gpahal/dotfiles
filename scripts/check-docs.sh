@@ -9,8 +9,8 @@ set -euo pipefail
 # - ai_tools/README.md "Ubuntu": "Run `bash ai_tools/setup.sh` on the Ubuntu machine too ... It
 #   runs ..."
 # Also check that:
-# - README.md "What's included" lists every formula and App Store app in homebrew/Brewfile and
-#   every cask in homebrew/install.sh's CASKS as a list item's link in the section package_section
+# - README.md "What's included" lists every formula in homebrew/Brewfile, and every App Store app
+#   in homebrew/install.sh's MAS_APPS and cask in its CASKS, as a list item's link in the section package_section
 #   names, and lists no other package in its "CLI tools" and "Apps" lists
 # - README.md "Ubuntu" names the casks in UBUNTU_CASKS, as Mac-only the formulae in the
 #   Brewfile's `if OS.mac?` blocks, and in its "System packages." item the apt packages in
@@ -133,7 +133,7 @@ backquoted "${sentence%%.*}" > "$tmp/ai-ubuntu-section"
 compare "ai_tools/README.md Ubuntu's \"It runs\" list" "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-section" \
     '"It runs `<step>`, ..." in the line starting "Run `bash ai_tools/setup.sh` on the Ubuntu machine too" in ai_tools/README.md'
 
-# README.md "What's included" against the Brewfile and CASKS. A package and a name in the README
+# README.md "What's included" against the Brewfile, MAS_APPS, and CASKS. A package and a name in the README
 # match when they're equal lowercased, with all but letters and digits dropped: the README's
 # ShellCheck is the formula shellcheck, and Logi Options+ the cask logi-options+. Homebrew names
 # some packages apart from their tools: git-delta is delta, a font cask starts with font-, and a
@@ -162,7 +162,9 @@ package_section() {
 brewfile="$REPO_DIR/homebrew/Brewfile"
 {
     brewfile_formulae "$brewfile" | sed 's/^/formula /; s/ [^ ]*$//'
-    sed -nE 's/^[[:space:]]*mas "([^"]+)".*/mas \1/p' "$brewfile"
+    # MAS_APPS's lines read "<id> <name>", with "optional" after some
+    awk '$0 == "MAS_APPS=(" { on = 1; next } on && /^\)/ { exit }
+        on && NF { gsub(/"/, ""); sub(/^ *[0-9]+ /, ""); sub(/ optional$/, ""); print "mas " $0 }' "$REPO_DIR/homebrew/install.sh"
     cask_list "$REPO_DIR/homebrew/install.sh" CASKS | sed 's/^/cask /'
 } > "$tmp/packages"
 [ -s "$tmp/packages" ] || fail "Couldn't read the packages from homebrew/Brewfile and homebrew/install.sh"
@@ -187,6 +189,7 @@ while read -r kind name && read -r canonical_name <&3; do
     if ! grep -qxF -- "$canonical_name" "$tmp/entries-$section"; then
         case "$kind" in
             cask) fail "README.md What's included doesn't list the cask $name, in its $section section" ;;
+            mas) fail "README.md What's included doesn't list the App Store app $name, in its $section section" ;;
             *) fail "README.md What's included doesn't list the Brewfile's $name, in its $section section" ;;
         esac
     fi
@@ -197,7 +200,7 @@ awk '/^### / { in_list = ($0 ~ /^### (CLI tools|Apps)/) } in_list && /^- \[/' "$
 canonical < "$tmp/listed" > "$tmp/listed-names"
 while IFS= read -r label && IFS= read -r canonical_name <&3; do
     grep -qxF -- "$canonical_name" "$tmp/package-names" ||
-        fail "README.md What's included lists $label, which isn't in the Brewfile or CASKS"
+        fail "README.md What's included lists $label, which isn't in the Brewfile, MAS_APPS, or CASKS"
 done < "$tmp/listed" 3< "$tmp/listed-names"
 
 # README.md "Ubuntu": the casks the Packages item says Ubuntu gets "here", against UBUNTU_CASKS

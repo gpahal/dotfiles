@@ -540,7 +540,7 @@ cp /usr/local/lib/dotfiles/ntfy.sh ubuntu/lib/ntfy.sh   # Ubuntu
 
 With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Ghostty and Zed configs, from under it. The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
 
-Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
+Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, and each to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
 Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
 

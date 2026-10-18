@@ -51,7 +51,7 @@ stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 run status
 # One for every cask, and one for raycast's install receipt, since its app is gone
 assert_eq 2 "$(brew_calls)" "brew calls on macOS"
-assert_contains "$RUN_OUTPUT" "missing    Brewfile App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
+assert_contains "$RUN_OUTPUT" "missing    App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
 assert_contains "$RUN_OUTPUT" "unverified Brewfile brew formulae (skipped by --quick"
 assert_contains "$RUN_OUTPUT" "ok         ghostty (cask)"
 assert_not_contains "$RUN_OUTPUT" "ghostty (cask), installed outside Homebrew"
@@ -73,7 +73,7 @@ assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing"
 # Only Dato, which is optional, isn't installed: information, not something missing
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
 run status
-assert_contains "$RUN_OUTPUT" "ok         Brewfile App Store apps"
+assert_contains "$RUN_OUTPUT" "ok         App Store apps"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
 # brew info fails for a cask it doesn't list when offline with no API cache, or when the cask was

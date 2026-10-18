@@ -125,14 +125,12 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Install the formulae added to this repo's Brewfile since setup last ran. brew bundle check also
-# fails on a missing App Store app, which install can't fix without an App Store sign-in, so both
-# skip the Brewfile's App Store apps, as the homebrew step's check does. The mas stage updates the
-# apps. Sourcing the step only defines its functions, but it also sets -euo pipefail, so this and
-# _install_new_casks run in a subshell.
+# Install the formulae added to this repo's Brewfile since setup last ran. Sourcing the step only
+# defines its functions, but it also sets -euo pipefail, so this and _install_new_casks run in a
+# subshell.
 _install_new_formulae() (
     # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && { bundle_installed_except_mas || bundle_except_mas install; }
+    source "$DOTFILES_DIR/homebrew/install.sh" && install_bundle
 )
 
 # Install the casks added to the homebrew step since setup last ran
@@ -295,7 +293,7 @@ upgrade() {
         # Casks marked as updating themselves that brew upgrade skips. Zed's settings.json turns
         # its updater off, and the others rarely run, so their own updaters rarely catch up.
         _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ || _stage_failed "self-updating casks" "$?"
-        # Every App Store app, not just the Brewfile's. mas asks for your password to update one.
+        # Every App Store app, not just the homebrew step's. mas asks for your password to update one.
         if command -v mas &>/dev/null; then
             mas upgrade || _stage_failed mas "$?"
         fi

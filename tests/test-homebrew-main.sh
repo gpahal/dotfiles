@@ -126,6 +126,7 @@ assert_not_contains "$RUN_OUTPUT" "Everything else in the Brewfile is installed"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Brew formulae and App Store apps already installed."
 assert_eq "" "$(installs)" "installs with only the optional Dato missing"
+assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 
 # One cask fails: the rest install, and the step fails naming it
 reset

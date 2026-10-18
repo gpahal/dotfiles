@@ -793,8 +793,8 @@ ensure_app_quit() {
 # Install a Homebrew cask unless it, or the path it installs, is already there. Fails, saying
 # how to get brew, when it's missing. Exits with brew's status when interrupted_status says a
 # signal stopped it: brew catches Ctrl-C and exits 130, so the step's bash never sees the signal,
-# and a caller's `|| result=1` would carry on. A third argument, cask_state's first field when the caller already
-# has it, saves the brew calls cask_state makes.
+# and a caller's `|| result=1` would carry on. A third argument, cask_state's first field when
+# the caller already has it, saves the brew calls cask_state makes.
 install_cask() {
     local cask="$1" from="${3:-}" status=0
     require_cmd brew || return 1

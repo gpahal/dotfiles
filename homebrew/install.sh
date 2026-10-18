@@ -171,6 +171,12 @@ install_bundle() {
     ! is_macos || what="formulae and App Store apps"
     if bundle_installed; then
         echo "Brew $what already installed."
+        if is_macos; then
+            local optional
+            optional="$(missing_mas_apps optional | comma_list)"
+            [ -z "$optional" ] ||
+                echo "  Not installed, and optional: $optional. To add one, buy it in the App Store, then re-run."
+        fi
     else
         echo "Installing brew $what..."
         # Keeps brew's status, so main sees 130 from Ctrl-C

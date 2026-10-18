@@ -101,7 +101,13 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 
 ### Desktop app settings
 
-The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The app stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, and archives inactive sessions after 30 days. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
+The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The script also sets:
+
+- **Claude Code.** The Dock icon bounces on notifications, the Mac stays awake while Claude works, on battery too, inactive sessions are archived after 30 days, and scheduled tasks are on.
+- **General.** No menu bar icon, so the app doesn't keep running once its window is closed. Option+Space opens quick entry.
+- **Cowork.** Browser tools, in Chrome, web search, and scheduled tasks are on. The browser tools drive your own Chrome, signed in to your accounts, so a Cowork task can act on any site you're logged in to. A scheduled task runs without you watching. Turning either off in the app lasts only until the step runs again. To keep it off, set `coworkBrowserToolsEnabled` or `coworkScheduledTasksEnabled` to `false` in `ai_tools/claude-desktop/install.sh`, then re-run the step.
+
+Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
 
 ## Codex
 
@@ -138,7 +144,7 @@ Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-se
 
 ### Desktop app settings
 
-The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake while a task runs and for Codex Remote while plugged in, squash-merges pull requests, lets a mid-turn message steer the turn, and opens links in your browser. OpenAI's reference doesn't list these `[desktop]` keys. They come from the file the app writes, checked against ChatGPT 26.930.21537. Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings).
+The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake while a task runs and for Codex Remote while plugged in, squash-merges pull requests, and never refreshes a worktree from its upstream branch. A mid-turn message steers the turn, threads show their steps and commands, the context window's usage shows, ambient suggestions are on, every reasoning effort is in the picker, and links open in your browser. OpenAI's reference doesn't list these `[desktop]` keys. They come from the file the app writes, checked against ChatGPT 26.930.21537. Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings).
 
 ## T3 Code
 

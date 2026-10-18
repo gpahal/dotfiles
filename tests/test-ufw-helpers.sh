@@ -105,18 +105,13 @@ assert_eq "" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules among the wanted o
         "22/tcp                     ALLOW       fd00::/7" \
         "22/tcp                     ALLOW       fe80::/9"
 } > "$SANDBOX/ufw-rules"
-assert_eq "22/tcp ALLOW Anywhere
-22/tcp (v6) ALLOW Anywhere (v6)
-OpenSSH LIMIT Anywhere
-2000:3000/tcp ALLOW Anywhere
-80,2222/tcp ALLOW Anywhere # web
-Anywhere ALLOW 203.0.113.9
-22 ALLOW 10.0.0.0/7
-192.168.1.5 22/tcp on eth0 ALLOW Anywhere
-22/tcp ALLOW 172.16.0.0/12
-22/tcp ALLOW 192.168.0.0/15
-22/tcp ALLOW fd00::/7
-22/tcp ALLOW fe80::/9" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
+# Each with its source first, tab-separated
+assert_eq "$(printf '%s\t%s\n' Anywhere "22/tcp ALLOW Anywhere" Anywhere "22/tcp (v6) ALLOW Anywhere (v6)" \
+    Anywhere "OpenSSH LIMIT Anywhere" Anywhere "2000:3000/tcp ALLOW Anywhere" \
+    Anywhere "80,2222/tcp ALLOW Anywhere # web" 203.0.113.9 "Anywhere ALLOW 203.0.113.9" \
+    10.0.0.0/7 "22 ALLOW 10.0.0.0/7" Anywhere "192.168.1.5 22/tcp on eth0 ALLOW Anywhere" \
+    172.16.0.0/12 "22/tcp ALLOW 172.16.0.0/12" 192.168.0.0/15 "22/tcp ALLOW 192.168.0.0/15" \
+    fd00::/7 "22/tcp ALLOW fd00::/7" fe80::/9 "22/tcp ALLOW fe80::/9")" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
 # Unreadable rules or SSH ports fail it
 stub ufw 'exit 1'
 assert_exit 1 ufw_broad_ssh_rules -n

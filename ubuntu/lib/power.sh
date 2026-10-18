@@ -9,8 +9,16 @@ sleep_masked() {
     done
 }
 
+mask_sleep() {
+    sudo systemctl mask "${SLEEP_TARGETS[@]}"
+}
+
 sleep_conf_written() {
     file_is "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
+}
+
+write_sleep_conf() {
+    write_root_file "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
 }
 
 sysctl_file_written() {

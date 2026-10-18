@@ -21,9 +21,11 @@ set -euo pipefail
 HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/ntfy.sh
 source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
+# shellcheck source=lib/paths.sh
+source "$HEALTH_REPO_DIR/ubuntu/lib/paths.sh"
 
 # Tests point this into their sandbox
-NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-/etc/dotfiles/ntfy-url}"
+NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 # ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 # How a status item only root could check says so, and the line a push then ends with

@@ -147,12 +147,12 @@ HEADER='smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.17.0] (local build)\nSeria
 mkdir -p "$HOME/.cargo/bin"
 printf '#!/bin/bash\n' > "$HOME/.cargo/bin/smartctl"
 chmod +x "$HOME/.cargo/bin/smartctl"
-PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
+PATH="$HOME/.cargo/bin:$PATH" run sbin_cmd smartctl
 assert_eq "$STUB_DIR/smartctl" "$RUN_OUTPUT" "the smartctl chosen"
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$SANDBOX/no-such-dir"
-PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
-assert_eq 1 "$RUN_STATUS" "smartctl_cmd's exit status with smartctl only on PATH: $RUN_OUTPUT"
+PATH="$HOME/.cargo/bin:$PATH" run sbin_cmd smartctl
+assert_eq 1 "$RUN_STATUS" "sbin_cmd's exit status with smartctl only on PATH: $RUN_OUTPUT"
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$STUB_DIR"
 rm "$HOME/.cargo/bin/smartctl"
@@ -231,11 +231,11 @@ assert_contains "$RUN_OUTPUT" "skipped    Disk health (SMART): this is a VM"
 assert_file_not_contains "$STUB_LOG" "smartctl"
 in_vm() { false; }
 # Without smartctl, it's unknown and says what installs it
-smartctl_cmd() { return 1; }
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$SANDBOX/no-such-dir"
 assert_exit 3 diag status_smart
 assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART): smartctl isn't installed"
 assert_contains "$RUN_OUTPUT" "smartmontools"
-unset -f smartctl_cmd
 load_script ubuntu/install.sh
 is_ubuntu() { true; }
 in_vm() { false; }

@@ -174,7 +174,7 @@ esac'
 # One wired connection, "Wired connection 1", whose Wake-on-LAN setting is in $SANDBOX/wol, and
 # a Wi-Fi one. The step names connections by UUID, since two can share a name.
 stub nmcli 'case "$*" in
-    "-t -f UUID,TYPE,NAME connection show") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired connection 1" "2222-bbbb:802-11-wireless:Home\\:5G" ;;
+    "-t -e no -f UUID,TYPE,NAME connection show") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired connection 1" "2222-bbbb:802-11-wireless:Home:5G" ;;
     *"-g 802-3-ethernet.wake-on-lan connection show uuid 1111-aaaa") cat "'"$SANDBOX"'/wol" ;;
     "connection modify uuid 1111-aaaa 802-3-ethernet.wake-on-lan magic") echo magic > "'"$SANDBOX"'/wol" ;;
 esac'
@@ -460,7 +460,7 @@ assert_exit 1 in_git_worktree "$SANDBOX"
 in_git_worktree() { false; }
 
 # No wired connection: Wake-on-LAN is skipped
-stub nmcli '[ "$*" != "-t -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'
+stub nmcli '[ "$*" != "-t -e no -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    Wake-on-LAN: no wired connection"
 

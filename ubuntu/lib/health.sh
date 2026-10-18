@@ -8,8 +8,13 @@ smartd_enabled() {
     apt_installed smartmontools && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
 }
 
-# The unit's ConditionVirtualization=no skips smartd in a VM, where the host manages the disks
+# The unit's ConditionVirtualization=no skips smartd in a VM, where the host manages the disks.
+# status and apply work it out once (cache_checks).
 in_vm() {
+    if [ -n "${IN_VM_CACHE:-}" ]; then
+        [ "$IN_VM_CACHE" == yes ]
+        return
+    fi
     systemd-detect-virt -q 2>/dev/null
 }
 
@@ -28,10 +33,6 @@ smartd_ready() {
 # absolute path as given, without its secure_path.
 sbin_cmd() {
     PATH="$SBIN_PATH" command -v "$1"
-}
-
-smartctl_cmd() {
-    sbin_cmd smartctl
 }
 
 # Print an item for one disk's SMART health, from smartctl -H. Its exit status is a bit mask:
@@ -85,7 +86,7 @@ status_smart() {
         status_item skipped "$label: this is a VM, whose host manages the disks"
         return 0
     fi
-    if ! smartctl="$(smartctl_cmd)"; then
+    if ! smartctl="$(sbin_cmd smartctl)"; then
         status_item unknown "$label: smartctl isn't installed; the ubuntu step installs smartmontools"
         return 0
     fi
@@ -184,23 +185,20 @@ install_smartd() {
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
 }
 
-# The ntfy code smartd's hook and the UPS notifier source. They run away from the repo, which the
-# notifier's nut user may not be able to read, so it's installed for them.
-ntfy_lib_installed() {
-    cmp -s "$NTFY_LIB_SRC" "$NTFY_LIB"
-}
-
-install_ntfy_lib() {
-    ntfy_lib_installed || install_root_file "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
-}
-
-# The hook is root's and runs as root, so it's installed whole, executable, with the ntfy code
+# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources. The
+# hook runs away from the repo, as the UPS notifier does, whose nut user may not be able to read
+# it, so the ntfy code is installed for both.
 smartd_hook_installed() {
-    cmp -s "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && [ -x "$SMARTD_HOOK" ] && ntfy_lib_installed
+    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
 install_smartd_hook() {
-    install_root_file "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_ntfy_lib
+    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB"
+}
+
+# In a VM smartd doesn't run, so its hook doesn't matter there
+smartd_hook_ready() {
+    in_vm || smartd_hook_installed
 }
 
 # The hook that pushes smartd's warnings, and the ntfy code it sources. In a VM smartd doesn't run,

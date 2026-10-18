@@ -45,6 +45,10 @@ apt_timers_enabled() {
     done
 }
 
+enable_apt_timers() {
+    sudo systemctl enable --now "${APT_TIMERS[@]}"
+}
+
 # Print $AUTO_UPGRADES_CONF with each line of $AUTO_UPGRADES_CONTENT in place of the lines that
 # set its key, or appended when none does. Software & Updates keeps other APT::Periodic keys there,
 # such as AutocleanInterval, so every other line stays, as software-properties leaves them.
@@ -98,6 +102,10 @@ turn_on_unattended_upgrades() {
 
 keep_conffiles_written() {
     file_is "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
+}
+
+write_keep_conffiles() {
+    write_root_file "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
 }
 
 # Print the packages apt-get upgrade would hold back, one per line. A simulation needs no root.

@@ -18,11 +18,9 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=lib/ntfy.sh
 source "$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
-
-# The ubuntu step's SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE
-SMARTD_HOOK=/etc/smartmontools/run.d/50dotfiles-notify
-UPS_NOTIFY=/usr/local/libexec/dotfiles-ups-notify
-NTFY_URL_FILE=/etc/dotfiles/ntfy-url
+# SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE, as the ubuntu step installs them
+# shellcheck source=lib/paths.sh
+source "$DOTFILES_DIR/ubuntu/lib/paths.sh"
 
 usage() {
     echo "Usage: bash ubuntu/setup-alerts.sh [--test] (or: just alerts [test])"

@@ -21,7 +21,7 @@ export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBO
 REPO="$SANDBOX/repo"
 mkdir -p "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
 cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO/ubuntu/"
-cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO/ubuntu/lib/"
+cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" "$REPO/ubuntu/lib/"
 for runner in setup ai_tools; do
     script="$REPO/setup.sh"
     [ "$runner" == setup ] || script="$REPO/ai_tools/setup.sh"

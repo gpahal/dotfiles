@@ -200,13 +200,13 @@ ups_services_active() {
 }
 
 # The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
-# installed with it (install_ntfy_lib)
+# installed with it
 ups_notifier_installed() {
-    cmp -s "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && [ -x "$UPS_NOTIFY" ] && ntfy_lib_installed
+    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
 install_ups_notifier() {
-    install_root_file "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_ntfy_lib
+    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
@@ -231,8 +231,10 @@ ups_ready() {
 
 # Set UPS_STATE to the UPS part's state: vm, nohwdb (upower's hwdb, which tells a UPS, is
 # missing), noudev (udevadm failed), none (no UPS on USB), or plugged, with UPS_PLUGGED the
-# plugged-in UPSes' IDs. Needs no sudo.
+# plugged-in UPSes' IDs. Needs no sudo. apply works it out once and sets UPS_STATE_CACHED for the
+# calls after, since it reads all of udev's database.
 ups_state() {
+    [ "${UPS_STATE_CACHED:-}" != true ] || return 0
     UPS_PLUGGED=""
     if in_vm; then
         UPS_STATE=vm

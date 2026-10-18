@@ -294,31 +294,30 @@ EOF
 # address bar has focus. With no window open, Cmd+T opens one. SCRIPT_RESULT is "moved" when
 # another app came to the front before the paste, which then isn't pressed.
 # Hammerspoon's Ctrl+Opt+Cmd+N runs it while those keys are still down, which would turn Cmd+T
-# into Ctrl+Opt+Cmd+T. Shift, Control, Option, and Command are bits 17 to 20 of NSEvent's
-# modifierFlags; the wait for them gives up after a second.
+# into Ctrl+Opt+Cmd+T, Hammerspoon's terminal hotkey. Shift, Control, Option, and Command are bits
+# 17 to 20 of NSEvent's modifierFlags. Both waits share 10 seconds, after which it fails rather
+# than press anything.
 new_tab() {
     applescript "$1" <<EOF
 use framework "AppKit"
 use scripting additions
 
+on chromeInFront()
+    tell application "System Events" to return bundle identifier of (first application process whose frontmost is true) is "$CHROME"
+end chromeInFront
+
+on modifiersHeld()
+    return (((current application's NSEvent's modifierFlags()) as integer) div 131072) mod 16 is not 0
+end modifiersHeld
+
 on run argv
-    tell application "System Events"
-        repeat 100 times
-            if bundle identifier of (first application process whose frontmost is true) is "$CHROME" then exit repeat
-            delay 0.1
-        end repeat
-        if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
-            error "Google Chrome didn't come to the front"
-        end if
-    end tell
-    repeat 50 times
-        if (((current application's NSEvent's modifierFlags()) as integer) div 131072) mod 16 is 0 then exit repeat
-        delay 0.02
+    repeat 200 times
+        if chromeInFront() and not modifiersHeld() then exit repeat
+        delay 0.05
     end repeat
+    if not chromeInFront() then error "Google Chrome didn't come to the front"
+    if modifiersHeld() then error "modifier keys were still held, so the new tab's Cmd+T would have taken them"
     tell application "System Events"
-        if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
-            error "Google Chrome didn't stay in front"
-        end if
         keystroke "t" using command down
         if item 1 of argv is "paste" then
             delay 0.15

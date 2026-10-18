@@ -18,8 +18,9 @@ setup_sandbox
 OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
 
 # CLIPBOARD is the clipboard's text, or with BIG_CLIPBOARD, hundreds of KB of lines, more than a
-# pipe holds. The new tab's script logs the keystrokes it would press, noting a Cmd+T it doesn't
-# first wait for the modifier keys to be released for, or fails with NEW_TAB_ERROR.
+# pipe holds. The new tab's script logs the keystrokes it would press, noting a Cmd+T it could
+# send with modifier keys still held, as when it doesn't wait for them or fail while they're down,
+# or fails with NEW_TAB_ERROR.
 # With FRONT_CHANGES, another app comes to the front during the delay before the paste: a script
 # that checks for that before pressing Cmd+V returns "moved". Gmail's script logs the URL it would
 # open and prints GMAIL_RESULT, or fails with GMAIL_ERROR. CHROME_RUNNING makes Chrome running.
@@ -34,7 +35,7 @@ case "$script" in
         if [ -n "${NEW_TAB_ERROR:-}" ]; then echo "$NEW_TAB_ERROR" >&2; exit 1; fi
         case "$script" in *"first application process whose frontmost"*"com.google.Chrome"*) ;; *) exit 1 ;; esac
         case "$script" in
-            *"modifierFlags"*"keystroke \"t\""*) echo "  Cmd+T" >> "$STUB_LOG" ;;
+            *"modifierFlags"*"if modifiersHeld() then error"*"keystroke \"t\""*) echo "  Cmd+T" >> "$STUB_LOG" ;;
             *) echo "  Cmd+T with the modifiers still held" >> "$STUB_LOG" ;;
         esac
         [ "$2" == paste ] || exit 0

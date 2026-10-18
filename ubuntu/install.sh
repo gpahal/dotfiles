@@ -169,18 +169,17 @@ ubuntu_root_files() {
     "$1" "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
-# root_copy_current <src> <dest>: succeeds when a file installed as root is a copy of the repo's,
-# executable when the repo's is
+# root_copy_current <src> <dest> <mode>: succeeds when a file installed as root is a copy of the
+# repo's, and executable when the mode is 0755. The mode is fixed, not the repo file's, since a
+# checkout can lose its exec bits, and run-parts skips a hook that isn't executable.
 root_copy_current() {
-    cmp -s "$1" "$2" && { [ ! -x "$1" ] || [ -x "$2" ]; }
+    cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
 }
 
-# install_root_copy <src> <dest>: install a copy of the repo's file as root's, 755 when the repo's
-# is executable and 644 otherwise, unless it's already current
+# install_root_copy <src> <dest> <mode>: install a copy of the repo's file as root's, with the
+# mode, unless it's already current
 install_root_copy() {
-    local mode=0644
-    [ ! -x "$1" ] || mode=0755
-    root_copy_current "$1" "$2" || install_root_file "$1" "$2" "$mode"
+    root_copy_current "$@" || install_root_file "$@"
 }
 
 # Add the step's simple sudo items, which status and apply drive by their check functions. The

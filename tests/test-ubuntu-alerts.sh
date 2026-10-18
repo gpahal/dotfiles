@@ -7,11 +7,13 @@ set -euo pipefail
 # root, so it reads only the installed paths, and a copy points them into the sandbox. ntfy_push
 # sends the message as is, even one starting with @. And ubuntu/setup-alerts.sh, which reads a
 # topic or URL without showing it, saves the URL, names the four alerts that go there, and runs the
-# hook with a test warning and the UPS notifier, when installed, with a test event. curl, logger,
-# sudo, and id are stubs.
+# hook with a test warning and the UPS notifier, when installed, with a test event. The ubuntu step
+# installs the hooks with fixed modes. curl, logger, sudo, and id are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 URL_FILE="$SANDBOX/ntfy-url"
@@ -175,4 +177,32 @@ assert_contains "$RUN_OUTPUT" "When one doesn't arrive, journalctl -t dotfiles-u
 is_ubuntu() { false; }
 assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "The alerts are Ubuntu only"
+
+# --- the ubuntu step's installs of the hooks ---
+# The hooks are installed 0755 and the ntfy code 0644, whatever the checkout's exec bits, since
+# run-parts skips a hook that isn't executable. An installed hook that isn't executable is out of
+# date.
+load_script ubuntu/install.sh
+ubuntu_sandbox_paths
+stub_sudo_exec
+checkout="$SANDBOX/checkout"
+mkdir -p "$checkout"
+cp "$REPO_DIR/ubuntu/smartd-notify.sh" "$REPO_DIR/ubuntu/ups-notify.sh" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$checkout"
+chmod 644 "$checkout"/*
+# shellcheck disable=SC2034 # the step's install functions read them
+{
+    SMARTD_HOOK_SRC="$checkout/smartd-notify.sh"
+    UPS_NOTIFY_SRC="$checkout/ups-notify.sh"
+    NTFY_LIB_SRC="$checkout/ntfy.sh"
+}
+assert_exit 1 smartd_hook_installed
+assert_exit 0 install_smartd_hook
+assert_exit 0 install_ups_notifier
+assert_eq 755 "$(file_mode "$SMARTD_HOOK")" "smartd's hook's mode"
+assert_eq 755 "$(file_mode "$UPS_NOTIFY")" "the UPS notifier's mode"
+assert_eq 644 "$(file_mode "$NTFY_LIB")" "the ntfy code's mode"
+assert_exit 0 smartd_hook_installed
+assert_exit 0 ups_notifier_installed
+chmod 644 "$SMARTD_HOOK"
+assert_exit 1 smartd_hook_installed
 test_done

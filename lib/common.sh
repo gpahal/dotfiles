@@ -1124,7 +1124,7 @@ write_back() {
 # Merge a jq expression into a JSON file, creating the file if needed. A file the expression
 # doesn't change is left alone, unformatted and not backed up.
 json_merge() {
-    local file="$1" filter="$2" tmp input=""
+    local file="$1" filter="$2" tmp input="" values
     require_cmd jq || return 1
     ! json_applied "$file" "$filter" || return 0
     # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
@@ -1139,8 +1139,12 @@ json_merge() {
         fi
     fi
     [[ "$input" =~ [^[:space:]] ]] || input='{}'
-    if [ "$(printf '%s\n' "$input" | jq -s length 2>/dev/null)" != 1 ]; then
-        echo "  $file isn't valid JSON, or holds more than one value, so it was left as it is." >&2
+    # jq's own error says where invalid JSON goes wrong
+    if ! values="$(printf '%s\n' "$input" | jq -s length)"; then
+        echo "  $file isn't valid JSON, so it was left as it is." >&2
+        return 1
+    elif [ "$values" != 1 ]; then
+        echo "  $file holds $values JSON values, not one, so it was left as it is." >&2
         return 1
     fi
     tmp="$(mktemp)"

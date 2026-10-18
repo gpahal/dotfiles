@@ -68,6 +68,9 @@ mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/T3 Code (Alpha).app"
 echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
 listing="t3-code	$SANDBOX/T3 Code (Beta).app"
 assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a cask whose app was renamed"
+# A receipt whose uninstall also quits the app and removes a binary, as most apps' do, is read too
+echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}, {"binary": ["t3"]}, {"uninstall": [{"quit": "com.t3"}]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose uninstall does more"
 rm -r "$SANDBOX/T3 Code (Alpha).app"
 assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose app is gone"
 

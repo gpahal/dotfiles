@@ -831,18 +831,17 @@ cask_app_path() {
 CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
     "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
+# Print the path of brew's install receipt for cask $1, which records what brew installed for it
+cask_receipt() {
+    echo "$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
+}
+
 # recorded_cask_app <cask> <app>: print the app path brew recorded when it installed <cask>, in
-# the dir of <app>, the path the cask now gives. Fails when brew's install receipt names no app, or
-# the cask's uninstall does more than remove its app, which scripts/upgrade.sh's re-record would
-# then run.
+# the dir of <app>, the path the cask now gives. Fails when the install receipt names no app.
 recorded_cask_app() {
-    local receipt name
-    receipt="$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
-    name="$(jq -er '.uninstall_artifacts
-        | if all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))
-          then [.[] | select(has("app")) | .target // (.app[1].target? // .app[0])][0]
-          else empty end
-        | strings' "$receipt" 2>/dev/null)" || return 1
+    local name
+    name="$(jq -er '[.uninstall_artifacts[] | objects | select(has("app"))
+        | .target // (.app[1].target? // .app[0])][0] | strings' "$(cask_receipt "$1")" 2>/dev/null)" || return 1
     case "$name" in
         /*) echo "$name" ;;
         *) echo "${2%/*}/$name" ;;

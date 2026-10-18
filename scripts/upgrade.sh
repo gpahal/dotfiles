@@ -116,9 +116,12 @@ _upgrade_self_updating_casks() {
 }
 
 # Succeeds when the app brew recorded for cask $1 is gone but the app at $2, which the cask now
-# gives, is there: the app renamed itself as it updated
+# gives, is there: the app renamed itself as it updated. Only for a cask whose uninstall does no
+# more than remove its app, which _readopt_renamed_cask's uninstall would otherwise run.
 _cask_app_renamed() {
     local recorded
+    jq -e '.uninstall_artifacts | all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))' \
+        "$(cask_receipt "$1")" &>/dev/null || return 1
     recorded="$(recorded_cask_app "$1" "$2")" || return 1
     [ "$recorded" != "$2" ] && [ ! -e "$recorded" ] && [ -d "$2" ]
 }

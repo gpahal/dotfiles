@@ -15,15 +15,26 @@ mcd() {
     [[ "$1" ]] && mkdir -p "$1" && cd "$1"
 }
 
-# Run the last command in history as root, showing it first. With hist_ignore_space, a line typed
-# with a leading space never reaches history, so that may not be the last command typed. The
-# function keyword, since please was once an alias: a shell that still has it would expand
-# `please()` into a parse error on re-sourcing, and stop loading this file.
+# Run the command typed before this one as root, showing it first. A preexec hook keeps the line
+# before the current one, as typed, since history can't give it: share_history puts other shells'
+# commands there, hist_ignore_space leaves a line out, and fc -n prints a newline as \n, which
+# zsh -c reads as n. A line run twice in a row counts once, so a second please runs the same
+# command. The function keyword, since please was once an alias: a shell that still has it would
+# expand `please()` into a parse error on re-sourcing, and stop loading this file.
+function _please_preexec {
+    [[ $1 == "${_please_line-}" ]] && return
+    typeset -g _please_prev=${_please_line-} _please_line=$1
+}
+autoload -U add-zsh-hook
+add-zsh-hook preexec _please_preexec
+
 function please {
-    local c
-    c="$(fc -ln -1)"
-    print -r -- "sudo: $c"
-    sudo zsh -c "$c"
+    if [[ -z ${_please_prev-} ]]; then
+        print -u2 "please: no earlier command in this shell"
+        return 1
+    fi
+    print -r -- "sudo: $_please_prev"
+    sudo zsh -c "$_please_prev"
 }
 
 # git with no arguments shows a short status

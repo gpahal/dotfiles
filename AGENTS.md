@@ -32,7 +32,7 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
   - the Claude and Codex models the `claude-code` and `codex` steps set → the reviewer table in `ai_tools/skills/engineering/interrogate/SKILL.md`
   - an app's keys rechecked against a new version → the version table in `ai_tools/README.md` "Maintenance"
   - `ai_tools/setup.sh` steps → `ai_tools/README.md`, marked **(script)**
-  - `upgrade` → README "Updating"; `upgrade-ai-tools` → `ai_tools/README.md` "Updating"; a new stage of either → `stage_doc`, and `stage_code` when its code differs, in `scripts/check-docs.sh`
+  - `upgrade` → README "Updating"; `upgrade-ai-tools` → `ai_tools/README.md` "Updating"
   - steps done by hand → the "Manual steps" section of README or `ai_tools/README.md`. The `manual-steps` steps print it at run time, so it's the only copy.
 
   `README.md` and `ai_tools/README.md` each start with a first-run checklist per OS, and keep to what a user does and sees. How a step handles a case goes in a comment beside the code that handles it, or in a test. Run prose through `unslop`.

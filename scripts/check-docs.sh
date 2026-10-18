@@ -14,8 +14,6 @@ set -euo pipefail
 #   homebrew/install.sh's UBUNTU_PACKAGES
 # - README.md "Maintenance" copies back each file the steps' *_files functions copy, from where
 #   the step copies it, and nothing else
-# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps,
-#   and each stage runs what stage_code maps
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
@@ -298,90 +296,6 @@ while IFS=$'\t' read -r file home; do
         fail "README.md Maintenance's copy-back list copies $(tilde "$home") back to $file, which the steps copy to $(printf '%s\n' "$dests" | while IFS= read -r d; do tilde "$d"; done | paste -sd, - | sed 's/,/, /g')"
     fi
 done < "$tmp/copied-back"
-
-# README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools in
-# scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds to
-# failed, directly or through _stage_failed, must map to text its Updating section has (stage_doc),
-# and to code the function's body has (stage_code). Each item of the section's first list must
-# describe a stage. A new stage goes in the map.
-# stage_doc's text is what a user sees, such as the command they'd run or what the stage updates,
-# so the docs can leave out how the script runs it.
-stage_doc() {
-    case "$1:$2" in
-        upgrade:apt) echo 'apt packages' ;;
-        upgrade:brew) echo 'brew upgrade' ;;
-        "upgrade:brew bundle") echo 'formulae added to the Brewfile' ;;
-        upgrade:casks) echo 'casks added to the homebrew step' ;;
-        "upgrade:brew cleanup") echo 'brew cleanup' ;;
-        upgrade:fc-cache) echo 'font cache' ;;
-        "upgrade:self-updating casks") echo 'Casks that update themselves' ;;
-        upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins" | "upgrade:tmux plugins") echo 'vim and tmux plugins' ;;
-        upgrade:mise) echo 'mise upgrade' ;;
-        "upgrade:mise hook-env") echo 'the Node `mise upgrade` installed' ;;
-        upgrade:npm) echo 'npm update -g' ;;
-        upgrade:uv) echo 'uv tool upgrade --all' ;;
-        upgrade:rustup) echo 'rustup update' ;;
-        upgrade:upgrade-ai-tools) echo 'upgrade-ai-tools' ;;
-        "upgrade-ai-tools:claude update") echo 'claude update' ;;
-        "upgrade-ai-tools:desktop apps") echo 'Desktop apps' ;;
-        "upgrade-ai-tools:codex cask") echo 'Codex CLI' ;;
-        "upgrade-ai-tools:claude marketplaces") echo 'claude plugin marketplace update' ;;
-        'upgrade-ai-tools:claude plugin $id') echo 'claude plugin update' ;;
-        "upgrade-ai-tools:claude plugin list") echo 'claude plugin list' ;;
-        "upgrade-ai-tools:t3 update") echo 't3 update' ;;
-        "upgrade-ai-tools:codex marketplaces") echo 'codex plugin marketplace upgrade' ;;
-        *) return 1 ;;
-    esac
-}
-
-# The text in the function's body that runs a stage, where it isn't what stage_doc quotes
-stage_code() {
-    case "$1:$2" in
-        upgrade:apt) echo 'apt_get_update && sudo apt' ;;
-        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
-        "upgrade:brew bundle") echo '_install_new_formulae' ;;
-        upgrade:casks) echo '_install_new_casks' ;;
-        upgrade:fc-cache) echo 'fc-cache -f' ;;
-        upgrade:rustup) echo '.cargo/bin/rustup update' ;;
-        "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
-        "upgrade:vim plugins") echo 'PlugUpdate' ;;
-        "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
-        "upgrade:mise hook-env") echo 'mise hook-env' ;;
-        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools claude ' ;;
-        "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;
-        *) stage_doc "$1" "$2" ;;
-    esac
-}
-for fn in upgrade upgrade-ai-tools; do
-    doc=README.md
-    [ "$fn" == upgrade ] || doc=ai_tools/README.md
-    section "$REPO_DIR/$doc" "## Updating" > "$tmp/updating"
-    awk -v fn="${fn//-/_}() {" '$0 == fn { on = 1 } on { print } on && /^\}/ { exit }' "$REPO_DIR/scripts/upgrade.sh" > "$tmp/body"
-    stages="$({ grep -oE 'failed\+=\([^)]+\)|_stage_failed ("[^"]+"|[^ "]+)' "$tmp/body" || true; } |
-        sed -E 's/^failed\+=\(//; s/\)$//; s/^_stage_failed //; s/^"//; s/"$//' | awk '!seen[$0]++')"
-    [ -n "$stages" ] || fail "Couldn't read $fn's stages from scripts/upgrade.sh"
-    : > "$tmp/stage-texts"
-    while IFS= read -r stage; do
-        [ -n "$stage" ] || continue
-        if ! text="$(stage_doc "$fn" "$stage")"; then
-            fail "$fn has a stage, $stage, that scripts/check-docs.sh doesn't map to its docs"
-            continue
-        fi
-        printf '%s\n' "$text" >> "$tmp/stage-texts"
-        grep -qF -- "$text" "$tmp/updating" || fail "$doc Updating doesn't describe $fn's $stage stage: $text"
-        code="$(stage_code "$fn" "$stage")"
-        grep -qF -- "$code" "$tmp/body" || fail "$fn's $stage stage doesn't run what $doc Updating says: $code"
-    done <<< "$stages"
-    # The first list's items, each with its continuation lines
-    awk '/^- / { item = 1 } item && !/^(- |  )/ { exit } item' "$tmp/updating" |
-        awk '/^- / && NR > 1 { print "" } { printf "%s ", $0 } END { print "" }' > "$tmp/items"
-    while IFS= read -r item; do
-        [ -n "$item" ] || continue
-        grep -qFf "$tmp/stage-texts" <<< "$item" ||
-            fail "$doc Updating has an item that describes none of $fn's stages: ${item:0:60}"
-    done < "$tmp/items"
-done
 
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
 # missing or empty

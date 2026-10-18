@@ -20,12 +20,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Logitech devices..."
     if is_macos; then
         echo "  The homebrew step installs Logi Options+ on macOS; skipping."

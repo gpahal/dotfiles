@@ -37,7 +37,7 @@ deb_status() {
 }
 
 # Download Chrome's .deb and install it. Extra arguments go to apt-get install, e.g. --reinstall.
-# main runs it as `install_chrome || ...`, where set -e is off, so each command checks its own
+# apply runs it as `install_chrome || ...`, where set -e is off, so each command checks its own
 # failure.
 install_chrome() {
     local deb status=0
@@ -98,12 +98,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Google Chrome..."
     if is_macos; then
         echo "  The homebrew step installs Chrome on macOS; skipping."

@@ -2,8 +2,8 @@
 # Source it after tests/lib.sh, and call ubuntu_sandbox_paths after setup_sandbox and after each
 # load_script ubuntu/install.sh, which sets the constants back. It fails the test when a constant
 # that ubuntu/install.sh or ubuntu/lib/*.sh sets still starts with /etc, /var, /usr, /run, or /dev,
-# so a constant added later can't send a test to the real machine. A test may point one elsewhere
-# in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it calls, print the
+# outside the repo, so a constant added later can't send a test to the real machine. A test may
+# point one elsewhere in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it calls, print the
 # ufw rules the step adds, for a ufw stub to list. Bash 3.2.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
@@ -52,6 +52,8 @@ _ubuntu_system_paths_left() {
         eval "set -- \${${name}[@]+\"\${${name}[@]}\"}"
         for value; do
             case "$value" in
+                # A checkout under /var, as mktemp's dirs are on macOS
+                "$REPO_DIR"/*) ;;
                 /etc* | /var* | /usr* | /run* | /dev*) left="$left $name=$value" ;;
             esac
         done

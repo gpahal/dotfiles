@@ -5,9 +5,9 @@ set -euo pipefail
 # Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
 # rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
 # networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. Then it asks on its own whether
-# to add you to the docker group, which lets `docker` run without sudo but is root-equivalent;
-# without it, use sudo docker. On macOS, OrbStack (from the homebrew step) provides Docker.
+# These need sudo, so the step lists what's missing and asks once. The run that installs Docker
+# then asks on its own whether to add you to the docker group, which lets `docker` run without sudo
+# but is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -303,11 +303,11 @@ status() {
     docker_sudo_items
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
-    # The step asks about the group on its own, and you may say no, so its absence isn't missing
+    # The step asks about the group once, and you may say no, so its absence isn't missing
     if in_docker_group; then
         status_item ok "$(id -un) in the docker group"
     else
-        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it"
+        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
     fi
     if "$installed"; then
         sudo_items_status starts_at_boot socket_ready
@@ -426,17 +426,15 @@ apply() {
     fi
     sudo_items_pending docker_auto_updates_configured
 
-    local result=0
+    local result=0 fresh=false
     if [ ${#pending[@]} -eq 0 ]; then
-        if in_docker_group; then
-            echo "  Docker is already installed and set up."
-            return 0
-        fi
+        echo "  Docker is already installed and set up."
+        return 0
     elif confirm_sudo_changes "${pending[@]}"; then
         if ! "$installed"; then
             # The rest needs Docker's packages, and the docker group they add
             install_docker || return 1
-            installed=true
+            fresh=true
         elif "$repair_source"; then
             add_docker_repo || result=1
         fi
@@ -451,8 +449,9 @@ apply() {
             echo "  Applied."
         fi
     fi
-    # Docker's packages add the group
-    if "$installed" && ! in_docker_group; then
+    # Asked only once, in the run that installs Docker, whose packages add the group. A no then lasts,
+    # and status's info item says how to join later.
+    if "$fresh" && ! in_docker_group; then
         add_to_docker_group || result=1
     fi
     return "$result"

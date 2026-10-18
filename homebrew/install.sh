@@ -158,7 +158,6 @@ install_bundle() {
         return 0
     fi
     echo "Installing brew formulae..."
-    # Keeps brew's status, so main sees 130 from Ctrl-C
     brew bundle install --file="$BREWFILE" --no-upgrade
 }
 
@@ -179,8 +178,9 @@ missing_mas_apps() {
 # Install the App Store apps that aren't, as brew bundle would: mas install for an app the Apple
 # Account has, then, for a required one, mas get for a free one it doesn't. A new Mac isn't signed
 # in to the App Store yet, so a required app that fails only warns (see the header), and an
-# optional one that fails, as when it's never been bought, is only a note. Returns the status of an
-# interrupted mas, so main stops.
+# optional one that fails, as when it's never been bought, is only a note. An optional app that
+# isn't installed gets one mas install every run, even after setup, so it installs once an Apple
+# Account that owns it signs in. Returns the status of an interrupted mas, so main stops.
 install_mas_apps() {
     local missing kind id name status failed=() optional=()
     missing="$(missing_mas_apps)"

@@ -102,9 +102,16 @@ watchdog() {
     done
 }
 
+jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
+# 0 would start no test and wait forever
+case "$jobs" in
+    '' | *[!0-9]* | 0*)
+        echo "TEST_JOBS must be a positive integer, not '$jobs'" >&2
+        exit 1
+        ;;
+esac
 # /tmp, not $TMPDIR, keeps the tests' TMUX_TMPDIR under tmux's socket path length limit on macOS
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
-jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 
 # Remove test $1's HOME, TMUX_TMPDIR, and sandbox, which the test's EXIT trap removes unless the
 # watchdog had to SIGKILL it, stopping any tmux server it left running there

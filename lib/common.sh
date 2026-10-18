@@ -6,8 +6,8 @@
 unset CDPATH
 DOTFILES_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DOTFILES_DIR
-# The script that sourced this file, which names a step that uses the default main in step_args's
-# usage line. Made absolute now, since a test that loads the step cd's to its sandbox after.
+# The script that sourced this file, which names a step in step_args's usage line. Made absolute
+# now, since a test that loads the step cd's to its sandbox after.
 case "${BASH_SOURCE[1]:-}" in
     /*) _SOURCED_BY="${BASH_SOURCE[1]}" ;;
     *) _SOURCED_BY="$PWD/${BASH_SOURCE[1]:-}" ;;
@@ -337,11 +337,9 @@ check_args() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local path="${BASH_SOURCE[1]}" step_usage
-    # The script that defines the main calling this one: the step's, whether it runs directly or
-    # a test sourced it. The default main is this file's, so then it's the script that sourced it.
-    [ ! "$path" -ef "${BASH_SOURCE[0]}" ] || path="$_SOURCED_BY"
-    step_usage="Usage: bash $(_repo_path "$path") [--status [--quick]] [--backup | --no-backup]"
+    local step_usage
+    # The step is the script that sourced this file, whether it runs directly or a test loaded it
+    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status [--quick]] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 

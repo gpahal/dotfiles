@@ -97,6 +97,11 @@ assert_contains "$RUN_OUTPUT" "missing    ~/.config/git/config"
 [ ! -e "$HOME/.config/git/config" ] || fail "git/install.sh --status installed the git config"
 assert_exit 0 "$BASH" "$REPO_DIR/manual-steps.sh" --status --no-backup
 assert_eq "" "$RUN_OUTPUT" "manual-steps.sh --status"
+# The manual-steps scripts, which aren't named install.sh, name themselves in their usage too
+for step in manual-steps.sh ai_tools/manual-steps.sh; do
+    assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
+    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
+done
 
 # A step run directly prints its usage for -h or --help and fails on an unknown flag or any word,
 # changing nothing either way

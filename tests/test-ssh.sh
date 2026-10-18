@@ -70,6 +70,54 @@ for config in 'Host *\n  UseKeychain yes\n  IgnoreUnknown UseKeychain\n  AddKeys
     assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing with: $config"
 done
 
+# ssh keeps only the first IgnoreUnknown that applies, so an earlier one that doesn't name
+# UseKeychain wins over one that does. In the Host * block, the line still goes at its top.
+printf 'Host *\n  IgnoreUnknown ControlPersistX\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
+assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing after another IgnoreUnknown"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain to the top of it by hand"
+# Above every Host line, it goes at the top of the file
+config='IgnoreUnknown ControlPersistX\nHost *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n'
+# shellcheck disable=SC2059 # the config holds \n
+printf "$config" > "$SSH_CONFIG"
+assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing after a global IgnoreUnknown"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "$(printf '  line, so add this line at the top of %s:\n    IgnoreUnknown UseKeychain' "$SSH_CONFIG")"
+assert_not_contains "$RUN_OUTPUT" "to the top of it"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain at the top of the file by hand"
+
+# A UseKeychain line in a block above Host * needs the IgnoreUnknown above it, so the step's own
+# block can't supply it: it's added, and the step says where the line goes
+printf 'Host github.com\n  UseKeychain yes\n' > "$SSH_CONFIG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Added a Host * block"
+assert_contains "$RUN_OUTPUT" "$(printf '  line, so add this line at the top of %s:\n    IgnoreUnknown UseKeychain' "$SSH_CONFIG")"
+assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing after a UseKeychain above Host *"
+assert_exit 0 main
+assert_not_contains "$RUN_OUTPUT" "to the top of it"
+assert_contains "$RUN_OUTPUT" "at the top of $SSH_CONFIG:"
+assert_eq 1 "$(host_star_count)" "Host * blocks after a UseKeychain above Host *"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain at the top of the file by hand"
+# With other lines missing from your Host * block too, it names both places
+printf 'Host github.com\n  UseKeychain yes\nHost *\n  User me\n' > "$SSH_CONFIG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "$(printf 'add these lines to the top of it:\n    AddKeysToAgent yes\n    UseKeychain yes\n')"
+assert_contains "$RUN_OUTPUT" "at the top of $SSH_CONFIG:"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "UseKeychain; add AddKeysToAgent yes and UseKeychain yes to the top of it and IgnoreUnknown UseKeychain at the top of the file by hand"
+# Following the advice works, for ssh too
+printf 'IgnoreUnknown UseKeychain\n' | cat - "$SSH_CONFIG" > "$SANDBOX/config"
+printf '  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SANDBOX/config"
+mv "$SANDBOX/config" "$SSH_CONFIG"
+assert_eq "" "$(host_star_missing)" "the lines missing after following the advice"
+run status_host_star
+assert_contains "$RUN_OUTPUT" "ok         The Host * block"
+if [ -n "${ssh_bin:-}" ]; then
+    assert_exit 0 "$ssh_bin" -F "$SSH_CONFIG" -G example.com
+fi
+
 # With both, there's nothing to add
 printf 'Host *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
 assert_exit 0 main

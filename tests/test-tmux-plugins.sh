@@ -6,8 +6,7 @@ set -euo pipefail
 # The tmux step installs tpm and each plugin at the commit tmux/plugins.lock pins, not at HEAD. A
 # re-run changes nothing, a plugin at another commit is missing until a re-run moves it back, with
 # no fetch when the checkout has the pin, and a plugin that fails to fetch fails the step after the
-# others install. plugins.lock lists the
-# plugins tmux.conf loads. Local repos stand in for GitHub.
+# others install. plugins.lock lists the plugins tmux.conf loads. Local repos stand in for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

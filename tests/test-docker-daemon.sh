@@ -140,6 +140,15 @@ assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
 assert_file_not_contains "$STUB_LOG" "dockerd"
 assert_file_not_contains "$STUB_LOG" "systemctl"
+# Even when the last of them has every setting: it's not configured, and the step leaves it alone
+{ echo '{"debug": true}'; echo "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
+cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_exit 1 daemon_configured
+: > "$STUB_LOG"
+assert_exit 1 configure_daemon
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_file_not_contains "$STUB_LOG" "dockerd"
 
 # Several JSON values aren't configured, even when the last one is
 { cat "$SANDBOX/before-restart"; sorted /dev/stdin <<< "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"

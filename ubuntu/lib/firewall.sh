@@ -4,11 +4,15 @@
 # ufw goes on only while no SSH session comes from elsewhere.
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
-# Succeeds when ufw is on and denies incoming connections, which its config files show to anyone
+# Succeeds when ufw is on and denies incoming connections: its config files say so, and
+# ufw.service, which loads the rules at boot, is enabled and active. systemctl stop ufw, or a unit
+# that failed at boot, unloads the rules but leaves the files as they were. Anyone may read both.
 ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
         grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
-        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null
+        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null &&
+        systemctl is-enabled -q ufw.service 2>/dev/null &&
+        systemctl is-active -q ufw.service 2>/dev/null
 }
 
 # Succeeds when ufw filters IPv6 too. With IPV6=no, it leaves sshd open on the global IPv6
@@ -288,7 +292,10 @@ configure_ufw() {
     done
     sudo ufw allow in on tailscale0 > /dev/null || return 1
     sudo ufw allow "$TAILSCALE_PORT/udp" > /dev/null || return 1
-    "$on" || sudo ufw --force enable > /dev/null
+    "$on" && return 0
+    sudo ufw --force enable > /dev/null || return 1
+    # ufw enable loads the rules but leaves a stopped ufw.service stopped, which ufw_enabled checks
+    sudo systemctl enable --now -q ufw.service
 }
 
 # Set up the firewall once sudo is in use

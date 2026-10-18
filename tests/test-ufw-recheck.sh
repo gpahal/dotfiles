@@ -21,10 +21,16 @@ is_ubuntu() { true; }
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
 status_firmware() { :; }
-# ufw's on state and linger come from files under /etc and /var, so those checks are replaced.
-# Linger is on when $SANDBOX/linger exists, and loginctl turns it on.
-ufw_enabled() { [ ! -e "$SANDBOX/ufw-off" ]; }
-echo IPV6=yes > "$UFW_DEFAULTS"
+# ufw is on when its sandbox config says ENABLED=yes and ufw.service is enabled and active, which
+# it is unless $SANDBOX/ufw-unit-inactive exists (the systemctl stub below). Linger comes from a
+# file under /var, so its check is replaced: it's on when $SANDBOX/linger exists, and loginctl
+# turns it on.
+mkdir -p "$(dirname "$UFW_CONF")"
+ufw_on() { echo ENABLED=yes > "$UFW_CONF"; }
+ufw_off() { echo ENABLED=no > "$UFW_CONF"; }
+ufw_defaults() { printf '%s\n' 'DEFAULT_INPUT_POLICY="DROP"' "IPV6=$1" > "$UFW_DEFAULTS"; }
+ufw_on
+ufw_defaults yes
 lingering() { [ -e "$SANDBOX/linger" ]; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check and reload
@@ -60,9 +66,12 @@ not_cached() { rm -f "$SANDBOX/cached"; }
 
 # Everything else is set up
 # ssh.socket listens on the ports in $SANDBOX/socket-ports, one per line, as systemctl show lists
-# its addresses
+# its addresses. ufw.service is enabled, and active unless $SANDBOX/ufw-unit-inactive exists, which
+# enable --now removes.
 stub systemctl 'case "$1" in
-    is-enabled) echo masked ;;
+    is-enabled) [ "$*" == "is-enabled -q ufw.service" ] || echo masked ;;
+    is-active) [ "$*" != "is-active -q ufw.service" ] || [ ! -e "'"$SANDBOX"'/ufw-unit-inactive" ] ;;
+    enable) [ "${!#}" != ufw.service ] || rm -f "'"$SANDBOX"'/ufw-unit-inactive" ;;
     show) [ "$2" != ssh.socket ] || sed "s/.*/[::]:& (Stream)/" "'"$SANDBOX"'/socket-ports" ;;
 esac'
 echo 22 > "$SANDBOX/socket-ports"
@@ -89,19 +98,19 @@ printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
-# lists them, or says it's inactive while $SANDBOX/ufw-off exists. allow from <range> to any port
+# lists them, or says it's inactive while its config says ENABLED=no. allow from <range> to any port
 # <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once, and
 # --force enable turns ufw on.
 stub ufw 'rules="'"$SANDBOX"'/ufw-rules"
 case "$1" in
-    status) if [ -e "'"$SANDBOX"'/ufw-off" ]; then echo "Status: inactive"; else cat "$rules"; fi ;;
+    status) if grep -qx ENABLED=no "'"$UFW_CONF"'"; then echo "Status: inactive"; else cat "$rules"; fi ;;
     allow) case "$*" in
             "allow from "*) rule="$(printf "%-26s ALLOW       %s" "$7/tcp" "$3")" ;;
             "allow in on tailscale0") rule="Anywhere on tailscale0     ALLOW       Anywhere" ;;
             *) rule="$(printf "%-26s ALLOW       Anywhere" "$2")" ;;
         esac
         grep -qxF "$rule" "$rules" || echo "$rule" >> "$rules" ;;
-    --force) rm -f "'"$SANDBOX"'/ufw-off" ;;
+    --force) echo ENABLED=yes > "'"$UFW_CONF"'" ;;
 esac'
 # The step's rules for SSH on port 22
 range_rules() {
@@ -154,10 +163,10 @@ assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules allowing SSH 
 assert_not_contains "$RUN_OUTPUT" "install and enable ufw"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 # With ufw off, the step turns it on too
-touch "$SANDBOX/ufw-off"
+ufw_off
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw, denying incoming connections"
-rm "$SANDBOX/ufw-off"
+ufw_on
 
 # Something else pending and approved, credentials not cached: the rules are checked with sudo
 # after the confirm, and set only when they're missing
@@ -201,12 +210,12 @@ assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
 # ufw on with IPV6=no leaves sshd open on the global IPv6 address: status says so, and the step
 # leaves the file to you
-echo IPV6=no > "$UFW_DEFAULTS"
+ufw_defaults no
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
 assert_exit 0 main
-assert_eq IPV6=no "$(cat "$UFW_DEFAULTS")" "ufw's defaults after a run"
-echo IPV6=yes > "$UFW_DEFAULTS"
+assert_file_contains "$UFW_DEFAULTS" IPV6=no
+ufw_defaults yes
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \
     "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-rules"
@@ -263,7 +272,7 @@ logins() { printf '%s\n' "$@" > "$SANDBOX/logins"; }
 no_sessions() { rm -f "$SANDBOX"/ss-[0-9]* "$SANDBOX/logins"; }
 # Turn ufw off and run the step, which then sets the firewall up
 firewall_run() {
-    touch "$SANDBOX/ufw-off"
+    ufw_off
     : > "$STUB_LOG"
     run main
 }
@@ -284,6 +293,18 @@ assert_eq 0 "$RUN_STATUS" "the step from the console"
 assert_file_contains "$STUB_LOG" "ss -Htn state established ( sport = :22 )"
 assert_file_not_contains "$STUB_LOG" "sudo ss "
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
+
+# The files say ufw is on while ufw.service is stopped, as after systemctl stop ufw, which unloads
+# the rules: status says it's off, and the step turns it on again and starts the unit
+touch "$SANDBOX/ufw-unit-inactive"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
+[ ! -e "$SANDBOX/ufw-unit-inactive" ] || fail "the step left ufw.service stopped"
+assert_exit 0 status
 
 # Sessions from the private ranges or the tailnet, over IPv4, IPv6, and IPv4-mapped IPv6, keep
 # working, so ufw goes on. A link-local one does whatever interface it came in on, such as a VPN's,
@@ -367,7 +388,7 @@ firewall_unchanged
 
 # With ufw on, a session from outside doesn't stop the missing rules: allow rules can't cut anyone
 # off. ufw isn't turned on again, nor its policy set.
-rm -f "$SANDBOX/ufw-off"
+ufw_on
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 203.0.113.9
 rules_missing

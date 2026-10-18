@@ -66,12 +66,12 @@ not_cached() { rm -f "$SANDBOX/cached"; }
 
 # Everything else is set up
 # ssh.socket listens on the ports in $SANDBOX/socket-ports, one per line, as systemctl show lists
-# its addresses. ufw.service is enabled, and active unless $SANDBOX/ufw-unit-inactive exists, which
-# enable --now removes.
+# its addresses. ufw.service is enabled unless $SANDBOX/ufw-unit-disabled exists, and active
+# unless $SANDBOX/ufw-unit-inactive does. enable --now removes both.
 stub systemctl 'case "$1" in
-    is-enabled) [ "$*" == "is-enabled -q ufw.service" ] || echo masked ;;
+    is-enabled) if [ "$*" == "is-enabled -q ufw.service" ]; then [ ! -e "'"$SANDBOX"'/ufw-unit-disabled" ]; else echo masked; fi ;;
     is-active) [ "$*" != "is-active -q ufw.service" ] || [ ! -e "'"$SANDBOX"'/ufw-unit-inactive" ] ;;
-    enable) [ "${!#}" != ufw.service ] || rm -f "'"$SANDBOX"'/ufw-unit-inactive" ;;
+    enable) [ "${!#}" != ufw.service ] || rm -f "'"$SANDBOX"'/ufw-unit-inactive" "'"$SANDBOX"'/ufw-unit-disabled" ;;
     show) [ "$2" != ssh.socket ] || sed "s/.*/[::]:& (Stream)/" "'"$SANDBOX"'/socket-ports" ;;
 esac'
 echo 22 > "$SANDBOX/socket-ports"
@@ -402,6 +402,15 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/ufw-unit-inactive" ] || fail "the step left ufw.service stopped"
+assert_exit 0 status
+# ufw.service running but disabled, so the rules aren't loaded after a reboot: the same
+touch "$SANDBOX/ufw-unit-disabled"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
+[ ! -e "$SANDBOX/ufw-unit-disabled" ] || fail "the step left ufw.service disabled"
 assert_exit 0 status
 
 # Sessions from the private ranges or the tailnet, over IPv4, IPv6, and IPv4-mapped IPv6, keep

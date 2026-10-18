@@ -52,6 +52,9 @@ ALLOWED_BEFORE=(
     "git: git uses gh for GitHub credentials|Logged in to GitHub with gh"
     "git: GitHub SSH remotes go over HTTPS, through gh's credential helper (*)|Logged in to GitHub with gh"
 )
+# t3-code's status line for a t3 serve started by hand, up to the command line it shows in
+# parentheses. tests/test-smoke-patterns.sh checks it against the step's own formatter.
+T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
 
 if ! command -v orb &>/dev/null; then
     echo "OrbStack's orb command isn't installed. Install OrbStack (brew install --cask orbstack)." >&2
@@ -349,7 +352,7 @@ else
         # A status report with items missing exits 3
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
-        grep -qE '^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand;' <<< "$VM_OUTPUT" ||
+        grep -qE "$T3_MANUAL_SERVE_STATUS" <<< "$VM_OUTPUT" ||
             t3_fail "t3-code's status doesn't flag the t3 serve started by hand"
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true

@@ -51,9 +51,10 @@ notifications_pending() {
 
 open_manual_steps() {
     local bundle_id pending_notifications="" readable=true extension_installed=false open_extension=false targets=""
-    # Unreadable settings would count all four apps as pending, so don't offer to open them
-    if ! pending_notifications="$(notifications_pending com.mitchellh.ghostty \
-        com.anthropic.claudefordesktop com.openai.codex com.t3tools.t3code)"; then
+    # Unreadable settings would count all three apps as pending, so don't offer to open them.
+    # Ghostty's are the main README's manual step.
+    if ! pending_notifications="$(notifications_pending com.anthropic.claudefordesktop \
+        com.openai.codex com.t3tools.t3code)"; then
         pending_notifications=""
         readable=false
     fi
@@ -66,9 +67,9 @@ open_manual_steps() {
     print_section macOS
     if ! "$readable"; then
         echo "  Couldn't read the notification settings, which macOS lets only a terminal with Full Disk Access read."
-        echo "  In System Settings → Notifications, set Ghostty, Claude, ChatGPT, and T3 Code to Allow notifications + Persistent."
+        echo "  In System Settings → Notifications, set Claude, ChatGPT, and T3 Code to Allow notifications + Persistent."
     elif [ -z "$pending_notifications" ]; then
-        echo "  Notifications for Ghostty, Claude, ChatGPT, and T3 Code are already allowed and Persistent."
+        echo "  Notifications for Claude, ChatGPT, and T3 Code are already allowed and Persistent."
     fi
     if "$extension_installed"; then
         echo "  Claude in Chrome extension already installed."

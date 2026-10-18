@@ -42,7 +42,7 @@ CLAUDE_DESKTOP_SETTINGS='
     | .preferences.ccKeepAwakeOnBattery = true
     | .preferences.ccdScheduledTasksEnabled = true
     | .preferences.menuBarEnabled = false
-    | .preferences.quickEntryShortcut.accelerator = "Alt+Space"
+    | .preferences.quickEntryShortcut |= ((if type == "object" then . else {} end) | .accelerator = "Alt+Space")
     | .preferences.coworkBrowserToolsEnabled = true
     | .preferences.coworkPreferredBrowser = "chrome"
     | .preferences.coworkWebSearchEnabled = true

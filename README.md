@@ -25,7 +25,7 @@ Set up the Mac first, then the Ubuntu machine: Ubuntu's **SSH key** manual step 
 ### macOS
 
 1. Run `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. The first `git` command asks to install the Command Line Tools. Install them, then run the clone again.
-2. Sign in to the App Store and buy [Dato](https://apps.apple.com/app/dato/id1470584107) once, so the `homebrew` step can install it with the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. Buy it only if you want Dato. Without it, the `homebrew` step still passes but warns that the App Store apps aren't installed, and `--status` lists them as missing.
+2. Sign in to the App Store, so the `homebrew` step can install the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional. Buy it there once if you want it. Without it, the `homebrew` step notes it isn't installed, and `--status` lists it as `info`, which doesn't need attention.
 3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
 4. Give Ghostty Full Disk Access, then quit and reopen it. The first of the macOS [manual steps](#macos-1) says how.
 5. Do the rest of the macOS [manual steps](#macos-1), commit signing included.
@@ -75,13 +75,13 @@ bash setup.sh
 
 Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, and the run ends by listing the failed steps and the command that re-runs them.
 
-**Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, and Docker's disk usage. `--quick` skips the slowest checks, Docker's disk usage among them.
+**Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 
 **Files you also edit.** Setup copies most configs over the installed ones, and backs up a file you edited first, after asking when there's a terminal. `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
-**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs or trusts them without a pinned checksum or key fingerprint, as each vendor's instructions do, so a vendor's HTTPS server decides what runs.
+**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's first `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs the installers and the `.deb` without a pinned checksum, as each vendor's instructions do, so the vendor's HTTPS server decides what runs. An apt key must match the fingerprint its step pins. The skills CLI comes from npm through `npx`, pinned by version but not by checksum, and the Ghostty snap from the Snap Store.
 
 **XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
 
@@ -101,12 +101,12 @@ just alerts [test]        # bash ubuntu/setup-alerts.sh, see "Phone alerts" in M
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs.
+The same `bash setup.sh` sets up Ubuntu, the only Linux supported. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `zed`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs. The `homebrew` step still installs the Zed cask.
 
 What differs from macOS:
 
 - **Steps.** Ubuntu runs `homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker chrome logitech manual-steps`. Ghostty and Zed are only for when you sit at the machine.
-- **System packages.** Before Homebrew, the `homebrew` step installs these apt packages, after asking: `build-essential procps curl file git zsh lsof bsdextrautils unzip jq locales fontconfig`.
+- **System packages.** Before Homebrew, the `homebrew` step installs these apt packages, after asking: `build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig`.
 - **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only `macmon`, `terminal-notifier`, `pam-reattach`, and `mas`. zsh comes from apt. Of the casks, Ubuntu gets `zed` and `font-monaspace` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
 - **PATH.** Homebrew comes first, as on macOS, so brew's `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
 - **Clipboard.** Copying in tmux and yanking in vim go through OSC 52, which Ghostty puts on the Mac's clipboard.
@@ -120,13 +120,13 @@ The Ubuntu machine stays on so the Mac and the phone can reach its agents at any
 - **Power cuts.** With a UPS on USB, the machine shuts down on a low battery and starts again when mains returns. If the UPS keeps its power on, a fallback starts the machine 15 minutes later, but only on a motherboard that wakes from an RTC alarm. The **Power cuts** manual step tests both.
 - **Kernel panics.** The machine reboots 10 seconds after one.
 - **Disk health.** smartd watches the drives and pushes its warnings to your phone. It may not repeat a warning, so act on the first one.
-- **Health alerts.** A daily check pushes what needs attention to your phone when it changes, again each week while it lasts, and once more when it's all clear. Each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
+- **Health alerts.** A daily check pushes what needs attention to your phone when it changes, again each week while it lasts, and once more when it's all clear. It runs without root, so it skips the checks that need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. A push names them. To check them, run `sudo -v`, then `just status`. Each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
 - **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.
-- **Tailscale.** Once you've logged in, Tailscale updates itself, and you can run `tailscale serve` without `sudo`. So can anything else running as you, and it can run `tailscale funnel` too, which opens a port to the internet, if the tailnet's policy grants funnel. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
-- **Firewall.** ufw lets SSH in only from private addresses, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw allows only private IPv4, ULA, and link-local ranges.
-- **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`. For containers to reach a port on the host, run `sudo ufw allow in on docker0`.
+- **Tailscale.** Once you've logged in, Tailscale updates itself, and you can run `tailscale serve` without `sudo`. So can anything else running as you. It can also run `tailscale funnel`, which opens a port to the internet if the tailnet's policy grants funnel, and `tailscale set --ssh`, which turns on Tailscale SSH. The **Tailscale** manual step covers the policy. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
+- **Firewall.** ufw lets SSH in only from `10.0.0.0/8`, `192.168.0.0/16`, and IPv6's unique local and link-local ranges, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. It leaves out `172.16.0.0/12`, which the `docker` step limits Docker's networks to, so containers can't reach sshd. On a LAN in that range, SSH in over Tailscale. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw lets in no global IPv6 address.
+- **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent, so the step asks about it separately. Without it, use `sudo docker`. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`, and `just status` flags a running container's port that listens on every address. For containers to reach a port on the host, run `sudo ufw allow in on docker0`. Docker networks get their subnets only from `172.17.0.0/16` to `172.31.0.0/16`, outside the SSH ranges. The default bridge takes the first, so creating a 15th network of your own fails.
 - **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
 
 Over SSH from the Mac, both machines' tmux use the `Ctrl+a` prefix, so press it twice to reach the inner one.
@@ -156,7 +156,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - [Git](https://git-scm.com/) config with the [delta](https://github.com/dandavison/delta) pager, `zdiff3` and `histogram` diffs, `rerere`, auto-squash and `updateRefs` on rebase, rebase on pull, and object checks on fetch
 - [difftastic](https://github.com/Wilfred/difftastic) as the diff tool: `git dft`, `git dd`, and `git dlog`
 - `git cob` and `git cobr` pick a local or remote branch with fzf and switch to it. `git co` runs `switch`, `git unstage` runs `restore --staged`, and `git del` deletes a merged branch
-- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt path`, `list`, `rm`, and `prune` do the rest; `git wt` alone prints its usage
+- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt base` prints the ref `git wt add` branches from when you give no base. `git wt rm --delete-merged-branch <name>` also deletes the branch when another branch has all its commits. `git wt path`, `list`, and `prune` do the rest; `git wt` alone prints its usage
 - Copied to `~/.config/git/config`, with a global ignore file at `~/.config/git/ignore`
 - Put settings for one machine in `~/.gitconfig.local`. To clone a repo with malformed objects, run `git -c transfer.fsckObjects=false clone <url>`
 
@@ -170,7 +170,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 
 ### SSH
 
-- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot
+- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot. The block starts with `IgnoreUnknown UseKeychain`, so an ssh other than Apple's, such as Homebrew's, still reads the file
 - `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
 
 ### vim
@@ -196,13 +196,13 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - Aliases and functions include `g` (`git`, or `git status -sb`), `c` (`bat -pp`), `t` (`eza --tree`), `port <n>` and `killport <n>`, `o [path]`, `scratch` (a shell in a temp dir), `reload`, and `ts` (`tmux-sessionizer`)
 - `rm` deletes immediately. On macOS, use `trash` for a delete you can undo
 - `~/.zshrc.local`, if it exists, is sourced near the end. Put secrets and settings for one machine there
-- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. Starship reads `~/.config/starship.toml`
+- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. `~/.zprofile`, `main.zsh`, and on Ubuntu `~/.zshenv` source `path.zsh`, which sets PATH. Starship reads `~/.config/starship.toml`
 
 ### Ghostty
 
 - [Ghostty](https://ghostty.org/) with the GitHub Dark theme and Monaspace, a native tab bar, copy-on-select, and SSH integration, which installs Ghostty's terminfo on remote hosts
-- Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), and `Cmd+Shift+Enter` zooms a split
-- `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME
+- Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), `Cmd+Ctrl+arrows` resize a split, `Cmd+Shift+=` makes the splits equal, and Ghostty's own `Cmd+Shift+Enter` zooms one
+- `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME. It takes over macOS's `` Cmd+` ``, which switches between an app's windows. That's intended
 - A notification when a command that ran over 10 seconds finishes while Ghostty is unfocused
 - Copied to `~/.config/ghostty/config.ghostty`
 
@@ -217,7 +217,8 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
 - Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
-- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+T` and `Ctrl+Opt+E` read
+- In Zed's terminal, `Shift+Enter` adds a newline in the Claude Code and Codex CLIs
+- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` read
 
 ### Stream Deck
 
@@ -229,25 +230,17 @@ macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dot
 | **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, the selected file's folder, or the window's folder | Opens a Ghostty window at the thread's folder |
 | **Files** | Opens the tab's folder in Finder | Reveals the open file in Finder | Opens the selected folder or reveals the selected file, or opens the window's folder | Opens the thread's folder in Finder |
 
-A T3 Code thread's folder is its worktree, or its project's folder when it has none.
+A T3 Code thread's folder is its worktree, or its project's folder when it has none. With no folder to use, such as when another app is in front or the folder is on another machine over SSH, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** keys do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. App keys show each app's own icon, and [`stream-deck/icons`](stream-deck/icons/README.md) lists where each came from.
 
-The keys of apps show each app's official icon or logo, taken from the app's own repo or the brand's published logo. [`stream-deck/icons`](stream-deck/icons/README.md) keeps the originals and lists where each came from.
-
-Sometimes there's no path to use: another app is in front, Zed has no file open, T3 Code shows no thread, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. The key shows a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
-
-The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`, and Hammerspoon's `Ctrl+Opt+T` and `Ctrl+Opt+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
-
-**Overview** shows CPU and memory use, and a press opens the **System** page of live stats. The plugin bundles the page as a profile, and **Back** returns to the profile you came from:
+**Overview** shows CPU and memory use, and a press opens the **System** page of live stats, laid out for the 15-key Stream Deck:
 
 | | | | | |
 | :- | :- | :- | :- | :- |
 | Back | CPU | Memory | Swap | Activity Monitor |
-| Top CPU | GPU | Temperature | Power | Disk |
+| Top Process | GPU | Temperature | Power | Disk |
 | Network | | | | |
 
-Each stat key updates every 2 seconds while it's on screen, and a press opens Activity Monitor. Green, yellow, and red show how close each stat is to trouble. Memory's color is macOS's memory pressure, as in Activity Monitor, since macOS fills free memory with cache. CPU and GPU draw the last minute as a line. GPU, Temperature, and Power come from [macmon](#cli-tools-installed-via-brew), and show a dash without it. The stat keys are also in the category, to put on any page. The page is laid out for the 15-key Stream Deck. Stream Deck installs it the first time you press **Overview** and keeps its own copy after, so a change to `stream-deck/profile` reaches Stream Deck only once you delete the **System** profile in Stream Deck's settings and press **Overview** again. After editing the page, run `bash stream-deck/build-profile.sh`.
-
-Stream Deck runs the plugin's `bin/open-in` and `bin/open-app`, so macOS asks Stream Deck for the permissions they need. Accessibility lets them read Zed's window title and the thread T3 Code shows, and press the new tab's keys, and Automation lets them control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+Each stat key updates every 2 seconds while it's on screen, and turns yellow or red as the stat nears trouble. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need [macmon](#cli-tools-installed-via-brew). A press opens Activity Monitor, and **Back** returns to the profile you came from. The stat keys are also in the category, to put on any page.
 
 ### Hammerspoon
 
@@ -255,14 +248,14 @@ macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets 
 
 | Hotkey | What it does |
 | :- | :- |
-| `Ctrl+Opt+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
-| `Ctrl+Opt+B` | Opens Google Chrome |
-| `Ctrl+Opt+N` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
-| `Ctrl+Opt+T` | Opens Ghostty at the folder in front, as the Stream Deck's **Terminal** key does |
-| `Ctrl+Opt+C` | Opens T3 Code |
-| `Ctrl+Opt+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
+| `Ctrl+Opt+Cmd+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
+| `Ctrl+Opt+Cmd+B` | Opens Google Chrome |
+| `Ctrl+Opt+Cmd+N` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
+| `Ctrl+Opt+Cmd+T` | Opens Ghostty at the folder in front, as the Stream Deck's **Terminal** key does |
+| `Ctrl+Opt+Cmd+C` | Opens T3 Code |
+| `Ctrl+Opt+Cmd+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
 
-The [Stream Deck](#stream-deck) has keys for the same six. `Ctrl+Opt+T` and `Ctrl+Opt+E` run a copy of the plugin's `bin/open-in`, which the step puts in `~/.hammerspoon/bin`, and print its log line to Hammerspoon's console. A running Hammerspoon reloads the config when the step changes it, and the config sets Hammerspoon to open at login. The new tab's keystrokes, and reading Zed's window title and T3 Code's thread, need Accessibility, a [manual step](#macos-1). `Ctrl+Opt+Space` is macOS's shortcut for the next input source, so the `macos` step turns that off.
+The hotkeys use `Ctrl+Opt+Cmd` because [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`.
 
 ### tmux
 
@@ -367,10 +360,10 @@ macOS only. Installed with brew casks:
 - [Elgato Stream Deck](https://www.elgato.com/s/downloads): Stream Deck keys, with the [Stream Deck](#stream-deck) plugin
 - [Hammerspoon](https://www.hammerspoon.org/): the [hotkeys](#hammerspoon) that open Claude, Chrome, Ghostty, T3 Code, and Zed
 
-Installed from the Mac App Store with mas, once you're signed in to the App Store and have bought the paid ones (see [First run](#macos)):
+Installed from the Mac App Store with mas, once you're signed in to the App Store (see [First run](#macos)):
 
 - [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704): keeps the Mac awake
-- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar
+- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar. It's paid and optional, and installs only once you buy it
 - [Windows App](https://apps.apple.com/app/windows-app/id1295203466): Microsoft's RDP client, to reach the Ubuntu desktop through GNOME's Remote Login
 
 ### macOS defaults
@@ -378,13 +371,11 @@ Installed from the Mac App Store with mas, once you're signed in to the App Stor
 The `macos` step sets these:
 
 - **Finder:** hidden files, extensions, path and status bars, the full path in the window title, list view, folders first, search the current folder, no warning when changing an extension
-- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, no next input source on `Ctrl+Opt+Space`, so [Hammerspoon](#hammerspoon) can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
+- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
 - **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
 - **Screenshots:** PNG in `~/Screenshots`, without window shadows
 - **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
 - **Misc:** no `.DS_Store` on network or USB volumes, expanded save and print dialogs, new documents saved to disk rather than iCloud, plain-text TextEdit, all processes in Activity Monitor
-
-The TextEdit setting needs [Full Disk Access](#macos-1) for the terminal.
 
 ### Touch ID for sudo
 
@@ -409,12 +400,12 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 6. Open OrbStack once and finish its setup, so `docker` works.
 7. Open [Raycast](https://www.raycast.com/), grant permissions, and [set its hotkey](https://manual.raycast.com/settings) to `Cmd+Space`, which the `macos` step frees from Spotlight.
 8. Open [Rectangle](https://rectangleapp.com/), grant accessibility permissions, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Dato, and Tailscale.
+9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato if you bought it.
 10. Open Stats and turn on the modules you want (optional).
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
 13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press **Editor**, **Terminal**, and **Files** once each with Ghostty, Zed, and Finder in front, then press **New Tab** and **Gmail**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and T3 Code's thread, and paste into the new tab.
-14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+N` can paste into the new tab and `Ctrl+Opt+T` and `Ctrl+Opt+E` can read Zed's window title and T3 Code's thread. Press `Ctrl+Opt+T` and `Ctrl+Opt+E` once each with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. The config sets Hammerspoon to open at login.
+14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+Cmd+N` can paste into the new tab and `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` can read Zed's window title and T3 Code's thread. Press `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` once each with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. The config sets Hammerspoon to open at login.
 
 **Shell**
 
@@ -444,7 +435,7 @@ Once, before or right after setup:
 3. **Disk encryption.** Store the installer's recovery key off the machine. Step 1 of [First run](#ubuntu) covers the choice in the installer.
 4. **Login shell.** Run `chsh -s /usr/bin/zsh`, if you skipped it during setup.
 5. **Shell history and vim-go.** Run `atuin import auto` once, and `:GoInstallBinaries` in vim once.
-6. **Tailscale.** Run `sudo tailscale up`. In the admin console, **Disable key expiry** for the machine, and review the access policy so only the devices you need reach it.
+6. **Tailscale.** Run `sudo tailscale up`. In the admin console, **Disable key expiry** for the machine, and review the access policy so only the devices you need reach it. Anything running as you can turn on Tailscale SSH with `tailscale set --ssh`, which skips sshd's settings, so remove `root` from `users` in the policy's `ssh` rules (the default policy lets Tailscale SSH log in as root).
 7. **SSH key.** On the Mac, run these, where `<alias>` is the name you pick for the machine:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <tailnet-name>`.
@@ -458,7 +449,7 @@ Once, before or right after setup:
 11. **Logitech.** At the Ubuntu desktop, open Solaar and pair your devices.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need a desktop session, and a reboot ends it. Turn on GNOME's Remote Login in **Settings → System → Remote Desktop**, set its username and password, and connect over Tailscale with the Mac's Windows App. Or turn on automatic login in GDM, which starts a session at boot but leaves the login keyring locked.
 13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts`. Paste the topic name at its prompt, which hides it, or a full `https://` URL for a topic on another ntfy server. Then run `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
-14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Test it: unplug the UPS from the wall and wait for the low-battery push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` starts the shutdown at once). Plug it back in, and check that the machine starts and `just status` reports the UPS on mains. Separately, check the fallback for a UPS that keeps its power on, at the machine: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power.
+14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Test it: unplug the UPS from the wall and wait for the low-battery push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` starts the shutdown at once). Plug it back in, and check that the machine starts and `just status` reports the UPS on mains. Separately, check the fallback for a UPS that keeps its power on, at the machine: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power. If the UPS keeps its power on while mains is still out, the fallback loops. The machine starts on battery, shuts down again on the low battery, and repeats until the battery runs out. So in the test, make sure the UPS cuts its output. If it doesn't, look in its settings for one that turns the output off on shutdown.
 15. **Backups.** Back up `~`, including `~/.t3` and `~/.worktrees`, and `/var/lib/docker/volumes` off the machine, with restic or Borg on a schedule. Restore a few files once to check it.
 16. **Livepatch (optional).** With a free Ubuntu Pro token, run `sudo pro attach <token>` and `sudo pro enable livepatch` for kernel fixes without a reboot.
 
@@ -479,9 +470,8 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - In a scratch repo, `git commit --allow-empty -m test`, then `git log --show-signature -1`, shows `Good "git" signature`.
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
-- With a file open in Zed, the Stream Deck **Files** key reveals it in Finder, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed. With a thread open in T3 Code, **Editor**, **Terminal**, and **Files** open its worktree.
-- With a URL copied, `Ctrl+Opt+N` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Space` and the **Claude** key bring Claude to the front, and `Ctrl+Opt+C` and the **T3 Code** key bring T3 Code to the front. With a file open in Zed, `Ctrl+Opt+T` opens Ghostty at its folder, and in that Ghostty tab, `Ctrl+Opt+E` opens the folder in Zed. With a thread open in T3 Code, `Ctrl+Opt+T` and `Ctrl+Opt+E` open its worktree. With Gmail open in a background tab, the **Gmail** key switches Chrome to that tab instead of opening another.
-- The Stream Deck **Overview** key shows CPU and memory. Pressing it opens the **System** page, where every key shows a number within a few seconds, a stat key opens Activity Monitor, and **Back** returns to your keys.
+- With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder. **Overview** opens the **System** page, where every key shows a number within a few seconds.
+- With a URL copied, `Ctrl+Opt+Cmd+N` opens a new Chrome tab with the URL selected in the address bar.
 
 ### Ubuntu
 
@@ -496,18 +486,17 @@ Run these over SSH from the Mac.
 
 The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which updates everything installed. A stage that fails doesn't stop the rest, and `upgrade` lists the failed stages and returns 1:
 
-- Ubuntu's apt packages: `sudo apt-get update && sudo apt upgrade`.
-- Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step, then `brew cleanup`. On Ubuntu it then refreshes the font cache.
-- Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
+- Ubuntu's apt packages: `sudo apt upgrade`.
+- Homebrew: `brew upgrade`, then the formulae added to the Brewfile and the casks added to the homebrew step. On Ubuntu it then refreshes the font cache.
+- Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+), when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
-- vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `~/.vimrc` pins. The vim step copies that file from `vim/vimrc`.
-- tmux plugins: moves each plugin to the commit `tmux/plugins.lock` pins.
+- vim and tmux plugins, each to the commit the repo pins.
 - mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
-- mise's new Node on PATH: `mise hook-env`. If that fails, `upgrade` skips `npm update -g`, which would run the old Node.
-- Global npm packages: `npm update -g`
+- Global npm packages: `npm update -g`, run with the Node `mise upgrade` installed. When `upgrade` can't switch to that Node, it skips this.
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
+- Old Homebrew versions: `brew cleanup`. It runs last, so it also removes the old versions of the casks upgraded above.
 
 Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
 
@@ -541,6 +530,7 @@ cp ~/.hammerspoon/init.lua hammerspoon/init.lua   # macOS
 cp ~/.hammerspoon/bin/open-in stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in   # macOS
 cp ~/Library/LaunchAgents/dotfiles.ssh-add.plist ssh/dotfiles.ssh-add.plist   # macOS
 cp ~/Library/LaunchAgents/dotfiles.claude-desktop.plist ai_tools/claude-desktop/dotfiles.claude-desktop.plist   # macOS
+cp ~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist   # macOS
 cp ~/.config/environment.d/99-homebrew.conf ubuntu/environment.d/99-homebrew.conf   # Ubuntu
 cp ~/.claude/CLAUDE.md ai_tools/user-instructions.md   # or ~/.codex/AGENTS.md
 cp /etc/smartmontools/run.d/50dotfiles-notify ubuntu/smartd-notify.sh   # Ubuntu
@@ -553,6 +543,8 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 Packages installed by hand don't go back automatically. Add formulae and App Store apps to `homebrew/Brewfile`, casks to `CASKS` in `homebrew/install.sh`, and both to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
 Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
+
+**Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
 
 [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to test one.
 

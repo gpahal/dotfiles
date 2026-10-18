@@ -23,19 +23,25 @@ PAM_ROOT_UID=0
 # they own, change it
 PAM_TRUSTED_DIR=/
 
-# Print where Homebrew links pam-reattach's module, the copy's source. Prints nothing without
-# Homebrew.
-reattach_source() {
+# Where Homebrew links pam-reattach's module, the copy's source, or "" without Homebrew.
+# read_reattach_source sets it the first time it runs, since brew --prefix takes a moment and a
+# run needs the path several times. Call it before a command substitution needs the path, as the
+# value set in one doesn't last.
+REATTACH_SOURCE=""
+REATTACH_SOURCE_READ=false
+
+read_reattach_source() {
     local prefix
+    "$REATTACH_SOURCE_READ" && return 0
+    REATTACH_SOURCE_READ=true
     command -v brew &>/dev/null || return 0
     prefix="$(brew --prefix 2>/dev/null)" || return 0
-    echo "$prefix/lib/pam/pam_reattach.so"
+    REATTACH_SOURCE="$prefix/lib/pam/pam_reattach.so"
 }
 
 reattach_source_installed() {
-    local source
-    source="$(reattach_source)"
-    [ -n "$source" ] && [ -f "$source" ]
+    read_reattach_source
+    [ -n "$REATTACH_SOURCE" ] && [ -f "$REATTACH_SOURCE" ]
 }
 
 # Succeeds when $PAM_ROOT_UID owns $1 and neither its group nor others can write it
@@ -68,10 +74,8 @@ reattach_unsafe_parent() {
 # Succeeds when the copy needs installing: Homebrew's module exists, and the copy is missing,
 # differs from it, or isn't root's alone to write
 reattach_copy_needed() {
-    local source
     reattach_source_installed || return 1
-    source="$(reattach_source)"
-    ! { [ -f "$REATTACH_MODULE" ] && cmp -s "$source" "$REATTACH_MODULE" && reattach_module_safe; }
+    ! { [ -f "$REATTACH_MODULE" ] && cmp -s "$REATTACH_SOURCE" "$REATTACH_MODULE" && reattach_module_safe; }
 }
 
 # Print sudo_local as it should be, whatever it holds now: the template's header, then, when
@@ -129,16 +133,16 @@ pam_module_exists() {
 # Touch ID is optional in the macos step, which skips it when off. Every module sudo_local loads
 # must exist: one can be removed under it, and then sudo may fail, depending on the stack.
 status_touch_id() {
-    local off="$1" module source fix parent
+    local off="$1" module fix parent
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
     fi
     if ! has_tid; then
         status_item "$off" "Touch ID for sudo: off, an option that just touch-id turns on"
-    elif [ "$(cat "$SUDO_LOCAL")" == "$(desired_sudo_local)" ]; then
+    # Read before desired_sudo_local's subshell needs it, so the checks below reuse it
+    elif read_reattach_source && [ "$(cat "$SUDO_LOCAL")" == "$(desired_sudo_local)" ]; then
         status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
-        source="$(reattach_source)"
         if [ -f "$REATTACH_MODULE" ]; then
             # just touch-id reinstalls the copy from Homebrew's, so it refuses without that
             fix="re-run just touch-id"
@@ -150,7 +154,7 @@ status_touch_id() {
                 status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't root's alone to write; $fix"
             elif [ -n "$parent" ]; then
                 status_item missing "Touch ID in tmux: $parent, above the dir sudo loads pam-reattach from, isn't root's alone to write; run sudo chown root $parent && sudo chmod go-w $parent"
-            elif [ -n "$source" ] && [ -f "$source" ] && ! cmp -s "$source" "$REATTACH_MODULE"; then
+            elif reattach_source_installed && ! cmp -s "$REATTACH_SOURCE" "$REATTACH_MODULE"; then
                 status_item missing "Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id to install the new module"
             fi
         elif ! reattach_source_installed; then

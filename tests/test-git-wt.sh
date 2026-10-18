@@ -44,6 +44,9 @@ cd "$repo"
 assert_eq "$dir/foo" "$(git wt path foo)" "path for foo"
 assert_eq "$dir" "$(git wt path)" "path with no name"
 
+# base: origin's default branch, as a full ref
+assert_eq refs/remotes/origin/main "$(git wt base)" "base"
+
 # add: a new branch from origin's default branch, not the local HEAD, with no upstream
 out="$(git wt add foo 2> /dev/null)" || fail "git wt add foo failed"
 assert_eq "$dir/foo" "$out" "path git wt add prints"
@@ -94,6 +97,19 @@ assert_exit 0 git wt rm -f secrets
 [ ! -e "$out" ] || fail "git wt rm -f left $out"
 git branch -q -D secrets
 
+# rm --delete-merged-branch also deletes the worktree's branch, unless it has commits no other
+# branch, local or remote, has
+git wt add merged > /dev/null 2>&1 || fail "git wt add merged failed"
+assert_exit 0 git wt rm --delete-merged-branch merged
+git show-ref --verify --quiet refs/heads/merged && fail "git wt rm --delete-merged-branch kept branch merged"
+out="$(git wt add unmerged 2> /dev/null)" || fail "git wt add unmerged failed"
+commit_in "$out" mine
+assert_exit 0 git wt rm unmerged --delete-merged-branch
+assert_contains "$RUN_OUTPUT" "git wt: kept branch unmerged, which has commits no other branch has"
+[ ! -e "$out" ] || fail "git wt rm --delete-merged-branch left $out"
+git show-ref --verify --quiet refs/heads/unmerged || fail "git wt rm --delete-merged-branch deleted branch unmerged"
+git branch -q -D unmerged
+
 # A branch named like a tag: adding it again prints its path
 git tag v2
 git wt add v2 > /dev/null 2>&1 || fail "git wt add v2 failed"
@@ -111,6 +127,7 @@ for other in "$SANDBOX/elsewhere/z" "$SANDBOX/another/z" "$HOME/Dev/solo"; do
     out="$(git -C "$other" wt add feat 2> /dev/null)" || fail "git wt add in $other failed"
     assert_eq "$WORKTREES_DIR/$(other_key "$other")/feat" "$out" "path for a repo at $other"
     assert_eq "$(git -C "$other" rev-parse HEAD)" "$(git -C "$out" rev-parse HEAD)" "feat's base in $other"
+    assert_eq HEAD "$(git -C "$other" wt base)" "base in $other"
 done
 assert_contains "$(git -C "$SANDBOX/elsewhere/z" wt path)" "/_/z-" "path for a repo named z"
 [ "$(git -C "$SANDBOX/elsewhere/z" wt path)" != "$(git -C "$SANDBOX/another/z" wt path)" ] ||
@@ -126,6 +143,7 @@ assert_eq "origin/remote-only" "$(git -C "$dir/remote-only" rev-parse --abbrev-r
 
 # With a remote but no origin/HEAD, the base is origin/main, not the local HEAD
 git remote set-head origin -d
+assert_eq refs/remotes/origin/main "$(git wt base)" "base without origin/HEAD"
 out="$(git wt add nohead 2> /dev/null)" || fail "git wt add without origin/HEAD failed"
 assert_eq "$pushed" "$(git -C "$dir/nohead" rev-parse HEAD)" "nohead's base"
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -149,6 +167,13 @@ assert_exit 1 git wt add nested/broken no-such-base
 [ ! -e "$dir/nested" ] || fail "a failed git wt add left $dir/nested"
 [ -d "$dir/nohead" ] || fail "a failed git wt add removed another worktree"
 
+# A base that looks like an option fails, rather than reaching git worktree add as one: --lock
+# would make a worktree git wt rm -f can't remove
+assert_exit 1 git wt add opt --lock
+assert_contains "$RUN_OUTPUT" "'--lock' isn't a valid base"
+[ ! -e "$dir/opt" ] || fail "git wt add with an option as its base made $dir/opt"
+git show-ref --verify --quiet refs/heads/opt && fail "git wt add with an option as its base made branch opt"
+
 # A worktree deleted by hand is pruned, so adding it again works
 out="$(git wt add gone 2> /dev/null)" || fail "git wt add gone failed"
 rm -rf "$out"
@@ -167,10 +192,11 @@ mark() {
     touch "$gitdir/worktree-hook-created-branch"
     printf '%s\n' "$2" > "$gitdir/worktree-hook-session"
 }
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-other p-unmarked p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-other p-unmarked \
+    p-here; do
     git wt add "$name" > /dev/null 2>&1 || fail "git wt add $name failed"
 done
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-here; do
     mark "$name" s1
 done
 mark p-other s2
@@ -190,15 +216,25 @@ printf '/Draft notes.txt\n/zz.local\n' >> "$repo/.git/info/exclude"
 echo draft > "$dir/p-draft/Draft notes.txt"
 echo same > "$repo/zz.local"
 echo same > "$dir/p-draft/zz.local"
+# An ignored symlink is a copy of the main checkout's only when it points at the same place, even
+# when what each points at holds the same bytes
+printf '/env-a\n/env-b\n' >> "$repo/.git/info/exclude"
+for path in "$repo" "$dir/p-link" "$dir/p-samelink"; do
+    echo same > "$path/env-a"
+    echo same > "$path/env-b"
+done
+ln -s env-a "$repo/.env"
+ln -s env-b "$dir/p-link/.env"
+ln -s env-a "$dir/p-samelink/.env"
 commit_in "$dir/p-committed" mine
 # The worktree prune runs from stays, as git can't remove it
 out="$(cd "$dir/p-here" && git wt prune --session s1 2>&1)" || fail "git wt prune --session s1 failed: $out"
-for name in p-clean p-built p-cache; do
+for name in p-clean p-built p-cache p-samelink; do
     [ ! -e "$dir/$name" ] || fail "git wt prune --session s1 kept $name"
     git show-ref --verify --quiet "refs/heads/$name" && fail "git wt prune --session s1 kept branch $name"
 done
 assert_contains "$out" "git wt: removed $(cd -P "$dir" && pwd)/p-clean and branch p-clean"
-for name in p-changed p-committed p-draft p-other p-unmarked p-here; do
+for name in p-changed p-committed p-draft p-link p-other p-unmarked p-here; do
     [ -d "$dir/$name" ] || fail "git wt prune --session s1 removed $name"
     git show-ref --verify --quiet "refs/heads/$name" || fail "git wt prune --session s1 deleted branch $name"
 done
@@ -207,15 +243,15 @@ git wt prune 2> /dev/null || fail "git wt prune failed"
 for name in p-other p-here; do
     [ ! -e "$dir/$name" ] || fail "git wt prune kept $name"
 done
-for name in p-changed p-committed p-draft p-unmarked; do
+for name in p-changed p-committed p-draft p-link p-unmarked; do
     [ -d "$dir/$name" ] || fail "git wt prune removed $name"
 done
 assert_exit 1 git wt prune --session
 assert_exit 1 git wt prune --bogus
-for name in p-changed p-committed p-draft p-unmarked; do
+for name in p-changed p-committed p-draft p-link p-unmarked; do
     git wt rm -f "$name" 2> /dev/null
 done
-rm "$repo/zz.local"
+rm "$repo/zz.local" "$repo/.env" "$repo/env-a" "$repo/env-b"
 
 # A --separate-git-dir repo is keyed by its checkout, not by the git dir's parent
 git init -q -b main --separate-git-dir "$SANDBOX/sep.git" "$HOME/Dev/x/sep"

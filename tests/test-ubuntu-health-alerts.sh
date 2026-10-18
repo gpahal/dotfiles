@@ -5,23 +5,25 @@ set -euo pipefail
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
 # setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy, only when one
 # exits 1 or 3, and again only when the message changed or a week passed, with one all-clear when
-# nothing needs attention any more; boot pushes that the machine started. With no URL saved,
-# neither pushes.
+# nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
+# saved, neither pushes.
 # The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
 # and the two runners are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
-export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url"
+export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
 
 # A copy of the script in a repo whose runners print $SANDBOX/out/<runner> and exit with
 # $SANDBOX/exit/<runner>, 0 by default, logging how they were called
 REPO="$SANDBOX/repo"
 mkdir -p "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
 cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO/ubuntu/"
-cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO/ubuntu/lib/"
+cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" "$REPO/ubuntu/lib/"
 for runner in setup ai_tools; do
     script="$REPO/setup.sh"
     [ "$runner" == setup ] || script="$REPO/ai_tools/setup.sh"
@@ -55,7 +57,7 @@ ubuntu:
   unknown    Free space on /: df couldn't read it
   missing    Free space on /home: 8.3 GiB of 100.0 GiB (8%)
   info       ntfy URL set
-  unverified Disk health (SMART): reading it needs root
+  unverified Disk health (SMART): reading it needs root; run sudo -v, then status, to check it
 
 Needs attention: ubuntu. Run: bash setup.sh ubuntu
 EOF
@@ -89,6 +91,8 @@ assert_file_not_contains "$STUB_LOG" "Sleep masked"
 assert_file_not_contains "$STUB_LOG" "ntfy URL set"
 assert_file_not_contains "$STUB_LOG" "Disk health"
 assert_file_not_contains "$STUB_LOG" "Claude Code"
+# An item only root could check comes back unverified, so the push says what wasn't checked
+assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
 fi
@@ -201,14 +205,35 @@ assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "ubuntu: Item number 1 with"
 assert_file_not_contains "$STUB_LOG" "Item number 200 "
 assert_file_contains "$STUB_LOG" "more lines; bash setup.sh --status lists them"
+# Without such an item, the push doesn't say so
+assert_file_not_contains "$STUB_LOG" "Not checked here"
 echo 0 > "$SANDBOX/exit/setup"
 
 # boot pushes that the machine started, retrying while the network comes up
+echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 assert_file_contains "$STUB_LOG" "--data-raw $(hostname) started at "
 assert_file_not_contains "$STUB_LOG" "sleep"
+# Once per boot: the user manager starting it again, as after a restart of user@<uid>, pushes
+# nothing
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_contains "$RUN_OUTPUT" "Already pushed the boot notice for this boot."
+assert_file_not_contains "$STUB_LOG" "curl"
+# A new boot pushes again, as does every start when the boot's ID can't be read
+echo boot-2 > "$DOTFILES_BOOT_ID_FILE"
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
+rm "$DOTFILES_BOOT_ID_FILE"
+for _ in 1 2; do
+    : > "$STUB_LOG"
+    assert_exit 0 "$BASH" "$ALERT" boot
+    assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
+done
+echo boot-3 > "$DOTFILES_BOOT_ID_FILE"
 touch "$SANDBOX/curl-fails"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" boot
@@ -216,6 +241,10 @@ assert_contains "$RUN_OUTPUT" "Couldn't push the boot notice to ntfy after 20 tr
 assert_eq 20 "$(grep -c '^curl -' "$STUB_LOG")" "the boot notice's tries"
 assert_eq 19 "$(grep -c '^sleep 10' "$STUB_LOG")" "the waits between them"
 rm "$SANDBOX/curl-fails"
+# A failed push isn't recorded, so the next start tries again
+: > "$STUB_LOG"
+assert_exit 0 "$BASH" "$ALERT" boot
+assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 
 # No URL saved: boot pushes nothing. No argument prints the usage and exits 2.
 rm "$DOTFILES_NTFY_URL_FILE"
@@ -227,6 +256,7 @@ assert_exit 2 "$BASH" "$ALERT"
 # --- the ubuntu step's status: a failed last run of an installed alert service ---
 # systemctl --user show -p Result --value prints $SANDBOX/result/<unit>, empty when it's missing
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 HEALTH_UNIT_DIR="$SANDBOX/units"
 mkdir -p "$HEALTH_UNIT_DIR" "$SANDBOX/result"
 stub systemctl '[ "$*" != "--user show -p Result --value ${!#}" ] || cat "'"$SANDBOX"'/result/${!#}" 2> /dev/null || true'

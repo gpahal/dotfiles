@@ -31,22 +31,13 @@ T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # startup would leave telemetry on without launchd's copy. The app's name carries its release
 # stage, so the agent opens it by bundle ID.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
-T3_CODE_TELEMETRY_AGENT_CONTENT='<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>dotfiles.t3code-telemetry-off</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>/bin/launchctl setenv T3CODE_TELEMETRY_ENABLED false; exec /usr/bin/open --env T3CODE_TELEMETRY_ENABLED=false -b com.t3tools.t3code</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>'
+
+# Pass each file the step copies on macOS, as source and destination, to a function: copy_file to
+# copy it, or status_file to report it. The LaunchAgent isn't loaded now, since it would open T3
+# Code, which must be quit for the settings below. launchd loads it at the next login.
+t3_code_files() {
+    "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
+}
 # Where `t3 service install` writes the unit, whatever XDG_CONFIG_HOME is. The systemd user manager
 # doesn't see an XDG_CONFIG_HOME set in the shell either, so the drop-in goes beside the unit.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
@@ -70,7 +61,7 @@ Environment=T3CODE_HOST=$T3_CODE_HOST"
 
 # The default model and its effort, values you can change (replace_custom_value).
 # t3_code_choose_custom_values sets T3_CODE_REPLACE_MODEL and T3_CODE_REPLACE_EFFORT to whether to
-# write each over yours, and rebuilds T3_CODE_SERVER_FILTER to match.
+# write each over yours, which t3_code_server_filter reads.
 T3_CODE_MODEL="claude-opus-5-5"
 T3_CODE_MODEL_NAME="T3 Code's default model (defaultModelSelection.model)"
 T3_CODE_REPLACE_MODEL=false
@@ -161,7 +152,6 @@ t3_code_server_filter() {
     | .sourceControlWritingStyle.customInstructions = "Keep titles concise. Use short bullet points in the description."
 '
 }
-T3_CODE_SERVER_FILTER="$(t3_code_server_filter)"
 
 # Print the default model in the server settings, or nothing when it's unset or the file can't be
 # read
@@ -177,8 +167,8 @@ t3_code_effort() {
         "$T3_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Decide whether to replace a model or effort of your own, asking with a terminal, and rebuild
-# the server filter to match. A model of your own that stays leaves its effort alone.
+# Decide whether to replace a model or effort of your own, asking with a terminal, for
+# t3_code_server_filter. A model of your own that stays leaves its effort alone.
 t3_code_choose_custom_values() {
     T3_CODE_REPLACE_MODEL=false
     T3_CODE_REPLACE_EFFORT=false
@@ -188,7 +178,6 @@ t3_code_choose_custom_values() {
             T3_CODE_REPLACE_EFFORT=true
         fi
     fi
-    T3_CODE_SERVER_FILTER="$(t3_code_server_filter)"
 }
 
 # Status items naming a model or effort of your own. The effort counts only with the repo's model.
@@ -216,10 +205,16 @@ T3_CODE_CLIENT_FILTER='
 
 # The app's name can change between releases. Ask brew which app the t3-code
 # cask installs, and otherwise take any T3 Code*.app beside where brew puts it, or in
-# /Applications, except the separate nightly build.
+# /Applications, except the separate nightly build. A caller that already asked brew passes its
+# answer, cask_app_path's output, so brew isn't asked again.
+# Usage: t3_code_app_path [cask app path]
 t3_code_app_path() {
     local app dir=/Applications
-    app="$(cask_app_path t3-code)"
+    if [ $# -gt 0 ]; then
+        app="$1"
+    else
+        app="$(cask_app_path t3-code)"
+    fi
     if [ -n "$app" ] && [ -d "$app" ]; then
         echo "$app"
         return 0
@@ -238,18 +233,23 @@ t3_code_app_path() {
 # cask now gives, and fail otherwise. T3 Code can rename itself in an update, which can get there
 # before the cask does. The app is then installed, not gone, and
 # brew's record catches up at the next upgrade-ai-tools once the cask does.
+# Usage: t3_code_renamed_app [cask app path], as t3_code_app_path takes it
 t3_code_renamed_app() {
-    local app
-    app="$(t3_code_app_path)" || return 1
+    local app cask_app
+    if [ $# -gt 0 ]; then
+        cask_app="$1"
+    else
+        cask_app="$(cask_app_path t3-code)"
+    fi
+    app="$(t3_code_app_path "$cask_app")" || return 1
     brew list --cask t3-code &>/dev/null || return 1
-    [ "$app" != "$(cask_app_path t3-code)" ] || return 1
+    [ "$app" != "$cask_app" ] || return 1
     echo "$app"
 }
 
-# Succeeds when the LaunchAgent is current and launchd's environment has the variable now
+# Succeeds when launchd's environment has the variable now
 t3_code_telemetry_off() {
-    file_is "$T3_CODE_TELEMETRY_AGENT" "$T3_CODE_TELEMETRY_AGENT_CONTENT" &&
-        [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
+    [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
 }
 
 configure_t3_code() {
@@ -260,32 +260,27 @@ configure_t3_code() {
     app_name="${app_name%.app}"
     # The settings below apply even when this fails
     local result=0
+    echo "  LaunchAgent that opens T3 Code at login with telemetry off:"
+    t3_code_files copy_file || result=1
     if t3_code_telemetry_off; then
-        echo "  T3 Code already opens at login with telemetry off"
-    elif ! mkdir -p "$(dirname "$T3_CODE_TELEMETRY_AGENT")" ||
-        ! printf '%s\n' "$T3_CODE_TELEMETRY_AGENT_CONTENT" > "$T3_CODE_TELEMETRY_AGENT"; then
-        echo "  Couldn't write $T3_CODE_TELEMETRY_AGENT, so telemetry stays on, and T3 Code doesn't" >&2
-        echo "  open at login" >&2
-        result=1
+        echo "  Telemetry is already off in launchd's environment"
     elif ! launchctl setenv T3CODE_TELEMETRY_ENABLED false; then
         # The LaunchAgent still sets it at the next login
         echo "  Couldn't set T3CODE_TELEMETRY_ENABLED in launchd's environment, so telemetry stays on" >&2
         echo "  until the next login" >&2
         result=1
     else
-        # The agent isn't loaded now, since it would open T3 Code, which must be quit for the
-        # settings below; it runs at the next login
-        echo "  Turned off telemetry (restart T3 Code if it's running), and set T3 Code to open at login"
+        echo "  Turned off telemetry (restart T3 Code if it's running)"
     fi
 
     t3_code_choose_custom_values
-    if json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" &&
+    if json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" &&
         json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"; then
         echo "  The $T3_CODE_SERVER_SETTINGS_NAME and app settings are already set"
         return "$result"
     fi
     ensure_app_quit "${app_name:-T3 Code}" || return "$result"
-    json_merge "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" || return 1
+    json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || return 1
     json_merge "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER" || return 1
     echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and app settings"
     return "$result"
@@ -357,8 +352,13 @@ t3_code_service_active() {
 # shellcheck disable=SC2088 # shown, not expanded
 T3_CODE_SERVICE_LOG="~/.t3/userdata/logs/boot-service.log"
 
-# Start the service. wait_for_t3_code_service reports a start that fails.
+# Start the service. wait_for_t3_code_service reports a start that fails. A unit that hit its start
+# limit, as when another server held the port, is reset first, since systemd would otherwise refuse
+# to start it for 5 minutes.
 start_t3_code_service() {
+    if [ "$(systemctl --user show -p Result --value t3code.service 2>/dev/null)" == start-limit-hit ]; then
+        systemctl --user reset-failed t3code.service || true
+    fi
     systemctl --user start t3code.service || true
 }
 
@@ -505,9 +505,9 @@ configure_t3_code_ubuntu() {
 # with 2 when the drop-in isn't written and loaded, and then doesn't start a service it stopped.
 # Fails with 1 when only something else failed.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0 drop_in_ok=true
+    local settings_set=false stopped=false result=0 drop_in_ok=true tmp=""
     t3_code_choose_custom_values
-    json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" && settings_set=true
+    json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
     # Loading a current drop-in, as after a failed reload, needs no restart unless the running
     # server lacks its environment
     if t3_code_drop_in_current; then
@@ -531,11 +531,18 @@ update_t3_code_server() {
         stopped=true
     fi
     if ! "$settings_set"; then
-        json_merge "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER" || result=1
+        json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
     fi
     if ! t3_code_drop_in_current; then
-        { mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")" &&
-            printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"; } || drop_in_ok=false
+        # Through write_back, since a drop-in cut short without its host line would have the
+        # enabled unit serve on every interface at the next boot
+        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
+            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
+            rm -f "$tmp"
+            drop_in_ok=false
+        elif ! write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN"; then
+            drop_in_ok=false
+        fi
     fi
     if "$drop_in_ok" && ! t3_code_load_drop_in; then
         drop_in_ok=false
@@ -649,7 +656,7 @@ setup_t3_code_browser() {
 # Status's check that the service runs. --quick checks once that it's active, instead of
 # watching it for up to 10 s for a server that crashes on start.
 t3_code_service_running_now() {
-    if [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; then
+    if status_quick; then
         t3_code_service_active
     else
         wait_for_t3_code_service 2>/dev/null
@@ -694,21 +701,20 @@ status() {
         status_result
         return
     fi
-    # The app's path and the cask's state each ask brew which app it installs
-    local CASK_APP_CACHE=""
-    ! is_macos || ! command -v brew &>/dev/null || cache_cask_app_path t3-code
     if is_macos; then
-        local renamed
-        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app)"; then
+        # Asked once, for both the renamed app's check and the app's path
+        local renamed cask_app=""
+        ! command -v brew &>/dev/null || cask_app="$(cask_app_path t3-code || true)"
+        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app "$cask_app")"; then
             status_item ok "t3-code (cask), as ${renamed##*/}"
         else
-            status_cask t3-code "$(t3_code_app_path || true)"
+            status_cask t3-code "$(t3_code_app_path "$cask_app" || true)"
         fi
-        status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
+        status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
         t3_code_status_custom_values
         status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
-        status_check "T3 Code opens at login with telemetry off (LaunchAgent dotfiles.t3code-telemetry-off.plist)" \
-            t3_code_telemetry_off
+        t3_code_files status_file
+        status_check "T3 Code's telemetry off in launchd's environment" t3_code_telemetry_off
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
         status_result
         return
@@ -719,7 +725,7 @@ status() {
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
     status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
-    status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
+    status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
     t3_code_status_custom_values
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
         status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
@@ -752,12 +758,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up T3 Code..."
     require_cmd jq || return 1
     if is_macos; then

@@ -7,7 +7,7 @@ argument-hint: "[what to cover] [--check]"
 
 # Show me your work
 
-Reply with a numbered list of the decisions behind the work in this conversation, so the user can review a long or unattended run and check each claim. The reply is the deliverable: write no file.
+Reply with a numbered list of the decisions behind the work in this conversation, so the user can review a long or unattended run and check each claim. The reply is the deliverable: write no file in the repo.
 
 ## List the decisions
 
@@ -39,10 +39,10 @@ Correct a wrong item so it states what happened. Done when every item passes and
 
 End with an **Attention** section: the items the user should check first, by number. Flag decisions with weak or `none` evidence, verification claimed but never shown, choices that look risky now (premature, beyond scope, or treating a symptom), and assumptions the user never confirmed. `No flags.` is a valid answer.
 
-With `--check`, have a reviewer from the other model family scan the list before you write Attention, since a model reviewing its own work misses what it already believes. In a `mktemp -d` directory, `<tmp>`, write `prompt.md`: the list, the `git log --stat` of the commits it cites, and a brief to flag the problems above by item number, reading files in the repo to test the evidence. Make a second `mktemp -d` directory, `<answers>`, for the answer, and leave its path out of the prompt. The runner refuses an out-file under the prompt file's directory, which the reviewer can read. `--check` depends on the interrogate skill, whose runner is installed beside this skill. If the runner is missing, say so in Attention and give your own flags. Run it from the repo root:
+With `--check`, have a reviewer from the other model family scan the list before you write Attention, since a model reviewing its own work misses what it already believes. In a `mktemp -d` directory, `<tmp>`, write `prompt.md`: the list, the `git log --stat` of the commits it cites, and a brief to flag the problems above by item number, reading files in the repo to test the evidence. Make a second `mktemp -d` directory, `<answers>`, for the answer, and leave its path out of the prompt. The runner refuses an out-file under the prompt file's directory or the repo, which the reviewer can read. `--check` depends on the interrogate skill, whose runner is installed beside this skill. If the runner is missing, say so in Attention and give your own flags. Run it from the repo root:
 
 ```sh
 ${CLAUDE_SKILL_DIR}/../interrogate/scripts/run-reviewer.sh <claude|codex> <model> medium <tmp>/prompt.md <answers>/check.md
 ```
 
-In Codex, resolve `../interrogate/scripts/run-reviewer.sh` against this skill's `SKILL.md` path instead. Take the other family's model from the reviewer table in the interrogate skill's `SKILL.md` (`../interrogate/SKILL.md`, installed beside this skill). The runner needs network access, so in a sandbox, ask to run it outside (in Codex, request escalated permissions). Merge its flags into Attention, and start the section with `Reviewed by <model>.` If the run fails, say so in Attention and give your own flags.
+In Codex, resolve `../interrogate/scripts/run-reviewer.sh` against this skill's `SKILL.md` path instead. Take the other family's model from the reviewer table in the interrogate skill's `SKILL.md` (`../interrogate/SKILL.md`, installed beside this skill). The runner needs network access, so in a sandbox, ask to run it outside (in Codex, request escalated permissions). Merge its flags into Attention, and start the section with `Reviewed by <model>.` If the run fails, say so in Attention and give your own flags. Once Attention is written, remove `<tmp>` and `<answers>`.

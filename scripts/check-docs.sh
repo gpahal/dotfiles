@@ -17,7 +17,8 @@ set -euo pipefail
 #   homebrew/install.sh's UBUNTU_PACKAGES
 # - README.md "Maintenance" copies back each file the steps' *_files functions copy, from where
 #   the step copies it, and nothing else
-# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps
+# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps,
+#   and each stage runs what stage_code maps
 # - README.md's just lines, in "How setup works" and "Maintenance", name the justfile's recipes and
 #   the scripts they run
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
@@ -30,6 +31,8 @@ REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_DIR/scripts/lib/markdown.sh"
 # shellcheck source=lib/brew.sh
 source "$REPO_DIR/scripts/lib/brew.sh"
+# shellcheck source=lib/runners.sh
+source "$REPO_DIR/scripts/lib/runners.sh"
 errors=0
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -39,14 +42,24 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print a runner's default steps on an OS (Darwin or Linux), one per line, from its --help. A
-# uname that reports the OS stands in for the real one, so both lists come from one machine.
-runner_steps() {
-    mkdir -p "$tmp/$2"
-    printf '#!/bin/sh\n[ "$1" = -s ] && { echo %s; exit 0; }\nexec /usr/bin/uname "$@"\n' "$2" > "$tmp/$2/uname"
-    chmod +x "$tmp/$2/uname"
-    PATH="$tmp/$2:$PATH" "$BASH" "$REPO_DIR/$1" --help |
-        sed -n 's/^Steps, run in this order by default: //p' | tr ' ' '\n'
+# Print the section of Markdown file $1 under heading $2, given with its #s, without the heading:
+# each line down to the next heading of the same or a higher level. A # line in a code block, such
+# as a shell comment, isn't a heading.
+section() {
+    awk -v h="$2" 'BEGIN { level = index(h, " ") }
+        /^[[:space:]]*(```|~~~)/ { fence = !fence }
+        !fence && /^#+ / && index($0, " ") <= level { on = ($0 == h); next }
+        on' "$1"
+}
+
+# Print the words in list file $1, or, when it's empty, the text the check looked for in the doc
+# ($2), so a rewording that hides the list says what to restore
+doc_words() {
+    if [ -s "$1" ]; then
+        tr '\n' ' ' < "$1"
+    else
+        echo "(nothing found: it looked for $2)"
+    fi
 }
 
 # Print the backquoted words in a line of text, one per line
@@ -59,29 +72,32 @@ in_both() {
     grep -Fxf "$2" "$1" || true
 }
 
-# compare <what> <expected file> <actual file>
+# compare <what> <expected file> <actual file> <the text the check looks for in the doc>
 compare() {
     if ! cmp -s "$2" "$3"; then
         fail "$1 doesn't match STEPS. STEPS: $(tr '\n' ' ' < "$2")
-  The doc: $(tr '\n' ' ' < "$3")"
+  The doc: $(doc_words "$3" "$4")"
     fi
 }
 
-runner_steps setup.sh Darwin > "$tmp/setup-macos"
-runner_steps setup.sh Linux > "$tmp/setup-ubuntu"
-runner_steps ai_tools/setup.sh Darwin > "$tmp/ai-macos"
-runner_steps ai_tools/setup.sh Linux > "$tmp/ai-ubuntu"
+# A failed --help leaves the list empty, which the loop below reports
+runner_steps "$REPO_DIR/setup.sh" Darwin > "$tmp/setup-macos" || true
+runner_steps "$REPO_DIR/setup.sh" Linux > "$tmp/setup-ubuntu" || true
+runner_steps "$REPO_DIR/ai_tools/setup.sh" Darwin > "$tmp/ai-macos" || true
+runner_steps "$REPO_DIR/ai_tools/setup.sh" Linux > "$tmp/ai-ubuntu" || true
 for list in setup-macos setup-ubuntu ai-macos ai-ubuntu; do
     [ -s "$tmp/$list" ] || fail "Couldn't read the steps for $list from the runner's --help"
 done
 
 # README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"
-awk '/^## / { in_section = ($0 == "## How setup works") } in_section && /^\| `/' "$readme" |
+section "$readme" "## Ubuntu" > "$tmp/ubuntu-section"
+section "$readme" "## How setup works" | { grep '^| `' || true; } |
     sed 's/^| `\([^`]*\)`.*/\1/' > "$tmp/table"
 for os in macos ubuntu; do
     in_both "$tmp/table" "$tmp/setup-$os" > "$tmp/table-$os"
-    compare "README.md How setup works's step table, for $os," "$tmp/setup-$os" "$tmp/table-$os"
+    compare "README.md How setup works's step table, for $os," "$tmp/setup-$os" "$tmp/table-$os" \
+        'table rows starting "| `<step>`" under "## How setup works"'
 done
 cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 while IFS= read -r step; do
@@ -89,21 +105,24 @@ while IFS= read -r step; do
 done < "$tmp/table"
 
 # README.md "Ubuntu": the Steps item names the steps in one backquoted list
-line="$(awk '/^## / { in_section = ($0 == "## Ubuntu") } in_section && /^- \*\*Steps\.\*\* Ubuntu runs `/ { print; exit }' "$readme")"
+line="$(awk '/^- \*\*Steps\.\*\* Ubuntu runs `/ { print; exit }' "$tmp/ubuntu-section")"
 backquoted "$line" | head -1 | tr ' ' '\n' > "$tmp/ubuntu-list"
-compare "README.md Ubuntu's \"Steps.\" item" "$tmp/setup-ubuntu" "$tmp/ubuntu-list"
+compare "README.md Ubuntu's \"Steps.\" item" "$tmp/setup-ubuntu" "$tmp/ubuntu-list" \
+    '"- **Steps.** Ubuntu runs `<steps>`" under "## Ubuntu"'
 
 # ai_tools/README.md: one sentence lists every step, and the next says which Ubuntu skips
 ai_readme="$REPO_DIR/ai_tools/README.md"
 line="$(grep -m1 '^The steps, in order, are ' "$ai_readme" || true)"
 sentence="${line#The steps, in order, are }"
 backquoted "${sentence%%.*}" > "$tmp/ai-list"
-compare "ai_tools/README.md's step list" "$tmp/ai-macos" "$tmp/ai-list"
+compare "ai_tools/README.md's step list" "$tmp/ai-macos" "$tmp/ai-list" \
+    'a line starting "The steps, in order, are `<step>`, ..." in ai_tools/README.md'
 skips="${line#*Ubuntu skips }"
 [ "$skips" != "$line" ] || skips=""
 backquoted "${skips%%[;.]*}" > "$tmp/ai-skips"
 grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
-compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list"
+compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
+    '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
 
 # ai_tools/README.md "Ubuntu": the sentence after "Run `bash ai_tools/setup.sh` on the Ubuntu
 # machine too" names Ubuntu's steps
@@ -111,7 +130,8 @@ line="$(grep -m1 '^Run `bash ai_tools/setup.sh` on the Ubuntu machine too' "$ai_
 sentence="${line#*It runs }"
 [ "$sentence" != "$line" ] || sentence=""
 backquoted "${sentence%%.*}" > "$tmp/ai-ubuntu-section"
-compare "ai_tools/README.md Ubuntu's \"It runs\" list" "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-section"
+compare "ai_tools/README.md Ubuntu's \"It runs\" list" "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-section" \
+    '"It runs `<step>`, ..." in the line starting "Run `bash ai_tools/setup.sh` on the Ubuntu machine too" in ai_tools/README.md'
 
 # README.md "What's included" against the Brewfile and CASKS. A package and a name in the README
 # match when they're equal lowercased, with all but letters and digits dropped: the README's
@@ -148,7 +168,7 @@ brewfile="$REPO_DIR/homebrew/Brewfile"
 [ -s "$tmp/packages" ] || fail "Couldn't read the packages from homebrew/Brewfile and homebrew/install.sh"
 cut -d' ' -f2- "$tmp/packages" | canonical > "$tmp/package-names"
 
-awk '/^## / { in_section = ($0 == "## What'"'"'s included") } in_section' "$readme" > "$tmp/included"
+section "$readme" "## What's included" > "$tmp/included"
 [ -s "$tmp/included" ] || fail "README.md has no What's included section"
 
 # Print the link labels in the list items of a ### section of What's included, and its ####
@@ -181,33 +201,33 @@ while IFS= read -r label && IFS= read -r canonical_name <&3; do
 done < "$tmp/listed" 3< "$tmp/listed-names"
 
 # README.md "Ubuntu": the casks the Packages item says Ubuntu gets "here", against UBUNTU_CASKS
-line="$(awk '/^## / { in_section = ($0 == "## Ubuntu") } in_section && /Of the casks, Ubuntu gets / { print; exit }' "$readme")"
+line="$(awk '/Of the casks, Ubuntu gets / { print; exit }' "$tmp/ubuntu-section")"
 line="${line#*Of the casks, Ubuntu gets }"
 backquoted "${line%% here*}" | sort > "$tmp/ubuntu-casks-doc"
 cask_list "$REPO_DIR/homebrew/install.sh" UBUNTU_CASKS | sort > "$tmp/ubuntu-casks"
 cmp -s "$tmp/ubuntu-casks" "$tmp/ubuntu-casks-doc" ||
     fail "README.md Ubuntu's cask list doesn't match UBUNTU_CASKS. UBUNTU_CASKS: $(tr '\n' ' ' < "$tmp/ubuntu-casks")
-  The doc: $(tr '\n' ' ' < "$tmp/ubuntu-casks-doc")"
+  The doc: $(doc_words "$tmp/ubuntu-casks-doc" '"Of the casks, Ubuntu gets `<cask>` ... here" under "## Ubuntu"')"
 
 # README.md "Ubuntu": the formulae the Packages item calls Mac-only, against the Brewfile's
 # `if OS.mac?` blocks
-line="$(awk '/^## / { in_section = ($0 == "## Ubuntu") } in_section && /except the Mac-only / { print; exit }' "$readme")"
+line="$(awk '/except the Mac-only / { print; exit }' "$tmp/ubuntu-section")"
 line="${line#*except the Mac-only }"
 backquoted "${line%%.*}" | sort > "$tmp/mac-only-doc"
 brewfile_formulae "$brewfile" | awk '$2 == "mac" { print $1 }' | sort > "$tmp/mac-only"
 cmp -s "$tmp/mac-only" "$tmp/mac-only-doc" ||
     fail "README.md Ubuntu's Mac-only formulae don't match the Brewfile's OS.mac? blocks. The Brewfile: $(tr '\n' ' ' < "$tmp/mac-only")
-  The doc: $(tr '\n' ' ' < "$tmp/mac-only-doc")"
+  The doc: $(doc_words "$tmp/mac-only-doc" '"except the Mac-only `<formula>` ..." under "## Ubuntu"')"
 
 # README.md "Ubuntu": the System packages item's backquoted list, against UBUNTU_PACKAGES
-line="$(awk '/^## / { in_section = ($0 == "## Ubuntu") } in_section && /^- \*\*System packages\.\*\* / { print; exit }' "$readme")"
+line="$(awk '/^- \*\*System packages\.\*\* / { print; exit }' "$tmp/ubuntu-section")"
 line="${line#*installs these apt packages}"
 backquoted "$line" | head -1 | tr ' ' '\n' | sort > "$tmp/ubuntu-packages-doc"
 sed -n 's/^UBUNTU_PACKAGES="\(.*\)"$/\1/p' "$REPO_DIR/homebrew/install.sh" | tr ' ' '\n' | sort > "$tmp/ubuntu-packages"
 [ -s "$tmp/ubuntu-packages" ] || fail "Couldn't read UBUNTU_PACKAGES from homebrew/install.sh"
 cmp -s "$tmp/ubuntu-packages" "$tmp/ubuntu-packages-doc" ||
     fail "README.md Ubuntu's System packages item doesn't match UBUNTU_PACKAGES. UBUNTU_PACKAGES: $(tr '\n' ' ' < "$tmp/ubuntu-packages")
-  The doc: $(tr '\n' ' ' < "$tmp/ubuntu-packages-doc")"
+  The doc: $(doc_words "$tmp/ubuntu-packages-doc" '"- **System packages.** ... installs these apt packages `<packages>`" under "## Ubuntu"')"
 
 # README.md "Maintenance": the copy-back list copies each file a step copies into $HOME, or into
 # /etc, back to the repo, from where the step puts it. A step names the files it copies in *_files
@@ -224,10 +244,15 @@ for cmd in $SENTINELS git sudo; do
     printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$cmd" "$tmp/sentinels.log" > "$tmp/sentinels/$cmd"
     chmod +x "$tmp/sentinels/$cmd"
 done
-# Only the steps with such a function, since sourcing one takes a while
-find "$REPO_DIR" -mindepth 2 -maxdepth 3 -name install.sh -not -path '*/skills/*' -print0 |
-    xargs -0 grep -lE '^[a-z_]+_files\(\) \{' | sort > "$tmp/installs"
+# Only the repo's own steps, a new one not yet added included, so an install.sh .gitignore lists,
+# such as one under .scratch, isn't sourced. A tracked file deleted from the working tree is
+# skipped. Only those with such a function, since sourcing one takes a while.
+git -C "$REPO_DIR" ls-files --cached --others --exclude-standard -- '*/install.sh' |
+    awk -F/ -v repo="$REPO_DIR" 'NF <= 3 && !/\/skills\// { print repo "/" $0 }' |
+    while IFS= read -r f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done |
+    xargs -0 grep -lE '^[a-z0-9_]+_files\(\) \{' | sort -u > "$tmp/installs"
 for os in Darwin Linux; do
+    os_uname_shim "$tmp/$os" "$os"
     env -i HOME="$copy_home" PATH="$tmp/$os:$tmp/sentinels:/usr/bin:/bin" REPO_DIR="$REPO_DIR" "$BASH" -c '
         source "$REPO_DIR/lib/common.sh"
         common="$(compgen -A function)"
@@ -254,7 +279,7 @@ fi
 # <repo file> <tab> <home file>, from the repo with the same empty HOME. lazygit answers
 # --print-config-dir as it does on macOS. Each line must be a cp, or a loop around one, and only
 # those lines run.
-awk '/^## / { on = ($0 == "## Maintenance") } on && /^```/ { if (fence) exit; fence = 1; next } on && fence' "$readme" > "$tmp/copy-back"
+section "$readme" "## Maintenance" | awk '/^```/ { fences++; next } fences == 1' > "$tmp/copy-back"
 while IFS= read -r line; do
     case "$line" in
         "cp "* | "for "*"; do cp "*"; done") printf '%s\n' "$line" ;;
@@ -298,30 +323,31 @@ done < "$tmp/copied-back"
 
 # README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools in
 # scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds to
-# failed, directly or through _stage_failed, must map to text its Updating section has, and the
-# command that text quotes must be in the function's body. Each item of the section's first list
-# must describe a stage. A new stage goes in the map.
+# failed, directly or through _stage_failed, must map to text its Updating section has (stage_doc),
+# and to code the function's body has (stage_code). Each item of the section's first list must
+# describe a stage. A new stage goes in the map.
+# stage_doc's text is what a user sees, such as the command they'd run or what the stage updates,
+# so the docs can leave out how the script runs it.
 stage_doc() {
     case "$1:$2" in
-        upgrade:apt) echo 'sudo apt-get update && sudo apt upgrade' ;;
-        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
-        "upgrade:brew bundle") echo 'brew bundle install --no-upgrade' ;;
-        upgrade:casks) echo 'brew install --cask' ;;
+        upgrade:apt) echo 'apt packages' ;;
+        upgrade:brew) echo 'brew upgrade' ;;
+        "upgrade:brew bundle") echo 'formulae added to the Brewfile' ;;
+        upgrade:casks) echo 'casks added to the homebrew step' ;;
         "upgrade:brew cleanup") echo 'brew cleanup' ;;
         upgrade:fc-cache) echo 'font cache' ;;
-        "upgrade:self-updating casks") echo 'brew upgrade --cask --greedy <cask>' ;;
+        "upgrade:self-updating casks") echo 'Casks that update themselves' ;;
         upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins") echo PlugUpdate ;;
-        "upgrade:tmux plugins") echo 'tmux/plugins.lock' ;;
+        "upgrade:vim plugins" | "upgrade:tmux plugins") echo 'vim and tmux plugins' ;;
         upgrade:mise) echo 'mise upgrade' ;;
-        "upgrade:mise hook-env") echo 'mise hook-env' ;;
+        "upgrade:mise hook-env") echo 'the Node `mise upgrade` installed' ;;
         upgrade:npm) echo 'npm update -g' ;;
         upgrade:uv) echo 'uv tool upgrade --all' ;;
         upgrade:rustup) echo 'rustup update' ;;
         upgrade:upgrade-ai-tools) echo 'upgrade-ai-tools' ;;
         "upgrade-ai-tools:claude update") echo 'claude update' ;;
-        "upgrade-ai-tools:desktop apps") echo 'brew upgrade --cask --greedy' ;;
-        "upgrade-ai-tools:codex cask") echo 'brew upgrade --cask --greedy codex' ;;
+        "upgrade-ai-tools:desktop apps") echo 'Desktop apps' ;;
+        "upgrade-ai-tools:codex cask") echo 'Codex CLI' ;;
         "upgrade-ai-tools:claude marketplaces") echo 'claude plugin marketplace update' ;;
         'upgrade-ai-tools:claude plugin $id') echo 'claude plugin update' ;;
         "upgrade-ai-tools:claude plugin list") echo 'claude plugin list' ;;
@@ -335,13 +361,16 @@ stage_doc() {
 stage_code() {
     case "$1:$2" in
         upgrade:apt) echo 'apt_get_update && sudo apt' ;;
+        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
         "upgrade:brew bundle") echo '_install_new_formulae' ;;
         upgrade:casks) echo '_install_new_casks' ;;
         upgrade:fc-cache) echo 'fc-cache -f' ;;
         upgrade:rustup) echo '.cargo/bin/rustup update' ;;
         "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
+        "upgrade:vim plugins") echo 'PlugUpdate' ;;
         "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
-        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools ' ;;
+        "upgrade:mise hook-env") echo 'mise hook-env' ;;
+        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools claude ' ;;
         "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;
         *) stage_doc "$1" "$2" ;;
     esac
@@ -349,7 +378,7 @@ stage_code() {
 for fn in upgrade upgrade-ai-tools; do
     doc=README.md
     [ "$fn" == upgrade ] || doc=ai_tools/README.md
-    awk '/^## / { on = ($0 == "## Updating") } on' "$REPO_DIR/$doc" > "$tmp/updating"
+    section "$REPO_DIR/$doc" "## Updating" > "$tmp/updating"
     awk -v fn="${fn//-/_}() {" '$0 == fn { on = 1 } on { print } on && /^\}/ { exit }' "$REPO_DIR/scripts/upgrade.sh" > "$tmp/body"
     stages="$({ grep -oE 'failed\+=\([^)]+\)|_stage_failed ("[^"]+"|[^ "]+)' "$tmp/body" || true; } |
         sed -E 's/^failed\+=\(//; s/\)$//; s/^_stage_failed //; s/^"//; s/"$//' | awk '!seen[$0]++')"
@@ -378,12 +407,12 @@ done
 
 # README.md "How setup works" and "Maintenance": the blocks of just lines name each of the
 # justfile's recipes but default, and the script each line's comment says it runs is in that recipe
-awk '/^## / { on = ($0 == "## How setup works" || $0 == "## Maintenance") } on && /^just [a-z]/' "$readme" > "$tmp/just-lines"
+{ section "$readme" "## How setup works"; section "$readme" "## Maintenance"; } | { grep '^just [a-z]' || true; } > "$tmp/just-lines"
 awk '{ print $2 }' "$tmp/just-lines" | sort > "$tmp/just-doc"
 sed -nE 's/^([a-z][a-z0-9-]*)( [^:]*)?:( .*)?$/\1/p' "$REPO_DIR/justfile" | grep -vx default | sort > "$tmp/just-recipes" || true
 cmp -s "$tmp/just-recipes" "$tmp/just-doc" ||
     fail "README.md's just recipes don't match the justfile. The justfile: $(tr '\n' ' ' < "$tmp/just-recipes")
-  The doc: $(tr '\n' ' ' < "$tmp/just-doc")"
+  The doc: $(doc_words "$tmp/just-doc" 'lines starting "just <recipe>" under "## How setup works" and "## Maintenance"')"
 while IFS= read -r line; do
     recipe="$(printf '%s\n' "$line" | awk '{ print $2 }')"
     script="$(printf '%s\n' "${line#*# }" | sed -nE 's/^bash ([^ ,:]+).*/\1/p')"

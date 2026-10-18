@@ -48,9 +48,10 @@ APT_UPDATE_RETRY_DELAY=0
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.service" | try-restart*) exit 0 ;; *) exit 1 ;; esac'
 stub dockerd
-stub sudo 'exec env "$@"'
-# fetch downloads Docker's key
+stub_sudo_exec
+# fetch downloads Docker's key, which has the fingerprint the step pins
 fetch() { echo key > "$2"; }
+stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $DOCKER_KEY_FPR"
 # The key goes under /etc/apt/keyrings
 DOCKER_KEYRING="$SANDBOX/keyrings/docker.asc"
 # curl answers the HEAD request for Docker's Release file with $SANDBOX/http-status
@@ -232,7 +233,7 @@ assert_file_not_contains "$STUB_LOG" "usermod"
 set_up_docker() {
     reset
     printf '%s\n' docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > "$SANDBOX/installed"
-    echo '{"log-driver": "local", "live-restore": true, "ip": "127.0.0.1", "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}}' > "$DOCKER_DAEMON_CONFIG"
+    jq "$DOCKER_DAEMON_SETTINGS" <<< '{}' > "$DOCKER_DAEMON_CONFIG"
     printf '%s\n' "$DOCKER_UNATTENDED_CONTENT" > "$DOCKER_UNATTENDED_CONF"
     docker_sources > "$DOCKER_SOURCES"
 }

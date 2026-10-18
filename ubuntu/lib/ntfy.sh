@@ -6,8 +6,9 @@
 # functions.
 
 # ntfy_push <url> <title> <message> [header...]
-# The URL reaches curl as config on stdin, with its backslashes and double quotes escaped, since
-# any user can read a process's arguments, and the topic is the URL's only secret
+# The URL reaches curl as config on stdin, with its backslashes and double quotes escaped, rather
+# than as an argument. That only keeps the topic, the URL's only secret, out of ps listings and
+# diagnostics: any local user can read the URL file itself (see save_url in setup-alerts.sh).
 # e.g. ntfy_push "$url" "Alerts from box" "A test." "Tags: white_check_mark"
 # --data-raw, since --data-binary would read a message starting with @, which smartd and upsmon
 # pass on, as a file name, and push that file's contents.

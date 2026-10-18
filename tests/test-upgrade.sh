@@ -6,7 +6,8 @@ set -euo pipefail
 # formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
 # ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
 # even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
-# managed scopes, and the t3 CLI only from ~/.local/bin. A self-updating app that renamed itself is
+# managed scopes, with each marketplace's and plugin's version shown before and after, the t3 CLI
+# only from ~/.local/bin, and brew cleanup last. A self-updating app that renamed itself is
 # re-recorded in Homebrew. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
 # and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
 # alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
@@ -76,7 +77,7 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"d@m\", \"scope\": \"managed\"}
 ]"'
 stub codex
-mkdir -p "$HOME/.vim/autoload" "$SANDBOX/tmp"
+mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
 # The tmux plugins are at their pins, from local repos in place of GitHub
 fake_tmux_plugins
@@ -88,15 +89,15 @@ chmod +x "$STUB_DIR/uname"
 echo Darwin > "$SANDBOX/uname-s"
 
 # Run upgrade as if on the given OS, with only the stubs and the system's base commands
-# on PATH, printing what ran, with the repo shown as REPO. TMPDIR puts the temp files in the sandbox on either OS. DOTFILES_DIR points elsewhere, since upgrade finds the Brewfile
-# from its own path.
+# on PATH, printing what ran, with the repo shown as REPO. DOTFILES_DIR points elsewhere, since
+# upgrade finds the Brewfile from its own path.
 upgrade_on() {
     : > "$STUB_LOG"
     case "$1" in
         darwin*) echo Darwin ;;
         *) echo Linux ;;
     esac > "$SANDBOX/uname-s"
-    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" TMPDIR="$SANDBOX/tmp" \
+    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" \
         "$BASH" -c 'source "$2/scripts/upgrade.sh"; OSTYPE=$1; upgrade' bash "$1" "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1 || {
         fail "upgrade failed on $1:"
         _show "$(cat "$SANDBOX/output")"
@@ -117,10 +118,7 @@ brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
 brew info --json=v2 --installed --cask
 brew info --json=v2 --cask rectangle
-brew list --cask rectangle
-brew info --json=v2 --cask rectangle
 brew install --cask rectangle
-brew cleanup
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed
 brew info --json=v2 --cask zed
@@ -146,11 +144,15 @@ pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
+claude plugin marketplace list --json
 claude plugin marketplace update
+claude plugin marketplace list --json
 claude plugin list --json
 claude plugin update a@m --scope user
+claude plugin list --json
 t3 update
-codex plugin marketplace upgrade" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
+codex plugin marketplace upgrade
+brew cleanup" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
 assert_file_contains "$SANDBOX/output" "Claude is running; quit it and run upgrade-ai-tools again to update it."
 
 # With HOME reached through a symlink, Claude Code still counts as the native install
@@ -169,13 +171,16 @@ mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 # brew bundle check fails on a missing App Store app, which brew bundle install can't fix without
 # an App Store sign-in, so upgrade has it skip the Brewfile's App Store apps by id. Here only those
 # apps would fail the check, so bundle install doesn't run.
+# shellcheck disable=SC2016 # expanded by the inner bash
+mas_skip="$("$BASH" -c 'source "$1/homebrew/install.sh"; mas_app_ids "$1/homebrew/Brewfile" | tr "\n" " "' bash "$REPO_DIR")"
+[ -n "$mas_skip" ] || fail "the Brewfile has no App Store app ids"
 cp "$STUB_DIR/brew" "$SANDBOX/brew"
 stub brew 'case "$*" in
-    "bundle check"*) [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "937984704 1470584107 1295203466 " ] ;;
+    "bundle check"*) [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "'"$mas_skip"'" ] ;;
     "list --cask"*) exit 1 ;;
 esac'
 assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with an App Store app missing"
-assert_eq "" "$(ls -A "$SANDBOX/tmp")" "files upgrade leaves in TMPDIR"
+assert_eq "" "$(ls -A "$TMPDIR")" "files upgrade leaves in TMPDIR"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
 # A cask with no app artifact, such as Logi Options+, which installs through an installer and quits
@@ -215,7 +220,6 @@ brew upgrade
 brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
 brew list --cask -1
-brew cleanup
 fc-cache -f ~/.local/share/fonts
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed
@@ -231,11 +235,15 @@ brew list --cask claude
 brew list --cask chatgpt
 brew list --cask t3-code
 brew list --cask codex
+claude plugin marketplace list --json
 claude plugin marketplace update
+claude plugin marketplace list --json
 claude plugin list --json
 claude plugin update a@m --scope user
+claude plugin list --json
 t3 update
-codex plugin marketplace upgrade" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
+codex plugin marketplace upgrade
+brew cleanup" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
 
 # A running Zed isn't replaced, which would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'
@@ -268,6 +276,34 @@ assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" 'claude plugin list'
 assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
+
+# Since plugins can add hooks that run as you, each Claude Code marketplace's commit and each
+# updated plugin's version show before and after the update. A marketplace that isn't a git
+# checkout has no version, and a plugin that isn't updated isn't shown. A project's copy of an
+# updated plugin, listed first, doesn't stand in for its version after.
+market="$SANDBOX/market"
+git init -q "$market"
+git -C "$market" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
+echo 1.0.0 > "$SANDBOX/plugin-version"
+stub claude 'case "$*" in
+    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"'"$SANDBOX"'\"}]" ;;
+    "plugin marketplace update") git -C "'"$market"'" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ;;
+    "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"project\", \"version\": \"0.9.0\"},
+        {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
+        {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
+    "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
+esac'
+assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
+  m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
+  dir: -
+"
+assert_contains "$RUN_OUTPUT" "Claude Code plugins:
+  a@m: 1.0.0 -> 1.1.0
+  b@m: 2.0.0"
+assert_not_contains "$RUN_OUTPUT" "c@m"
 
 # Ctrl-C during claude plugin list stops upgrade-ai-tools, running nothing after it
 stub claude '[ "$*" != "plugin list --json" ] || exit 130'
@@ -370,6 +406,18 @@ assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_file_contains "$STUB_LOG" 'pgrep -af ^/Elsewhere/Zed Preview[^/]*\.app/Contents/MacOS/'
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
+# The app's path matches only itself: a . in it doesn't match another app's character, so another
+# running app doesn't hold the cask back
+stub brew 'case "$*" in
+    "list --cask zed") ;;
+    "outdated "*) echo "${!#}"; exit 1 ;;
+    "info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed.Dev.app\"}]}]}" ;;
+esac'
+# shellcheck disable=SC2016 # expanded by the stub
+stub pgrep 'echo "/Elsewhere/ZedxDev.app/Contents/MacOS/zed" | grep -E -- "${!#}"'
+assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+assert_not_contains "$RUN_OUTPUT" "is running"
 
 # An app that renamed itself as it updated, as T3 Code (Alpha) did to T3 Code (Beta), is re-recorded
 # in place, even while it runs, since brew upgrade would stop on the app it recorded being gone.

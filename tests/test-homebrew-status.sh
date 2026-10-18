@@ -5,7 +5,8 @@ set -euo pipefail
 
 # The homebrew step's status lists the installed casks and their apps with one brew call, rather
 # than one per cask, and reports each cask as installed by Homebrew, installed outside it, listed
-# by brew with its app deleted, or missing. On Ubuntu it reports the apt packages Homebrew needs
+# by brew with its app deleted, or missing. A missing App Store app is missing, apart from the
+# optional Dato, which is information. On Ubuntu it reports the apt packages Homebrew needs
 # and only Ubuntu's casks, and without Homebrew it asks brew nothing.
 
 # shellcheck source=lib.sh
@@ -56,6 +57,13 @@ assert_contains "$RUN_OUTPUT" "ok         font-monaspace (cask)"
 assert_contains "$RUN_OUTPUT" "ok         zed (cask), installed outside Homebrew"
 assert_contains "$RUN_OUTPUT" "missing    raycast (cask): brew lists it, but its app is gone; run brew reinstall --cask raycast"
 assert_contains "$RUN_OUTPUT" "missing    rectangle (cask)"
+assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
+
+# Only Dato, which is optional, isn't installed: information, not something missing
+stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
+run status
+assert_contains "$RUN_OUTPUT" "ok         Brewfile App Store apps"
+assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
 # brew info fails for a cask it doesn't list when offline with no API cache, or when the cask was
 # removed upstream. The report still lists every cask.

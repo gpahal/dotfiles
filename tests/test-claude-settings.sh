@@ -150,6 +150,25 @@ run status
 assert_contains "$RUN_OUTPUT" "missing    Worktree hook: WorktreeCreate already runs my-hook.sh, so ours isn't registered"
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 
+# Our hook with a hand-edited type or timeout gets the step's back, and status flags the drift
+# first. Other keys in its entry, and other hooks in its group, stay.
+load_script ai_tools/claude-code/install.sh
+claude_code_path() { echo "$HOME/.local/bin/claude"; }
+claude_code_have_git_wt() { true; }
+echo '{}' > "$settings"
+json_merge "$settings" "$(claude_code_settings)" > /dev/null
+jq '.hooks.WorktreeCreate[0].hooks[0] += {type: "http", timeout: 5, x: 1}
+    | .hooks.SessionEnd[0].hooks[0] |= del(.timeout)
+    | .hooks.SessionEnd[0].hooks += [{type: "command", command: "other-hook.sh", timeout: 7}]' \
+    "$settings" > "$settings.new" && mv "$settings.new" "$settings"
+assert_exit 1 json_applied "$settings" "$(claude_code_settings)"
+json_merge "$settings" "$(claude_code_settings)" > /dev/null
+assert_eq '[{"hooks":[{"type":"command","command":"~/.claude/hooks/worktree-hook.sh","timeout":120,"x":1}]}]' \
+    "$(jq -c '.hooks.WorktreeCreate' "$settings")" "WorktreeCreate after fixing a drifted hook"
+assert_eq '[{"hooks":[{"type":"command","command":"~/.claude/hooks/worktree-hook.sh","timeout":30},{"type":"command","command":"other-hook.sh","timeout":7}]}]' \
+    "$(jq -c '.hooks.SessionEnd' "$settings")" "SessionEnd after fixing a missing timeout"
+json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied after fixing a drifted hook"
+
 # Status reports the sign-in from `claude auth status --json`, which prints loggedIn whether or
 # not it exits 0. Logged out, it names the command that signs in. Output it can't read is unknown.
 load_script ai_tools/claude-code/install.sh
@@ -165,4 +184,16 @@ assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 echo '"maybe"' > "$SANDBOX/logged-in"
 run status
 assert_contains "$RUN_OUTPUT" "unknown    Signed in to Claude Code: claude auth status didn't say"
+
+# Loading the codex step after this one, as check-ai-settings.sh does, keeps Claude Code's
+# keepable values, and loading this step again adds them once
+load_script ai_tools/claude-code/install.sh
+claude_rows="$(keepable_indexes claude_code | wc -l)"
+[ "$claude_rows" -gt 0 ] || fail "no keepable values for Claude Code"
+load_script ai_tools/codex/install.sh
+assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading codex"
+assert_contains "$(claude_code_settings)" "claude-opus-5-5"
+load_script ai_tools/claude-code/install.sh
+assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading it again"
+[ "$(keepable_indexes codex | wc -l)" -gt 0 ] || fail "loading claude-code again dropped codex's values"
 test_done

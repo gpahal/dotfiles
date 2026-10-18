@@ -68,9 +68,15 @@ rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
 # so those two functions are replaced. sudo -n true, which sudo_cached runs, succeeds only with
 # SUDO_CACHED set.
 # shellcheck disable=SC2016 # expanded by the stub
-stub sudo '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1
-[ "$1" != -n ] || shift
-exec "$@"'
+stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
+# It runs a command on the sandbox's files, and refuses one on a path outside it, as an argument
+# or a value, so a system path the test missed can't be written to
+assert_exit 0 sudo -n touch "$SANDBOX/by-sudo"
+[ -e "$SANDBOX/by-sudo" ] || fail "the sudo stub didn't run touch"
+assert_exit 1 sudo install -m 0644 /dev/null /usr/lib/dotfiles-test/by-sudo
+assert_contains "$RUN_OUTPUT" "refused: /usr/lib/dotfiles-test/by-sudo is outside the sandbox"
+assert_exit 1 sudo env DEST=/etc/by-sudo true
+assert_contains "$RUN_OUTPUT" "refused: DEST=/etc/by-sudo is outside the sandbox"
 stub chsh
 load_script zsh/install.sh
 current_login_shell() { echo /bin/bash; }

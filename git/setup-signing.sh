@@ -37,19 +37,17 @@ commit_email() {
     local email
     email="$(global_get user.email)"
     if [ -z "$email" ]; then
-        email="$(git --git-dir=/dev/null config --file "$DOTFILES_DIR/git/gitconfig" user.email)"
+        email="$(git_file "$DOTFILES_DIR/git/gitconfig" user.email)"
     fi
     printf '%s\n' "$email"
 }
 
-# Set a key in ~/.gitconfig, saying whether it changed. git config --file still looks for a repo,
-# and dies inside a broken checkout, such as a copied worktree whose .git points nowhere, so each
-# call names no git dir.
+# Set a key in ~/.gitconfig, saying whether it changed
 set_local() {
-    if [ "$(git --git-dir=/dev/null config --file "$LOCAL_CONFIG" --get "$1" || true)" == "$2" ]; then
+    if [ "$(git_file "$LOCAL_CONFIG" --get "$1" || true)" == "$2" ]; then
         echo "  $1 is already $2"
     else
-        git --git-dir=/dev/null config --file "$LOCAL_CONFIG" "$1" "$2"
+        git_file "$LOCAL_CONFIG" "$1" "$2"
         echo "  Set $1 = $2"
     fi
 }
@@ -89,13 +87,13 @@ generate_key() {
         echo "  $KEY doesn't exist. Create it with: $how" >&2
         return 1
     fi
-    mkdir -p "$(dirname "$KEY")"
-    chmod 700 "$(dirname "$KEY")"
+    # main calls this under ||, which turns set -e off here
+    mkdir -p "$(dirname "$KEY")" && chmod 700 "$(dirname "$KEY")" || return 1
     if [ "$KEY" == "$SIGNING_KEY" ]; then
-        ssh-keygen -q -t ed25519 -N '' -C "$EMAIL signing" -f "$KEY"
+        ssh-keygen -q -t ed25519 -N '' -C "$EMAIL signing" -f "$KEY" || return 1
         echo "  Generated $KEY"
     else
-        ssh-keygen -t ed25519 -C "$EMAIL" -f "$KEY"
+        ssh-keygen -t ed25519 -C "$EMAIL" -f "$KEY" || return 1
     fi
 }
 

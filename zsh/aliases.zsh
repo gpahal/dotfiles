@@ -51,9 +51,6 @@ elif command -v resolvectl &>/dev/null; then
     alias flushdns='resolvectl flush-caches'
 fi
 
-# Run last command as root
-alias please='sudo zsh -c "$(fc -ln -1)"'
-
 alias today="date '+%A, %B %d, %Y'"
 alias now="date '+%A, %B %d, %Y %H:%M:%S'"
 alias dus="du -sckx * | sort -nr"

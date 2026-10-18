@@ -2,14 +2,15 @@
 set -euo pipefail
 
 # interrogate's run-reviewer.sh stops the reviewer and its watchdog when cancelled, reports the
-# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory, and
-# ignores CDPATH. A stub claude stands in for the reviewer.
+# reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory or the
+# repo, and ignores CDPATH. A stub claude stands in for the reviewer.
 # code-review's materialize-head.sh puts a reviewed head where that reviewer can read it.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# The sandbox's pkill is a sentinel. This test's own pkill only stops the sleeps it started.
-PKILL="$(command -v pkill)"
+# The sandbox's pkill and pgrep are sentinels. This test's own only find and stop the sleeps it
+# started.
+PKILL="$(command -v pkill)" PGREP="$(command -v pgrep)"
 setup_sandbox
 
 RUNNER="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
@@ -30,7 +31,7 @@ SLEEP_PATTERN="^([^ ]*/)?sleep (sleep )?($REVIEWER_SLEEP|$REVIEWER_TIMEOUT)\$"
 
 # Print the PIDs of any sleep this test started, the reviewer's or the watchdog's
 leftover_sleeps() {
-    pgrep -f "$SLEEP_PATTERN" || true
+    "$PGREP" -f "$SLEEP_PATTERN" || true
 }
 
 # Wait up to 10 seconds for a command to succeed
@@ -51,19 +52,29 @@ no_sleeps_left() {
     [ -z "$(leftover_sleeps)" ]
 }
 
+# The runner and the reviewer run in their own process groups, which the signal tests/run.sh
+# sends on a timeout or Ctrl-C doesn't reach, and the sleeps would run for days. The runner stops
+# its reviewer when it's stopped, and pkill gets any sleep left.
+RUNNER_PID=""
+# shellcheck disable=SC2016 # expanded at exit
+on_exit '[ -z "$RUNNER_PID" ] || kill -- "-$RUNNER_PID" 2> /dev/null'
+# shellcheck disable=SC2016
+on_exit '"$PKILL" -f "$SLEEP_PATTERN"'
+
 # Start the runner with a reviewer that sleeps, send it a signal, and check its exit status and
 # that nothing it started lives on
 check_signal() {
-    local signal="$1" expected="$2" runner status=0
+    local signal="$1" expected="$2" status=0
     stub claude 'sleep "$REVIEWER_SLEEP"'
     # Job control keeps SIGINT deliverable: without it, a background job ignores SIGINT
     set -m
     (cd "$REPO" && exec bash "$RUNNER" claude model high "$PROMPT" "$OUT") > /dev/null 2>&1 &
-    runner=$!
+    RUNNER_PID=$!
     set +m
     wait_for both_sleeps_started || fail "$signal: the reviewer and the watchdog didn't both start"
-    kill -"$signal" "$runner"
-    wait "$runner" || status=$?
+    kill -"$signal" "$RUNNER_PID"
+    wait "$RUNNER_PID" || status=$?
+    RUNNER_PID=""
     assert_eq "$expected" "$status" "exit status after SIG$signal"
     wait_for no_sleeps_left || fail "$signal: processes left running: $(leftover_sleeps | tr '\n' ' ')"
     "$PKILL" -f "$SLEEP_PATTERN" || true
@@ -134,13 +145,22 @@ assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for a refused out-file"
 mkdir -p "$SANDBOX/prompts-answers"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$SANDBOX/prompts-answers/answer.md"
 
-# A CDPATH with a dir of the same name doesn't redirect a relative prompt or out-file path
-mkdir -p "$REPO/rel" "$REPO/ans" "$SANDBOX/decoy/rel" "$SANDBOX/decoy/ans"
+# An out-file under the repo root is refused too, since both reviewers can read the repo
+mkdir -p "$REPO/ans"
+: > "$STUB_LOG"
+assert_exit 2 bash "$RUNNER" claude model high "$PROMPT" "$REPO/ans/answer.md"
+assert_contains "$RUN_OUTPUT" "is inside the repo under review"
+assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for an out-file in the repo"
+
+# A CDPATH with a dir of the same name doesn't redirect a relative prompt or out-file path. The
+# decoy is outside the repo, so a redirected out-file would be accepted rather than refused.
+mkdir -p "$REPO/rel" "$SANDBOX/decoy/rel" "$SANDBOX/decoy/ans"
 echo "Review this." > "$REPO/rel/prompt.md"
 : > "$STUB_LOG"
-CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md
-assert_file_contains "$REPO/ans/answer.md" "No findings."
+CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md "$OUT"
 assert_file_contains "$STUB_LOG" "--add-dir $(pwd -P)/rel "
+CDPATH="$SANDBOX/decoy" assert_exit 2 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md
+assert_contains "$RUN_OUTPUT" "'$(pwd)/ans/answer.md' is inside the repo under review"
 
 # code-review's materialize-head.sh writes a commit's tracked files, or the staged files, under the
 # review's temp dir, so a reviewer reads the reviewed head rather than the working tree. The

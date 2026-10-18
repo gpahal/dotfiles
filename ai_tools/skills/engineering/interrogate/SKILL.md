@@ -58,7 +58,7 @@ For each split, fill in the part of [`references/reviewer-prompt.md`](references
 
 Number the splits from 1. For a sharded scope, number the shards from 1 too, and fill each shard's prompts with that shard's packet. An unsharded scope is shard 1. Save each prompt as `<tmp>/prompt-<shard>-<n>.md`, directly in the scope's temp directory. The script lets Claude read only the prompt file's directory, so that directory has to hold the diff files and any materialized `head`.
 
-Make a second temp directory, `<answers>` (`mktemp -d`), for the reviewers' answers, and leave its path out of every prompt. The script refuses an out-file under the prompt file's directory, where Claude would read the other reviewer's answers.
+Make a second temp directory, `<answers>` (`mktemp -d`), for the reviewers' answers, and leave its path out of every prompt. The script refuses an out-file under the prompt file's directory or the repo, where a reviewer would read the other reviewer's answers.
 
 Run every reviewer on every split of every shard from the repo root, in the background, at most 4 at a time. Start each of the rest as an earlier run finishes.
 
@@ -66,7 +66,7 @@ Run every reviewer on every split of every shard from the repo root, in the back
 ${CLAUDE_SKILL_DIR}/scripts/run-reviewer.sh <claude|codex> <model> <effort> <tmp>/prompt-<shard>-<n>.md <answers>/<reviewer>-<shard>-<n>.md
 ```
 
-In Codex, resolve `scripts/run-reviewer.sh` against this skill's `SKILL.md` path instead. The model comes from the table, and the effort is the run's effort. The script runs that family's CLI read-only, from the repo root, and writes the reviewer's final answer to the out-file. It needs network access, so in a sandbox, ask to run it outside (in Codex, request escalated permissions). It stops a reviewer that runs past 30 minutes, or 60 minutes at `high` effort and above.
+In Codex, resolve `scripts/run-reviewer.sh` against this skill's `SKILL.md` path instead. The model comes from the table, and the effort is the run's effort. The script runs that family's CLI read-only, from the repo root, and writes the reviewer's final answer to the out-file. Claude is confined to the repo and the prompt's directory, but the Codex reviewer can read any file you can, so instructions planted in a diff could get a secret quoted into its answer. Run this skill only on changes from authors you trust. It needs network access, so in a sandbox, ask to run it outside (in Codex, request escalated permissions). It stops a reviewer that runs past 30 minutes, or 60 minutes at `high` effort and above.
 
 When a run fails (the CLI is missing or signed out, the run errors or times out, or the answer is empty), the script exits non-zero and prints the CLI's last log lines. Retry it once. If it fails again, carry on with the other runs, and say in the verdict which splits only one model reviewed.
 

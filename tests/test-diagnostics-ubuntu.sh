@@ -12,6 +12,8 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -50,13 +52,13 @@ assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
 assert_eq out "$RUN_OUTPUT" "run_bounded's output"
 # timeout(1) gets -k 5. It exits 137 when it sent SIGKILL, which run_bounded reports as 124, but a
 # command killed before the deadline keeps its 137.
-(
+run_bounded_killed() {
     stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; [ "$3" -lt 2 ] || exit 137; sleep "$3"; exit 137'
     assert_exit 124 run_bounded 1 sleep 10
     assert_exit 137 run_bounded 5 sleep 10
     rm "$STUB_DIR/timeout"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest run_bounded_killed
 
 # --- free space (status_disk_space) ---
 # df_lines <line>...: df -P -k prints the header, then the first line whose mount point is the path
@@ -110,13 +112,14 @@ assert_contains "$RUN_OUTPUT" "unknown    Free space on /: df couldn't read it"
 read_only
 
 # --- the ubuntu step: SMART ---
+# sbin_cmd searches only the stubs
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 in_vm() { false; }
-# The system dirs sbin_cmd searches, here the stubs
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
-# sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise
+# sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise.
+# Not stub_sudo_exec, which would refuse the disks' /dev paths; smartctl, the only command it
+# runs here, is a stub.
 stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
 [ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
 shift
@@ -147,12 +150,12 @@ HEADER='smartctl 7.4 2023-08-01 r5530 [x86_64-linux-6.17.0] (local build)\nSeria
 mkdir -p "$HOME/.cargo/bin"
 printf '#!/bin/bash\n' > "$HOME/.cargo/bin/smartctl"
 chmod +x "$HOME/.cargo/bin/smartctl"
-PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
+PATH="$HOME/.cargo/bin:$PATH" run sbin_cmd smartctl
 assert_eq "$STUB_DIR/smartctl" "$RUN_OUTPUT" "the smartctl chosen"
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$SANDBOX/no-such-dir"
-PATH="$HOME/.cargo/bin:$PATH" run smartctl_cmd
-assert_eq 1 "$RUN_STATUS" "smartctl_cmd's exit status with smartctl only on PATH: $RUN_OUTPUT"
+PATH="$HOME/.cargo/bin:$PATH" run sbin_cmd smartctl
+assert_eq 1 "$RUN_STATUS" "sbin_cmd's exit status with smartctl only on PATH: $RUN_OUTPUT"
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$STUB_DIR"
 rm "$HOME/.cargo/bin/smartctl"
@@ -231,16 +234,15 @@ assert_contains "$RUN_OUTPUT" "skipped    Disk health (SMART): this is a VM"
 assert_file_not_contains "$STUB_LOG" "smartctl"
 in_vm() { false; }
 # Without smartctl, it's unknown and says what installs it
-smartctl_cmd() { return 1; }
+# shellcheck disable=SC2034 # sbin_cmd reads it
+SBIN_PATH="$SANDBOX/no-such-dir"
 assert_exit 3 diag status_smart
 assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART): smartctl isn't installed"
 assert_contains "$RUN_OUTPUT" "smartmontools"
-unset -f smartctl_cmd
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 in_vm() { false; }
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
 read_only
 
 # --- the ubuntu step: firmware ---
@@ -254,7 +256,6 @@ fwupd() {
     printf '%b' "$1" > "$SANDBOX/fwupd"
     echo "${2:-0}" > "$SANDBOX/fwupd.status"
 }
-FWUPD_METADATA_DIRS="$SANDBOX/fwupd-metadata"
 mkdir -p "$FWUPD_METADATA_DIRS/lvfs"
 touch "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
 
@@ -280,13 +281,13 @@ else
     skip_rest "jq isn't installed, so fwupdmgr's JSON can't be read"
 fi
 # Without jq it says it can't list them
-(
+firmware_without_jq() {
     hide jq
     fwupd '{ "Devices" : [ { "Name" : "Disk", "Version" : "1", "Releases" : [ { "Version" : "2" } ] } ] }\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: couldn't read fwupdmgr's JSON without jq"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest firmware_without_jq
 # No device fwupd supports
 fwupd 'No updatable devices\n' 2
 assert_exit 0 diag status_firmware
@@ -316,18 +317,18 @@ DOTFILES_STATUS_QUICK=1 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "unverified Firmware updates: skipped by --quick"
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"
 # Without fwupd it's skipped
-(
+firmware_without_fwupd() {
     hide fwupdmgr
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "skipped    Firmware updates: fwupd isn't installed"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest firmware_without_fwupd
 read_only
 
 # The ubuntu step's report has free space for /, ~, and /var, SMART, and firmware. apt-get -s
 # upgrade, for the packages apt holds back, holds none back.
 stub apt-get
-(
+ubuntu_report() {
     hide tailscale nmcli
     ufw_enabled() { false; }
     run status
@@ -346,22 +347,34 @@ stub apt-get
     assert_contains "$RUN_OUTPUT" "Disk health (SMART)"
     assert_contains "$RUN_OUTPUT" "ufw rules allowing SSH"
     read_only
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest ubuntu_report
 
-# --- the docker step: disk usage ---
+# --- the docker step: disk usage, and ports published on every address ---
 load_script docker/install.sh
 is_macos() { false; }
+# You're in the docker group while $SANDBOX/in-group exists. sudo -n runs a command while
+# $SANDBOX/sudo-cached exists, and fails without asking otherwise.
+stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
+touch "$SANDBOX/in-group"
+stub_sudo_exec '[ "${1:-}" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
+[ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }'
+rm -f "$SANDBOX/sudo-cached"
 # docker.service is active unless $SANDBOX/docker-inactive exists; docker.socket always is
 stub systemctl 'case "$*" in
     "is-active --quiet docker.service") [ ! -e "'"$SANDBOX"'/docker-inactive" ] ;;
     *docker.socket*) exit 0 ;;
     *) exit 1 ;;
 esac'
-# docker system df prints $SANDBOX/docker-df and exits with $SANDBOX/docker-df.status
-stub docker '[ "$1 $2" == "system df" ] || exit 1
-cat "'"$SANDBOX"'/docker-df"
-exit "$(cat "'"$SANDBOX"'/docker-df.status")"'
+# docker system df and docker ps print $SANDBOX/docker-df and $SANDBOX/docker-ps, and exit with
+# their .status files, 0 by default
+stub docker 'case "$1 $2" in
+    "system df") out=docker-df ;;
+    "ps --format") out=docker-ps ;;
+    *) exit 1 ;;
+esac
+cat "'"$SANDBOX"'/$out" 2> /dev/null
+exit "$(cat "'"$SANDBOX"'/$out.status" 2> /dev/null || echo 0)"'
 docker_df() {
     printf '%b' "$1" > "$SANDBOX/docker-df"
     echo "${2:-0}" > "$SANDBOX/docker-df.status"
@@ -377,8 +390,23 @@ assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 0, 0B; conta
 # Permission denied on the socket is unverified, and says why
 docker_df 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock\n' 1
 assert_exit 0 diag status_docker_usage
-assert_contains "$RUN_OUTPUT" "unverified Docker disk usage"
-assert_contains "$RUN_OUTPUT" "docker group"
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: me can't reach the daemon's socket yet; log out and back in"
+# Outside the docker group, logging in again can't help: the check goes through sudo -n while sudo
+# credentials are cached, and is unverified otherwise, without running docker
+rm "$SANDBOX/in-group"
+: > "$STUB_LOG"
+assert_exit 0 diag status_docker_usage
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: me isn't in the docker group; run sudo -v, then status, to check it"
+assert_file_not_contains "$STUB_LOG" "docker system"
+read_only
+docker_df 'Images\t1\t1GB\t0B\n'
+touch "$SANDBOX/sudo-cached"
+assert_exit 0 diag status_docker_usage
+assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 1, 1GB"
+assert_file_contains "$STUB_LOG" "sudo -n docker system df --format"
+read_only
+rm "$SANDBOX/sudo-cached"
+touch "$SANDBOX/in-group"
 # A daemon that went away, a failure, and output it can't read are information
 docker_df 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n' 1
 assert_exit 0 diag status_docker_usage
@@ -402,12 +430,65 @@ DOTFILES_STATUS_QUICK=1 assert_exit 0 diag status_docker_usage
 assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --quick"
 assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
-# The docker step's report includes it once Docker is installed
+# Ports published on every address bypass ufw: status names each, with the container. Ones on
+# 127.0.0.1 or another given address, and ports a container exposes without publishing, are fine.
+printf '%b\n' 'web\t0.0.0.0:8080->80/tcp, [::]:8080->80/tcp, 127.0.0.1:9000->9000/tcp' \
+    'db\t5432/tcp' 'old\t:::2222->22/tcp' 'local\t127.0.0.1:3000->3000/tcp, 192.168.1.5:53->53/udp' > "$SANDBOX/docker-ps"
+: > "$STUB_LOG"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp, web [::]:8080->80/tcp, old :::2222->22/tcp; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
+assert_file_contains "$STUB_LOG" "docker ps --format {{.Names}}"
+printf '%b\n' 'db\t5432/tcp' 'local\t127.0.0.1:3000->3000/tcp' > "$SANDBOX/docker-ps"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
+: > "$SANDBOX/docker-ps"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
+# The daemon out of reach without the docker group is unverified; another failure is unknown
+echo 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock' > "$SANDBOX/docker-ps"
+echo 1 > "$SANDBOX/docker-ps.status"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me can't reach the daemon's socket yet; log out and back in"
+# Outside the docker group, it goes through sudo -n while sudo credentials are cached
+rm "$SANDBOX/in-group"
+: > "$STUB_LOG"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me isn't in the docker group; run sudo -v, then status, to check it"
+assert_file_not_contains "$STUB_LOG" "docker ps"
+read_only
+printf '%b\n' 'web\t0.0.0.0:8080->80/tcp' > "$SANDBOX/docker-ps"
+echo 0 > "$SANDBOX/docker-ps.status"
+touch "$SANDBOX/sudo-cached"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp"
+assert_file_contains "$STUB_LOG" "sudo -n docker ps --format"
+read_only
+rm "$SANDBOX/sudo-cached"
+touch "$SANDBOX/in-group"
+echo 1 > "$SANDBOX/docker-ps.status"
+echo 'Error response from daemon: something broke' > "$SANDBOX/docker-ps"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: couldn't list the containers (Error response from daemon: something broke)"
+# A daemon that went away during the check, as a restart does, is information
+echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' > "$SANDBOX/docker-ps"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "info       Container ports published on every address, which ufw doesn't filter: the daemon isn't running"
+rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
+# A stopped daemon runs no containers, and isn't started
+touch "$SANDBOX/docker-inactive"
+: > "$STUB_LOG"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address, which ufw doesn't filter: the daemon isn't running"
+assert_file_not_contains "$STUB_LOG" "docker ps"
+rm "$SANDBOX/docker-inactive"
+read_only
+# The docker step's report includes both once Docker is installed
 docker_installed() { true; }
 status_apt_source() { :; }
 docker_df 'Images\t1\t1GB\t0B\n'
 run status
 assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 1, 1GB"
+assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
 DOTFILES_STATUS_QUICK=1 run status
 assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --quick"
 read_only

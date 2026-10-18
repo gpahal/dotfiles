@@ -32,12 +32,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Copying Zed config..."
     zed_files copy_file_ask
 }

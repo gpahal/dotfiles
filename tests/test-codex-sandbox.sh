@@ -16,7 +16,7 @@ setup_sandbox
 load_script ai_tools/codex/install.sh
 is_macos() { false; }
 is_ubuntu() { true; }
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 S="$SANDBOX/state"
 USERNS_RESTRICT_SYSCTL="$S/userns"
 BWRAP_PROFILE="$SANDBOX/apparmor.d/bwrap-userns-restrict"

@@ -4,12 +4,6 @@ export GCC_COLORS="error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quo
 export EDITOR="vim"
 export VISUAL="vim"
 
-# Put ~/.local/bin and the `cargo install` and `go install` bin directories first. Homebrew's own
-# directories come from brew shellenv, ahead of /usr/local/bin.
-# Assigning to the path array (not `export PATH=...`) applies main.zsh's typeset -U, which also
-# drops duplicates added earlier, e.g. by brew shellenv in nested shells.
-path=("$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" $path)
-
 export LANG="en_US.UTF-8"
 
 # Turns off T3 Code's telemetry in the t3 CLI and in servers started from a shell. The macOS app

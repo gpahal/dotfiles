@@ -43,6 +43,8 @@ mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT"
 stub systemctl 'case "$2" in is-active | is-enabled) exit 0 ;; show) echo 4242 ;; esac'
 stub sleep
+# No t3 serve started by hand
+stub pgrep 'exit 1'
 : > "$STUB_LOG"
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"

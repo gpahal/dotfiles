@@ -20,8 +20,12 @@ stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
 stub chsh 'exit 1'
 assert_exit 0 bash "$REPO_DIR/zsh/install.sh"
 stub brew 'exit 1'
-# mise is a sentinel, and the config runs mise when it finds one on PATH
+# mise is a sentinel, and the config runs mise when it finds one on PATH. /etc/zprofile's
+# path_helper puts the system's dirs, /opt/homebrew/bin among them on macOS, ahead of the stubs,
+# so ~/.zprofile puts them back in front.
 stub mise
+# shellcheck disable=SC2016 # expanded by zsh
+printf 'path=(%q $path)\n' "$STUB_DIR" >> "$HOME/.zprofile"
 
 WORK="$SANDBOX/work"
 mkdir -p "$WORK"
@@ -49,10 +53,11 @@ stub eza
 touch "$WORK/main.go" "$WORK/main_test.go"
 # shellcheck disable=SC2016 # expanded by zsh
 checks='echo loaded; print -r -- main^; [[ -o extendedglob ]] && echo extendedglob-on
-for a in l la ll lla; do alias $a; done; true'
+print -r -- "mise=$(whence -p mise)"; for a in l la ll lla; do alias $a; done; true'
 for term in xterm-256color dumb; do
     output="$(in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
+    assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
     assert_eq "" "$(cat "$ERR")" "stderr with TERM=$term"
 done
 assert_contains "$output" "main^" "main^ in a terminal"
@@ -100,5 +105,6 @@ command_not_found_handler() { print "mise: $1"; _command_not_found_handler "$@";
 output="$(zsh -c "source '$HOME/.zsh/main.zsh'; nosuchtool" 2>&1)" || true
 assert_contains "$output" "mise: nosuchtool" "the handler left after loading"
 assert_not_contains "$output" "_command_not_found_handler" "the handler mise wraps"
-unset HOMEBREW_PREFIX HOMEBREW_REPOSITORY
+export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
+unset HOMEBREW_REPOSITORY
 test_done

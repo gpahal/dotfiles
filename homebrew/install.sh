@@ -18,6 +18,16 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 
 BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
+# The ids of the App Store apps a Brewfile lists, one per line. brew bundle skips the ids in
+# HOMEBREW_BUNDLE_MAS_SKIP; names would split on their spaces.
+mas_app_ids() {
+    sed -nE 's/^[[:space:]]*mas "[^"]*", id: ([0-9]+).*/\1/p' "$1"
+}
+
+# The Brewfile's App Store apps a Mac can do without, by name: paid apps you may not buy. One that
+# isn't installed is information in status and the step's warning, not something to fix.
+OPTIONAL_MAS=("Dato")
+
 # Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
 # them all. The path is empty for a cask with no app, and for every cask off macOS or without jq.
 installed_cask_apps() {
@@ -31,7 +41,7 @@ installed_cask_apps() {
 # The apt packages that provide UBUNTU_COMMANDS (lib/common.sh), which Ubuntu needs before
 # Homebrew, locales for locale-gen, which the ubuntu step runs to add the en_US.UTF-8 locale, and
 # fontconfig for fc-cache, which lets apps find the Monaspace cask's fonts. Minimal images lack them.
-UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq locales fontconfig"
+UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
 
 CASKS=(
     font-monaspace
@@ -136,9 +146,12 @@ install_homebrew() {
     load_brew
 }
 
-# --no-upgrade leaves outdated ones to `upgrade`
+# --no-upgrade leaves outdated ones to `upgrade`. An optional App Store app that isn't installed
+# doesn't count, or a Mac without it would reinstall the bundle on every run.
 bundle_installed() {
-    brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
+    local skip=""
+    ! is_macos || skip="$(missing_mas_apps optional id | tr '\n' ' ')"
+    HOMEBREW_BUNDLE_MAS_SKIP="$skip" brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
 }
 
 # Run brew bundle <check|install> on everything in the Brewfile but its App Store apps
@@ -154,54 +167,70 @@ bundle_installed_except_mas() {
 
 # Formulae and App Store apps from the Brewfile
 install_bundle() {
+    local what=formulae
+    ! is_macos || what="formulae and App Store apps"
     if bundle_installed; then
+        echo "Brew $what already installed."
         if is_macos; then
-            echo "Brew formulae and App Store apps already installed."
-        else
-            echo "Brew formulae already installed."
+            local optional
+            optional="$(missing_mas_apps optional | comma_list)"
+            [ -z "$optional" ] ||
+                echo "  Not installed, and optional: $optional. To add one, buy it in the App Store, then re-run."
         fi
     else
-        if is_macos; then
-            echo "Installing brew formulae and App Store apps..."
-        else
-            echo "Installing brew formulae..."
-        fi
+        echo "Installing brew $what..."
         # Keeps brew's status, so main sees 130 from Ctrl-C
         local status=0
         brew bundle install --file="$BREWFILE" --no-upgrade || status=$?
         if [ "$status" -ne 0 ]; then
-            if is_macos && [ "$status" -le 128 ] && mas_app_missing; then
+            local required optional
+            required="$(missing_mas_apps required | comma_list)"
+            optional="$(missing_mas_apps optional | comma_list)"
+            if is_macos && [ "$status" -le 128 ] && [ -n "$required$optional" ]; then
                 # On a new Mac, nobody has signed in to the App Store yet, so the App Store apps
                 # alone don't fail the step
                 if bundle_installed_except_mas; then
-                    echo "  Everything else in the Brewfile is installed, but not its App Store apps." >&2
+                    [ -z "$required" ] ||
+                        echo "  Everything else in the Brewfile is installed, but not its App Store apps." >&2
                     status=0
                 fi
-                echo "  Sign in to the App Store, buy any paid app homebrew/Brewfile lists under mas there once, then re-run." >&2
-                echo "  mas installs with sudo, so re-run from a terminal, or after sudo -v." >&2
+                if [ -n "$required" ]; then
+                    echo "  Sign in to the App Store, buy any paid app homebrew/Brewfile lists under mas there once, then re-run." >&2
+                    echo "  mas installs with sudo, so re-run from a terminal, or after sudo -v." >&2
+                fi
+                if [ -n "$optional" ]; then
+                    echo "  Not installed, and optional: $optional. To add one, buy it in the App Store, then re-run." >&2
+                fi
             fi
             [ "$status" -eq 0 ] || return "$status"
         fi
     fi
 }
 
-# Succeeds when an App Store app the Brewfile lists isn't installed, or mas itself isn't
-mas_app_missing() {
-    local installed id
-    installed="$(mas list 2>/dev/null | awk '{ print $1 }')" || return 0
-    while read -r id; do
-        printf '%s\n' "$installed" | grep -qxF "$id" || return 0
-    done < <(mas_app_ids "$BREWFILE")
-    return 1
+# missing_mas_apps <required|optional> [id]: print the name, or with id the id, of each of the
+# Brewfile's App Store apps of that kind (OPTIONAL_MAS) that isn't installed, one per line. Without
+# mas, that's all of them.
+missing_mas_apps() {
+    local installed id name optional
+    installed="$(mas list 2>/dev/null | awk '{ print $1 }')" || installed=""
+    while read -r id name; do
+        optional=required
+        ! has_arg "$name" "${OPTIONAL_MAS[@]}" || optional=optional
+        [ "$optional" == "$1" ] || continue
+        [ "${2:-}" != id ] || name="$id"
+        printf '%s\n' "$installed" | grep -qxF "$id" || printf '%s\n' "$name"
+    done < <(sed -nE 's/^[[:space:]]*mas "([^"]*)", id: ([0-9]+).*/\2 \1/p' "$BREWFILE")
 }
 
-# Install a cask, adding it to the caller's failed array when that fails. Exits on Ctrl-C, which
-# brew catches and exits 130 for, so bash wouldn't stop by itself.
+# Print the lines of stdin joined with ", "
+comma_list() {
+    paste -sd, - | sed 's/,/, /g'
+}
+
+# try_install_cask <cask> <app> <state>: install a cask, adding it to the caller's failed array
+# when that fails. The state is cask_state's, which spares install_cask asking brew again.
 try_install_cask() {
-    local status=0
-    install_cask "$@" || status=$?
-    [ "$status" -le 128 ] || exit "$status"
-    [ "$status" -eq 0 ] || failed+=("$1")
+    install_cask "$@" || failed+=("$1")
 }
 
 # Fail after trying every cask, naming the ones that failed, so one failure doesn't skip the rest
@@ -232,7 +261,7 @@ install_casks() {
         case "$state" in brew | other) continue ;; esac
         "$installing" || echo "Installing brew casks..."
         installing=true
-        try_install_cask "$cask" "$app"
+        try_install_cask "$cask" "$app" "$state"
     done
     if ! "$installing"; then
         echo "Brew casks already installed."
@@ -244,7 +273,7 @@ install_casks() {
 }
 
 status() {
-    local missing cask bundle apps
+    local missing cask bundle apps app
     if is_macos; then
         status_check "Xcode Command Line Tools" command_line_tools_installed
         status_item skipped "apt packages Homebrew needs: Ubuntu only"
@@ -266,17 +295,20 @@ status() {
     status_item ok "Homebrew"
     bundle="Brewfile brew formulae"
     # brew bundle check is the slowest check of any step
-    if [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; then
+    if status_quick; then
         status_item unverified "$bundle (skipped by --quick; run status without it to check)"
     else
         status_check "$bundle" bundle_installed_except_mas
     fi
     if is_macos; then
-        if mas_app_missing; then
+        if [ -n "$(missing_mas_apps required)" ]; then
             status_item missing "Brewfile App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
         else
             status_item ok "Brewfile App Store apps"
         fi
+        while IFS= read -r app; do
+            status_item info "$app (App Store) isn't installed. It's optional: to add it, buy it in the App Store, then re-run the homebrew step"
+        done < <(missing_mas_apps optional)
     else
         status_item skipped "Brewfile App Store apps: macOS only"
     fi
@@ -289,12 +321,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     require_supported_os || return 1
     if is_macos; then
         install_command_line_tools

@@ -42,18 +42,10 @@ install_ghostty() {
     fi
 }
 
-# Pass the file the step copies, as source and destination, to a function: copy_config to copy it,
+# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
 # or status_file to report it
 ghostty_files() {
     "$1" "$DOTFILES_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty"
-}
-
-# Set when the installed config differs, so main attempts a reload after copying
-CONFIG_CHANGED=false
-
-copy_config() {
-    cmp -s "$1" "$2" || CONFIG_CHANGED=true
-    copy_file "$1" "$2"
 }
 
 # Print the settings a Ghostty config file sets, sorted, one per line: each key, or for a keybind,
@@ -100,20 +92,16 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Ghostty..."
     # A failed install or copy fails the step, after the rest has run
     local installed=0
     if is_ubuntu; then
         install_ghostty || installed=$?
     fi
-    ghostty_files copy_config || installed=1
-    if "$CONFIG_CHANGED"; then
+    COPIED=false
+    ghostty_files copy_file || installed=1
+    if "$COPIED"; then
         # SIGUSR2 reloads the config; other signals quit Ghostty
         if pkill -USR2 -x ghostty; then
             echo "  Reloaded Ghostty config."

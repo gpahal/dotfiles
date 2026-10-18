@@ -6,34 +6,43 @@ set -euo pipefail
 # The homebrew step's main: the Command Line Tools on macOS and the apt packages on Ubuntu come
 # first, a failed bundle still installs the casks, one failed cask doesn't stop the rest, an app
 # installed outside Homebrew counts as installed, Ctrl-C (exit 130 from brew) stops the step, the
-# App Store hint shows when an App Store app is missing, apt-get update is retried only while
-# another update holds apt's lists lock, Ubuntu refreshes the font cache after a cask install, and
-# a re-run installs nothing. test-homebrew-install.sh covers installing Homebrew
-# itself.
+# App Store hint shows when an App Store app is missing (only a note for the optional Dato),
+# apt-get update is retried only while another update holds apt's lists lock, Ubuntu refreshes the
+# font cache after a cask install, and a re-run installs nothing. test-homebrew-install.sh covers
+# installing Homebrew itself.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script homebrew/install.sh
+[ -n "$(mas_app_ids "$BREWFILE")" ] || fail "mas_app_ids found no App Store apps in the Brewfile"
 # No app path for a cask brew doesn't list, so nothing asks brew info or finds the real Mac's apps
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
 cask_app_path() { :; }
 FONTS="$HOME/.local/share/fonts"
 
-# brew: the bundle is installed when $SANDBOX/bundle-ok exists, everything but its App Store apps
-# when $SANDBOX/rest-ok exists and HOMEBREW_BUNDLE_MAS_SKIP names all their ids, and bundle
-# install exits with $SANDBOX/bundle-status. The casks in $SANDBOX/casks are installed, each with its app at
-# $SANDBOX/apps/<cask>.app. Installing one exits with the status after its name in
+# brew: the bundle is installed when $SANDBOX/bundle-ok exists, or when $SANDBOX/rest-ok exists and
+# each App Store app is installed or its id is in HOMEBREW_BUNDLE_MAS_SKIP. bundle install creates
+# rest-ok when $SANDBOX/install-rest exists, and exits with $SANDBOX/bundle-status. The casks in
+# $SANDBOX/casks are installed, each with its app at $SANDBOX/apps/<cask>.app. Installing one exits with the status after its name in
 # $SANDBOX/cask-status, creates its app, and for font-monaspace adds a font where Homebrew would.
 stub brew 'S="'"$SANDBOX"'"
 app_json() { printf "{\"token\": \"%s\", \"artifacts\": [{\"app\": [\"x.app\"], \"target\": \"%s\"}]}" "$1" "$S/apps/$1.app"; }
 case "$1 $2" in
     "bundle check")
-        [ -e "$S/bundle-ok" ] || { [ -e "$S/rest-ok" ] &&
-            [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "937984704 1470584107 1295203466 " ]; } ;;
-    "bundle install") exit "$(cat "$S/bundle-status" 2>/dev/null || echo 0)" ;;
+        [ -e "$S/bundle-ok" ] && exit 0
+        [ -e "$S/rest-ok" ] || exit 1
+        for id in '"$(mas_app_ids "$BREWFILE" | tr '\n' ' ')"'; do
+            case " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " in *" $id "*) continue ;; esac
+            mas list | awk "{ print \$1 }" | grep -qxF "$id" || exit 1
+        done
+        ;;
+    "bundle install")
+        [ ! -e "$S/install-rest" ] || touch "$S/rest-ok"
+        exit "$(cat "$S/bundle-status" 2>/dev/null || echo 0)"
+        ;;
     "list --cask") if [ "$3" == -1 ]; then cat "$S/casks"; else grep -qxF "$3" "$S/casks"; fi ;;
     "info --json=v2")
         if [ "$3" == --installed ]; then
@@ -57,7 +66,7 @@ stub xcode-select
 stub fc-cache
 stub sudo 'exit 0'
 reset() {
-    rm -rf "$SANDBOX/bundle-ok" "$SANDBOX/rest-ok" "$SANDBOX/bundle-status" "$SANDBOX/apps" "$FONTS"
+    rm -rf "$SANDBOX/bundle-ok" "$SANDBOX/rest-ok" "$SANDBOX/install-rest" "$SANDBOX/bundle-status" "$SANDBOX/apps" "$FONTS"
     : > "$SANDBOX/casks"
     : > "$SANDBOX/cask-status"
     : > "$STUB_LOG"
@@ -101,6 +110,23 @@ assert_contains "$RUN_OUTPUT" "Everything else in the Brewfile is installed"
 assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "brew bundle install --no-upgrade
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs with only the App Store apps missing"
+
+# The bundle install fails only on the optional Dato: the step passes, saying it's optional,
+# without the sign-in steps
+reset
+echo 1 > "$SANDBOX/bundle-status"
+touch "$SANDBOX/install-rest"
+stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
+assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
+assert_not_contains "$RUN_OUTPUT" "Everything else in the Brewfile is installed"
+# Then the bundle counts as installed without Dato, so a re-run doesn't install it again
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Brew formulae and App Store apps already installed."
+assert_eq "" "$(installs)" "installs with only the optional Dato missing"
+assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 
 # One cask fails: the rest install, and the step fails naming it
 reset
@@ -156,7 +182,7 @@ assert_eq "" "$(installs)" "brew installs without the apt packages"
 # apt-get update fails at once while apt-daily holds the lists lock, so it's retried a few times,
 # and only for that. sudo runs apt-get, which fails with the lock error the number of times in
 # $SANDBOX/locked, or with another error while $SANDBOX/apt-broken exists.
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 stub apt-get 'S="'"$SANDBOX"'"
 [ "${*: -1}" == update ] || exit 0
 if [ -e "$S/apt-broken" ]; then

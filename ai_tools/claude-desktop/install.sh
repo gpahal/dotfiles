@@ -42,7 +42,7 @@ CLAUDE_DESKTOP_SETTINGS='
     | .preferences.ccKeepAwakeOnBattery = true
     | .preferences.ccdScheduledTasksEnabled = true
     | .preferences.menuBarEnabled = false
-    | .preferences.quickEntryShortcut = {"accelerator": "Alt+Space"}
+    | .preferences.quickEntryShortcut |= ((if type == "object" then . else {} end) | .accelerator = "Alt+Space")
     | .preferences.coworkBrowserToolsEnabled = true
     | .preferences.coworkPreferredBrowser = "chrome"
     | .preferences.coworkWebSearchEnabled = true
@@ -77,12 +77,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up the Claude desktop app..."
     if ! is_macos; then
         echo "  The claude cask is macOS-only, and this machine is used over SSH; skipping."

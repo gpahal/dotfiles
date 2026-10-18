@@ -10,21 +10,40 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 NOTIFICATION_SETTINGS="$HOME/Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 
-# Print each of the given apps whose notifications aren't allowed with the Persistent alert style,
-# reading each app's entry once. Fails when the settings can't be read: macOS only lets a terminal
-# with Full Disk Access read them. Flag bits as decoded by https://github.com/drewdiver/ncprefs.py:
-# 1<<25 Allow notifications, 1<<3 Temporary (banners), 1<<4 Persistent (alerts).
+# Print "<bundle id> <flags>" for each app in the notification settings, from one plutil run. The
+# apps list comes out as XML, which awk reads without jq, one element a line. Only keys of an app's
+# own dict count, not of one nested in it.
+notification_flags() {
+    local xml
+    xml="$(plutil -extract apps xml1 -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
+    printf '%s\n' "$xml" | awk '
+        /<dict>/ { if (++depth == 1) { id = ""; flags = "" } next }
+        /<\/dict>/ { if (depth-- == 1 && id != "") print id, flags; next }
+        depth != 1 { next }
+        /<key>bundle-id<\/key>/ { want = "string"; next }
+        /<key>flags<\/key>/ { want = "integer"; next }
+        want != "" {
+            if (match($0, "<" want ">[^<]*</" want ">")) {
+                value = substr($0, RSTART + length(want) + 2, RLENGTH - 2 * length(want) - 5)
+                if (want == "string") id = value; else flags = value
+            }
+            want = ""
+        }'
+}
+
+# Print each of the given apps whose notifications aren't allowed with the Persistent alert style.
+# Fails when the settings can't be read: macOS only lets a terminal with Full Disk Access read them.
+# Flag bits as decoded by https://github.com/drewdiver/ncprefs.py: 1<<25 Allow notifications, 1<<3
+# Temporary (banners), 1<<4 Persistent (alerts).
 notifications_pending() {
-    local count i id flags wanted=" $* " persistent=" "
-    count="$(plutil -extract apps raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
-    for ((i = 0; i < count; i++)); do
-        id="$(plutil -extract "apps.$i.bundle-id" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || continue
-        [[ "$wanted" == *" $id "* ]] || continue
-        flags="$(plutil -extract "apps.$i.flags" raw -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || continue
+    local apps id flags wanted=" $* " persistent=" "
+    apps="$(notification_flags)" || return 1
+    while read -r id flags; do
+        [[ "$wanted" == *" $id "* ]] && [[ "$flags" =~ ^[0-9]+$ ]] || continue
         if (( (flags >> 25 & 1) && (flags >> 4 & 1) && !(flags >> 3 & 1) )); then
             persistent+="$id "
         fi
-    done
+    done <<< "$apps"
     for id; do
         [[ "$persistent" == *" $id "* ]] || echo "$id"
     done
@@ -86,10 +105,10 @@ print_section() {
     print_doc_section "$DOTFILES_DIR/ai_tools/README.md" "## Manual steps" "### $1"
 }
 
-main() {
-    step_args "$@"
-    # Nothing to check: the list is what scripts can't do
-    ! status_requested "$@" || return 0
+# Nothing to check: the list is what scripts can't do
+status() { return 0; }
+
+apply() {
     if is_macos; then
         open_manual_steps
     else

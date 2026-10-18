@@ -59,32 +59,37 @@ base_ref() {
     echo fresh
 }
 
-# Succeeds when the repo fetched in the last 10 minutes. FETCH_HEAD is per worktree, so check the
-# current worktree's and the main one's. A failed fetch leaves it empty, so that doesn't count.
-fetched_recently() {
-    local dir
-    for dir in "$(git rev-parse --absolute-git-dir)" \
-        "$(git rev-parse --path-format=absolute --git-common-dir)"; do
-        [ -n "$(find "$dir/FETCH_HEAD" -size +0 -mmin -10 2> /dev/null)" ] && return 0
-    done
-    return 1
+# Print the file whose mtime records the hook's last successful fetch of origin's branch $1, one
+# per branch in the repo's common git dir, so every worktree shares it. FETCH_HEAD can't stand in:
+# any fetch, of another branch or remote, rewrites it, and the user's own fetches don't count.
+# % and / are encoded, so each branch gets its own file name.
+fetch_stamp() {
+    printf '%s/dotfiles-worktree-hook/fetched-%s\n' \
+        "$(git rev-parse --path-format=absolute --git-common-dir)" \
+        "$(printf '%s' "$1" | sed 's/%/%25/g; s|/|%2F|g')"
 }
 
-# Bring the branch fresh_base picks up to date, so the worktree branches from what's on the
-# remote. Every `claude -w` and isolated subagent waits for this, so skip it after a recent fetch,
-# and stop the fetch 15 s after it starts (WORKTREE_HOOK_FETCH_DEADLINE, which the test shortens).
-# That's a deadline for the whole fetch, not a stall timeout, so a slow fetch that's still
-# downloading stops too. A failed fetch leaves the local copy, as Claude Code does.
+# Bring the branch git wt base picks up to date, so the worktree branches from what's on the
+# remote. Every `claude -w` and isolated subagent waits for this, so skip it within 10 minutes of
+# the hook's last fetch of that branch, and stop the fetch 15 s after it starts
+# (WORKTREE_HOOK_FETCH_DEADLINE, which the test shortens). That's a deadline for the whole fetch,
+# not a stall timeout, so a slow fetch that's still downloading stops too. A failed fetch leaves
+# the local copy, as Claude Code does, and no stamp.
 fetch_default_branch() {
-    local base
-    base="$(fresh_base)"
+    local base branch stamp
+    base="$(git wt base)"
     case "$base" in
         refs/remotes/origin/*) ;;
         *) return 0 ;;
     esac
-    fetched_recently && return 0
-    fetch_with_timeout "${base#refs/remotes/origin/}" ||
+    branch="${base#refs/remotes/origin/}"
+    stamp="$(fetch_stamp "$branch")"
+    [ -z "$(find "$stamp" -mmin -10 2> /dev/null)" ] || return 0
+    if fetch_with_timeout "$branch"; then
+        mkdir -p "$(dirname "$stamp")" && touch "$stamp" || true
+    else
         echo "worktree-hook: couldn't fetch ${base#refs/remotes/}; branching from the local copy" >&2
+    fi
 }
 
 # Job control gives the fetch and watchdog separate process groups, including their children.
@@ -118,21 +123,6 @@ batch_ssh_command() {
         ssh="'$(printf '%s' "$GIT_SSH" | sed "s/'/'\\\\''/g")'"
     fi
     printf '%s -o BatchMode=yes -o ConnectTimeout=5\n' "${ssh:-ssh}"
-}
-
-# Print the base for a fresh branch, as git wt picks it, but never origin/<name>: origin's default
-# branch, else origin/main or origin/master, else HEAD. The ref stays in full, so a tag named
-# origin/main can't stand in for it.
-fresh_base() {
-    local ref
-    for ref in "$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2> /dev/null || true)" \
-        refs/remotes/origin/main refs/remotes/origin/master; do
-        if [ -n "$ref" ] && git show-ref --verify --quiet "$ref"; then
-            printf '%s\n' "$ref"
-            return
-        fi
-    done
-    echo HEAD
 }
 
 # Print the path of the worktree that has branch $1 checked out, if any. awk reads to the end:
@@ -229,9 +219,9 @@ create() {
         name="worktree-$name"
     fi
     git show-ref --verify --quiet "refs/heads/$name" && existed=true
-    # git wt add would track a branch origin has, which the fetch didn't update
+    # Without a base, git wt add would track a branch origin has, which the fetch didn't update
     if [ -z "$base" ] && ! "$existed"; then
-        base="$(fresh_base)"
+        base="$(git wt base)"
     fi
     path="$(git wt add "$name" ${base:+"$base"})"
     if ! "$existed"; then
@@ -271,21 +261,13 @@ remove() {
         git worktree remove --force "$path" >&2
         return
     fi
-    # Claude Code asks before removing a worktree with changes, so by now they're meant to go
-    git wt rm --force "$name" >&2
-    # Delete the branch the create hook made, unless it has commits no other branch, local or
-    # remote, has. git branch -d would keep a branch made from a newer origin/main than HEAD.
-    if [ "$branch" != "$name" ] || ! "$created"; then
-        return 0
-    fi
-    # Not grep -q: it exits at the first match, and under pipefail a for-each-ref still writing
-    # then dies of SIGPIPE, which would keep the branch
-    # shellcheck disable=SC2143
-    if [ -n "$(git for-each-ref --contains "refs/heads/$name" --format='%(refname)' refs/heads refs/remotes |
-        grep -vxF "refs/heads/$name")" ]; then
-        git branch -D "$name" >&2
+    # Claude Code asks before removing a worktree with changes, so by now they're meant to go.
+    # Delete the branch too when the create hook made it, unless it has commits no other branch,
+    # local or remote, has.
+    if [ "$branch" = "$name" ] && "$created"; then
+        git wt rm --force --delete-merged-branch "$name" >&2
     else
-        echo "worktree-hook: kept branch $name, which has commits no other branch has" >&2
+        git wt rm --force "$name" >&2
     fi
 }
 

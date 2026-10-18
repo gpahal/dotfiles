@@ -2,10 +2,12 @@
 set -euo pipefail
 
 # Install Docker Engine on Ubuntu from Docker's apt repo, the Linux counterpart of OrbStack on the
-# Mac. The daemon starts at boot, so containers with a restart policy come back, `docker` works
-# without sudo, container logs rotate, containers keep running across daemon restarts, published
-# ports listen on 127.0.0.1, and Docker updates install with the daily security updates. These
-# need sudo, so the step lists what's missing and asks once. On macOS, OrbStack (from the homebrew step) provides Docker.
+# Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
+# rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
+# networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
+# These need sudo, so the step lists what's missing and asks once. Then it asks on its own whether
+# to add you to the docker group, which lets `docker` run without sudo but is root-equivalent;
+# without it, use sudo docker. On macOS, OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -16,6 +18,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
+# The fingerprint of Docker's release key, "Docker Release (CE deb)"
+DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
 # unattended-upgrades only installs from Ubuntu's own repos unless told otherwise. The origin and
 # label come from Docker's Release file, e.g.
@@ -24,18 +28,24 @@ DOCKER_UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-docker
 DOCKER_UNATTENDED_CONTENT='// From the dotfiles docker step: install Docker updates with the daily security updates
 Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
 DOCKER_DAEMON_CONFIG=/etc/docker/daemon.json
-DOCKER_DAEMON_KEYS="log-driver, live-restore, and localhost-only published ports"
+DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, and address pools"
 # The local log driver rotates each container's logs (5 files of 20 MB); json-file, the default,
 # grows without limit. It applies to containers created after the change. live-restore keeps
 # containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
 # 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
 # default-network-opts the user-defined networks, such as Compose's, created after the change.
-# ufw also blocks containers from reaching ports on the host. `sudo ufw allow in on docker0` lets in
-# the default bridge, and each user-defined network's bridge, br-<first 12 characters of the
-# network ID>, needs its own rule. The step adds neither.
+# Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
+# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps only the
+# 172 ones, so docker0 stays on 172.17.0.0/16, and a network created after the change stays out of
+# the SSH ranges. The trade-off: docker0 takes one of the 15, so a 15th network of your own fails.
+# ufw blocks containers from reaching ports on the host, SSH included, since the ubuntu step's SSH
+# ranges leave out 172.16.0.0/12. `sudo ufw allow in on docker0` lets in the default bridge, and
+# each user-defined network's bridge, br-<first 12 characters of the network ID>, needs its own
+# rule. The step adds neither.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
+    | .["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]
     | if has("log-opts") then .["log-opts"] |= with_entries(select(
         .key | IN("max-size", "max-file", "compress", "labels", "labels-regex",
                   "env", "env-regex", "tag", "mode", "max-buffer-size")
@@ -74,10 +84,10 @@ docker_source_ok() {
 
 # Run it once apt_repo_published says Docker has packages for this release
 add_docker_repo() {
-    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
+    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# main runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
+# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -104,6 +114,31 @@ socket_ready() {
         systemctl is-active --quiet docker.socket 2>/dev/null
 }
 
+enable_docker_service() {
+    sudo systemctl enable --now docker.service
+}
+
+enable_docker_socket() {
+    sudo systemctl enable --now docker.socket
+}
+
+write_docker_auto_updates() {
+    write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
+}
+
+# Add the step's simple sudo items, which status and apply drive by their check functions. Added
+# at run time, since their texts name paths tests point elsewhere.
+docker_sudo_items() {
+    sudo_items_reset
+    sudo_item "Docker starts at boot (docker.service enabled)" \
+        "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
+        starts_at_boot enable_docker_service
+    sudo_item "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    sudo_item "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
+        "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
+        docker_auto_updates_configured write_docker_auto_updates
+}
+
 # Succeeds when the daemon config on stdin already has the settings
 daemon_settings_applied() {
     local current
@@ -116,7 +151,7 @@ daemon_config_unreadable() {
 }
 
 # Reads without sudo, or with sudo only when it doesn't ask for a password. A file only root can
-# read is otherwise unverified, so main lists it to check after approval.
+# read is otherwise unverified, so apply lists it to check after approval.
 daemon_configured() {
     if [ -r "$DOCKER_DAEMON_CONFIG" ]; then
         daemon_settings_applied < "$DOCKER_DAEMON_CONFIG"
@@ -133,13 +168,47 @@ daemon_restart_note() {
     printf '%s' " binding applies to the default bridge, and to networks created from now on"
 }
 
+# docker_status_run <label> <docker args>...: run docker for a status check, stopped after 30 s,
+# leaving its output in DOCKER_OUT and its exit status in DOCKER_STATUS, which the caller declares
+# local. Outside the docker group it goes through sudo -n, which runs only while sudo credentials
+# are cached, since logging in again can't help. Returns 0 when docker succeeded; 1 when it
+# reported, under the label, why docker couldn't be asked; and 2 when docker failed otherwise,
+# which the caller reports.
+docker_status_run() {
+    local label="$1" docker=(docker)
+    shift
+    DOCKER_OUT=""
+    DOCKER_STATUS=0
+    if ! in_docker_group; then
+        if ! sudo_cached; then
+            status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
+            return 1
+        fi
+        docker=(sudo -n docker)
+    fi
+    DOCKER_OUT="$(run_bounded 30 "${docker[@]}" "$@" 2>&1)" || DOCKER_STATUS=$?
+    [ "$DOCKER_STATUS" -ne 0 ] || return 0
+    case "$DOCKER_OUT" in
+        # In the group, but this session started before joining it
+        *"permission denied"*)
+            status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
+            ;;
+        # Stopped since the caller saw it running, as a restart does
+        *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
+            status_item info "$label: the daemon isn't running"
+            ;;
+        *) return 2 ;;
+    esac
+    return 1
+}
+
 # Information, not something the step sets up: what images, containers, volumes, and the build
 # cache take on disk, so you can prune before the disk fills. docker.socket would start a stopped
 # daemon on the first docker command, so it's only asked when docker.service is already running.
 # It prunes nothing.
 status_docker_usage() {
-    local label="Docker disk usage" out status=0 type count size reclaimable summary=""
-    if [ -n "${DOTFILES_STATUS_QUICK:-}" ]; then
+    local label="Docker disk usage" out status=0 type count size reclaimable summary="" DOCKER_OUT DOCKER_STATUS
+    if status_quick; then
         status_item unverified "$label: skipped by --quick"
         return 0
     fi
@@ -149,20 +218,12 @@ status_docker_usage() {
     fi
     # One line per type: Images, Containers, Local Volumes, and Build Cache. Docker's output has
     # had these fields since 17.06; the reclaimable space may end in a percentage.
-    out="$(run_bounded 30 docker system df --format '{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}' 2>&1)" || status=$?
+    docker_status_run "$label" system df --format '{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}' || status=$?
+    [ "$status" -ne 1 ] || return 0
+    out="$DOCKER_OUT"
     if [ "$status" -ne 0 ]; then
-        case "$out" in
-            *"permission denied"*)
-                status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
-                ;;
-            *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
-                status_item info "$label: the daemon isn't running"
-                ;;
-            *)
-                [ "$status" -ne 124 ] || out="docker system df didn't answer within 30 s"
-                status_item info "$label: couldn't check ($(grep -v '^ *$' <<< "$out" | head -n 1))"
-                ;;
-        esac
+        [ "$DOCKER_STATUS" -ne 124 ] || out="docker system df didn't answer within 30 s"
+        status_item info "$label: couldn't check ($(grep -v '^ *$' <<< "$out" | head -n 1))"
         return 0
     fi
     while IFS=$'\t' read -r type count size reclaimable; do
@@ -181,6 +242,45 @@ status_docker_usage() {
     fi
 }
 
+# Print each port a published port list from docker ps binds on every address, one per line, such
+# as 0.0.0.0:8080->80/tcp. Docker lists IPv6 ones as [::]:<port>, or :::<port> before 26.
+ports_on_every_address() {
+    local nl=$'\n'
+    printf '%s\n' "${1//, /$nl}" | grep -E '^(0\.0\.0\.0|\[::\]|::):[^ ]*->' || true
+}
+
+# Published ports skip ufw, since Docker's iptables rules come first. The daemon settings bind them
+# to 127.0.0.1, but not on a network created before them, or for a port published on 0.0.0.0, so
+# status lists the running containers' ports that every address reaches. docker.socket would start
+# a stopped daemon, which then runs no containers, so a stopped one isn't asked.
+status_docker_ports() {
+    local label="Container ports published on every address, which ufw doesn't filter"
+    local none="No container ports published on every address, which ufw doesn't filter"
+    local out status=0 name ports open="" port DOCKER_OUT DOCKER_STATUS
+    if ! systemctl is-active --quiet docker.service 2>/dev/null; then
+        status_item ok "$none: the daemon isn't running"
+        return 0
+    fi
+    docker_status_run "$label" ps --format '{{.Names}}\t{{.Ports}}' || status=$?
+    [ "$status" -ne 1 ] || return 0
+    out="$DOCKER_OUT"
+    if [ "$status" -ne 0 ]; then
+        [ "$DOCKER_STATUS" -ne 124 ] || out="docker ps didn't answer within 30 s"
+        status_item unknown "$label: couldn't list the containers ($(grep -v '^ *$' <<< "$out" | head -n 1))"
+        return 0
+    fi
+    while IFS=$'\t' read -r name ports; do
+        while IFS= read -r port; do
+            [ -z "$port" ] || open="${open:+$open, }$name $port"
+        done < <(ports_on_every_address "$ports")
+    done <<< "$out"
+    if [ -z "$open" ]; then
+        status_item ok "$none"
+    else
+        status_item missing "$label: $open; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
+    fi
+}
+
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
@@ -190,12 +290,17 @@ status() {
     fi
     local installed=false
     docker_installed && installed=true
+    docker_sudo_items
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
-    status_check "$(id -un) in the docker group" in_docker_group
+    # The step asks about the group on its own, and you may say no, so its absence isn't missing
+    if in_docker_group; then
+        status_item ok "$(id -un) in the docker group"
+    else
+        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it"
+    fi
     if "$installed"; then
-        status_check "Docker starts at boot (docker.service enabled)" starts_at_boot
-        status_check "docker.socket enabled and listening" socket_ready
+        sudo_items_status starts_at_boot socket_ready
     else
         status_item missing "Docker starts at boot (docker.service enabled)"
         status_item missing "docker.socket enabled and listening"
@@ -207,22 +312,25 @@ status() {
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         status_check "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" daemon_configured
     fi
-    status_check "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" docker_auto_updates_configured
+    sudo_items_status docker_auto_updates_configured
+    ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
     status_result
 }
 
 # Merge the settings into the file, keeping its other keys. Nothing is written until jq succeeds.
+# When Docker won't restart with the new file, the old content, kept in memory, goes back, so no
+# backup is left in /etc/docker.
 configure_daemon() {
-    local current='{}' exists=false tmp backup="$DOCKER_DAEMON_CONFIG.dotfiles-bak" running=false
+    local original="" current='{}' exists=false tmp running=false
     if sudo test -e "$DOCKER_DAEMON_CONFIG"; then
         exists=true
-        if ! current="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
+        if ! original="$(sudo cat "$DOCKER_DAEMON_CONFIG")"; then
             echo "  Couldn't read $DOCKER_DAEMON_CONFIG." >&2
             return 1
         fi
         # jq reads an empty file as no input and prints nothing
-        [ -n "${current//[[:space:]]/}" ] || current='{}'
+        [ -z "${original//[[:space:]]/}" ] || current="$original"
     fi
     tmp="$(mktemp)" || return 1
     if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp"; then
@@ -240,50 +348,36 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    # A backup to put back if Docker won't restart with the new file. It goes once Docker does.
-    if "$exists" && ! sudo cp -p "$DOCKER_DAEMON_CONFIG" "$backup"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    # A failed write leaves the old file whole. main runs this as `configure_daemon || ...`, where
+    # A failed write leaves the old file whole. apply runs this as `configure_daemon || ...`, where
     # set -e is off, so each command checks its own failure.
     if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
         rm -f "$tmp"
-        "$exists" && sudo rm -f "$backup"
         return 1
     fi
     rm -f "$tmp"
     # Only a running daemon needs the restart; a stopped one reads the file when it starts
     systemctl is-active --quiet docker.service && running=true
-    if ! sudo systemctl try-restart docker.service; then
-        if "$exists"; then
-            if ! install_root_file "$backup" "$DOCKER_DAEMON_CONFIG"; then
-                echo "  Docker activation failed, and putting the previous configuration back failed too. Copy $backup to $DOCKER_DAEMON_CONFIG by hand." >&2
-                return 1
-            fi
-            echo "  Docker activation failed; restored the previous configuration, which is also in $backup. Fix the error and re-run." >&2
-        else
-            sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
-            echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
-        fi
-        if "$running"; then
-            sudo systemctl start docker.service ||
-                echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
-        fi
-        return 1
-    fi
-    # Docker took the new file
+    sudo systemctl try-restart docker.service && return 0
     if "$exists"; then
-        sudo rm -f "$backup"
+        if ! write_root_file "$DOCKER_DAEMON_CONFIG" "$original"; then
+            echo "  Docker activation failed, and putting the previous configuration back failed too. Write it to" >&2
+            echo "  $DOCKER_DAEMON_CONFIG by hand:" >&2
+            printf '%s\n' "$original" >&2
+            return 1
+        fi
+        echo "  Docker activation failed; restored the previous configuration. Fix the error and re-run." >&2
+    else
+        sudo rm -f "$DOCKER_DAEMON_CONFIG" || return 1
+        echo "  Docker activation failed; removed the new configuration. Fix the error and re-run." >&2
     fi
+    if "$running"; then
+        sudo systemctl start docker.service ||
+            echo "  Docker couldn't recover with its previous configuration. Check: journalctl -u docker" >&2
+    fi
+    return 1
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Docker..."
     if is_macos; then
         echo "  OrbStack, from the homebrew step, provides Docker; skipping."
@@ -292,6 +386,8 @@ main() {
     require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
+    # add_apt_repo needs it, after other changes
+    require_cmd gpg || return 1
 
     # Installed Docker updates only while its source is the one this step writes. A release upgrade
     # turns third-party sources off, and a re-run rewrites this one for the new release once Docker
@@ -305,56 +401,67 @@ main() {
         repair_source=true
     fi
     local pending=()
+    docker_sudo_items
     "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo. The group is root-equivalent: anything running as you, agents included, can get root with docker run -v /:/host")
     # Freshly installed packages enable and start both units
-    if "$installed" && ! starts_at_boot; then
-        pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")
-    fi
-    if "$installed" && ! socket_ready; then
-        pending+=("Enable docker.socket")
-    fi
+    ! "$installed" || sudo_items_pending starts_at_boot socket_ready
     if ! "$installed" || ! daemon_configured; then
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
         else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, and publish ports on 127.0.0.1 unless given an address: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
+            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and keep new networks out of 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
         fi
     fi
-    docker_auto_updates_configured || pending+=("Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF")
+    sudo_items_pending docker_auto_updates_configured
 
     local result=0
     if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Docker is already installed and set up."
+        if in_docker_group; then
+            echo "  Docker is already installed and set up."
+            return 0
+        fi
+    elif confirm_sudo_changes "${pending[@]}"; then
+        if ! "$installed"; then
+            # The rest needs Docker's packages, and the docker group they add
+            install_docker || return 1
+            installed=true
+        elif "$repair_source"; then
+            add_docker_repo || result=1
+        fi
+        # Each part from here on runs whether or not the one before it failed
+        sudo_items_apply socket_ready || result=1
+        daemon_configured || configure_daemon || result=1
+        # After the config, so a daemon this starts reads it rather than restarting for it
+        sudo_items_apply starts_at_boot docker_auto_updates_configured || result=1
+        if [ "$result" -ne 0 ]; then
+            echo "  Applied the rest. Some changes failed; see the errors above." >&2
+        else
+            echo "  Applied."
+        fi
+    fi
+    # Docker's packages add the group
+    if "$installed" && ! in_docker_group; then
+        add_to_docker_group || result=1
+    fi
+    return "$result"
+}
+
+# The group is root-equivalent, so it gets its own question: Docker works without it, through sudo
+# docker. T3 Code's agents need it to run docker.
+add_to_docker_group() {
+    echo "  The docker group lets docker run without sudo, for you and T3 Code's agents. It's"
+    echo "  root-equivalent: anything running as you, agents included, can get root with"
+    echo "  docker run -v /:/host. Without it, run sudo docker."
+    if ! confirm "  Add $(id -un) to the docker group, with sudo?"; then
+        echo "  Left $(id -un) out of the docker group."
         return 0
     fi
-    confirm_sudo_changes "${pending[@]}" || return 0
-    if ! "$installed"; then
-        # The rest needs Docker's packages, and the docker group they add
-        install_docker || return 1
-    elif "$repair_source"; then
-        add_docker_repo || result=1
-    fi
-    # Each part from here on runs whether or not the one before it failed
-    if ! in_docker_group; then
-        sudo usermod -aG docker "$(id -un)" || result=1
-        echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
-        echo "  service and its agents) and a running tmux server keep their old groups until you"
-        echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."
-    fi
-    socket_ready || sudo systemctl enable --now docker.socket || result=1
-    daemon_configured || configure_daemon || result=1
-    # After the config, so a daemon this starts reads it rather than restarting for it
-    starts_at_boot || sudo systemctl enable --now docker.service || result=1
-    docker_auto_updates_configured ||
-        write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT" || result=1
-    if [ "$result" -ne 0 ]; then
-        echo "  Applied the rest. Some changes failed; see the errors above." >&2
-        return 1
-    fi
-    echo "  Applied."
+    sudo usermod -aG docker "$(id -un)" || return 1
+    echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
+    echo "  service and its agents) and a running tmux server keep their old groups until you"
+    echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

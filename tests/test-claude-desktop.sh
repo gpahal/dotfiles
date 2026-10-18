@@ -101,6 +101,22 @@ assert_contains "$RUN_OUTPUT" "already set"
 assert_contains "$RUN_OUTPUT" "$AGENT is already up to date"
 assert_eq "$before" "$(/bin/ls -i "$CONFIG")" "config after a re-run"
 
+# A key Claude adds to the quick entry shortcut stays, so the settings still count as set
+jq '.preferences.quickEntryShortcut.enabled = true' "$CONFIG" > "$SANDBOX/q.json" && cp "$SANDBOX/q.json" "$CONFIG"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Claude desktop app settings"
+
+# A quick entry shortcut that isn't an object is replaced by one
+stub pgrep 'exit 1'
+for value in true '"Alt+Space"'; do
+    jq --argjson v "$value" '.preferences.quickEntryShortcut = $v' "$CONFIG" > "$SANDBOX/q.json"
+    cp "$SANDBOX/q.json" "$CONFIG"
+    assert_exit 0 main
+    assert_eq '{"accelerator":"Alt+Space"}' "$(jq -c .preferences.quickEntryShortcut "$CONFIG")" \
+        "quick entry shortcut replacing $value"
+done
+stub pgrep 'exit 0'
+
 # A setting changed while Claude runs: without a terminal, it isn't quit and the config stays
 jq '.preferences.menuBarEnabled = true' "$CONFIG" > "$SANDBOX/changed.json"
 cp "$SANDBOX/changed.json" "$CONFIG"

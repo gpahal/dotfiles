@@ -5,7 +5,8 @@ set -euo pipefail
 
 # Without a terminal, the homebrew step installs Homebrew when sudo is cached or the prefix
 # already exists, and otherwise stops before the installer, on both OSes. missing_ubuntu_commands
-# checks for locale-gen and fc-cache along with the rest.
+# checks for locale-gen and fc-cache along with the rest. A cask install that brew's Ctrl-C stops
+# ends the step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -47,6 +48,43 @@ for os in ubuntu macos; do
     assert_exit 0 install_homebrew
     assert_file_contains "$STUB_LOG" "run_installer bash"
     rmdir "$PREFIX"
+done
+
+# brew catches Ctrl-C and exits 130, so install_cask exits with it, rather than returning a failure
+# that a caller's `|| result=1` would turn into 1. Any other failure returns, so the rest still
+# install, including other codes above 128 such as 137, 141 from SIGPIPE, or 255.
+load_script homebrew/install.sh
+is_macos() { false; }
+cask_state() { printf 'missing\t\n'; }
+try_cask() {
+    local failed=()
+    try_install_cask foo ""
+    echo "carried on, failed: ${failed[*]}"
+}
+direct() {
+    install_cask foo "" || echo "returned $?"
+}
+for code in 130 143 129 1 137 141 255; do
+    stub brew "exit $code"
+    if ! interrupted_status "$code"; then
+        assert_exit 0 try_cask
+        assert_contains "$RUN_OUTPUT" "carried on, failed: foo"
+    else
+        assert_exit "$code" try_cask
+        assert_not_contains "$RUN_OUTPUT" "carried on"
+        assert_exit "$code" direct
+        assert_not_contains "$RUN_OUTPUT" "returned"
+    fi
+done
+
+# A cask that runs an installer names no app in brew's metadata, so cask_state takes its app from
+# CASK_PKG_APPS, on macOS. Without it, an app installed outside brew would count as missing.
+load_script homebrew/install.sh
+is_macos() { true; }
+stub brew 'exit 1'
+for entry in "elgato-stream-deck=/Applications/Elgato Stream Deck.app" "tailscale-app=/Applications/Tailscale.app"; do
+    IFS=$'\t' read -r _ app <<< "$(cask_state "${entry%%=*}")"
+    assert_eq "${entry#*=}" "$app" "the app cask_state finds for ${entry%%=*}"
 done
 
 # shellcheck disable=SC2034 # missing_ubuntu_commands reads it

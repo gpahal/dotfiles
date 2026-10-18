@@ -78,7 +78,8 @@ load_script ubuntu/setup-alerts.sh
 is_ubuntu() { true; }
 NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
-# sudo runs the command, and refuses any path under /etc
+# sudo runs the command, and refuses any path under /etc. Not stub_sudo_exec, which would refuse
+# the test warning's SMARTD_DEVICE=/dev/test, a name the hook only prints.
 stub sudo 'for a in "$@"; do case "$a" in /etc/*) echo "refused: $a" >&2; exit 1 ;; esac; done
 exec "$@"'
 URL=https://ntfy.sh/my-topic

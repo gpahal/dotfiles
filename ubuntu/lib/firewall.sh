@@ -7,8 +7,14 @@
 # Succeeds when ufw is on and denies incoming connections, which its config files show to anyone
 ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
-        grep -qx 'ENABLED=yes' /etc/ufw/ufw.conf 2>/dev/null &&
-        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' /etc/default/ufw 2>/dev/null
+        grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
+        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null
+}
+
+# Succeeds when ufw filters IPv6 too. With IPV6=no, it leaves sshd open on the global IPv6
+# address while ufw_enabled still succeeds. The step leaves the file to you, and status reports it.
+ufw_ipv6_on() {
+    grep -qx 'IPV6=yes' "$UFW_DEFAULTS" 2>/dev/null
 }
 
 # The ports ssh.socket listens on while it's active, one per line. systemctl show lists each
@@ -58,7 +64,7 @@ ufw_rules() {
 # expose sshd. Takes sudo's flags: with -n it never asks for a password. Returns 2 when ufw is on
 # and denies incoming connections, but its rules (`ufw status` needs root) couldn't be read, so
 # they're unverified, and 1 for anything else missing. Rules you added by hand are left to you.
-# shellcheck disable=SC2120 # main in install.sh passes sudo's flags
+# shellcheck disable=SC2120 # apply in install.sh passes sudo's flags
 ufw_configured() {
     local missing
     ufw_enabled || return 1
@@ -77,28 +83,30 @@ ufw_missing_rules() {
 }
 
 # Print each allow or limit rule ufw has that lets SSH in from beyond the private ranges, other
-# than on tailscale0, as ufw_rules prints it: one to an SSH port, or every port, from Anywhere, a
-# public address, or a range wider than $SSH_RANGES', such as the rule `ufw allow ssh` adds. The
-# step never adds or deletes such a rule, so status reports it. Takes sudo's flags. Fails when the
-# rules or the SSH ports can't be read.
+# than on tailscale0, as "<source>\t<rule>", with the rule as ufw_rules prints it: one to an SSH
+# port, or every port, from Anywhere, a public address, or a range wider than $SSH_RANGES', such
+# as the rule `ufw allow ssh` adds. The step never adds or deletes such a rule, so status reports
+# it. Takes sudo's flags. Fails when the rules or the SSH ports can't be read.
 ufw_broad_ssh_rules() {
     local rules ports rule
     rules="$(ufw_rules "$@")" && ports="$(sshd_ports "$@")" && [ -n "$ports" ] || return 1
     while IFS= read -r rule; do
         # shellcheck disable=SC2086 # one port per word
-        ! ufw_rule_broad_ssh "$rule" $ports || echo "$rule"
+        ! ufw_rule_broad_ssh "$rule" $ports || printf '%s\t%s\n' "$UFW_RULE_SOURCE" "$rule"
     done <<< "$rules"
 }
 
 # ufw_rule_broad_ssh <rule> <port>...: succeeds when the rule, as `ufw status` lists it with runs
 # of spaces squeezed, lets any of the ports in over TCP from beyond the private ranges, other than
-# on tailscale0. "To" is [address] [ports[/proto] | app] [(v6)] [on <interface>], and an address
-# alone, or Anywhere, means every port. Of the app profiles, only OpenSSH's port is known.
+# on tailscale0, and sets UFW_RULE_SOURCE to where it lets them in from. "To" is [address]
+# [ports[/proto] | app] [(v6)] [on <interface>], and an address alone, or Anywhere, means every
+# port. Of the app profiles, only OpenSSH's port is known.
 ufw_rule_broad_ssh() {
     local rule="${1%% # *}" to from spec port
     shift
     [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
     to="${BASH_REMATCH[1]}" from="${BASH_REMATCH[4]}"
+    UFW_RULE_SOURCE="$from"
     to="${to/ (v6)/}"
     case "$to" in *" on tailscale0") return 1 ;; esac
     to="${to%% on *}"
@@ -133,27 +141,21 @@ ufw_ports_include() {
     return 1
 }
 
-# Succeeds for a rule's source inside the private ranges: one of $SSH_RANGES, or a private address
-# or a range of them no wider than those, /16 or narrower for IPv4 and /10 for IPv6
+# Succeeds for a rule's source inside the private ranges: an address in one of $SSH_RANGES, or a
+# range of them no wider than the one it's in, such as 10.0.0.0/12 inside 10.0.0.0/8
 private_source() {
-    local range bits
-    for range in "${SSH_RANGES[@]}"; do
-        [ "$1" != "$range" ] || return 0
-    done
+    local bits floor
     case "$1" in
         Anywhere) return 1 ;;
         */*) bits="${1##*/}" ;;
         *) bits=128 ;;
     esac
-    [[ "$bits" =~ ^[0-9]+$ ]] && private_address "${1%/*}" || return 1
-    case "$1" in
-        *:*) [ "$bits" -ge 10 ] ;;
-        *) [ "$bits" -ge 16 ] ;;
-    esac
+    [[ "$bits" =~ ^[0-9]+$ ]] && floor="$(private_prefix "${1%/*}")" && [ "$bits" -ge "$floor" ]
 }
 
-# Succeeds for an IPv4 or IPv6 address in one of the private ranges in $SSH_RANGES
-private_address() {
+# Print the prefix length of the range in $SSH_RANGES that an IPv4 or IPv6 address is in, or fail
+# when it's in none
+private_prefix() {
     local a b hextet
     case "$1" in
         *:*)
@@ -161,14 +163,28 @@ private_address() {
             # fe8 to feb
             hextet="0000${1%%:*}"
             hextet="${hextet:${#hextet}-4}"
-            case "$hextet" in fd?? | fe[89ab]?) return 0 ;; esac
-            return 1
+            case "$hextet" in
+                fd??) echo 8 ;;
+                fe[89ab]?) echo 10 ;;
+                *) return 1 ;;
+            esac
+            return 0
             ;;
     esac
     IFS=. read -r a b _ <<< "$1"
     [[ "$a" =~ ^[0-9]+$ ]] && [[ "$b" =~ ^[0-9]+$ ]] || return 1
-    [ "$a" -eq 10 ] || { [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ]; } ||
-        { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
+    if [ "$a" -eq 10 ]; then
+        echo 8
+    elif [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; then
+        echo 16
+    else
+        return 1
+    fi
+}
+
+# Succeeds for an IPv4 or IPv6 address in one of the private ranges in $SSH_RANGES
+private_address() {
+    private_prefix "$1" > /dev/null
 }
 
 # Succeeds for an address the firewall would cut off: outside the private ranges, and not reached
@@ -236,18 +252,20 @@ outside_ssh_peers() {
 }
 
 # --force skips the question about dropping SSH connections, which the rules keep. Changes nothing
-# and fails while the SSH ports can't be read, or an SSH session comes from outside the private
-# ranges and the tailnet, which the firewall would cut off.
+# and fails while the SSH ports can't be read, or, to turn ufw on, while an SSH session comes from
+# outside the private ranges and the tailnet, which the firewall would cut off. With ufw already
+# on, it only adds the allow rules that are missing, which can't cut anyone off.
 # setup_ufw runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command
 # checks its own failure.
 configure_ufw() {
-    local ports port range outside
+    local ports port range outside="" on=false
     ports="$(sshd_ports)" && [ -n "$ports" ] || {
         echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
         return 1
     }
+    ! ufw_enabled || on=true
     # shellcheck disable=SC2086 # one port per word
-    if ! outside="$(outside_ssh_peers $ports)"; then
+    if ! "$on" && ! outside="$(outside_ssh_peers $ports)"; then
         echo "  Couldn't list the established SSH connections with ss, so the firewall is left unchanged." >&2
         return 1
     fi
@@ -262,7 +280,7 @@ configure_ufw() {
     if ! apt_installed ufw; then
         apt_get install -y ufw || return 1
     fi
-    sudo ufw default deny incoming > /dev/null || return 1
+    "$on" || sudo ufw default deny incoming > /dev/null || return 1
     for port in $ports; do
         for range in "${SSH_RANGES[@]}"; do
             sudo ufw allow from "$range" to any port "$port" proto tcp > /dev/null || return 1
@@ -270,11 +288,54 @@ configure_ufw() {
     done
     sudo ufw allow in on tailscale0 > /dev/null || return 1
     sudo ufw allow "$TAILSCALE_PORT/udp" > /dev/null || return 1
-    sudo ufw --force enable > /dev/null
+    "$on" || sudo ufw --force enable > /dev/null
 }
 
 # Set up the firewall once sudo is in use
 setup_ufw() {
     ensure_sshd_run_dir || return 1
     ufw_configured || configure_ufw
+}
+
+# Print the status items for ufw: on, filtering IPv6, its rules, and any other rule that lets SSH
+# in from elsewhere. Reads the rules, which only root can, with sudo -n.
+status_ufw() {
+    local ufw=0 from rule where
+    local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+    if ! ufw_enabled; then
+        status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+        return 0
+    fi
+    status_item ok "ufw on, denying incoming connections"
+    if ufw_ipv6_on; then
+        status_item ok "ufw filters IPv6"
+    else
+        status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
+    fi
+    if ! apt_installed openssh-server; then
+        status_item missing "$rules: openssh-server isn't installed"
+        return 0
+    elif [ ! -d "$SSHD_RUN_DIR" ]; then
+        status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
+        return 0
+    fi
+    if sudo_cached; then
+        ufw_configured -n || ufw=$?
+    else
+        ufw=2
+    fi
+    case "$ufw" in
+        0) status_item ok "$rules" ;;
+        1) status_item missing "$rules (re-run the ubuntu step)" ;;
+        *)
+            status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
+            return 0
+            ;;
+    esac
+    while IFS=$'\t' read -r from rule; do
+        [ -n "$rule" ] || continue
+        where=anywhere
+        [ "$from" == Anywhere ] || where="$from, outside the private ranges"
+        status_item missing "ufw rule lets SSH in from $where: $rule; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
+    done < <(ufw_broad_ssh_rules -n || true)
 }

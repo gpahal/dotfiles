@@ -10,6 +10,9 @@ const os = require("node:os");
 const MACMON = "/opt/homebrew/bin/macmon";
 // Samples kept for the CPU and GPU sparklines
 const HISTORY = 30;
+// Failed macmon runs in a row before the next start waits, and the longest wait
+const MACMON_RETRIES = 3;
+const MACMON_MAX_WAIT_MS = 10 * 60 * 1000;
 const GIB = 1024 ** 3;
 
 // Activity Monitor's Memory Used: app memory (anonymous pages less purgeable ones), wired, and
@@ -29,13 +32,14 @@ function parseSwap(text) {
 
 // netstat -ibn: the byte counts of each en interface's link row. Counted from the right, since a
 // row without an address has one column fewer. Other interfaces, such as utun for a VPN, carry
-// traffic en already counts.
+// traffic en already counts. A down interface is named with a *, as en0*. It keeps its counters,
+// so leaving it out would count its lifetime total as one sample's traffic when it comes back up.
 function parseNetstat(text) {
   let rx = 0;
   let tx = 0;
   for (const line of text.split("\n")) {
     const cols = line.trim().split(/\s+/);
-    if (!/^en\d+$/.test(cols[0]) || !cols[2]?.startsWith("<Link#")) continue;
+    if (!/^en\d+\*?$/.test(cols[0]) || !cols[2]?.startsWith("<Link#")) continue;
     rx += Number(cols.at(-5));
     tx += Number(cols.at(-2));
   }
@@ -77,7 +81,8 @@ const NEEDS = {
   network: ["network"],
 };
 
-function createSampler({ log = () => {} } = {}) {
+// macmonPath and spawnProcess stand in for macmon and child_process.spawn in tests
+function createSampler({ log = () => {}, macmonPath = MACMON, spawnProcess = spawn } = {}) {
   let cpuPrev = cpuTimes();
   let netPrev = null;
   const cpuHistory = [];
@@ -85,33 +90,63 @@ function createSampler({ log = () => {} } = {}) {
   let macmon = null;
   let macmonLatest = null;
   let macmonMissing = false;
+  let failures = 0;
+  let retryAt = 0;
 
-  // Runs macmon only while a key needs it; it prints a JSON line every 2 seconds
-  function startMacmon() {
-    if (macmon || macmonMissing) return;
-    if (!fs.existsSync(MACMON)) {
-      macmonMissing = true;
-      log("macmon isn't installed; GPU, temperature, and power keys show nothing");
-      return;
+  // A run of child that failed to start or exited non-zero. After MACMON_RETRIES in a row, each
+  // start waits twice as long as the one before, so a macmon that keeps crashing isn't restarted,
+  // and logged, every 2 seconds.
+  function macmonFailed(child, message) {
+    if (macmon !== child) return;
+    macmon = null;
+    macmonLatest = null;
+    failures++;
+    let wait = "";
+    if (failures >= MACMON_RETRIES) {
+      const ms = Math.min(2000 * 2 ** (failures - MACMON_RETRIES + 1), MACMON_MAX_WAIT_MS);
+      retryAt = Date.now() + ms;
+      wait = `; trying again in ${Math.round(ms / 1000)} s`;
     }
-    macmon = spawn(MACMON, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
+    log(`${message}${wait}`);
+  }
+
+  // Runs macmon only while a key needs it; it prints a JSON line every 2 seconds. Each callback
+  // changes state only while its process is still the current one: a process stopped and
+  // replaced can still exit, or print, after its replacement started.
+  function startMacmon() {
+    if (macmon || Date.now() < retryAt) return;
+    // Checked on each start, so installing macmon takes effect without restarting the plugin
+    const missing = !fs.existsSync(macmonPath);
+    if (missing && !macmonMissing) log("macmon isn't installed; GPU, temperature, and power keys show nothing");
+    macmonMissing = missing;
+    if (missing) return;
+    const child = spawnProcess(macmonPath, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
+    macmon = child;
+    // Without a listener, a spawn error, such as from a macmon that isn't executable or that an
+    // upgrade removed since the check above, would crash the whole plugin
+    child.on("error", (error) => macmonFailed(child, `couldn't run macmon: ${error.message}`));
     let buffer = "";
-    macmon.stdout.on("data", (chunk) => {
+    child.stdout?.on("data", (chunk) => {
+      if (macmon !== child) return;
       buffer += chunk;
       const lines = buffer.split("\n");
       buffer = lines.pop();
       for (const line of lines) {
         try {
           macmonLatest = JSON.parse(line);
+          failures = 0;
         } catch {
           // A partial line from a macmon that's quitting
         }
       }
     });
-    macmon.on("exit", (code) => {
-      if (code) log(`macmon exited with status ${code}`);
-      macmon = null;
-      macmonLatest = null;
+    child.on("exit", (code) => {
+      if (code) {
+        macmonFailed(child, `macmon exited with status ${code}`);
+      } else if (macmon === child) {
+        macmon = null;
+        macmonLatest = null;
+      }
     });
   }
 
@@ -121,11 +156,13 @@ function createSampler({ log = () => {} } = {}) {
     macmonLatest = null;
   }
 
-  // Starts the rates afresh, so the first sample after the keys reappear covers only the time
-  // since
+  // Starts the rates and sparklines afresh, so the first sample after the keys reappear covers
+  // only the time since, and no line joins across the gap
   function reset() {
     cpuPrev = cpuTimes();
     netPrev = null;
+    cpuHistory.length = 0;
+    gpuHistory.length = 0;
   }
 
   async function sample(kinds) {
@@ -146,15 +183,19 @@ function createSampler({ log = () => {} } = {}) {
         run("/usr/bin/vm_stat", []).then((out) => {
           if (out) s.memory = { used: parseVmStat(out), total: os.totalmem() };
         }),
-        run("/usr/sbin/sysctl", ["-n", "kern.memorystatus_vm_pressure_level"]).then((out) => {
-          if (out) s.pressure = Number(out);
-        }),
       );
     }
-    if (needed.has("swap")) {
+    // Memory pressure and swap from one sysctl, which prints each value on its own line
+    const keys = [];
+    if (needed.has("memory")) keys.push("kern.memorystatus_vm_pressure_level");
+    if (needed.has("swap")) keys.push("vm.swapusage");
+    if (keys.length > 0) {
       jobs.push(
-        run("/usr/sbin/sysctl", ["-n", "vm.swapusage"]).then((out) => {
-          if (out) s.swap = parseSwap(out);
+        run("/usr/sbin/sysctl", ["-n", ...keys]).then((out) => {
+          if (!out) return;
+          const values = out.split("\n");
+          if (needed.has("memory")) s.pressure = Number(values.shift());
+          if (needed.has("swap")) s.swap = parseSwap(values.shift() ?? "");
         }),
       );
     }
@@ -268,18 +309,26 @@ function sparkline(history, color) {
   return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
 }
 
-// A key with a label, a large value, and an optional line under it, then any extra drawing
-function card(label, value, valueColor, sub, extra = "") {
+// A key's background and label, then the rest of its drawing
+function frame(label, ...parts) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
     `<rect width="144" height="144" fill="${COLORS.background}"/>`,
     text(72, 30, 19, COLORS.label, label),
+    ...parts,
+    `</svg>`,
+  ].join("");
+}
+
+// A key with a label, a large value, and an optional line under it, then any extra drawing
+function card(label, value, valueColor, sub, extra = "") {
+  return frame(
+    label,
     // Values such as "545 MB" are too wide for the full size
     text(72, 78, String(value).length > 4 ? 34 : 40, valueColor, value, { weight: 700 }),
     sub ? text(72, 106, 17, COLORS.text, sub, { weight: 500 }) : "",
     extra,
-    `</svg>`,
-  ].join("");
+  );
 }
 
 const empty = (label, sub = "") => card(label, "—", COLORS.muted, sub);
@@ -295,14 +344,7 @@ const RENDER = {
     const mem = s.memory
       ? [formatPercent((s.memory.used / s.memory.total) * 100), PRESSURE[s.pressure] ?? COLORS.text]
       : ["—", COLORS.muted];
-    return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
-      `<rect width="144" height="144" fill="${COLORS.background}"/>`,
-      text(72, 30, 19, COLORS.label, "SYSTEM"),
-      row(78, "CPU", ...cpu),
-      row(120, "MEM", ...mem),
-      `</svg>`,
-    ].join("");
+    return frame("SYSTEM", row(78, "CPU", ...cpu), row(120, "MEM", ...mem));
   },
   cpu(s) {
     if (s.cpu == null) return empty("CPU");
@@ -326,15 +368,12 @@ const RENDER = {
   top(s) {
     if (!s.top) return empty("TOP CPU");
     const name = s.top.name.length > 11 ? `${s.top.name.slice(0, 10)}…` : s.top.name;
-    return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
-      `<rect width="144" height="144" fill="${COLORS.background}"/>`,
-      text(72, 30, 19, COLORS.label, "TOP CPU"),
+    return frame(
+      "TOP CPU",
       text(72, 74, 22, COLORS.text, name, { weight: 700 }),
       // ps counts one core as 100%, as Activity Monitor does
       text(72, 116, 34, level(s.top.cpu, 50, 100), formatPercent(s.top.cpu), { weight: 700 }),
-      `</svg>`,
-    ].join("");
+    );
   },
   gpu(s) {
     if (!s.gpu) return empty("GPU", s.macmonMissing ? "needs macmon" : "");
@@ -360,14 +399,11 @@ const RENDER = {
   network(s) {
     if (!s.network) return empty("NETWORK");
     const rate = (bytes) => `${formatBytes(bytes)}/s`;
-    return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
-      `<rect width="144" height="144" fill="${COLORS.background}"/>`,
-      text(72, 30, 19, COLORS.label, "NETWORK"),
+    return frame(
+      "NETWORK",
       text(72, 78, 22, COLORS.download, `↓ ${rate(s.network.rx)}`, { weight: 700 }),
       text(72, 116, 22, COLORS.upload, `↑ ${rate(s.network.tx)}`, { weight: 700 }),
-      `</svg>`,
-    ].join("");
+    );
   },
 };
 

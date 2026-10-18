@@ -3,7 +3,7 @@ set -euo pipefail
 
 # write_back moves a temp file from the same directory into place, so a failed write can't leave
 # a settings file cut short. The file keeps its mode, and a symlink stays a symlink while its
-# target is replaced the same way. json_merge starts a missing, empty, or whitespace-only file from
+# target is replaced the same way. A read-only file is left alone. json_merge starts a missing, empty, or whitespace-only file from
 # {}, and fails on one it can't read, leaving it as it is. append_line adds a line only once, and
 # fails only when it can't write the file. install_root_file and write_root_file replace a
 # root-owned file the same way, through sudo.
@@ -86,6 +86,21 @@ if [ "$(id -u)" -ne 0 ]; then
     assert_contains "$RUN_OUTPUT" "The new contents are in $new"
     [ -e "$new" ] || fail "a failed write_back through a symlink removed the new contents"
     chmod 755 "$HOME/ro"
+    # A file made read-only stays as it is, as cp would leave it, though its directory would let
+    # a rename replace it. So does one a symlink points to.
+    printf 'old\n' > "$HOME/locked.conf"
+    chmod 444 "$HOME/locked.conf"
+    ln -s locked.conf "$HOME/locked-link.conf"
+    for name in locked.conf locked-link.conf; do
+        new="$(mktemp)"
+        printf 'new\n' > "$new"
+        assert_exit 1 write_back "$new" "$HOME/$name"
+        assert_eq old "$(cat "$HOME/locked.conf")" "read-only file after write_back to $name"
+        assert_eq 444 "$(file_mode "$HOME/locked.conf")" "read-only file's mode after write_back to $name"
+        assert_contains "$RUN_OUTPUT" "$HOME/$name is read-only, so left it unchanged. The new contents are in $new."
+        [ -e "$new" ] || fail "a write_back to read-only $name removed the new contents"
+    done
+    [ -L "$HOME/locked-link.conf" ] || fail "a write_back replaced the symlink to a read-only file"
 fi
 
 # json_merge starts a missing, empty, or whitespace-only file from {}
@@ -135,7 +150,7 @@ assert_exit 1 append_line x "$HOME/dir"
 
 # A root-owned file: a failed write leaves the old file whole and no temp file behind. The file
 # keeps its mode, and a new one gets 644.
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"

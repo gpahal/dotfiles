@@ -4,21 +4,14 @@
 # the end. Bash 3.2.
 #
 # setup_sandbox gives the test a temp HOME and puts a failing sentinel first on PATH for each
-# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A test that
-# lacks a tool it needs calls skip. tests/run.sh runs each test and says how skips and timeouts
-# count.
+# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
+# runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
+# test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
+# calls skip. tests/run.sh runs each test and says how skips and timeouts count.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-
-# A test run by a relative path, as bash tests/test-vim.sh or tests/run.sh runs it, starts again
-# by its absolute path. step_args finds a step's path from the outermost script, which is the test
-# when it loads a step, and the test cd's into its sandbox, where the relative path is gone.
-case "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}" in
-    /*) ;;
-    */test-*.sh | test-*.sh) exec "$BASH" "$TESTS_DIR/${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]##*/}" "$@" ;;
-esac
 TEST_FAILURES=0
 TEST_SKIPPED=false
 TEST_DONE=false
@@ -27,19 +20,21 @@ TEST_DONE=false
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Point HOME, TMUX_TMPDIR, and WORKTREES_DIR at a new temp dir, unset the variables that would
-# send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos, put
-# $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
+# Point HOME, TMUX_TMPDIR, WORKTREES_DIR, and TMPDIR at a new temp dir, unset the variables that
+# would send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos,
+# put $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
 # sudo is stubbed to fail, as it does when not cached, so no test runs it for real, even on a CI
 # runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
 # failing sentinel (see _sentinels). Sets an EXIT trap that removes the
 # temp dir and makes the test exit 1 when an assertion failed or a sentinel ran, so a test mustn't
-# set its own.
+# set its own; on_exit adds to it.
 setup_sandbox() {
     local var
     # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
-    # /tmp to /private/tmp there, so paths the steps print match $HOME.
-    SANDBOX="$(cd -P "$(mktemp -d /tmp/dotfiles-test.XXXXXX)" && pwd)"
+    # /tmp to /private/tmp there, so paths the steps print match $HOME. tests/run.sh sets
+    # TEST_SANDBOX_PARENT to the test's own dir under /tmp, which it removes even when its
+    # watchdog SIGKILLs the test before the EXIT trap can.
+    SANDBOX="$(cd -P "$(mktemp -d "${TEST_SANDBOX_PARENT:-/tmp}/dotfiles-test.XXXXXX")" && pwd)"
     trap _sandbox_exit EXIT
     # GIT_* covers what a git hook, a worktree, or `git -c` exports: GIT_DIR and GIT_WORK_TREE
     # would point the steps' git at the real repo, and GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT,
@@ -59,15 +54,26 @@ setup_sandbox() {
     # for the tmux plugins.
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
-    # The apt sources directory, where the ubuntu step writes tailscale.list, and the release
+    # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps.
+    # macOS's mktemp ignores TMPDIR without a template, so a wrapper below gives it one.
+    export TMPDIR="$SANDBOX/tmp"
+    # Set, so zsh/main.zsh and ~/.zprofile don't run the real brew's shellenv, and pointing
+    # nowhere, so they put no real Homebrew dir ahead of the stubs
+    export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
+    # The apt sources directory, where tests point the steps' apt sources, and the release
     # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
     # test to override them.
     export APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d" OS_RELEASE="$SANDBOX/os-release"
     mkdir -p "$APT_SOURCES_DIR"
     printf '%s\n' ID=ubuntu VERSION_ID='"26.04"' VERSION_CODENAME=resolute UBUNTU_CODENAME=resolute > "$OS_RELEASE"
     export STUB_DIR="$SANDBOX/stubs" STUB_LOG="$SANDBOX/stub.log"
-    mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$STUB_DIR"
+    mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$TMPDIR" "$STUB_DIR"
     : > "$STUB_LOG"
+    # Not a stub, so it logs nothing: a bare mktemp or mktemp -d gets a template under $TMPDIR
+    printf '%s\n' '#!/bin/bash' \
+        "case \"\$*\" in '' | -d) exec $(command -v mktemp) \"\$@\" \"\$TMPDIR/tmp.XXXXXXXXXX\" ;; esac" \
+        "exec $(command -v mktemp) \"\$@\"" > "$STUB_DIR/mktemp"
+    chmod +x "$STUB_DIR/mktemp"
     _stubs_first
     # shellcheck disable=SC2086 # a list of names
     _sentinels $SENTINELS
@@ -83,7 +89,11 @@ for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857
 }
 
 _sandbox_exit() {
-    local status=$?
+    local status=$? hook
+    # Each in a subshell, so one that fails, even under set -u, can't stop the cleanup below
+    for hook in ${_ON_EXIT[@]+"${_ON_EXIT[@]}"}; do
+        (eval "$hook") || true
+    done
     # A sentinel that ran under `|| true` or in a command expected to fail still fails the test
     if [ -s "$SANDBOX/unstubbed.log" ]; then
         echo "Commands ran that the test didn't stub:" >&2
@@ -93,7 +103,7 @@ _sandbox_exit() {
     # A tmux server a test started lives on after its socket's directory is gone
     _stop_tmux_servers
     case "${SANDBOX:-}" in
-        /tmp/dotfiles-test.* | /private/tmp/dotfiles-test.*)
+        */dotfiles-test.*)
             chmod -R u+w "$SANDBOX" 2>/dev/null || true
             rm -rf "$SANDBOX"
             ;;
@@ -112,6 +122,17 @@ _sandbox_exit() {
         status=77
     fi
     exit "$status"
+}
+
+# Run a command when the test exits, before the sandbox goes: after test_done, when set -e stops
+# it, or on the SIGTERM tests/run.sh sends on a timeout or Ctrl-C. It's for what the test starts in
+# another process group, which those signals don't reach. The command is a string evaluated then,
+# so its variables have their values at exit. Commands run in the order added; failures are
+# ignored.
+# e.g. on_exit 'kill -- "-$SERVER_PID" 2> /dev/null'
+_ON_EXIT=()
+on_exit() {
+    _ON_EXIT+=("$1")
 }
 
 # Stop every tmux server with a socket under $TMUX_TMPDIR, and wait up to 5 s for it and its
@@ -155,6 +176,30 @@ stub() {
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
     chmod +x "$STUB_DIR/$name"
+}
+
+# Stub sudo to run its command as you, as sudo with cached credentials would, after dropping a
+# leading -n. It refuses a command with an absolute path, alone or after an =, outside the sandbox
+# (which holds $STUB_DIR), other than /dev/null and the repo's files. So a system path the test
+# didn't point into the sandbox fails the command, rather than being written to as you. The
+# optional body runs first, with sudo's arguments as "$@", as a stub's does, and may change them
+# with set --, as to drop options that need root.
+# e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
+stub_sudo_exec() {
+    # shellcheck disable=SC2016 # expanded by the stub
+    stub sudo "${1:-}
+$(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
+[ "${1:-}" != -n ] || shift
+for arg in "$@"; do
+    case "$arg" in
+        /dev/null | "$sandbox" | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/* | *="$repo"/*) ;;
+        /* | *=/*)
+            echo "refused: $arg is outside the sandbox" >&2
+            exit 1
+            ;;
+    esac
+done
+exec env "$@"'
 }
 
 # Stub apt-config shell, which takes <var> <key> pairs and prints <var>='<value>' for each key
@@ -244,6 +289,21 @@ skip_rest() {
     TEST_SKIPPED=true
 }
 
+# Run a command, usually a function the test defines, in a subshell, so what it changes, such as
+# the commands it hides or the functions it replaces, stays there. Its failed checks count as the
+# test's.
+# e.g. subtest firmware_without_jq
+# shellcheck disable=SC2030,SC2031 # the subshell counts its own failures
+subtest() {
+    local failed=0
+    (
+        TEST_FAILURES=0
+        "$@"
+        exit "$TEST_FAILURES"
+    ) || failed=$?
+    TEST_FAILURES=$((TEST_FAILURES + failed))
+}
+
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
 test_done() {
     TEST_DONE=true
@@ -288,6 +348,9 @@ load_script() {
             exit 2
         fi
     done
+    # lib/common.sh defines its default main only when none exists, so a step loaded earlier with
+    # its own main would hide a later step's default one. Reloading lib/common.sh alone keeps main.
+    [ "$script" == "$REPO_DIR/lib/common.sh" ] || unset -f main
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first

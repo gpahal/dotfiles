@@ -46,9 +46,9 @@ assert_contains "$RUN_OUTPUT" "  info       item"
 # --- run_bounded without timeout(1) ---
 # It stops a command that runs too long with 124, and passes on another command's status and
 # output
-(
+run_bounded_without_timeout() {
+    local start=$SECONDS
     hide timeout
-    start=$SECONDS
     assert_exit 124 run_bounded 1 sleep 10
     [ $((SECONDS - start)) -lt 5 ] || fail "run_bounded without timeout(1) waited out the command"
     assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
@@ -56,8 +56,8 @@ assert_contains "$RUN_OUTPUT" "  info       item"
     # A command that exits 142 (SIGALRM's status) or 143 on its own, before the deadline, keeps it
     assert_exit 142 run_bounded 5 sh -c 'exit 142'
     assert_exit 143 run_bounded 5 sh -c 'kill -TERM $$'
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest run_bounded_without_timeout
 
 # --- free space (status_disk_space) ---
 # df_lines <line>...: df -P -k prints the header, then the first line whose mount point is the path
@@ -202,14 +202,14 @@ firewall 'Something else entirely\n'
 assert_exit 0 diag status_app_firewall
 assert_contains "$RUN_OUTPUT" "info       Application firewall: couldn't tell"
 # It isn't on PATH on macOS: the step finds it in /usr/libexec/ApplicationFirewall
-(
+firewall_off_path() {
     hide socketfilterfw
     APP_FIREWALL_DIR="$SANDBOX/alf"
     mkdir -p "$APP_FIREWALL_DIR"
     cp "$STUB_DIR/fdesetup" "$APP_FIREWALL_DIR/socketfilterfw"
     assert_eq "$APP_FIREWALL_DIR/socketfilterfw" "$(firewall_cmd)" "socketfilterfw's path"
-    exit "$TEST_FAILURES"
-) || TEST_FAILURES=$((TEST_FAILURES + $?))
+}
+subtest firewall_off_path
 read_only
 
 # The whole report: the diagnostics are in it, and none needs attention

@@ -12,7 +12,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-stub sudo 'exec env "$@"'
+stub_sudo_exec
 
 # --- chrome ---
 load_script chrome/install.sh
@@ -40,6 +40,8 @@ assert_contains "$RUN_OUTPUT" "ok         Google's apt source"
 
 # apt.systemd.daily also takes always, and an interval in s, m, h, or d, which a bare number means.
 # Any interval up to a day counts as daily.
+# shellcheck source=../ubuntu/lib/updates.sh
+source "$REPO_DIR/ubuntu/lib/updates.sh"
 for value in always 1d 24h 90m 3600s; do
     periodic "$value"
     assert_exit 0 unattended_upgrades_on

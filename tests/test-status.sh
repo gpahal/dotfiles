@@ -6,6 +6,8 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -66,6 +68,7 @@ no_prompting_sudo() {
 # The ubuntu step, on a machine where everything else is set up. ufw's and linger's state come
 # from files under /etc and /var, so those two checks are replaced.
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 lingering() { true; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
@@ -82,7 +85,7 @@ status_firmware() { :; }
 ups_todo() { :; }
 status_ups() { :; }
 warn_no_ups() { :; }
-# The kernel has the sysctl settings, which test-ubuntu-step.sh covers
+# The kernel has the sysctl settings, which test-ubuntu-system.sh covers
 sysctl_in_effect() { true; }
 locale_installed() { true; }
 unattended_upgrades_running() { true; }
@@ -92,9 +95,8 @@ apt_timers_enabled() { true; }
 health_units_written() { true; }
 health_units_loaded() { true; }
 sshd_enabled() { true; }
-# shellcheck disable=SC2034 # the step reads it
-REBOOT_REQUIRED="$SANDBOX/no-reboot-required"
 ufw_enabled() { true; }
+echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
@@ -104,11 +106,8 @@ stub tailscale 'case "$1" in
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 # The rest is set up too, through sandbox paths
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-mkdir -p "$SSHD_RUN_DIR"
-SLEEP_CONF="$SANDBOX/10-sleep.conf"
+mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
-SYSCTL_CONF="$SANDBOX/90-sysctl.conf"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 stub nmcli
 # sshd -T prints the port, and the drop-in's settings as sshd takes them
@@ -121,7 +120,6 @@ Status: active
 To                         Action      From
 --                         ------      ----
 22/tcp                     ALLOW       10.0.0.0/8
-22/tcp                     ALLOW       172.16.0.0/12
 22/tcp                     ALLOW       192.168.0.0/16
 22/tcp                     ALLOW       fd00::/8
 22/tcp                     ALLOW       fe80::/10
@@ -214,23 +212,23 @@ mkdir -p "$APT_SOURCES_DIR"
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 docker_sources > "$DOCKER_SOURCES"
 DOCKER_DAEMON_CONFIG="$SANDBOX/daemon.json"
-echo '{"log-driver": "local", "live-restore": true, "ip": "127.0.0.1", "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}}}' > "$DOCKER_DAEMON_CONFIG"
+jq "$DOCKER_DAEMON_SETTINGS" <<< '{}' > "$DOCKER_DAEMON_CONFIG"
 cp "$DOCKER_DAEMON_CONFIG" "$DOCKER_DAEMON_CONFIG.root"
 chmod 000 "$DOCKER_DAEMON_CONFIG"
 if [ ! -r "$DOCKER_DAEMON_CONFIG" ]; then
     : > "$STUB_LOG"
     sudo_not_cached
     run status
-    assert_contains "$RUN_OUTPUT" "unverified log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "unverified log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     assert_not_contains "$RUN_OUTPUT" "unknown"
     no_prompting_sudo
     sudo_cached_stub
     run status
-    assert_contains "$RUN_OUTPUT" "ok         log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "ok         log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     no_prompting_sudo
     echo '{}' > "$DOCKER_DAEMON_CONFIG.root"
     run status
-    assert_contains "$RUN_OUTPUT" "missing    log-driver, live-restore, and localhost-only published ports in $DOCKER_DAEMON_CONFIG"
+    assert_contains "$RUN_OUTPUT" "missing    log-driver, live-restore, localhost-only published ports, and address pools in $DOCKER_DAEMON_CONFIG"
     no_prompting_sudo
 fi
 chmod 644 "$DOCKER_DAEMON_CONFIG"

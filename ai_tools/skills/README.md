@@ -8,7 +8,8 @@ Agent skills for Claude Code and Codex, grouped by category:
 ## Installation
 
 `bash ai_tools/setup.sh skills` installs every skill globally for Claude Code and Codex with the
-[skills CLI](https://skills.sh). Re-run it after changing a skill. See
+[skills CLI](https://skills.sh). When `CLAUDE_CONFIG_DIR` points anywhere but `~/.claude`, it
+installs them for Codex only. Re-run it after changing a skill. See
 [ai_tools/README.md](../README.md#skills) for details.
 
 ## Scratch files
@@ -60,6 +61,7 @@ every skill listed here has that `LICENSE`.
   by [poteto](https://x.com/poteto), used under the MIT License:
   architect, bro, interrogate, show-me-your-work, technical-writing, unslop, and why
 
-The code-review and rewrite-docs skills started in this repo.
+code-review adapts OpenAI Codex's review prompt and Claude Code's `/simplify`, and rewrite-docs
+started in this repo.
 
 Thank you, Matt and poteto!

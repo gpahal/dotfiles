@@ -16,7 +16,8 @@ OUT="$DIR/com.gpahal.dotfiles.sdPlugin/profiles/System.streamDeckProfile"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-cp -R "$DIR/profile/" "$tmp/"
+# profile/. copies the folder's contents with both BSD and GNU cp; profile/ does only with BSD's
+cp -R "$DIR/profile/." "$tmp/"
 for page in "$tmp"/*.sdProfile/Profiles/*/; do
     mkdir -p "$page/Images"
 done

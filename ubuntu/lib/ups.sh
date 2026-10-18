@@ -126,7 +126,10 @@ nut_config() {
 # Print the system-shutdown hook that sets the RTC alarm. When the UPS cuts its power, the BIOS's
 # power-on after AC loss starts the machine once mains returns, and the alarm, which needs power,
 # does nothing. When it doesn't, as some don't when mains came back during the shutdown, the alarm
-# starts the machine.
+# starts the machine. A UPS that ignores the command while mains is still out makes a loop: the
+# alarm starts the machine on battery, upsmon sees a low battery and shuts it down again, setting
+# the alarm again, until the battery dies. The hook can't tell that case apart, since the UPS's
+# status is gone by then, so the Power cuts manual step has you check the UPS cuts its power.
 ups_rtc_hook() {
     printf '%s\n' "#!/bin/sh" \
         "# From the dotfiles ubuntu step: after a UPS shutdown, which leaves $UPS_POWERDOWN_FLAG, start the" \
@@ -155,10 +158,22 @@ nut_password() {
     echo "$password"
 }
 
+# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and the nut
+# group, which upsd and upsmon read it through. Returns 2 when it can't be read without sudo.
+nut_file_current() {
+    local current group
+    current="$(nut_read "$1")" || return 2
+    [ "$current" == "$2" ] || return 1
+    # Through sudo -n, as nut_read reads, when $NUT_DIR is closed to you
+    group="$({ ls -ld "$NUT_DIR/$1" || sudo -n ls -ld "$NUT_DIR/$1"; } 2>/dev/null | awk '{ print $4 }')"
+    [ -n "$group" ] || return 2
+    [ "$group" == "$NUT_GROUP" ]
+}
+
 # Succeeds when each file in $NUT_DIR is what the step writes for the configured UPS. Returns 2
 # when they can't be read without sudo.
 nut_files_current() {
-    local conf users driver vendor product password file current
+    local conf users driver vendor product password file
     conf="$(nut_read ups.conf)" && users="$(nut_read upsd.users)" || return 2
     driver="$(nut_value "$UPS_NAME" driver <<< "$conf")"
     vendor="$(nut_value "$UPS_NAME" vendorid <<< "$conf")"
@@ -166,8 +181,8 @@ nut_files_current() {
     password="$(nut_value upsmon password <<< "$users")"
     [ -n "$driver" ] && [ -n "$password" ] || return 1
     for file in "${NUT_FILES[@]}"; do
-        current="$(nut_read "$file")" || return 2
-        [ "$current" == "$(nut_config "$file" "$driver" "$vendor" "$product" "$password")" ] || return 1
+        nut_file_current "$file" "$(nut_config "$file" "$driver" "$vendor" "$product" "$password")" ||
+            return
     done
 }
 
@@ -185,13 +200,13 @@ ups_services_active() {
 }
 
 # The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
-# installed with it (install_ntfy_lib)
+# installed with it
 ups_notifier_installed() {
-    cmp -s "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && [ -x "$UPS_NOTIFY" ] && ntfy_lib_installed
+    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
 install_ups_notifier() {
-    install_root_file "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_ntfy_lib
+    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
@@ -216,8 +231,10 @@ ups_ready() {
 
 # Set UPS_STATE to the UPS part's state: vm, nohwdb (upower's hwdb, which tells a UPS, is
 # missing), noudev (udevadm failed), none (no UPS on USB), or plugged, with UPS_PLUGGED the
-# plugged-in UPSes' IDs. Needs no sudo.
+# plugged-in UPSes' IDs. Needs no sudo. apply works it out once and sets UPS_STATE_CACHED for the
+# calls after, since it reads all of udev's database.
 ups_state() {
+    [ "${UPS_STATE_CACHED:-}" != true ] || return 0
     UPS_PLUGGED=""
     if in_vm; then
         UPS_STATE=vm
@@ -258,9 +275,10 @@ warn_no_ups() {
     esac
 }
 
-# Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them
+# Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them. The
+# group is set in the same install, so no failure leaves the file without it.
 write_nut_file() {
-    write_root_file "$NUT_DIR/$1" "$2" 0640 && sudo chgrp nut "$NUT_DIR/$1"
+    write_root_file "$NUT_DIR/$1" "$2" 0640 "$NUT_GROUP"
 }
 
 # The enumerator turns ups.conf's sections into nut-driver@<name> units, so it runs before the
@@ -293,7 +311,7 @@ setup_ups() {
     }
     for file in "${NUT_FILES[@]}"; do
         content="$(nut_config "$file" "$driver" "$vendor" "$product" "$password")"
-        [ "$(nut_read "$file" 2>/dev/null)" != "$content" ] || continue
+        ! nut_file_current "$file" "$content" || continue
         write_nut_file "$file" "$content" || return 1
         changed=true
     done

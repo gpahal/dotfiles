@@ -5,14 +5,18 @@ set -euo pipefail
 # The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
 # sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves
 # rules you added by hand alone. While a logged-in SSH session comes from outside the private ranges
-# and the tailnet, it doesn't turn ufw on or add its rules, and fails. A connection that hasn't
-# logged in doesn't count. The SSH ports include ssh.socket's.
+# and the tailnet, it doesn't turn ufw on, and fails; with ufw on, it adds the missing rules, which
+# can't cut anyone off. A connection that hasn't logged in doesn't count. The SSH ports include
+# ssh.socket's.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
@@ -20,6 +24,7 @@ status_firmware() { :; }
 # ufw's on state and linger come from files under /etc and /var, so those checks are replaced.
 # Linger is on when $SANDBOX/linger exists, and loginctl turns it on.
 ufw_enabled() { [ ! -e "$SANDBOX/ufw-off" ]; }
+echo IPV6=yes > "$UFW_DEFAULTS"
 lingering() { [ -e "$SANDBOX/linger" ]; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check and reload
@@ -33,26 +38,23 @@ health_units_loaded() { true; }
 ups_todo() { :; }
 status_ups() { :; }
 warn_no_ups() { :; }
-# The kernel has the sysctl settings, which test-ubuntu-step.sh covers
+# The kernel has the sysctl settings, which test-ubuntu-system.sh covers
 sysctl_in_effect() { true; }
 locale_installed() { true; }
 unattended_upgrades_running() { true; }
 # test-ubuntu-step.sh covers apt's timers, sshd at boot, and a pending reboot
 apt_timers_enabled() { true; }
 sshd_enabled() { true; }
-# shellcheck disable=SC2034 # the step reads it
-REBOOT_REQUIRED="$SANDBOX/no-reboot-required"
 touch "$SANDBOX/linger"
 
-# sudo without -n runs the command, as if you typed your password. sudo -n works only while
-# $SANDBOX/cached exists. sudo install makes $SSHD_RUN_DIR, the only install this test reaches,
-# instead of touching the real /run.
-stub sudo 'if [ "$1" == -n ]; then
+# sudo without -n runs the command, as if you typed your password, and refuses a path outside the
+# sandbox. sudo -n works only while $SANDBOX/cached exists. sudo install makes $SSHD_RUN_DIR, the
+# only install this test reaches, instead of touching the real /run.
+stub_sudo_exec 'if [ "${1:-}" == -n ]; then
     [ -e "'"$SANDBOX"'/cached" ] || exit 1
     shift
 fi
-[ "$1" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }
-exec "$@"'
+[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
 cached() { touch "$SANDBOX/cached"; }
 not_cached() { rm -f "$SANDBOX/cached"; }
 
@@ -82,11 +84,8 @@ SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
 # Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 # The rest is set up too, through sandbox paths
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-mkdir -p "$SSHD_RUN_DIR"
-SLEEP_CONF="$SANDBOX/10-sleep.conf"
+mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
-SYSCTL_CONF="$SANDBOX/90-sysctl.conf"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
@@ -107,7 +106,7 @@ esac'
 # The step's rules for SSH on port 22
 range_rules() {
     local range
-    for range in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fd00::/8 fe80::/10; do
+    for range in 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10; do
         printf '%-26s ALLOW       %s\n' "${1:-22}/tcp" "$range"
     done
 }
@@ -151,8 +150,14 @@ assert_not_contains "$RUN_OUTPUT" "sudo -v"
 no_prompting_sudo
 rules_missing
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw"
+assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules allowing SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp"
+assert_not_contains "$RUN_OUTPUT" "install and enable ufw"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
+# With ufw off, the step turns it on too
+touch "$SANDBOX/ufw-off"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Firewall: install and enable ufw, denying incoming connections"
+rm "$SANDBOX/ufw-off"
 
 # Something else pending and approved, credentials not cached: the rules are checked with sudo
 # after the confirm, and set only when they're missing
@@ -170,7 +175,7 @@ rm -f "$SANDBOX/linger"
 rules_missing
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
+assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 
 # Without $SSHD_RUN_DIR, which only the install path creates, the rules can't be read even with
 # cached credentials. With nothing else pending, the step says why and asks for nothing.
@@ -193,6 +198,15 @@ printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
+assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
+# ufw on with IPV6=no leaves sshd open on the global IPv6 address: status says so, and the step
+# leaves the file to you
+echo IPV6=no > "$UFW_DEFAULTS"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
+assert_exit 0 main
+assert_eq IPV6=no "$(cat "$UFW_DEFAULTS")" "ufw's defaults after a run"
+echo IPV6=yes > "$UFW_DEFAULTS"
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \
     "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-rules"
@@ -202,6 +216,10 @@ assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the privat
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
+# The rule for 172.16.0.0/12 an earlier version added, which lets Docker's containers reach sshd
+printf '%s\n' "22/tcp                     ALLOW       172.16.0.0/12" >> "$SANDBOX/ufw-rules"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 172.16.0.0/12, outside the private ranges: 22/tcp ALLOW 172.16.0.0/12;"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
@@ -347,19 +365,21 @@ assert_eq 1 "$RUN_STATUS" "the step with a session named by host"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
 firewall_unchanged
 
-# Adding the rules to a firewall that's on is skipped too while a session comes from outside
+# With ufw on, a session from outside doesn't stop the missing rules: allow rules can't cut anyone
+# off. ufw isn't turned on again, nor its policy set.
+rm -f "$SANDBOX/ufw-off"
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 203.0.113.9
 rules_missing
 : > "$STUB_LOG"
-assert_exit 1 main
-firewall_unchanged
-# Once that session ends, a re-run adds them
-no_sessions
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
+assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
+assert_file_not_contains "$STUB_LOG" "ufw default deny"
+assert_file_not_contains "$STUB_LOG" "ufw --force enable"
+assert_not_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_exit 0 ufw_configured -n
+no_sessions
 
 # The connections can't be listed: ufw stays as it is, and the rest of the step still runs
 touch "$SANDBOX/ss-fails"

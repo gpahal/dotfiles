@@ -12,8 +12,9 @@ set -euo pipefail
 # config.toml and rules files, so no MCP servers, plugins, or auto-reviewer load, and it never
 # asks for approval, so a command the sandbox blocks stays blocked.
 # Both need network access to reach their model, so a sandboxed caller must run this outside the
-# sandbox. The out-file goes outside the prompt file's directory, so Claude can't read
-# another run's answer there. The CLI's own log goes to <out-file>.log. A run that takes longer
+# sandbox. The out-file goes outside the prompt file's directory and the repo, so Claude can't
+# read another run's answer, and Codex, which can read anything, won't come across one while
+# searching the repo. The CLI's own log goes to <out-file>.log. A run that takes longer
 # than REVIEWER_TIMEOUT seconds (default 1800, or 3600 at high effort and above) is stopped and
 # counts as failed.
 
@@ -58,9 +59,14 @@ fi
 out="$out_dir/$(basename "$out")"
 log="$out.log"
 # pwd -P, so a symlinked path to the same directory can't slip past
-case "$(CDPATH='' cd "$out_dir" && pwd -P)/" in
+out_real="$(CDPATH='' cd "$out_dir" && pwd -P)/"
+case "$out_real" in
     "$(CDPATH='' cd "$prompt_dir" && pwd -P)"/*)
         echo "run-reviewer.sh: the out-file '$out' is inside the prompt file's directory, which the reviewer can read. Put answers in a separate temp dir." >&2
+        exit 2
+        ;;
+    "$(CDPATH='' cd "$root" && pwd -P)"/*)
+        echo "run-reviewer.sh: the out-file '$out' is inside the repo under review, which the reviewer can read. Put answers in a separate temp dir." >&2
         exit 2
         ;;
 esac

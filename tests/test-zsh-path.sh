@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# Homebrew's directories come before /usr/bin in nested shells, such as tmux panes, which inherit
-# HOMEBREW_PREFIX and a PATH that macOS's path_helper (in /etc/zprofile) or the parent has
-# reordered. Checks login shells, which read the ~/.zprofile lines the zsh step adds, and
-# interactive non-login shells, which only read main.zsh. A sandbox dir stands in for Homebrew.
-# Also checks that main.zsh runs brew shellenv when a shell starts without it, and the .zprofile,
+# zsh/path.zsh puts ~/.local/bin, mise's shims outside interactive shells, Cargo's and Go's dirs,
+# then Homebrew's in front of /usr/bin, without running mise, and without repeating a dir, in
+# nested shells too, such as tmux panes, which inherit HOMEBREW_PREFIX and a PATH that macOS's
+# path_helper (in /etc/zprofile) or the parent has reordered. Checks login shells, which source it
+# from ~/.zprofile, interactive non-login shells, which source it from main.zsh, and on Ubuntu
+# other shells, which source it from ~/.zshenv. A sandbox dir stands in for Homebrew. Also checks
+# that an interactive shell runs brew shellenv when it starts without it, and the .zprofile,
 # .profile, and .zshenv lines.
 
 # shellcheck source=lib.sh
@@ -92,43 +94,41 @@ else
     skip_rest "the mise checks: mise isn't installed"
 fi
 
-# A ~/.zprofile missing the reordering line and the Cargo and Go line gets them right after the
-# Homebrew line, so mise's shims and ~/.local/bin, added after them, stay ahead of Homebrew
+# A login shell that isn't interactive, as Codex and T3 Code start for each command, gets mise's
+# shims without running mise, and nothing in it runs brew once HOMEBREW_PREFIX is set
+stub mise 'exit 1'
+: > "$STUB_LOG"
+# macOS's path_helper puts /etc/paths.d's Homebrew dir ahead of the stubs, so put them back first
+cp "$HOME/.zprofile" "$SANDBOX/zprofile"
+printf '%s\n' "path=(\"$STUB_DIR\" \$path)" | cat - "$SANDBOX/zprofile" > "$HOME/.zprofile"
+output="$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" STUB_LOG="$STUB_LOG" PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$ZSH_BIN" -lc 'print -rl -- $path' < /dev/null 2> /dev/null)"
+assert_before "$output" "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "zsh -lc"
+assert_before "$output" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "zsh -lc"
+assert_file_not_contains "$STUB_LOG" "mise"
+assert_file_not_contains "$STUB_LOG" "brew"
+cp "$SANDBOX/zprofile" "$HOME/.zprofile"
+
+# ~/.zprofile gets one line, after what other installers (e.g. OrbStack) put there, so its dirs
+# come first
 load_script zsh/install.sh
-printf '%s\n' "# mine" "$ZPROFILE_BREW_LINE" "$ZPROFILE_MISE_LINE" "$ZPROFILE_LOCAL_LINE" > "$HOME/.zprofile"
-run setup_zprofile
-expected="$(printf '%s\n' "# mine" "${ZPROFILE_LINES[@]}")"
-assert_eq "$expected" "$(cat "$HOME/.zprofile")" "upgraded .zprofile"
-run setup_zprofile
-assert_contains "$RUN_OUTPUT" "already sets up PATH"
+printf '%s\n' "# mine" > "$HOME/.zprofile"
+run setup_lines "$HOME/.zprofile" "  already" "  added" "$ZPROFILE_LINE"
+assert_contains "$RUN_OUTPUT" "added"
+expected="$(printf '%s\n' "# mine" "$ZPROFILE_LINE")"
+assert_eq "$expected" "$(cat "$HOME/.zprofile")" ".zprofile"
+run setup_lines "$HOME/.zprofile" "  already" "  added" "$ZPROFILE_LINE"
+assert_contains "$RUN_OUTPUT" "already"
 assert_eq "$expected" "$(cat "$HOME/.zprofile")" ".zprofile after a second run"
 
-# A ~/.zprofile with the lines out of order fails status, and setup puts them back in order
-# where the first one was, dropping the other copies
-printf '%s\n' "# mine" "$ZPROFILE_MISE_LINE" "# orbstack" "$ZPROFILE_BREW_LINE" \
-    "$ZPROFILE_BREW_FIRST_LINE" "$ZPROFILE_LOCAL_LINE" "$ZPROFILE_MISE_LINE" > "$HOME/.zprofile"
-assert_exit 1 zprofile_set_up
-run setup_zprofile
-# Only reordered, so the message mustn't say lines were added
-assert_contains "$RUN_OUTPUT" "Updated the PATH lines in ~/.zprofile"
-expected="$(printf '%s\n' "# mine" "${ZPROFILE_LINES[@]}" "# orbstack")"
-assert_eq "$expected" "$(cat "$HOME/.zprofile")" ".zprofile with the lines out of order"
-assert_exit 0 zprofile_set_up
-# Lines in the wrong order alone fail status too
-printf '%s\n' "$ZPROFILE_LOCAL_LINE" "${ZPROFILE_LINES[@]:0:4}" > "$HOME/.zprofile"
-assert_exit 1 zprofile_set_up
-run setup_zprofile
-assert_eq "$(printf '%s\n' "${ZPROFILE_LINES[@]}")" "$(cat "$HOME/.zprofile")" ".zprofile with ~/.local/bin first"
-
-# A shell started without HOMEBREW_PREFIX, from an app rather than a login shell, runs brew
-# shellenv where Homebrew is installed. So does one whose PATH already starts with Homebrew's
-# dirs, for which shellenv prints nothing, such as a pane of the tmux server systemd starts at
-# boot: it gets tmux.conf's PATH but no HOMEBREW_PREFIX.
+# An interactive shell started without HOMEBREW_PREFIX, from an app rather than a login shell,
+# runs brew shellenv where Homebrew is installed. So does one whose PATH already starts with
+# Homebrew's dirs, for which shellenv run with that PATH would print nothing.
 for prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
     [ -x "$prefix/bin/brew" ] || continue
     for start_path in /usr/bin:/bin "$prefix/bin:$prefix/sbin:/usr/bin:/bin"; do
-        assert_eq "$prefix" "$(env -i HOME="$HOME" TERM=dumb PATH="$start_path" "$ZSH_BIN" -c \
-            'source ~/.zsh/main.zsh; print -r -- $HOMEBREW_PREFIX' < /dev/null 2> /dev/null)" \
+        assert_eq "$prefix" "$(env -i HOME="$HOME" TERM=dumb PATH="$start_path" "$ZSH_BIN" -ic \
+            'print -r -- $HOMEBREW_PREFIX' < /dev/null 2> /dev/null)" \
             "HOMEBREW_PREFIX with PATH=$start_path"
     done
     break
@@ -151,11 +151,11 @@ stock='if [ -d "$HOME/.local/bin" ] ; then
 fi
 PATH="$HOME/.local/bin:$PATH"'
 printf '%s\n' "$stock" > "$HOME/.profile"
-run setup_profile
-assert_contains "$RUN_OUTPUT" "Updated the Homebrew, Cargo, Go, mise, and ~/.local/bin lines in ~/.profile"
+run setup_lines "$HOME/.profile" "  already" "  updated" "${PROFILE_LINES[@]}"
+assert_contains "$RUN_OUTPUT" "updated"
 expected="$(printf '%s\n' "$stock" "${PROFILE_LINES[@]}")"
 assert_eq "$expected" "$(cat "$HOME/.profile")" ".profile"
-run setup_profile
+run setup_lines "$HOME/.profile" "  already" "  updated" "${PROFILE_LINES[@]}"
 assert_contains "$RUN_OUTPUT" "already"
 assert_eq "$expected" "$(cat "$HOME/.profile")" ".profile after a second run"
 mkdir -p "$HOME/.local/bin"
@@ -190,32 +190,45 @@ output="$(env -i HOME="$HOME" PATH="$BREW/bin:$HOME/.cargo/bin:$HOME/go/bin:/usr
     tr : '\n' | grep -xF -- "$expected" | awk '!seen[$0]++')"
 assert_eq "$expected" "$output" "sh -lc's PATH with Homebrew ahead of Cargo's and Go's dirs"
 rm -r "$HOME/.local/share/mise"
-# On Ubuntu, ~/.zshenv puts Homebrew and ~/.local/bin on PATH for commands run directly over SSH
-# (`ssh host codex`), which start a zsh that is neither login nor interactive. The sandbox Homebrew
-# stands in for /home/linuxbrew/.linuxbrew.
+# On Ubuntu, ~/.zshenv sources path.zsh too, for commands run directly over SSH (`ssh host
+# codex`), which start a zsh that is neither login nor interactive. The sandbox Homebrew, with a
+# brew that prints shellenv as the real one does, stands in for /home/linuxbrew/.linuxbrew.
 rm -f "$HOME/.zshenv"
-run setup_zshenv
-assert_contains "$RUN_OUTPUT" "Updated the skip_global_compinit and PATH lines in ~/.zshenv"
+run setup_lines "$HOME/.zshenv" "  already" "  updated" "${ZSHENV_LINES[@]}"
+assert_contains "$RUN_OUTPUT" "updated"
 assert_eq "$(printf '%s\n' "${ZSHENV_LINES[@]}")" "$(cat "$HOME/.zshenv")" ".zshenv"
-run setup_zshenv
+run setup_lines "$HOME/.zshenv" "  already" "  updated" "${ZSHENV_LINES[@]}"
 assert_contains "$RUN_OUTPUT" "already"
 assert_eq "$(printf '%s\n' "${ZSHENV_LINES[@]}")" "$(cat "$HOME/.zshenv")" ".zshenv after a second run"
-printf '%s\n' "${ZSHENV_LINES[@]}" | sed "s|/home/linuxbrew/.linuxbrew|$BREW|g" > "$HOME/.zshenv"
-# Print PATH from zsh run with the given flags, as sshd would start it
+sed -e "s|/home/linuxbrew/.linuxbrew|$BREW|g" -e "s|/opt/homebrew|$BREW|g" "$REPO_DIR/zsh/path.zsh" \
+    > "$HOME/.zsh/path.zsh"
+cat > "$BREW/bin/brew" << EOF_BREW
+#!/bin/sh
+case "\$PATH" in "$BREW/bin:$BREW/sbin"*) exit 0 ;; esac
+echo 'export HOMEBREW_PREFIX="$BREW"; export PATH="$BREW/bin:$BREW/sbin\${PATH+:\$PATH}"'
+EOF_BREW
+chmod +x "$BREW/bin/brew"
+# Print PATH from zsh run with the given flags and PATH, as sshd or systemd would start it
 zshenv_path() {
-    env -i HOME="$HOME" TERM=dumb PATH="/usr/bin:/bin" "$ZSH_BIN" "$@" 'print -rl -- $path' \
-        < /dev/null 2> /dev/null
+    env -i HOME="$HOME" TERM=dumb PATH="${ZSHENV_PATH:-/usr/bin:/bin}" "$ZSH_BIN" "$@" \
+        'print -rl -- $path' < /dev/null 2> /dev/null
 }
-output="$(zshenv_path -c)"
-assert_eq "$(printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "$HOME/go/bin" \
-    "$BREW/bin" "$BREW/sbin" /usr/bin /bin)" "$output" "zsh -c"
-# Interactive shells end up with the same order once main.zsh runs
-output="$(zshenv_path -ic)"
-assert_before "$output" "$HOME/.local/bin" "$BREW/bin" "zsh -ic with .zshenv"
-assert_before "$output" "$BREW/bin" /usr/bin "zsh -ic with .zshenv"
-assert_before "$output" "$BREW/sbin" /usr/bin "zsh -ic with .zshenv"
-# Login shells skip the line, since ~/.zprofile sets up PATH there
-assert_not_contains "$(zshenv_path -lc)" "$BREW/bin" "zsh -lc with .zshenv"
+expected="$(printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "$HOME/go/bin" \
+    "$BREW/bin" "$BREW/sbin" /usr/bin /bin)"
+assert_eq "$expected" "$(zshenv_path -c)" "zsh -c"
+# Login shells get the same, and interactive ones the same without the shims, which `mise
+# activate` replaces there
+# macOS's path_helper adds system dirs to a login shell's PATH, so compare only these
+assert_eq "$expected" "$(zshenv_path -lc | grep -xF -- "$expected")" "zsh -lc with .zshenv"
+assert_eq "$(grep -v mise/shims <<< "$expected")" "$(zshenv_path -ic)" "zsh -ic with .zshenv"
+# A zsh started under a PATH that already has these dirs, as a systemd user service's PATH from
+# environment.d does, adds no second copy, nested or not
+ZSHENV_PATH="$(tr '\n' : <<< "$expected")/usr/bin:/bin"
+assert_eq "" "$(zshenv_path -c | sort | uniq -d)" "PATH entries repeated in zsh -c"
+assert_eq "$expected" "$(zshenv_path -c "zsh -c 'print -rl -- \$path'")" "nested zsh -c"
+unset ZSHENV_PATH
+rm "$BREW/bin/brew"
+cp "$REPO_DIR/zsh/path.zsh" "$HOME/.zsh/path.zsh"
 # A shell started from one that set up Homebrew keeps the PATH it inherits
 output="$(env -i HOME="$HOME" HOMEBREW_PREFIX="$BREW" PATH="/first:/usr/bin:/bin" "$ZSH_BIN" -c \
     'print -rl -- $path' < /dev/null 2> /dev/null)"

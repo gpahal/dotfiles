@@ -7,6 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/keepable.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
 
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
@@ -19,23 +21,13 @@ CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); u
 # `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
 
-# Values you can change, such as with /model or /effort: each is set only when unset, and one of
-# your own is replaced only when replace_custom_value agrees. Each has a jq path, the repo's value
-# as JSON, the name prompts and status give it, and whether it's set only on Ubuntu.
-# configure_claude_code sets CLAUDE_CODE_REPLACE to whether to write each over yours.
-CLAUDE_CODE_KEEP_PATHS=()
-CLAUDE_CODE_KEEP_VALUES=()
-CLAUDE_CODE_KEEP_NAMES=()
-CLAUDE_CODE_KEEP_UBUNTU=()
-CLAUDE_CODE_REPLACE=()
+# Values you can change, such as with /model or /effort (ai_tools/lib/keepable.sh), each with a jq
+# path and the repo's value as JSON
 # Usage: claude_code_keepable <jq path> <JSON value> <name> [ubuntu]
 claude_code_keepable() {
-    CLAUDE_CODE_KEEP_PATHS+=("$1")
-    CLAUDE_CODE_KEEP_VALUES+=("$2")
-    CLAUDE_CODE_KEEP_NAMES+=("Claude Code's $3")
-    CLAUDE_CODE_KEEP_UBUNTU+=("$([ "${4:-}" == ubuntu ] && echo true || echo false)")
-    CLAUDE_CODE_REPLACE+=(false)
+    keepable claude_code "$1" "$2" "Claude Code's $3" "${4:-}"
 }
+keepable_forget claude_code
 claude_code_keepable .model '"claude-opus-5-5"' "model (model)"
 claude_code_keepable '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"' \
     "claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"
@@ -51,21 +43,14 @@ claude_code_keepable .statusLine.refreshInterval 5 \
 # Ghostty's channel, which sends OSC 777, wrapped for tmux, back to the Mac.
 claude_code_keepable .preferredNotifChannel '"ghostty"' "notification channel (preferredNotifChannel)" ubuntu
 
-# Succeeds when value $1 of CLAUDE_CODE_KEEP_PATHS applies on this OS
-claude_code_keep_applies() {
-    ! "${CLAUDE_CODE_KEEP_UBUNTU[$1]}" || is_ubuntu
-}
-
 # Print the settings' value at jq path $1, or nothing when it's unset or the file can't be read
-claude_code_value() {
+claude_code_keep_current() {
     jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Print the repo's value $1 of CLAUDE_CODE_KEEP_VALUES as claude_code_value prints it
+# Print a JSON value as claude_code_keep_current prints it
 claude_code_keep_wanted() {
-    local value="${CLAUDE_CODE_KEEP_VALUES[$1]}"
-    value="${value#\"}"
-    printf '%s\n' "${value%\"}"
+    keepable_unquote "$1"
 }
 
 claude_code_have_git_wt() {
@@ -133,7 +118,8 @@ claude_code_settings() {
     # Worktrees: ~/.claude/hooks/worktree-hook.sh creates them, branching from origin's default
     #   branch, and removes them under ~/.worktrees/<group>/<repo>/<name>, through git wt, and at
     #   SessionEnd removes the session's subagent worktrees that hold nothing to lose. It's added
-    #   unless already there, and only once git wt is installed. While another command holds WorktreeCreate or
+    #   only once git wt is installed, and one already there gets its type and timeout back.
+    #   While another command holds WorktreeCreate or
     #   WorktreeRemove, it's removed from all three events. Its 120 s timeout stops a stuck
     #   git wt from holding up claude -w for the default 10 minutes.
     # Status line: ~/.claude/statusline.sh (model, effort, context, 5-hour limit, git branch).
@@ -147,17 +133,20 @@ claude_code_settings() {
     #   mobile pushes stop.
     # Each value you can change, with = to write over yours or //= to set it only when unset
     local i op keepable=""
-    for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-        claude_code_keep_applies "$i" || continue
+    for i in $(keepable_indexes claude_code); do
         op="//="
-        if "${CLAUDE_CODE_REPLACE[i]}"; then op="="; fi
-        keepable+="| ${CLAUDE_CODE_KEEP_PATHS[i]} $op ${CLAUDE_CODE_KEEP_VALUES[i]}"
+        if "${KEEP_REPLACE[i]}"; then op="="; fi
+        keepable+="| ${KEEP_PATHS[i]} $op ${KEEP_VALUES[i]}"
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
     local settings='
+        # A hand-edited short timeout would kill the hook mid-fetch
         def add_hook($command; $timeout):
             (. // []) as $groups
-            | if any($groups[].hooks[]?; .command == $command) then $groups
+            | if any($groups[].hooks[]?; .command == $command) then
+                $groups | map(if (.hooks | type) == "array" then
+                        .hooks |= map(if .command == $command then .type = "command" | .timeout = $timeout else . end)
+                    else . end)
               else $groups + [{"hooks": [{"type": "command", "command": $command, "timeout": $timeout}]}] end;
         # Remove $command from hooks.<$event>, then any group that leaves empty, then the event
         def remove_hook($event; $command):
@@ -204,15 +193,8 @@ claude_code_settings() {
 # Usage: configure_claude_code [<register the worktree hook: true|false>]
 configure_claude_code() {
     echo "Configuring Claude Code..."
-    local settings i
-    for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-        CLAUDE_CODE_REPLACE[i]=false
-        claude_code_keep_applies "$i" || continue
-        if replace_custom_value "${CLAUDE_CODE_KEEP_NAMES[i]}" "$(claude_code_value "${CLAUDE_CODE_KEEP_PATHS[i]}")" \
-            "$(claude_code_keep_wanted "$i")"; then
-            CLAUDE_CODE_REPLACE[i]=true
-        fi
-    done
+    local settings
+    keepable_choose claude_code
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
         echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
@@ -241,14 +223,11 @@ user_instructions_files() {
 
 install_scripts() {
     echo "  Status line script and worktree hook:"
-    local status=0
-    script_files copy_file || status=1
-    chmod 755 "$CLAUDE_CODE_STATUSLINE" "$CLAUDE_CODE_WORKTREE_HOOK" || status=1
-    return "$status"
+    script_files copy_file
 }
 
 status() {
-    local value wanted i line claude
+    local line claude
     if claude="$(claude_code_path)"; then
         status_item ok "Claude Code"
         if status_require_cmd jq "Signed in to Claude Code"; then
@@ -269,14 +248,7 @@ status() {
     fi
     if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
         status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
-        for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-            claude_code_keep_applies "$i" || continue
-            value="$(claude_code_value "${CLAUDE_CODE_KEEP_PATHS[i]}")"
-            wanted="$(claude_code_keep_wanted "$i")"
-            if [ -n "$value" ] && [ "$value" != "$wanted" ]; then
-                status_custom_value "${CLAUDE_CODE_KEEP_NAMES[i]}" "$value" "$wanted"
-            fi
-        done
+        keepable_status claude_code
     fi
     claude_code_have_git_wt || status_item missing "Worktree hook: $CLAUDE_CODE_NO_GIT_WT"
     while IFS= read -r line; do
@@ -287,12 +259,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     # Anthropic's installer prints "Setting up Claude Code..." itself
     echo "Claude Code:"
     if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then

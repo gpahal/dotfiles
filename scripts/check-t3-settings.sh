@@ -60,9 +60,10 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the keys a jq filter reads or writes, one per line: .name, and "name": in an object
+# Print the keys a jq filter reads or writes, one per line: .name, and "name": in an object. Its
+# comments go first, so "e.g." in one can't yield a key g.
 keys_of() {
-    printf '%s\n' "$1" | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*":' |
+    printf '%s\n' "$1" | sed -E 's/(^|[[:space:]])#.*$/\1/' | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*":' |
         sed -E 's/^\.//; s/^"//; s/":$//' | sort -u
 }
 
@@ -140,9 +141,9 @@ warn() {
     warnings=$((warnings + 1))
 }
 
-check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
+check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
-defaults_check "server settings" "$T3_CODE_SERVER_FILTER" "$tmp/settings.ts" "$tmp/project.ts"
+defaults_check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 defaults_check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
 if [ "$errors" -gt 0 ]; then

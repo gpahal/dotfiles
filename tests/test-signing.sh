@@ -117,4 +117,30 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 main
 assert_file_contains "$ALLOWED" "local@example.com namespaces=\"git\""
 assert_not_contains "$(cat "$ALLOWED")" "repo@example.com"
 rm -f "$HOME/.gitconfig.local" "$HOME/.config/git/config"
+
+# A failed ssh-keygen fails the step on both OSes, saying nothing about a key it didn't make
+rm -f "$SIGNING" "$SIGNING.pub" "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_ed25519.pub"
+stub ssh-keygen 'exit 1'
+# The real one ran above, so bash has its path hashed
+hash -r
+for os in ubuntu macos; do
+    if [ "$os" == ubuntu ]; then
+        is_macos() { false; }
+        is_ubuntu() { true; }
+    else
+        is_macos() { true; }
+        is_ubuntu() { false; }
+    fi
+    DOTFILES_ASSUME_YES=1 assert_exit 1 main
+    assert_not_contains "$RUN_OUTPUT" "Generated"
+    assert_not_contains "$RUN_OUTPUT" "is missing. Recreate it"
+done
+# So does a ~/.ssh it can't create
+rm -rf "$HOME/.ssh"
+: > "$HOME/.ssh"
+stub ssh-keygen 'touch "$6" "$6.pub"'
+: > "$STUB_LOG"
+DOTFILES_ASSUME_YES=1 assert_exit 1 main
+assert_file_not_contains "$STUB_LOG" "ssh-keygen"
+rm "$HOME/.ssh"
 test_done

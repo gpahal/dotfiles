@@ -5,10 +5,10 @@ set -euo pipefail
 
 # A step missing a command it needs fails before it changes anything: claude-code and claude-desktop
 # without jq, claude-code without curl when Claude Code is missing, codex without yq, tmux without
-# tmux or git, git without gh, ubuntu and docker without jq, ubuntu without curl when Tailscale is
-# missing, t3-code without brew on macOS and without curl on Ubuntu when it would download the t3
-# CLI, runtimes without mise, and without curl when rustup is missing, and zsh without its
-# login zsh. chrome without curl is in test-chrome.sh.
+# tmux or git, git without gh, ubuntu and docker without jq, docker without gpg, ubuntu without
+# curl or gpg when Tailscale is missing, t3-code without brew on macOS and without curl on Ubuntu
+# when it would download the t3 CLI, runtimes without mise, and without curl when rustup is
+# missing, and zsh without its login zsh. chrome without curl is in test-chrome.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -135,7 +135,8 @@ runtimes_no_mise() {
 command -v yq &>/dev/null || stub yq
 for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq codex" "tmux tmux_step" \
     "git tmux_step" "gh git_step" "jq ubuntu_step" "curl ubuntu_no_tailscale" "jq docker_step" \
-    "brew t3_code_macos" "curl t3_code_ubuntu" "mise runtimes_no_mise" "curl runtimes_step"; do
+    "gpg ubuntu_no_tailscale" "gpg docker_step" "brew t3_code_macos" "curl t3_code_ubuntu" \
+    "mise runtimes_no_mise" "curl runtimes_step"; do
     cmd="${check% *}"
     step="${check#* }"
     rm -rf "$HOME"

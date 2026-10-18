@@ -5,8 +5,9 @@ set -euo pipefail
 
 # run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
-# Ctrl-C, or SIGTERM, stops the run. With --status, a step that exits 3 is listed as needing
-# attention. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
+# Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
+# step that carries on runs. With --status, a step that exits 3 is listed as needing
+# attention when its report has a missing or unknown item, and as failed otherwise. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
 # macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
 # both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
 # report the OS.
@@ -28,9 +29,18 @@ fake_step broken 'echo "broken output" >&2; exit 1'
 fake_step last 'echo "last ran"'
 # Signals itself, as a step does when Ctrl-C reaches it
 fake_step interrupted 'kill -INT $$'
-fake_step attention '[ "${1:-}" != --status ] || exit 3'
+fake_step attention '[ "${1:-}" != --status ] || { echo "  missing    something"; exit 3; }'
+fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; exit 3; }'
+# Exits 3 with no item needing attention, as a report that set -e cut short at a command that
+# exited 3, such as jq on a filter that doesn't compile
+fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
 # Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
+# Ctrl-C reaches the runner too, but the step carries on and fails, as one does when brew catches
+# SIGINT and exits 130 under `|| result=1`. Each signal the runner traps.
+for sig in INT TERM HUP; do
+    fake_step "caught-$sig" "kill -$sig \$PPID; echo \"caught-$sig carried on\"; exit 1"
+done
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
@@ -72,6 +82,22 @@ assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 interrupted" "$(cat "$SANDBOX/ran")" "steps run up to an interrupted one"
 
+# A signal the runner got stops it after the step, whatever the step's status, with the status
+# that signal gives
+for sig in INT:130 TERM:143 HUP:129; do
+    rm -f "$SANDBOX/ran"
+    assert_exit "${sig#*:}" run_steps "" first "caught-${sig%:*}" last
+    assert_contains "$RUN_OUTPUT" "caught-${sig%:*} carried on"
+    assert_contains "$RUN_OUTPUT" "The caught-${sig%:*} step was interrupted; stopping."
+    assert_not_contains "$RUN_OUTPUT" "Failed steps"
+    assert_eq "first
+caught-${sig%:*}" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIG${sig%:*}"
+done
+# With --status too
+rm -f "$SANDBOX/ran"
+assert_exit 130 run_steps --status caught-INT last
+assert_eq "caught-INT --status" "$(cat "$SANDBOX/ran")" "reports run up to one during which the runner got SIGINT"
+
 # Any other status above 128 is a failure, and the rest still run
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" sigpipe last
@@ -86,6 +112,14 @@ assert_exit 3 run_steps --status first attention
 assert_contains "$RUN_OUTPUT" "Needs attention: attention. Run: bash $0 attention"
 assert_eq "first --status
 attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
+# An unknown item needs attention too
+assert_exit 3 run_steps --status unknown
+assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
+# A report that exits 3 without a missing or unknown item failed
+assert_exit 1 run_steps --status cut-short
+assert_contains "$RUN_OUTPUT" "The cut-short step failed."
+assert_contains "$RUN_OUTPUT" "Failed steps: cut-short"
+assert_not_contains "$RUN_OUTPUT" "Needs attention"
 # A failure outranks needing attention, and the hint to re-run a failed report keeps --status
 assert_exit 1 run_steps --status attention broken
 assert_contains "$RUN_OUTPUT" "Needs attention: attention."
@@ -106,7 +140,7 @@ stub uname '[ "$1" != -m ] || echo arm64'
 
 # An unknown step stops the run before any step runs. step_script takes either OS's steps, so the
 # error lists both.
-# shellcheck disable=SC2034 # unknown_step reads them
+# shellcheck disable=SC2034 # run_steps reads them
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first nope
@@ -115,18 +149,18 @@ assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On
 
 # The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
 load_script lib/common.sh
+# shellcheck source=../scripts/lib/runners.sh
+source "$REPO_DIR/scripts/lib/runners.sh"
 # Set LISTED to a runner's default steps on an OS (Darwin or Linux)
-runner_steps() {
-    stub uname "[ \"\$1\" != -s ] || echo $2"
-    assert_exit 0 "$BASH" "$REPO_DIR/$1" --help
-    LISTED="$(printf '%s\n' "$RUN_OUTPUT" | sed -n 's/^Steps, run in this order by default: //p')"
+listed() {
+    LISTED="$(runner_steps "$REPO_DIR/$1" "$2")" || fail "$1 --help failed on $2"
     [ -n "$LISTED" ] || fail "no steps read from $1 --help on $2"
 }
 for runner in setup.sh ai_tools/setup.sh; do
-    runner_steps "$runner" Darwin
+    listed "$runner" Darwin
     # shellcheck disable=SC2206 # step names have no spaces
     MACOS_STEPS=($LISTED)
-    runner_steps "$runner" Linux
+    listed "$runner" Linux
     # shellcheck disable=SC2206
     UBUNTU_STEPS=($LISTED)
     # shellcheck disable=SC2034 # step_script reads it

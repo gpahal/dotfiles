@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Both runners take -h/--help, --status, --quick, --backup, and --no-backup anywhere among the step
-# names, and fail with a usage line on an unknown flag. lib/common.sh reads --status and --quick
+# names, and fail with a usage line on an unknown flag. check_args reads --status and --quick
 # wherever they are too.
 
 # shellcheck source=lib.sh
@@ -66,11 +66,12 @@ assert_exit 0 "$BASH" "$setup_sh" vim --no-backup
 assert_contains "$RUN_OUTPUT" "=== dotfiles setup ==="
 assert_file_contains "$HOME/.vimrc" "$(head -1 "$REPO_DIR/vim/vimrc")"
 
-# lib/common.sh: --status anywhere stops Homebrew's auto-update, and --quick sets
+# check_args: --status anywhere stops Homebrew's auto-update, and --quick sets
 # DOTFILES_STATUS_QUICK, for the runner and the steps it starts
 read_flags() {
     env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
-        . "$0/lib/common.sh" "$@"
+        . "$0/lib/common.sh"
+        check_args : words "$@"
         echo "${HOMEBREW_NO_AUTO_UPDATE:-unset} ${DOTFILES_STATUS_QUICK:-unset}"' "$REPO_DIR" "$@"
 }
 run read_flags vim --status
@@ -106,6 +107,28 @@ assert_exit 2 "$BASH" "$REPO_DIR/$step" status
 assert_contains "$RUN_OUTPUT" "Unknown argument: status"
 assert_contains "$RUN_OUTPUT" "Usage: bash $step"
 assert_eq "" "$(find "$HOME" -mindepth 1)" "files a step wrote for -h, --stauts, or status"
+
+# A step with lib/common.sh's default main names itself too, run directly or loaded by a test that
+# has since cd'd elsewhere, and its main runs its status or apply
+step=editorconfig/install.sh
+assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
+assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
+assert_exit 2 "$BASH" "$REPO_DIR/$step" status
+assert_contains "$RUN_OUTPUT" "Unknown argument: status"
+default_main() {
+    export HOME="$SANDBOX/home-default-main"
+    mkdir -p "$HOME"
+    load_script "$step"
+    cd /
+    assert_exit 0 main -h
+    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step's main -h"
+    assert_exit 3 main --status
+    assert_eq "  missing    ~/.editorconfig" "$RUN_OUTPUT" "$step's main --status"
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "Copying EditorConfig..."
+    [ -f "$HOME/.editorconfig" ] || fail "$step's main didn't copy ~/.editorconfig"
+}
+subtest default_main
 
 # The runners start each step with the bash running them, not whichever bash is first on PATH,
 # such as Homebrew's

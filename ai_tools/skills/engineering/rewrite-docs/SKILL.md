@@ -39,7 +39,7 @@ Check every claim against the code, config, scripts, `--help` output, and the re
 
 Each finding names its `path:line`, the evidence (the code line, the command and its output), and the fix.
 
-Done when every file in the inventory has been audited, and each finding has its evidence.
+Done when every file in the inventory has been audited, and each finding has its evidence. Then remove the scope's temp directory, `<tmp>`.
 
 ## 4. Sort small from big
 

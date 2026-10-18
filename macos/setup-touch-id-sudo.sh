@@ -24,7 +24,7 @@ usage() {
 # Copy Homebrew's module to the root-owned dir. Read-only, like the modules macOS ships.
 install_reattach_module() {
     sudo install -d -o root -g wheel -m 755 "$PAM_LOCAL_MODULES_DIR" &&
-        sudo install -o root -g wheel -m 444 "$(reattach_source)" "$REATTACH_MODULE"
+        sudo install -o root -g wheel -m 444 "$REATTACH_SOURCE" "$REATTACH_MODULE"
 }
 
 status() {
@@ -61,6 +61,7 @@ main() {
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
+    read_reattach_source
 
     local parent
     parent="$(reattach_unsafe_parent)"

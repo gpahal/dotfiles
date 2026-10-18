@@ -12,9 +12,14 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/keepable.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
 
-CODEX_CONFIG="$HOME/.codex/config.toml"
-CODEX_INSTRUCTIONS="$HOME/.codex/AGENTS.md"
+CODEX_DIR="$HOME/.codex"
+CODEX_CONFIG="$CODEX_DIR/config.toml"
+CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
+# Where Ubuntu keeps MCP OAuth tokens in plain text (mcp_oauth_credentials_store below)
+CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
 # The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
 # the step rather than leaving Codex reading files setup never wrote
 CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
@@ -23,23 +28,14 @@ BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
-# Settings you may keep your own values of (replace_custom_value), each a yq path, the repo's
-# value as TOML (see codex_set), and a name. configure_codex sets CODEX_REPLACE to whether to write
-# each over yours. Values only Ubuntu gets are marked ubuntu.
+# Settings you may keep your own values of (ai_tools/lib/keepable.sh), each with a yq path and
+# the repo's value as TOML (see codex_set)
 # Usage: codex_keepable <yq path> <TOML value> <name> [ubuntu]
-CODEX_KEEP_PATHS=()
-CODEX_KEEP_VALUES=()
-CODEX_KEEP_NAMES=()
-CODEX_KEEP_UBUNTU=()
-CODEX_REPLACE=()
 codex_keepable() {
-    CODEX_KEEP_PATHS+=("$1")
-    CODEX_KEEP_VALUES+=("$2")
-    CODEX_KEEP_NAMES+=("Codex's $3")
-    CODEX_KEEP_UBUNTU+=("$([ "${4:-}" == ubuntu ] && echo true || echo false)")
-    CODEX_REPLACE+=(false)
+    keepable codex "$1" "$2" "Codex's $3" "${4:-}"
 }
 # The default model and high reasoning effort, which /model changes
+keepable_forget codex
 codex_keepable .model '"gpt-6.1-sol"' "model (model)"
 codex_keepable .model_reasoning_effort '"high"' "reasoning effort (model_reasoning_effort)"
 # The CLI footer: model with reasoning effort, directory, git branch, and context used. /statusline
@@ -52,28 +48,17 @@ codex_keepable .tui.status_line '["model-with-reasoning", "current-dir", "git-br
 # panes, so `auto` finds Ghostty.
 codex_keepable .tui.notification_method '"osc9"' "notification method (tui.notification_method)" ubuntu
 
-# Succeeds when value $1 of CODEX_KEEP_PATHS applies on this OS
-codex_keep_applies() {
-    ! "${CODEX_KEEP_UBUNTU[$1]}" || is_ubuntu
-}
-
-# Print one line of JSON without a string's quotes
-codex_unquote() {
-    local value="${1#\"}"
-    printf '%s\n' "${value%\"}"
-}
-
-# Print the config's value at path $1 of CODEX_KEEP_PATHS as one line of JSON, without a string's
-# quotes, or nothing when it's unset or the config can't be read
+# Print the config's value at yq path $1 as one line of JSON, without a string's quotes, or
+# nothing when it's unset or the config can't be read
 codex_keep_current() {
     local value
-    value="$(yq -p toml -o json -I=0 "${CODEX_KEEP_PATHS[$1]}" "$CODEX_CONFIG" 2>/dev/null)" || return 0
-    [ "$value" == null ] || codex_unquote "$value"
+    value="$(yq -p toml -o json -I=0 "$1" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    [ "$value" == null ] || keepable_unquote "$value"
 }
 
-# Print the repo's value $1 of CODEX_KEEP_VALUES as codex_keep_current prints it
+# Print a TOML value as codex_keep_current prints it
 codex_keep_wanted() {
-    codex_unquote "$(printf 'v = %s\n' "${CODEX_KEEP_VALUES[$1]}" | yq -p toml -o json -I=0 '.v')"
+    keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
 }
 
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
@@ -89,10 +74,9 @@ codex_settings() {
     CODEX_PATHS=()
     CODEX_VALUES=()
     # The settings you may keep, unless you chose your own and keep them
-    for i in "${!CODEX_KEEP_PATHS[@]}"; do
-        codex_keep_applies "$i" || continue
-        if "${CODEX_REPLACE[i]}" || [ -z "$(codex_keep_current "$i")" ]; then
-            codex_set "${CODEX_KEEP_PATHS[i]}" "${CODEX_KEEP_VALUES[i]}"
+    for i in $(keepable_indexes codex); do
+        if "${KEEP_REPLACE[i]}" || [ -z "$(keepable_current codex "$i")" ]; then
+            codex_set "${KEEP_PATHS[i]}" "${KEEP_VALUES[i]}"
         fi
     done
     # Short answers and reasoning summaries
@@ -166,16 +150,84 @@ codex_settings_joined() {
     printf '%s\n' "$joined"
 }
 
-# Print the number of full-line comments in a file
-comment_lines() {
-    grep -c '^[[:space:]]*#' "$1" || true
+# Print a TOML file's full-line comments, trimmed and sorted. Lines inside a multi-line string
+# aren't comments, even when they start with #, so a line with an odd number of """ or ''' starts
+# or ends one.
+codex_comments() {
+    awk -v dq='"""' -v sq="'''" '
+        function count(s, d,   n, i) {
+            while ((i = index(s, d)) > 0) { n++; s = substr(s, i + 3) }
+            return n
+        }
+        str != "" { if (count($0, str) % 2) str = ""; next }
+        /^[[:space:]]*#/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; next }
+        count($0, dq) % 2 { str = dq; next }
+        count($0, sq) % 2 { str = sq }
+    ' "$1" | LC_ALL=C sort
+}
+
+# Succeeds when the edited copy, given first, still has every full-line comment of the source
+codex_comments_kept() {
+    [ -z "$(LC_ALL=C comm -23 <(codex_comments "$2") <(codex_comments "$1"))" ]
+}
+
+# Add the comments and blank lines after the source's last key back into the edited copy, given
+# first. They go at the end of the last table in the copy that the source has too, so a
+# commented-out key stays under the table it was written in. yq may put a table the edit added
+# before or after that one, such as a new [tui] above [tui.x], and rewrites headers, such as
+# [ "tui" ] # note to [tui], so headers are compared by their table path.
+codex_add_tail() {
+    local edited="$1" tmp
+    tmp="$(mktemp)" || return 1
+    awk -v source="$2" -v q="'" '
+        # A header as yq writes it: no spaces or trailing comment, and quotes only where needed
+        function path(s,   key) {
+            sub(/^[[:space:]]+/, "", s)
+            sub(/\][[:space:]]*#.*$/, "]", s)
+            sub(/[[:space:]]+$/, "", s)
+            gsub(/[[:space:]]*\.[[:space:]]*/, ".", s)
+            gsub(/\[[[:space:]]+/, "[", s)
+            gsub(/[[:space:]]+\]/, "]", s)
+            while (match(s, q "[^" q "\"\\\\]*" q)) {
+                s = substr(s, 1, RSTART - 1) "\"" substr(s, RSTART + 1, RLENGTH - 2) "\"" \
+                    substr(s, RSTART + RLENGTH)
+            }
+            while (match(s, /"[A-Za-z0-9_-]+"/)) {
+                s = substr(s, 1, RSTART - 1) substr(s, RSTART + 1, RLENGTH - 2) \
+                    substr(s, RSTART + RLENGTH)
+            }
+            return s
+        }
+        FILENAME == source {
+            if (/^[[:space:]]*\[/) header[path($0)] = 1
+            if (/^[[:space:]]*(#|$)/) tail = tail $0 "\n"; else tail = ""
+            next
+        }
+        # First pass over the copy: find the header that ends the last table the source has
+        FNR == 1 { pass++ }
+        pass == 1 {
+            if (/^\[/) {
+                if (path($0) in header) { at = 0; last = FNR }
+                else if (!at) at = FNR
+            }
+            next
+        }
+        FNR == at {
+            # The edit already left a blank line above this table
+            sub(/^\n+/, "", tail)
+            if (tail != "") printf "%s\n", tail
+        }
+        { print }
+        END { if (!at) printf "%s", tail }
+    ' "$2" "$edited" "$edited" > "$tmp" && mv "$tmp" "$edited"
 }
 
 # Write a copy of the Codex config with the settings applied, and print its path. yq rewrites the
 # whole file: values and full-line comments stay, but end-of-line comments may move or go,
 # multi-line strings become one-line strings with \n, and dotted keys such as profile.fast = {...}
 # may become tables. yq 4.54.1 drops the comments after the last key, such as a commented-out
-# table at the end, so they're added back, and the copy must keep every full-line comment. It also
+# table at the end, so they're added back, and the copy must keep every full-line comment the source
+# has. It also
 # moves values in two shapes, a top-level inline table after a top-level dotted key, and top-level
 # keys after a top-level array of inline tables, so the copy is checked against the edit's own
 # result before use.
@@ -199,11 +251,11 @@ codex_config_edited() {
         rm -f "$edited"
         return 1
     fi
-    if [ "$(comment_lines "$edited")" -lt "$(comment_lines "$source")" ]; then
-        awk '/^[[:space:]]*(#|$)/ { tail = tail $0 "\n"; next } { tail = "" } END { printf "%s", tail }' \
-            "$source" >> "$edited"
+    if ! codex_comments_kept "$edited" "$source" && ! codex_add_tail "$edited" "$source"; then
+        rm -f "$edited"
+        return 1
     fi
-    if [ "$(comment_lines "$edited")" -lt "$(comment_lines "$source")" ]; then
+    if ! codex_comments_kept "$edited" "$source"; then
         echo "  yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged." >&2
         rm -f "$edited"
         return 1
@@ -223,14 +275,8 @@ codex_config_matches() {
 
 configure_codex() {
     echo "Configuring Codex..."
-    local edited i
-    for i in "${!CODEX_KEEP_PATHS[@]}"; do
-        CODEX_REPLACE[i]=false
-        if codex_keep_applies "$i" && replace_custom_value "${CODEX_KEEP_NAMES[i]}" \
-            "$(codex_keep_current "$i")" "$(codex_keep_wanted "$i")"; then
-            CODEX_REPLACE[i]=true
-        fi
-    done
+    local edited
+    keepable_choose codex
     local settings="model, output, sandbox, approval, data-sharing, and status line settings"
     if is_macos; then
         settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
@@ -290,6 +336,21 @@ codex_status_signed_in() {
         status_item missing "Signed in to Codex: sign in to the ChatGPT app, or run codex login"
     else
         status_item missing "Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
+    fi
+}
+
+# Print an item for whether only you can read the MCP tokens Codex keeps in plain text on Ubuntu.
+# Prints nothing when there are no tokens yet.
+codex_status_credentials() {
+    local mode name="Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+    [ -e "$CODEX_CREDENTIALS" ] || return 0
+    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
+    if [ "$mode" == 600 ]; then
+        status_item ok "$name"
+    elif [ -z "$mode" ]; then
+        status_item unknown "$name: couldn't read its mode"
+    else
+        status_item missing "$name: its mode is $mode; run chmod 600 ~/.codex/.credentials.json"
     fi
 }
 
@@ -359,7 +420,6 @@ setup_codex_sandbox() {
 }
 
 status() {
-    local wanted value i
     if is_macos; then
         status_cask chatgpt /Applications/ChatGPT.app
     else
@@ -369,21 +429,15 @@ status() {
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
-    if ! tool_home_is "${CODEX_HOME:-}" "$HOME/.codex"; then
+    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
     else
         if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
-            for i in "${!CODEX_KEEP_PATHS[@]}"; do
-                codex_keep_applies "$i" || continue
-                value="$(codex_keep_current "$i")"
-                wanted="$(codex_keep_wanted "$i")"
-                if [ -n "$value" ] && [ "$value" != "$wanted" ]; then
-                    status_custom_value "${CODEX_KEEP_NAMES[i]}" "$value" "$wanted"
-                fi
-            done
+            keepable_status codex
         fi
         user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+        ! is_ubuntu || codex_status_credentials
     fi
     if is_ubuntu; then
         status_check "Codex's sandbox: bwrap can create one" bwrap_works
@@ -393,14 +447,9 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Codex..."
-    if ! tool_home_is "${CODEX_HOME:-}" "$HOME/.codex"; then
+    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2
         return 1
     fi

@@ -107,6 +107,18 @@ assert_not_contains "$RUN_OUTPUT" "followUpQueueMode"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
 assert_eq '"queue"' "$(get .desktop.followUpQueueMode)" "a [desktop] key already there on Ubuntu"
+# The MCP tokens Codex keeps in plain text there must be readable only by you. Status says nothing
+# of them before there are any.
+run status
+assert_not_contains "$RUN_OUTPUT" ".credentials.json"
+echo '{}' > "$CODEX_CREDENTIALS"
+chmod 644 "$CODEX_CREDENTIALS"
+run status
+assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you: its mode is 644; run chmod 600 ~/.codex/.credentials.json"
+chmod 600 "$CODEX_CREDENTIALS"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+rm -f "$CODEX_CREDENTIALS"
 
 # yq rewrites the file, keeping every value: inline tables, arrays of tables, dotted keys, quoted
 # table names, multi-line strings, and full-line comments. A table the step sets that's written
@@ -181,12 +193,51 @@ printf '# only\n# comments\n' > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_file_contains "$CODEX_CONFIG" "# only"
 assert_file_contains "$CODEX_CONFIG" "# comments"
+# They go back under the table they were written in, above the tables the edit adds, and a second
+# run leaves them there
+printf 'model = "x"\n\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq '# [profiles.fast]|# model = "y"||[analytics]' \
+    "$(grep -A3 -F '# [profiles.fast]' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comments' place"
+first="$(cat "$CODEX_CONFIG")"
+assert_exit 0 configure_codex
+assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run with trailing comments"
+# Also when yq adds a table above the last one, as a new [tui] above [tui.model_availability_nux]
+printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n# "gpt-7" = 1\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq 'gpt-6 = 1||# "gpt-7" = 1||[analytics]' \
+    "$(grep -B2 -A2 -F '# "gpt-7"' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment below a new parent table"
+# And when yq rewrites the headers, here to [tui] and [desktop]
+printf 'model = "x"\n\n[ "tui" ] # mine\nnotifications = true\n  [\x27desktop\x27]\nx = 1\n# y = 2\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq 'x = 1||# y = 2||[analytics]' \
+    "$(grep -B2 -A2 -F '# y = 2' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment under a rewritten header"
+# A # line inside a multi-line string isn't a comment, though yq turns the string into one line
+printf 'developer_instructions = """\n# Style\nBe brief.\n"""\nx = '"'''"'\n# raw\n'"'''"'\n# real\n[tui]\nnotifications = true\n' \
+    > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq '"# Style\nBe brief.\n"' "$(get .developer_instructions)" "a multi-line string holding a heading"
+assert_file_contains "$CODEX_CONFIG" "# real"
+assert_exit 0 configure_codex
+assert_contains "$RUN_OUTPUT" "already set"
 # A rewrite that still drops a comment fails, leaving the file alone
 printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n' > "$CODEX_CONFIG"
 cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
 yq() {
     case "$*" in
         *"-o toml"*) command yq "$@" | grep -v '^# keep me' ;;
+        *) command yq "$@" ;;
+    esac
+}
+assert_exit 1 configure_codex
+assert_contains "$RUN_OUTPUT" "yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged."
+assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+# So does one that changes a comment mid-file, though the count of comments comes out even
+printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n# tail\n' > "$CODEX_CONFIG"
+cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
+yq() {
+    case "$*" in
+        *"-o toml"*) command yq "$@" | sed 's/^# keep me$/# other/' ;;
         *) command yq "$@" ;;
     esac
 }

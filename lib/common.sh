@@ -4,8 +4,14 @@
 # A cd to a relative dir would search an exported CDPATH and print the dir it found, so every
 # script that sources this file, and the ones it runs, ignore it
 unset CDPATH
-DOTFILES_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOTFILES_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DOTFILES_DIR
+# The script that sourced this file, which names a step that uses the default main in step_args's
+# usage line. Made absolute now, since a test that loads the step cd's to its sandbox after.
+case "${BASH_SOURCE[1]:-}" in
+    /*) _SOURCED_BY="${BASH_SOURCE[1]}" ;;
+    *) _SOURCED_BY="$PWD/${BASH_SOURCE[1]:-}" ;;
+esac
 
 is_macos() {
     [ "$(uname -s)" == "Darwin" ]
@@ -80,9 +86,10 @@ file_is() {
 # write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
 # setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
 # *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
-# Usage: install_root_file <src> <dest> [mode]
+# A group, when given, is set by the same install, so no write can leave the file without it.
+# Usage: install_root_file <src> <dest> [mode] [group]
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" dir tmp
+    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
     dir="$(dirname "$dest")"
     sudo mkdir -p "$dir" || return 1
     # Through sudo, since the file or its directory may be root-only
@@ -91,7 +98,9 @@ install_root_file() {
             return 1
     fi
     tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
-    if sudo install -m "${mode:-644}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
+    opts=(-m "${mode:-644}")
+    [ -z "$group" ] || opts+=(-g "$group")
+    if sudo install "${opts[@]}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
         return 0
     fi
     sudo rm -f "$tmp"
@@ -99,11 +108,11 @@ install_root_file() {
 }
 
 # Write content, plus a newline, to a root-owned file, as install_root_file does
-# Usage: write_root_file <dest> <content> [mode]
+# Usage: write_root_file <dest> <content> [mode] [group]
 write_root_file() {
     local src status=0
     src="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" || status=1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" "${4:-}" || status=1
     rm -f "$src"
     return "$status"
 }
@@ -114,8 +123,90 @@ confirm_sudo_changes() {
     echo "  These need sudo:"
     printf '    - %s\n' "$@"
     confirm "  Apply them?" && return 0
-    echo "  Left unchanged. Run this step from a terminal to apply them."
+    if is_interactive; then
+        echo "  Left unchanged."
+    else
+        echo "  Left unchanged. Run this step from a terminal to apply them."
+    fi
     return 1
+}
+
+# A step that changes the system with sudo lists each simple item once, with sudo_item, so its
+# confirm_sudo_changes list, its fixes, and its status can't drift apart. An item that branches,
+# such as one with two pending texts, stays custom code. Add the items in a function that status
+# and apply both call, starting with sudo_items_reset, so a test that loads two steps gets each
+# step's own.
+SUDO_ITEM_STATUS=()
+SUDO_ITEM_PENDING=()
+SUDO_ITEM_CHECK=()
+SUDO_ITEM_FIX=()
+
+# sudo_item <status text> <pending text> <check function> <fix function>
+# Add an item. The check succeeds when it's set up, and the fix sets it up, with sudo. The status
+# text describes the state the check looks for, as status_check's does, and the pending text the
+# change, as confirm_sudo_changes lists it.
+# e.g. sudo_item "Linger, so user services start at boot" \
+#     "Start your user services at boot: loginctl enable-linger" lingering enable_linger
+sudo_item() {
+    SUDO_ITEM_STATUS+=("$1")
+    SUDO_ITEM_PENDING+=("$2")
+    SUDO_ITEM_CHECK+=("$3")
+    SUDO_ITEM_FIX+=("$4")
+}
+
+sudo_items_reset() {
+    SUDO_ITEM_STATUS=()
+    SUDO_ITEM_PENDING=()
+    SUDO_ITEM_CHECK=()
+    SUDO_ITEM_FIX=()
+}
+
+# The drivers below take the check functions of the items to drive, so a step can keep its custom
+# items in their place among the rest. They drive the items in the order they were added, every
+# item when given none.
+
+# Append the pending text of each item whose check fails to the caller's pending array, for
+# confirm_sudo_changes
+# e.g. local pending=(); sudo_items_pending sleep_masked sleep_conf_written
+sudo_items_pending() {
+    local i=0
+    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
+        if _sudo_item_wanted "$i" "$@" && ! "${SUDO_ITEM_CHECK[i]}"; then
+            pending+=("${SUDO_ITEM_PENDING[i]}")
+        fi
+        i=$((i + 1))
+    done
+}
+
+# Run the fix of each item whose check still fails. Each runs whether or not the one before it
+# failed; returns 1 when any did.
+sudo_items_apply() {
+    local i=0 result=0
+    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
+        if _sudo_item_wanted "$i" "$@" && ! "${SUDO_ITEM_CHECK[i]}"; then
+            "${SUDO_ITEM_FIX[i]}" || result=1
+        fi
+        i=$((i + 1))
+    done
+    return "$result"
+}
+
+# Print a status_check item for each item
+sudo_items_status() {
+    local i=0
+    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
+        if _sudo_item_wanted "$i" "$@"; then
+            status_check "${SUDO_ITEM_STATUS[i]}" "${SUDO_ITEM_CHECK[i]}"
+        fi
+        i=$((i + 1))
+    done
+}
+
+# _sudo_item_wanted <index> [check...]: succeeds when the item is among the checks named, or none is
+_sudo_item_wanted() {
+    local check="${SUDO_ITEM_CHECK[$1]}"
+    shift
+    [ $# -eq 0 ] || has_arg "$check" "$@"
 }
 
 # Fail on anything but Apple Silicon macOS and Ubuntu
@@ -167,22 +258,6 @@ fi
 export HOMEBREW_NO_ASK=1
 export HOMEBREW_NO_ENV_HINTS=1
 
-# Flags given to a runner or a step, anywhere among its arguments. Scripts source this file
-# without arguments, so "$@" is the script's. What's set here is exported, so the steps a runner
-# starts get it too.
-# - --status: a status report changes nothing, and that includes Homebrew's own update.
-# - --quick: a status report skips its slowest checks (DOTFILES_STATUS_QUICK).
-# - --backup or --no-backup answers every backup question yes or no (backup_edited, maybe_backup).
-for arg in "$@"; do
-    case "$arg" in
-        --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
-        --quick) export DOTFILES_STATUS_QUICK=1 ;;
-        --backup) export DOTFILES_BACKUP=yes ;;
-        --no-backup) export DOTFILES_BACKUP=no ;;
-    esac
-done
-unset arg
-
 # has_arg <flag> [arg...]: succeeds when <flag> is among the arguments
 # e.g. has_arg --quick "$@"
 has_arg() {
@@ -199,13 +274,22 @@ has_arg() {
 # e.g. if status_requested "$@"; then status; return $?; fi
 status_requested() { has_arg --status "$@"; }
 
-# check_args <usage function> <word function> [arg...]: check a step's or runner's arguments. -h or
-# --help prints the usage and exits 0. --status, --quick, --backup, and --no-backup pass, any
-# other flag exits 2, and each other argument goes to the word function. --quick without --status
-# exits 2 too, since it would otherwise run the steps instead of reporting.
+# Succeeds when a status report runs under --quick, which skips its slowest checks
+# e.g. if status_quick; then status_item unverified "...: skipped by --quick"; fi
+status_quick() { [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; }
+
+# check_args <usage function> <words|no-words> [arg...]: check a step's or runner's arguments. -h
+# or --help prints the usage and exits 0. Any flag but these exits 2. With words, each other
+# argument goes in ARG_WORDS, in order; with no-words, one exits 2. --quick without --status exits
+# 2 too, since it would otherwise run the steps instead of reporting. What the flags set is
+# exported, so the steps a runner starts get it too.
+# - --status: a status report changes nothing, and that includes Homebrew's own update.
+# - --quick: a status report skips its slowest checks (status_quick).
+# - --backup or --no-backup answers every backup question yes or no (maybe_backup).
 check_args() {
-    local usage_fn="$1" word_fn="$2" arg
+    local usage_fn="$1" words="$2" arg
     shift 2
+    ARG_WORDS=()
     for arg in "$@"; do
         case "$arg" in
             -h | --help)
@@ -216,13 +300,23 @@ check_args() {
     done
     for arg in "$@"; do
         case "$arg" in
-            --status | --quick | --backup | --no-backup) ;;
+            --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
+            --quick) export DOTFILES_STATUS_QUICK=1 ;;
+            --backup) export DOTFILES_BACKUP=yes ;;
+            --no-backup) export DOTFILES_BACKUP=no ;;
             -*)
                 echo "Unknown option: $arg" >&2
                 "$usage_fn" >&2
                 exit 2
                 ;;
-            *) "$word_fn" "$arg" ;;
+            *)
+                if [ "$words" != words ]; then
+                    echo "Unknown argument: $arg" >&2
+                    "$usage_fn" >&2
+                    exit 2
+                fi
+                ARG_WORDS+=("$arg")
+                ;;
         esac
     done
     if ! status_requested "$@" && has_arg --quick "$@"; then
@@ -238,20 +332,53 @@ check_args() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local path step_usage
-    # The step's script is the outermost file, since main runs only when the script runs directly
-    path="${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}"
-    path="$(CDPATH='' cd -- "$(dirname "$path")" && pwd)/${path##*/}"
-    step_usage="Usage: bash ${path#"$DOTFILES_DIR"/} [--status [--quick]] [--backup | --no-backup]"
-    check_args _step_usage _unknown_step_argument "$@"
+    local path="${BASH_SOURCE[1]}" step_usage
+    # The script that defines the main calling this one: the step's, whether it runs directly or
+    # a test sourced it. The default main is this file's, so then it's the script that sourced it.
+    [ ! "$path" -ef "${BASH_SOURCE[0]}" ] || path="$_SOURCED_BY"
+    step_usage="Usage: bash $(_repo_path "$path") [--status [--quick]] [--backup | --no-backup]"
+    check_args _step_usage no-words "$@"
 }
 
-# step_args's usage and word functions, which read its step_usage
+# step_args's usage function, which reads its step_usage
 _step_usage() { echo "$step_usage"; }
-_unknown_step_argument() {
-    echo "Unknown argument: $1" >&2
-    _step_usage >&2
-    exit 2
+
+# The default main of a step: step_args, then with --status the step's read-only status report,
+# and otherwise its apply, which sets it up. A step defines status and apply, or its own main,
+# which replaces this one. Defined only while no main is, so a test that loads a step, then
+# lib/common.sh again to bring back a function it replaced, keeps the step's own main.
+if ! declare -F main > /dev/null; then
+    main() {
+        step_args "$@"
+        if status_requested "$@"; then
+            status
+            return $?
+        fi
+        apply
+    }
+fi
+
+# copy_step <message> <files function>: the apply of a step that only copies configs. Prints the
+# message, then copies each file the files function passes to copy_file.
+# e.g. apply() { copy_step "Copying EditorConfig..." editorconfig_files; }
+copy_step() {
+    echo "$1"
+    "$2" copy_file
+}
+
+# copy_status <files function>: the status of a step that only copies configs. Reports each file
+# the files function passes to status_file.
+# e.g. status() { copy_status editorconfig_files; }
+copy_status() {
+    "$1" status_file
+    status_result
+}
+
+# Print a script's path relative to the repo, as a usage line names it
+_repo_path() {
+    local path
+    path="$(cd -- "$(dirname "$1")" && pwd)/${1##*/}"
+    echo "${path#"$DOTFILES_DIR"/}"
 }
 
 # Succeeds when stdin is a terminal, so a question can be answered. stdout may be piped, as in
@@ -276,9 +403,10 @@ confirm() {
 
 # Commands Ubuntu needs before Homebrew (https://docs.brew.sh/Homebrew-on-Linux#requirements),
 # plus zsh for the login shell, lsof for port and killport, col for MANPAGER, unzip for casks
-# such as font-monaspace, and jq, which steps use to edit JSON settings even if Homebrew breaks.
-# The homebrew step installs them with apt. They're listed here so missing_cmd_hint can say so.
-UBUNTU_COMMANDS=(cc make curl file git ps zsh lsof col unzip jq)
+# such as font-monaspace, jq, which steps use to edit JSON settings even if Homebrew breaks, and
+# gpg, which checks third-party apt keys' fingerprints. The homebrew step installs them with apt.
+# They're listed here so missing_cmd_hint can say so.
+UBUNTU_COMMANDS=(cc make curl file git ps zsh lsof col unzip jq gpg)
 
 # Print that a command is missing and how to get it. Every command the steps check for comes from
 # the homebrew step, which installs the UBUNTU_COMMANDS with apt on Ubuntu, except ssh-keygen,
@@ -348,12 +476,6 @@ join_lines() {
     printf '%s\n' "$out"
 }
 
-# The ids of the App Store apps a Brewfile lists, one per line. brew bundle skips the ids in
-# HOMEBREW_BUNDLE_MAS_SKIP; names would split on their spaces.
-mas_app_ids() {
-    sed -nE 's/^[[:space:]]*mas "[^"]*", id: ([0-9]+).*/\1/p' "$1"
-}
-
 # The record of the files copy_file and copy_file_ask installed, so a later run can tell a file
 # setup put there from one edited by hand since. One line per file, as sha256sum prints it:
 # "<sha256>  <absolute path>". Paths may contain spaces.
@@ -417,63 +539,66 @@ installed_unedited() {
     [ "$sha" == "$(recorded_sha256 "$1")" ]
 }
 
-# copy_file and copy_file_ask's shared steps. Prints whether dest is up to date and returns 0
-# when it is, recording it if it isn't recorded yet. Returns 1 when dest needs copying, and 2
-# when it's up to date but that record couldn't be written: a later run would take the
-# unrecorded file for an edit.
-_copy_up_to_date() {
-    local src="$1" dest="$2"
-    if [ ! -e "$dest" ] || ! cmp -s "$src" "$dest"; then
-        return 1
-    fi
-    installed_unedited "$dest" || record_installed "$dest" || return 2
-    echo "  $dest is already up to date"
-}
-
-# Each command is checked, since a caller may run this under || or if, where set -e is off
+# Each command is checked, since a caller may run this under || or if, where set -e is off. A
+# new file gets 644, or 755 when the source is executable, the two modes the repo holds. An
+# existing one keeps its mode, plus the executable bits an executable source needs. Sets COPIED
+# to true once the file is copied, so a caller that resets it can tell whether anything changed.
 _copy_and_record() {
-    local src="$1" dest="$2"
+    local src="$1" dest="$2" new_mode=644 exec=""
     mkdir -p "$(dirname "$dest")" || return 1
-    cp "$src" "$dest" || return 1
+    if [ -x "$src" ]; then
+        new_mode=755
+        exec=x
+    fi
+    replace_file "$src" "$dest" "$new_mode" "$exec" || {
+        if [ $? -eq 2 ]; then
+            echo "  $dest is read-only, so left it unchanged." >&2
+        else
+            echo "  Couldn't copy ${src#"$DOTFILES_DIR"/} to $dest, so left it unchanged." >&2
+        fi
+        return 1
+    }
+    # shellcheck disable=SC2034 # callers read it
+    COPIED=true
     record_installed "$dest" || return 1
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
 }
 
-# Copy a file, creating the destination directory, and record it. A file that already matches is
-# left alone. One that differs is replaced: silently when it's what setup last installed, and
-# after backup_edited otherwise. Fails, leaving it, when that backup does.
-copy_file() {
-    local src="$1" dest="$2" up_to_date=0
-    _copy_up_to_date "$src" "$dest" || up_to_date=$?
-    case "$up_to_date" in
-        0) return 0 ;;
-        2) return 1 ;;
-    esac
-    if [ -e "$dest" ] && ! installed_unedited "$dest"; then
-        backup_edited "$dest" || return 1
+# _copy_file <replace|ask> <src> <dest>: copy_file's and copy_file_ask's shared body. A file that
+# matches, executable bit included, is left alone, and recorded if it isn't yet: a later run would
+# take an unrecorded file for an edit, so failing to record it fails.
+_copy_file() {
+    local mode="$1" src="$2" dest="$3"
+    if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
+        installed_unedited "$dest" || record_installed "$dest" || return 1
+        echo "  $dest is already up to date"
+        return 0
+    fi
+    # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
+    if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
+        if [ "$mode" != ask ]; then
+            maybe_backup "$dest" yes \
+                "  $dest was changed since setup installed it, and will be replaced. Back it up to {} first?" ||
+                return 1
+        # An empty file holds nothing to merge, so it's replaced without asking
+        elif [ -s "$dest" ]; then
+            if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
+                echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
+                return 0
+            fi
+            if [ "${DOTFILES_BACKUP:-}" != no ]; then
+                backup_file "$dest" || return 1
+            fi
+        fi
     fi
     _copy_and_record "$src" "$dest"
 }
 
-# Back up a file edited by hand before setup replaces it. --backup or --no-backup
-# (DOTFILES_BACKUP) decides; otherwise ask with a terminal, and back up without one, since the
-# edit would be lost.
-backup_edited() {
-    local file="$1" bak
-    [ -f "$file" ] || return 0
-    bak="$(backup_path "$file")"
-    case "${DOTFILES_BACKUP:-}" in
-        no) return 0 ;;
-        yes) ;;
-        *)
-            if is_interactive &&
-                ! confirm "  $file was changed since setup installed it, and will be replaced. Back it up to $bak first?"; then
-                return 0
-            fi
-            ;;
-    esac
-    backup_file "$file" "$bak"
-}
+# Copy a file, creating the destination directory, and record it. A file that already matches is
+# left alone. One that differs is replaced: silently when it's what setup last installed, and
+# otherwise after maybe_backup, which backs it up without a terminal, since the edit would be
+# lost. Fails, leaving it, when that backup does.
+copy_file() { _copy_file replace "$@"; }
 
 # Print where backup_file backs a file up: <file>.bak, unless that holds something else, then
 # <file>.bak.<timestamp>, adding -2, -3, ... until the name is free or holds the same content, as
@@ -492,15 +617,13 @@ backup_path() {
 }
 
 # Copy a file to the path given second, or else to backup_path's. Never copies over an existing
-# file that differs: it picks backup_path's name instead, so no older backup is overwritten. Sets
-# BACKUP_PATH to the backup. Fails when the copy does; the caller must then leave the file as it is.
+# file that differs: it picks backup_path's name instead, so no older backup is overwritten. Fails
+# when the copy does; the caller must then leave the file as it is.
 backup_file() {
     local file="$1" bak="${2:-}"
     if [ -z "$bak" ] || { [ -e "$bak" ] && ! cmp -s "$file" "$bak"; }; then
         bak="$(backup_path "$file")"
     fi
-    # shellcheck disable=SC2034 # callers read it
-    BACKUP_PATH="$bak"
     if cmp -s "$file" "$bak"; then
         echo "  $file is already backed up to $bak"
         return 0
@@ -535,24 +658,7 @@ install_user_instructions() {
 # edits. One that differs and isn't what setup last installed is replaced only when the user
 # agrees, and left alone without a terminal. Agreeing backs it up too, without a second question,
 # unless --no-backup is set. Fails, leaving it, when that backup does.
-copy_file_ask() {
-    local src="$1" dest="$2" up_to_date=0
-    _copy_up_to_date "$src" "$dest" || up_to_date=$?
-    case "$up_to_date" in
-        0) return 0 ;;
-        2) return 1 ;;
-    esac
-    if [ -s "$dest" ] && ! installed_unedited "$dest"; then
-        if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
-            echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
-            return 0
-        fi
-        if [ "${DOTFILES_BACKUP:-}" != no ]; then
-            backup_file "$dest" || return 1
-        fi
-    fi
-    _copy_and_record "$src" "$dest"
-}
+copy_file_ask() { _copy_file ask "$@"; }
 
 # A setting you can change yourself, such as mise's global node, is one setup sets when it's unset.
 # When it holds a value of your own, setup asks each run whether to replace it with the repo's,
@@ -608,21 +714,30 @@ append_line() {
     printf '%s\n' "$line" >> "$file"
 }
 
+# maybe_backup <file> [<no-terminal answer: yes|no>] [<question>]
 # Before editing an existing file, ask whether to back it up, unless <file>.bak already matches
 # it. The backup goes where backup_file puts it, so an older, different .bak is kept. --backup or
-# --no-backup (DOTFILES_BACKUP) answers for you. Fails when the backup does; the caller must then
-# leave the file as it is.
+# --no-backup (DOTFILES_BACKUP) answers for you. Otherwise the question is asked with a terminal;
+# without one, yes backs the file up, and no leaves it to confirm, which says no unless
+# DOTFILES_ASSUME_YES=1. The question's {} is the backup's path. Fails when the backup does; the
+# caller must then leave the file as it is.
+# e.g. maybe_backup "$CODEX_CONFIG"
 maybe_backup() {
-    local bak
-    [ -f "$1" ] || return 0
-    cmp -s "$1" "$1.bak" && return 0
-    bak="$(backup_path "$1")"
+    local file="$1" default="${2:-no}" question="${3:-}" bak
+    [ -n "$question" ] || question="  Back up $file to {}?"
+    [ -f "$file" ] || return 0
+    cmp -s "$file" "$file.bak" && return 0
+    bak="$(backup_path "$file")"
     case "${DOTFILES_BACKUP:-}" in
         no) return 0 ;;
         yes) ;;
-        *) confirm "  Back up $1 to $bak?" || return 0 ;;
+        *)
+            if [ "$default" != yes ] || is_interactive; then
+                confirm "${question//\{\}/$bak}" || return 0
+            fi
+            ;;
     esac
-    backup_file "$1" "$bak"
+    backup_file "$file" "$bak"
 }
 
 # Succeeds when this script runs inside an app, e.g. in its built-in terminal
@@ -636,13 +751,20 @@ running_inside() {
     return 1
 }
 
+# Print a string with every character an extended regex treats as special escaped, so pgrep or
+# grep -E matches it literally
+# e.g. pgrep -ax "$(regex_escape "$app")"
+regex_escape() {
+    # shellcheck disable=SC2016 # a sed pattern, not an expansion
+    printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g'
+}
+
 # Quit a running app (after asking). Returns non-zero if it is still running.
 ensure_app_quit() {
     local app="$1" pattern
-    # pgrep takes a regex, so escape app names. On macOS, -a counts this script's ancestors too;
-    # procps's -a only lists full command lines, which the redirect hides.
-    # shellcheck disable=SC2016 # a sed pattern, not an expansion
-    pattern="$(printf '%s' "$app" | sed 's/[][\.*^$()+?{}|]/\\&/g')"
+    # On macOS, -a counts this script's ancestors too; procps's -a only lists full command lines,
+    # which the redirect hides.
+    pattern="$(regex_escape "$app")"
     pgrep -ax "$pattern" &>/dev/null || return 0
     if running_inside "$app"; then
         echo "  $app is running this script, so it can't be quit; skipping. Re-run this script from"
@@ -669,64 +791,45 @@ ensure_app_quit() {
 }
 
 # Install a Homebrew cask unless it, or the path it installs, is already there. Fails, saying
-# how to get brew, when it's missing.
+# how to get brew, when it's missing. Exits with brew's status when interrupted_status says a
+# signal stopped it: brew catches Ctrl-C and exits 130, so the step's bash never sees the signal,
+# and a caller's `|| result=1` would carry on. A third argument, cask_state's first field when
+# the caller already has it, saves the brew calls cask_state makes.
 install_cask() {
-    local cask="$1" from
+    local cask="$1" from="${3:-}" status=0
     require_cmd brew || return 1
-    IFS=$'\t' read -r from _ <<< "$(cask_state "$cask" "${2:-}")"
+    [ -n "$from" ] || IFS=$'\t' read -r from _ <<< "$(cask_state "$cask" "${2:-}")"
     case "$from" in
         brew) echo "  $cask already installed." ;;
         gone)
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
-            brew reinstall --cask "$cask"
+            brew reinstall --cask "$cask" || status=$?
             ;;
-        # brew install would fail on the existing app, and `upgrade` skips casks brew doesn't list
+        # brew install would fail on an existing app, or rerun a pkg cask's installer over it, and
+        # `upgrade` skips casks brew doesn't list
         other) echo "  $cask already installed, but not by Homebrew, so upgrade won't update it." ;;
         *)
             echo "  Installing $cask..."
-            brew install --cask "$cask"
+            brew install --cask "$cask" || status=$?
             ;;
     esac
+    ! interrupted_status "$status" || exit "$status"
+    return "$status"
 }
 
 # jq for the path of the app each cask in brew info --json=v2's output installs, or "" for a cask
 # with no app, such as a font or one that runs an installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app. Callers run
-# it in $(...), where nothing it caches would last, so a report that asks about one cask several
-# times runs cache_cask_app_path first.
+# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app
 cask_app_path() {
-    if [ -n "${CASK_APP_CACHE:-}" ] && [ "${CASK_APP_CACHE%%$'\t'*}" == "$1" ]; then
-        printf '%s\n' "${CASK_APP_CACHE#*$'\t'}"
-        return 0
-    fi
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
-}
-
-# Ask brew once for the app cask $1 installs, and have cask_app_path answer from that for the
-# rest of the caller, which declares CASK_APP_CACHE local so the answer ends with it
-# e.g. local CASK_APP_CACHE; cache_cask_app_path t3-code
-# When brew fails, nothing is cached and cask_app_path asks brew each time, so the caller's report
-# still runs.
-cache_cask_app_path() {
-    local app
-    if app="$(cask_app_path "$1")"; then
-        CASK_APP_CACHE="$1"$'\t'"$app"
-    else
-        CASK_APP_CACHE=""
-    fi
-}
-
-# Print the app path installed_cask_apps's output gives for a cask, failing when it isn't listed
-# e.g. app="$(listed_cask_app raycast "$apps")"
-listed_cask_app() {
-    printf '%s\n' "$2" | awk -F '\t' -v cask="$1" '$1 == cask { print $2; found = 1 } END { exit !found }'
 }
 
 # The app each cask that runs an installer puts in place, as <cask>=<path>. brew's metadata lists
 # no app for them.
-CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app")
+CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
+    "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
 # cask_state <cask> [<app>] [<listing>]: print how a Homebrew cask is installed, a tab, and the
 # path of the app it installs: "brew" when brew lists it, "gone" when brew lists it but its app was
@@ -739,7 +842,8 @@ CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Appli
 cask_state() {
     local cask="$1" app="" listed=false entry state
     if [ $# -ge 3 ]; then
-        if app="$(listed_cask_app "$cask" "$3")"; then
+        if app="$(printf '%s\n' "$3" |
+            awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
             listed=true
         fi
     elif brew list --cask "$cask" &>/dev/null; then
@@ -781,9 +885,10 @@ tool_home_is() {
     [ "$home" == "$default" ]
 }
 
-# Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there
+# Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there.
+# The newline ends a comment on the expression's last line, which would swallow the comparison.
 json_applied() {
-    [ -s "$1" ] && jq -e "($2) == ." "$1" &>/dev/null
+    [ -s "$1" ] && jq -e "($2"$'\n'") == ." "$1" &>/dev/null
 }
 
 # Print the HTTP status of a HEAD request for a URL: 200 when it's there, 404 when it isn't, and
@@ -830,42 +935,60 @@ apt_repo_published() {
     return 1
 }
 
-# Put back an apt key from the copy at $1, or remove the key at $2 when $1 is empty, since there
-# was none before
-restore_apt_key() {
-    if [ -n "$1" ]; then
-        install_root_file "$1" "$2" 0644
-    else
-        sudo rm -f "$2"
-    fi
+# Print the fingerprint of each key in an OpenPGP key file, its primary key's, uppercase, one per
+# line, or nothing when it holds none. Every key counts, since apt trusts every key in the file.
+# gpg gets a temp home, since --show-keys would create ~/.gnupg.
+apt_key_fingerprint() {
+    local home
+    home="$(mktemp -d)" || return 1
+    GNUPGHOME="$home" gpg --show-keys --with-colons "$1" 2>/dev/null |
+        awk -F: '$1 == "pub" { primary = 1; next } $1 == "fpr" && primary { print toupper($10); primary = 0 }' ||
+        true
+    rm -rf "$home"
 }
 
 # Add a third-party apt repo whose source file a step owns: install its key, write the source when
-# its content differs, and update from that file alone, so a failure is the repo's. A source apt
-# can't use fails every later apt-get update, so on failure the previous source and key come
-# back, or the new ones go. Callers first check apt_repo_published, before asking for sudo, so
-# they ask for nothing they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so
-# each command checks its own failure.
-# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
+# its content differs, and update from that file alone, so a failure is the repo's. The key must
+# have the fingerprint the step pins, so a swapped key, which unattended-upgrades would then trust
+# as root, fails before anything changes. A source apt can't use fails every later apt-get update,
+# so on failure the previous source and key come back, or the new ones go. A previous source that
+# already held this content isn't known to work, as when a held lists lock kept it untested, so it
+# goes too. Callers first check apt_repo_published, before asking for sudo, so they ask for nothing
+# they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so each command checks
+# its own failure.
+# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 add_apt_repo() {
-    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5"
-    local key old_key="" output="" previous="" reason=""
+    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5" fpr="$6"
+    local key fingerprint old_key="" output="" previous="" reason="" untested=false
+    require_cmd gpg || return 1
     # Read the source to restore before the key changes, so failing to read it changes nothing
     if [ -e "$file" ]; then
         previous="$(sudo cat "$file")" || return 1
     fi
+    if [ -n "$previous" ] && [ "$previous" == "$content" ]; then
+        previous=""
+        untested=true
+    fi
     key="$(mktemp)" || return 1
-    if [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
-        rm -f "$key" "$old_key"
+    if ! fetch "$key_url" "$key" "$name's apt key"; then
+        rm -f "$key"
         return 1
     fi
-    if ! fetch "$key_url" "$key" "$name's apt key" ||
-        ! sudo install -m 0755 -d "$(dirname "$keyring")"; then
+    fingerprint="$(apt_key_fingerprint "$key" | paste -sd, - | sed 's/,/, /g')"
+    if [ "$fingerprint" != "$fpr" ]; then
+        echo "  $name's apt key from $key_url has the fingerprint ${fingerprint:-(none)}, not $fpr, so" >&2
+        echo "  nothing was changed. If $name has published a new key, check its fingerprint against" >&2
+        echo "  $name's docs, then update the step's pinned one." >&2
+        rm -f "$key"
+        return 1
+    fi
+    # An untested source's key goes with it
+    if ! "$untested" && [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
         rm -f "$key" "$old_key"
         return 1
     fi
     # A failed write leaves the old key
-    if ! install_root_file "$key" "$keyring" 0644; then
+    if ! sudo install -m 0755 -d "$(dirname "$keyring")" || ! install_root_file "$key" "$keyring" 0644; then
         rm -f "$key" "$old_key"
         return 1
     fi
@@ -898,13 +1021,20 @@ add_apt_repo() {
                 echo "  $reason, and putting the old one back failed too. Fix $file by hand, or delete it, then re-run." >&2
             fi
         elif sudo rm -f "$file"; then
-            echo "  $reason, so it was removed. Fix the error above and re-run." >&2
+            if "$untested"; then
+                echo "  $reason. An earlier run left it, and it still fails, so it was removed. Fix the error above and re-run." >&2
+            else
+                echo "  $reason, so it was removed. Fix the error above and re-run." >&2
+            fi
         else
             echo "  $reason, and removing it failed too. Delete $file by hand, then re-run." >&2
         fi
-        if ! restore_apt_key "$old_key" "$keyring"; then
-            echo "  Couldn't put $name's old key back at $keyring. Re-run to install it again." >&2
-        fi
+        # Put the old key back, or remove the new one when there was none to keep
+        if [ -n "$old_key" ]; then
+            install_root_file "$old_key" "$keyring" 0644
+        else
+            sudo rm -f "$keyring"
+        fi || echo "  Couldn't put $name's old key back at $keyring. Re-run to install it again." >&2
         rm -f "$old_key"
         return 1
     fi
@@ -921,34 +1051,6 @@ ubuntu_codename() {
     )
 }
 
-# Succeeds for an APT::Periodic interval that makes apt.systemd.daily run a job at least daily:
-# always, or a number of s, m, h, or d, which a bare number means, from 1 s to a day
-periodic_daily() {
-    local number="${1%[smhd]}" unit=d
-    [ "$1" != always ] || return 0
-    [ "$number" == "$1" ] || unit="${1#"$number"}"
-    # Up to nine digits, so the seconds can't overflow
-    [[ "$number" =~ ^[0-9]{1,9}$ ]] || return 1
-    number=$((10#$number))
-    case "$unit" in
-        m) number=$((number * 60)) ;;
-        h) number=$((number * 3600)) ;;
-        d) number=$((number * 86400)) ;;
-    esac
-    [ "$number" -gt 0 ] && [ "$number" -le 86400 ]
-}
-
-# Read the values the way apt.systemd.daily does, with apt-config shell and its defaults: Enable is
-# 1, so only 0 turns it off, and the two intervals are 0.
-unattended_upgrades_on() {
-    local values enable=1 update=0 upgrade=0
-    values="$(apt-config shell enable APT::Periodic::Enable update APT::Periodic::Update-Package-Lists \
-        upgrade APT::Periodic::Unattended-Upgrade 2>/dev/null)" || return 1
-    # apt-config quotes each value for the shell
-    eval "$values"
-    ! [[ "$enable" =~ ^0+$ ]] && periodic_daily "$update" && periodic_daily "$upgrade"
-}
-
 # Print a file's permission bits in octal, e.g. 644. It asks stat which form it takes rather than
 # using is_macos, which tests override: GNU stat (Ubuntu, or coreutils on macOS) takes -c, and
 # macOS's own takes -f.
@@ -960,36 +1062,54 @@ file_mode() {
     fi
 }
 
-# Replace a file's contents with a temp file's, then remove the temp file. The contents go to a new
-# file in the same directory, given the old one's mode, which is then moved into place, so a full
-# disk can't leave the file cut short. A symlink's target is replaced the same way, so the link
-# stays. A dangling symlink fails, as json_merge does. Fails, keeping the temp file and saying
-# where it is, when the write does.
-write_back() {
-    local new="$1" dest="$2" tmp mode="" target
+# replace_file <src> <dest> <new-mode> [x]
+# Replace a file with a copy of another. The copy goes to a new file in the same directory, which
+# is then moved into place, so a failed or partial write leaves the old file whole, and a script
+# running from the old file reads on unchanged. A symlink's target is replaced the same way, so
+# the link stays. A dangling symlink fails, as json_merge does. The file keeps its mode, plus
+# executable bits where it has read bits with x; a new file gets <new-mode>. A file made
+# read-only fails with 2 and stays as it is, as cp would leave it, though its directory would let
+# a rename replace it. Prints nothing.
+replace_file() {
+    local src="$1" dest="$2" mode="$3" tmp target
     if [ -L "$dest" ]; then
         # macOS's readlink and GNU's both take -f, and follow every link in the chain. On a dangling
         # link macOS's prints the path and fails, and GNU's succeeds, so check the target exists.
         if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
-            echo "  Couldn't write $dest. The new contents are in $new." >&2
             return 1
         fi
         dest="$target"
     fi
+    # mv would move the copy into a directory
+    [ ! -d "$dest" ] || return 1
+    [ ! -e "$dest" ] || [ -w "$dest" ] || return 2
     if [ -e "$dest" ]; then
-        mode="$(file_mode "$dest")" || mode=""
+        mode="$(file_mode "$dest")" || return 1
+        [ -z "${4:-}" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
     fi
-    if tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" &&
-        cat "$new" > "$tmp" &&
-        # mktemp makes it 600. A new file gets the mode umask gives it.
-        chmod "${mode:-$(printf '%o' $((0666 & ~0$(umask))))}" "$tmp" &&
-        mv -f "$tmp" "$dest"; then
-        rm -f "$new"
+    tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
+    # cp onto the existing temp file keeps mktemp's 600 until chmod
+    if cp "$src" "$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$dest"; then
         return 0
     fi
-    [ -z "${tmp:-}" ] || rm -f "$tmp"
-    echo "  Couldn't write $dest. The new contents are in $new." >&2
+    rm -f "$tmp"
     return 1
+}
+
+# Replace a file's contents with a temp file's, as replace_file does, then remove the temp file. A
+# new file gets the mode umask gives it. Fails, keeping the temp file and saying where it is, when
+# the write does or the file is read-only.
+write_back() {
+    local new="$1" dest="$2"
+    replace_file "$new" "$dest" "$(printf '%o' $((0666 & ~0$(umask))))" || {
+        if [ $? -eq 2 ]; then
+            echo "  $dest is read-only, so left it unchanged. The new contents are in $new." >&2
+        else
+            echo "  Couldn't write $dest. The new contents are in $new." >&2
+        fi
+        return 1
+    }
+    rm -f "$new"
 }
 
 # Merge a jq expression into a JSON file, creating the file if needed. A file the expression
@@ -1287,20 +1407,6 @@ status_result() {
     return 0
 }
 
-# Read a runner's arguments: flags and step names, in any order. Sets RUNNER_MODE to --status or
-# "", and RUNNER_STEPS to the step names. Exits as check_args does, with the caller's usage
-# function. The loop above already read the other flags.
-# e.g. runner_args "$@"; run_steps "$RUNNER_MODE" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"}
-# shellcheck disable=SC2034 # the runners read RUNNER_MODE
-runner_args() {
-    RUNNER_MODE=""
-    RUNNER_STEPS=()
-    check_args usage _add_runner_step "$@"
-    ! status_requested "$@" || RUNNER_MODE=--status
-}
-
-_add_runner_step() { RUNNER_STEPS+=("$1"); }
-
 # Print the script of a step in the caller's MACOS_STEPS or UBUNTU_STEPS: $STEPS_DIR/manual-steps.sh
 # for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name. Either OS's
 # steps resolve, so a step named on the other OS reaches its own skip message.
@@ -1318,21 +1424,25 @@ step_script() {
     fi
 }
 
-# runner_main <name> [arg...]
-# The runners' shared body: pick STEPS for this OS, read the arguments, then run the steps, or
-# with --status their reports, under headers naming <name>. The caller sets MACOS_STEPS,
-# UBUNTU_STEPS, STEPS_DIR, and a usage function. Exits with the --status result (3 when something
-# needs attention, 1 when a step failed) and when a step fails; returns after a successful run.
+# runner_main <name> <quick> [arg...]
+# The runners' shared body: pick STEPS for this OS, read the arguments, flags and step names in
+# any order, then run the steps, or with --status their reports, under headers naming <name>.
+# <quick> ends the usage's --status sentence, saying what --quick skips. The caller sets
+# MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Sets RUNNER_STEPS to the steps named. Exits with the
+# --status result (3 when something needs attention, 1 when a step failed) and when a step fails;
+# returns after a successful run.
 runner_main() {
-    local name="$1" status=0
-    shift
+    local name="$1" quick="$2" script status=0
+    shift 2
+    script="$(_repo_path "${BASH_SOURCE[1]}")"
     if is_macos; then
         STEPS=("${MACOS_STEPS[@]}")
     else
         STEPS=("${UBUNTU_STEPS[@]}")
     fi
-    runner_args "$@"
-    if [ "$RUNNER_MODE" == "--status" ]; then
+    check_args _runner_usage words "$@"
+    RUNNER_STEPS=(${ARG_WORDS[@]+"${ARG_WORDS[@]}"})
+    if status_requested "$@"; then
         echo "=== $name status ==="
         run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
         exit "$status"
@@ -1343,16 +1453,23 @@ runner_main() {
     echo "=== $name setup complete! ==="
 }
 
-# Say a step name is unknown, listing the caller's MACOS_STEPS and UBUNTU_STEPS, since step_script
-# takes either OS's
-unknown_step() {
-    echo "Unknown step: $1. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
+# runner_main's usage function, which reads its script and quick
+_runner_usage() {
+    echo "Usage: bash $script [--status [--quick]] [--backup | --no-backup] [step...]"
+    echo "Steps, run in this order by default: ${STEPS[*]}"
+    echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
+    echo "unknown items. $quick"
+    echo "A config file edited since setup installed it is backed up before it's replaced: setup"
+    echo "asks with a terminal, and backs it up without one. Settings merges also ask whether to"
+    echo "back up an existing file. --backup or --no-backup answers every backup question yes or no."
+    echo "Flags may come before or after the step names."
 }
 
 # Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so
 # the caller stops too. brew catches SIGINT and exits 130, so bash doesn't see the signal itself
 # and would carry on. Other codes above 128, such as 141 from SIGPIPE or 255 from ssh, are
-# failures like any other.
+# failures like any other. run_steps also traps the signals, since a step that runs brew under
+# `|| result=1` turns its 130 into 1.
 interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
 }
@@ -1364,34 +1481,53 @@ interrupted_status() {
 #
 # With mode --status, run each step's read-only --status report instead, under a header with the
 # step's name. A step whose report has missing or unknown items exits 3; those are listed at the
-# end too, and the run returns 3 (or 1 when a step also failed). An empty mode runs the steps.
+# end too, and the run returns 3 (or 1 when a step also failed). A report that exits 3 without
+# such an item failed. An empty mode runs the steps.
 run_steps() {
-    local mode="$1" step script status failed=() attention=()
+    local mode="$1" step script status codes interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
+    # step_script takes either OS's steps, so the error lists both
     for step in "$@"; do
         step_script "$step" > /dev/null || {
-            unknown_step "$step"
+            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
             return 1
         }
     done
     warn_untested_platform
     # shellcheck disable=SC2154 # STEPS is set by the caller
     [ $# -gt 0 ] || set -- "${STEPS[@]}"
+    # Ctrl-C reaches the whole process group, but bash takes a step that exits normally to have
+    # handled it, and would carry on. These run once the step exits.
+    trap 'interrupted=130' INT
+    trap 'interrupted=143' TERM
+    trap 'interrupted=129' HUP
     for step in "$@"; do
         script="$(step_script "$step")"
         status=0
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
-            # as manual-steps) prints nothing. fflush streams each line as it comes. The runners'
-            # set -o pipefail keeps the step's status, such as 3, rather than awk's 0.
-            "$BASH" "$script" --status | awk -v header="$step:" 'NR == 1 { print header } { print; fflush() }' ||
-                status=$?
+            # as manual-steps) prints nothing. fflush streams each line as it comes. awk exits 0
+            # when it saw an item status_item marks as needing attention, since a report that set
+            # -e cut short at a command that exited 3, such as jq on a filter that doesn't
+            # compile, exits 3 too. -e is off in the group, so PIPESTATUS is read.
+            {
+                "$BASH" "$script" --status | awk -v header="$step:" '
+                    NR == 1 { print header }
+                    /^  (missing|unknown)    / { attention = 1 }
+                    { print; fflush() }
+                    END { exit !attention }'
+                codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
+            } || true
+            status="${codes% *}"
+            [ "$status" -ne 3 ] || [ "${codes#* }" -eq 0 ] || status=1
         else
             "$BASH" "$script" || status=$?
         fi
+        [ -z "$interrupted" ] || status="$interrupted"
         if interrupted_status "$status"; then
             echo "  The $step step was interrupted; stopping." >&2
+            trap - INT TERM HUP
             return "$status"
         elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then
             attention+=("$step")
@@ -1400,6 +1536,7 @@ run_steps() {
             failed+=("$step")
         fi
     done
+    trap - INT TERM HUP
     if [ ${#attention[@]} -gt 0 ]; then
         echo ""
         echo "Needs attention: ${attention[*]}. Run: bash $0 ${attention[*]}"

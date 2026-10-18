@@ -6,19 +6,22 @@ set -euo pipefail
 
 # The ubuntu step's warning about Wi-Fi that connects only after login: a connection limited to a
 # user, or whose password NetworkManager doesn't keep for the system (psk-flags agent-owned or
-# not-saved, bits 1 and 2), named by UUID and shown with nmcli -t's escapes decoded. nmcli is a
-# stub.
+# not-saved, bits 1 and 2), named by UUID and shown whole, which nmcli -e no leaves unescaped. nmcli
+# is a stub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 
 # One active system-wide Wi-Fi connection (empty permissions) whose psk-flags nmcli prints from
 # $SANDBOX/flags
 stub nmcli 'case "$*" in
-    "-t -f UUID,TYPE,NAME connection show --active") echo "4444-dddd:802-11-wireless:Office" ;;
+    "-t -e no -f UUID,TYPE,NAME connection show --active") echo "4444-dddd:802-11-wireless:Office" ;;
     "-g connection.permissions connection show uuid 4444-dddd") echo "" ;;
     "-g 802-11-wireless-security.psk-flags connection show uuid 4444-dddd") cat "'"$SANDBOX"'/flags" ;;
 esac'
@@ -37,11 +40,10 @@ for flags in "0 (none)" "4 (not-required)" ""; do
     assert_eq "" "$RUN_OUTPUT" "the warning for psk-flags \"$flags\""
 done
 
-# A name with a colon or a backslash, which nmcli -t escapes, is read whole and shown decoded,
-# and the commands name the connection by UUID
+# A name with a colon or a backslash is read whole, and the commands name the connection by UUID
 stub nmcli 'case "$*" in
-    "-t -f UUID,TYPE,NAME connection show --active") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired" \
-        "2222-bbbb:802-11-wireless:Home\\:5G" "3333-cccc:802-11-wireless:Back\\\\slash" ;;
+    "-t -e no -f UUID,TYPE,NAME connection show --active") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired" \
+        "2222-bbbb:802-11-wireless:Home:5G" "3333-cccc:802-11-wireless:Back\\slash" ;;
     "-g connection.permissions connection show uuid 2222-bbbb") echo "user:me" ;;
     "-g 802-11-wireless-security.psk-flags connection show uuid 3333-cccc") echo "1 (agent-owned)" ;;
 esac'

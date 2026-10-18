@@ -13,16 +13,16 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 
-NUT_DIR="$SANDBOX/nut"
-UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
-NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
-UPS_RTC_HOOK="$SANDBOX/system-shutdown/dotfiles-rtc-wake"
-UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
+# shellcheck disable=SC2012 # ls -l is the portable way to read a file's group
+file_group() { ls -ld "$1" | awk '{ print $4 }'; }
 mkdir -p "$NUT_DIR" "$SANDBOX/udev"
 touch "$UPOWER_HWDB"
 
@@ -53,16 +53,9 @@ unplug() { rm -f "$SANDBOX/udev/$1" "$SANDBOX/udev/$1-hiddev"; }
 usb_device usb1 1d6b 0002
 usb_device 1-2 046d c52b
 
-# sudo runs the command, refuses a path under /etc, /usr, or /run, and skips chgrp, since the test
-# runs as you, without a nut group. sudo -n fails while $SANDBOX/no-sudo exists, as it does
-# without cached credentials.
-stub sudo 'if [ "$1" == -n ]; then
-    [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1
-    shift
-fi
-for a in "$@"; do case "$a" in /etc/* | /usr/* | /run/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-[ "$1" != chgrp ] || exit 0
-exec env "$@"'
+# sudo runs the command, and refuses a path outside the sandbox. sudo -n fails while
+# $SANDBOX/no-sudo exists, as it does without cached credentials.
+stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
 # nut-scanner prints $SANDBOX/scan, as nut-scanner -U -q prints what it finds
 stub nut-scanner 'cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
 # NUT 2.8.2 and later name, after the driver, others that could serve the UPS
@@ -162,11 +155,13 @@ NOTIFYFLAG SHUTDOWN SYSLOG+EXEC
 NOTIFYFLAG REPLBATT SYSLOG+EXEC
 NOTIFYFLAG NOCOMM SYSLOG+EXEC" "$(cat "$NUT_DIR/upsmon.conf")" "upsmon.conf"
 # Each file is readable only by root and the nut group, as the packages ship them, since two hold
-# upsmon's password
+# upsmon's password. The install that writes it sets its group.
 for file in nut.conf ups.conf upsd.conf upsd.users upsmon.conf; do
     assert_eq 640 "$(file_mode "$NUT_DIR/$file")" "$file's mode"
-    assert_file_contains "$STUB_LOG" "sudo chgrp nut $NUT_DIR/$file"
+    assert_eq "$NUT_GROUP" "$(file_group "$NUT_DIR/$file")" "$file's group"
 done
+assert_eq 5 "$(grep -c "install -m 0640 -g $NUT_GROUP " "$STUB_LOG")" "NUT's files installed with their group"
+assert_file_not_contains "$STUB_LOG" "chgrp"
 # The notifier and the ntfy code it runs, as root's, from outside the repo
 cmp -s "$REPO_DIR/ubuntu/ups-notify.sh" "$UPS_NOTIFY" || fail "the notifier isn't the repo's"
 [ -x "$UPS_NOTIFY" ] || fail "the notifier isn't executable"
@@ -242,6 +237,27 @@ if [ "$(id -u)" -ne 0 ]; then
     assert_eq "" "$(ups_todo)" "what the UPS part needs when upsd.users can't be read"
     chmod 640 "$NUT_DIR/upsd.users"
     rm "$SANDBOX/no-sudo"
+fi
+
+# A file with another group, as a chgrp that failed after the write left it before: upsd and upsmon
+# can't read it, so it isn't current, and the step rewrites it alone, with the group
+other_group="$(id -Gn | tr ' ' '\n' | grep -vxF "$NUT_GROUP" | head -n 1)" || true
+if [ -n "$other_group" ]; then
+    chgrp "$other_group" "$NUT_DIR/upsmon.conf"
+    assert_exit 1 nut_files_current
+    run status_ups
+    assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
+    assert_contains "$(ups_todo)" "UPS: set up NUT"
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_eq "$NUT_GROUP" "$(file_group "$NUT_DIR/upsmon.conf")" "upsmon.conf's group after a re-run"
+    assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for a wrong group"
+    assert_exit 0 nut_files_current
+else
+    # In one group only, a file can't get another, so the step's group changes instead
+    NUT_GROUP=nut
+    assert_exit 1 nut_files_current
+    NUT_GROUP="$(id -gn)"
 fi
 
 # The RTC wake hook out of date: status says so, and the step replaces it alone

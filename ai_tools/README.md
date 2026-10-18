@@ -23,7 +23,7 @@ How to set up the AI tools on macOS, and on an [Ubuntu](#ubuntu-1) machine used 
 ### macOS
 
 1. Run the main [`setup.sh`](../README.md#first-run) first. The steps here need its `jq`, `yq`, and Node.
-2. Quit the Claude, ChatGPT, and T3 Code apps, open a new Ghostty window, and run `bash ai_tools/setup.sh`. Run it from Ghostty, since T3 Code can't be quit while the script runs in T3 Code's terminal.
+2. In a new Ghostty window, run `bash ai_tools/setup.sh`, and let it quit the apps it asks about. Use Ghostty rather than T3 Code's terminal, since the script quits T3 Code.
 3. Do the macOS [manual steps](#macos-1): the logins, the notifications, and the phone apps.
 4. Run the [checks](#check-it-works).
 
@@ -54,9 +54,9 @@ The `upgrade` shell function updates the AI tools with everything else, through 
 
 - **Claude Code native install:** `claude update`.
 - **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
-- **Desktop apps installed with brew:** `brew upgrade --cask --greedy`, skipping running apps. An app that renamed itself as it updated would fail that upgrade, so its cask is re-recorded instead with `brew uninstall --cask --force` and `brew install --cask --adopt`, which keep the app on disk.
-- **Codex CLI installed with brew:** `brew upgrade --cask --greedy codex`, even while it runs.
-- **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. A running session keeps the old version until `/reload-plugins`.
+- **Desktop apps installed with brew:** Claude, ChatGPT, and T3 Code, each skipped while it runs.
+- **Codex CLI installed with brew**, even while it runs.
+- **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. Plugins can add hooks that run as you, so it prints each marketplace's commit and each plugin's version before and after, for you to review. A running session keeps the old version until `/reload-plugins`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
 ## Claude Code
@@ -89,7 +89,7 @@ Docs: [Computer use](https://code.claude.com/docs/en/computer-use).
 
 Sessions start in auto mode, where a classifier approves safe actions and asks about risky ones **(script)**. Auto memory is off, and transcripts are kept 90 days instead of 30. The script adds no permission rules and leaves yours alone. T3 Code runs the same CLIs, so these settings apply there too, except the model, effort, mode, and sandbox, which T3 sets per session.
 
-`permissions.defaultMode`, `tui`, `editorMode`, `cleanupPeriodDays`, and the script's other settings are reset on every run, so change them in [`claude-code/install.sh`](./claude-code/install.sh), not in `/config`. A model, effort, or status line you change is kept unless you agree to replace it when the script asks. The keys the script sets in `~/.claude/settings.json` were checked against Claude Code 2.1.296. Docs: [Settings](https://code.claude.com/docs/en/settings-reference).
+`permissions.defaultMode`, `tui`, `editorMode`, `cleanupPeriodDays`, and the script's other settings are reset on every run, so change them in [`claude-code/install.sh`](./claude-code/install.sh), not in `/config`. A model, effort, or status line you change is kept unless you agree to replace it when the script asks. Docs: [Settings](https://code.claude.com/docs/en/settings-reference).
 
 ### Model and interface
 
@@ -101,7 +101,13 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 
 ### Desktop app settings
 
-The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The app stays out of the menu bar, bounces its Dock icon on notifications, keeps the Mac awake while Claude works, and archives inactive sessions after 30 days. Anthropic doesn't document these keys. They come from the app's own config file, checked against Claude 2.19675.0. Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
+The Claude desktop app **(script)** opens at login, through a LaunchAgent, so Option+Space quick entry works from the start. macOS may show a "Background item added" notice, and lists it under **System Settings → General → Login Items → Allow in the Background**. The script also sets:
+
+- **Claude Code.** The Dock icon bounces on notifications, the Mac stays awake while Claude works, on battery too, inactive sessions are archived after 30 days, and scheduled tasks are on.
+- **General.** No menu bar icon, so the app doesn't keep running once its window is closed. Option+Space opens quick entry.
+- **Cowork.** Browser tools, in Chrome, web search, and scheduled tasks are on. The browser tools drive your own Chrome, signed in to your accounts, so a Cowork task can act on any site you're logged in to. A scheduled task runs without you watching. Turning either off in the app lasts only until the step runs again. To keep it off, set `coworkBrowserToolsEnabled` or `coworkScheduledTasksEnabled` to `false` in `ai_tools/claude-desktop/install.sh`, then re-run the step.
+
+Docs: [Desktop app](https://code.claude.com/docs/en/desktop). Hammerspoon opens the app itself with Ctrl+Opt+Cmd+Space, as the main README's [Hammerspoon](../README.md#hammerspoon) says.
 
 ## Codex
 
@@ -132,13 +138,13 @@ In `~/.codex/config.toml` **(script)**:
 
 - **Model.** `gpt-6.1-sol` at high effort, with short answers and concise reasoning summaries. The script sets the model, effort, and footer when they're unset, and a run with a terminal asks before replacing your own. The interrogate skill's Codex reviewer uses the same model, so update its table in `ai_tools/skills/engineering/interrogate/SKILL.md` with the script's.
 - **Permissions.** Codex works in the workspace without asking, and sends anything else, network access included, to a reviewer agent instead of to you. The sandbox has no network unless you turn it on under `[sandbox_workspace_write]`, which the script leaves alone.
-- **Rewritten file.** The step edits `config.toml` with yq 4.54.1 or later, which rewrites the whole file. Values and full-line comments stay, though a comment may move, but end-of-line comments may go, and multi-line strings and dotted keys may change form. When yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
+- **Rewritten file.** The step rewrites `config.toml` with yq, which must be 4.54.1 or later, though the step doesn't check. End-of-line comments may go, and when yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
 
 Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 ### Desktop app settings
 
-The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake while a task runs and for Codex Remote while plugged in, squash-merges pull requests, lets a mid-turn message steer the turn, and opens links in your browser. OpenAI's reference doesn't list these `[desktop]` keys. They come from the file the app writes, checked against ChatGPT 26.930.21537. Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings).
+The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake while a task runs and for Codex Remote while plugged in, squash-merges pull requests, and never refreshes a worktree from its upstream branch. A mid-turn message steers the turn, threads show their steps and commands, the context window's usage shows, ambient suggestions are on, every reasoning effort is in the picker, and links open in your browser. Docs: [App settings](https://learn.chatgpt.com/codex/reference/settings).
 
 ## T3 Code
 
@@ -161,11 +167,25 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 ### App settings
 
-The script merges its settings into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**. New threads use Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Projects pull automatically. **Add project** starts in `~/Dev`. A mid-turn message steers the turn, and threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets. Pull requests squash-merge and drop the agent's credits on merge, and T3's commit and PR text follows custom instructions: concise titles and short bullet points. T3 deletes a settled thread's worktree after 15 days, and browser artifacts and logs after 30. Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. T3 Code documents these keys only in its source; they were checked against T3 Code 0.1.0's [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts). The script sets each key on its own, so keys a newer T3 Code adds stay as T3 wrote them.
+The script merges these into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
-The script also makes T3 wait for existing worktree setup actions before it starts the agent. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
+- **New threads.** Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks.
+- **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
+- **Projects.** They pull automatically, and **Add project** starts in `~/Dev`.
+- **Threads.** A mid-turn message steers the turn. Threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets.
+- **Pull requests.** They squash-merge and drop the agent's credits on merge. Commit and PR text has concise titles and short bullet points.
+- **Interface.** Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap.
+- **Cleanup.** T3 deletes browser artifacts and logs after 30 days.
 
-Worktree cleanup removes a worktree after its thread is idle 30 days, once its commits are in the remote default branch, or when its last thread is deleted. It keeps the branch, and skips a worktree with uncommitted changes or ignored files other than `node_modules`, such as a `.env`. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
+Worktree cleanup **(script)** removes a worktree T3 made:
+
+- 30 days after its thread was last active.
+- 15 days after its thread settles.
+- Once its pull request is merged into the remote default branch.
+- When its last thread is deleted.
+- When it has no commits beyond the default branch.
+
+It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It does delete ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 
 ## Privacy
 
@@ -197,7 +217,7 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. It runs `claude-code`, `codex`, `t3-code`, `skills`, and `manual-steps`. They set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
-Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file.
+Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file, and `--status` flags it when anyone else can.
 
 ### Notifications over SSH
 
@@ -208,7 +228,7 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
 - **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
-- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. If the service failed in the meantime, run `systemctl --user reset-failed t3code` first, or systemd refuses to start it for 5 minutes.
+- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.
 - **Browser.** When T3 Code's browser needs an AppArmor profile or libraries, the script prints the command that adds them, and `--status` reports it missing until you run it. The script doesn't run that command, because `~/.local/bin/t3` updates itself and you can write to it. Check it before you run it as root.
@@ -275,14 +295,23 @@ Run these over SSH from the Mac.
 ### Phone
 
 - With the T3 Code phone app in the background, start a turn from the Mac in a thread on the Ubuntu server. The phone gets a push notification when the turn ends.
-- In an interactive Claude Code session, ask "notify me when you're done" with a short task, then switch away from the terminal. The Claude phone app gets a push notification.
+- In an interactive Claude Code session, run `/remote-control` and finish connecting. Then ask "notify me when you're done" with a short task, and switch away from the terminal. The Claude phone app gets a push notification.
 - The ChatGPT phone app lists the Mac under Codex Remote and can start a task on it.
 
 ## Maintenance
 
-**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step backs up edited skills to `${XDG_STATE_HOME:-~/.local/state}/dotfiles/skills-backup/`.
+**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step records the skills it installed in `${XDG_STATE_HOME:-~/.local/state}/dotfiles/installed-skills`, and backs up edited skills to `skills-backup/` beside it.
 
-**When an app updates.** Some keys the script writes aren't documented, so each section that sets them names the version they were checked against. After an update, check those keys against the app's settings file or schema, fix the script if they changed, and update the version. Then check that the app still does what setup configured:
+**When an app updates.** These apps don't document every key the steps write, so each was checked against one version:
+
+| App | Checked against | Where the keys come from |
+| :- | :- | :- |
+| Claude Code | 2.1.296 | Its settings schema. [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt) lists the keys, and `scripts/check-ai-settings.sh` runs `claude doctor` on them |
+| Claude desktop app | 2.19675.0 | Its own `claude_desktop_config.json`, undocumented |
+| ChatGPT app | 26.930.21537 | The `[desktop]` table it writes in `~/.codex/config.toml`, which OpenAI's reference doesn't list |
+| T3 Code | 0.1.0 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts), documented only in its source. `scripts/check-t3-settings.sh` checks the keys against a release |
+
+After an update, check the keys against the app's settings file or schema, fix the step if they changed, and update the version here. The `t3-code` step sets each key on its own, so a key a newer T3 Code adds stays as T3 wrote it. Then check that the app still does what setup configured:
 
 - **Model.** Claude Code's status line starts with `Opus 5.5 · medium`, and the Codex CLI's footer shows `gpt-6.1-sol` with high effort. In the apps, the model picker of a new chat or thread shows the same.
 - **Notifications.** For each app, start a short task, switch away, and wait for the notification.

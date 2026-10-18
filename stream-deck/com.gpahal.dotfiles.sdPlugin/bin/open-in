@@ -1,15 +1,20 @@
 #!/bin/bash
 set -uo pipefail
 
-# Usage: open-in files|editor|terminal
-# Open what's in front in Finder, Zed, or Ghostty: a Ghostty tab's folder, the file open in Zed,
-# Finder's selection (or its front window's folder), or the folder of the thread T3 Code shows.
-# With no path to use, such as with another app in front, open a new window instead: Finder and
-# Ghostty at home, Zed empty. The Stream Deck plugin runs it for each key press, and Hammerspoon's
-# Ctrl+Opt+T and E run a copy, so macOS asks each for its permissions: Automation for Ghostty,
-# Finder, and System Events, and Accessibility to read Zed's window title and T3 Code's page.
-# OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log goes, for the
-# notifications.
+# Usage: open-in files|editor|terminal|claude|chrome|chrome-tab|gmail|t3-code|activity-monitor
+# files, editor, and terminal open what's in front in Finder, Zed, or Ghostty: a Ghostty tab's
+# folder, the file open in Zed, Finder's selection (or its front window's folder), or the folder of
+# the thread T3 Code shows. With no path to use, such as with another app in front, they open a new
+# window instead: Finder and Ghostty at home, Zed empty.
+# The others open Claude, Google Chrome, T3 Code, or Activity Monitor, or bring it to the front
+# when it's running. chrome-tab then opens a new Chrome tab, and when the clipboard holds text,
+# pastes it into the address bar and selects it, as hammerspoon/init.lua does. gmail brings
+# Chrome's first Gmail tab to the front, or opens Gmail in a new tab when none is open.
+# The Stream Deck plugin runs it for each key press, and Hammerspoon's Ctrl+Opt+Cmd+T and E run a
+# copy, so macOS asks each for its permissions: Automation for Ghostty, Finder, System Events, and
+# Google Chrome, and Accessibility to read Zed's window title and T3 Code's page, and to send the
+# new tab's keystrokes. OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log
+# goes, for the notifications.
 #
 # Each run prints a line to stderr, which the caller adds to its log. It exits 1 when it couldn't
 # open anything, or when a missing permission kept it from reading the path, though it still opens
@@ -22,6 +27,10 @@ GHOSTTY=com.mitchellh.ghostty
 ZED=dev.zed.Zed
 ZED_CLI="${DOTFILES_ZED_CLI:-/Applications/Zed.app/Contents/MacOS/cli}"
 T3_CODE=com.t3tools.t3code
+CLAUDE=com.anthropic.claudefordesktop
+CHROME=com.google.Chrome
+ACTIVITY_MONITOR=com.apple.ActivityMonitor
+GMAIL_URL=https://mail.google.com/mail/u/0/#inbox
 T3_STATE="${DOTFILES_T3_STATE:-$HOME/.t3/userdata/statev2.sqlite}"
 CALLER="${OPEN_IN_CALLER:-Stream Deck}"
 CALLER_LOG="${OPEN_IN_LOG:-~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log}"
@@ -30,6 +39,8 @@ CALLER_LOG="${OPEN_IN_LOG:-~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.
 SCRIPT_RESULT=""
 PERMISSION_ERROR=""
 CONTEXT_PATH=""
+# The notification for a failure that isn't a missing permission
+FAILURE=""
 
 # Stream Deck and Hammerspoon add the time to each line they log
 log() {
@@ -46,10 +57,9 @@ EOF
 
 # Run AppleScript from stdin with the arguments as argv, setting SCRIPT_RESULT to its result. With
 # -l JavaScript first, run JavaScript for Automation instead. A failure is logged, and one for a
-# missing permission sets PERMISSION_ERROR: -1743 is a denied Automation prompt, and -25211 or
-# "assistive access" is missing Accessibility. Missing
-# Accessibility can also come as -1719, but so does Zed with no window open, so the code alone
-# isn't enough.
+# missing permission sets PERMISSION_ERROR: -1743 is a denied Automation prompt, and -25211, 1002,
+# or "assistive access" is missing Accessibility. Missing Accessibility can also come as -1719, but
+# so does Zed with no window open, so the code alone isn't enough.
 applescript() {
     local err status=0 lang=()
     if [ "${1:-}" == -l ]; then
@@ -61,7 +71,7 @@ applescript() {
     SCRIPT_RESULT="$(osascript ${lang[@]+"${lang[@]}"} - "$@" 2> "$err")" || status=$?
     if [ "$status" -ne 0 ]; then
         log "ERROR $(tr '\n' ' ' < "$err")"
-        if grep -qE -- '-1743|-25211|assistive access' "$err"; then
+        if grep -qE -- '-1743|-25211|\(1002\)|assistive access' "$err"; then
             PERMISSION_ERROR="$(head -n 1 "$err")"
         fi
     fi
@@ -111,14 +121,14 @@ EOF
 # the key opens a new window.
 t3_code_folder() {
     local thread
-    applescript -l JavaScript <<'EOF' || return 1
+    applescript -l JavaScript "$T3_CODE" <<'EOF' || return 1
 ObjC.import("AppKit");
 ObjC.bindFunction("AXIsProcessTrusted", ["bool", []]);
 ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
 ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
-function run() {
+function run(argv) {
   if (!$.AXIsProcessTrusted()) throw new Error("not allowed assistive access to read T3 Code's page (-25211)");
-  const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.t3tools.t3code");
+  const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(argv[0]);
   if (apps.count === 0) return "";
   const attr = (el, name) => {
     const out = Ref();
@@ -243,15 +253,9 @@ end run
 EOF
 }
 
-main() {
-    local target="${1:-}" front status=0
-    case "$target" in
-        files | editor | terminal) ;;
-        *)
-            echo "Usage: open-in files|editor|terminal" >&2
-            return 2
-            ;;
-    esac
+# open_path <files|editor|terminal>: open what's in front in Finder, Zed, or Ghostty
+open_path() {
+    local target="$1" front status=0
     front="$(bundle_id "$(lsappinfo front 2> /dev/null)")"
     read_context_path "$front"
     log "$target from ${front:-an unknown app}: ${CONTEXT_PATH:-no path, so a new window}"
@@ -260,14 +264,144 @@ main() {
         editor) open_editor "$CONTEXT_PATH" || status=1 ;;
         terminal) open_terminal "${CONTEXT_PATH:-$HOME}" "$front" || status=1 ;;
     esac
-    if [ -n "$PERMISSION_ERROR" ]; then
-        status=1
-        notify "$CALLER lacks a permission: $PERMISSION_ERROR"
-    elif [ "$status" -ne 0 ]; then
+    if [ "$status" -ne 0 ]; then
         log "ERROR couldn't open ${CONTEXT_PATH:-a new window} for $target"
-        notify "Couldn't open ${CONTEXT_PATH:-a new window}. See $CALLER_LOG"
+        FAILURE="Couldn't open ${CONTEXT_PATH:-a new window}. See $CALLER_LOG"
     fi
-    return "$status"
+}
+
+# Whitespace alone isn't worth pasting. grep reads all of the clipboard, as grep -q wouldn't:
+# pbpaste would then get SIGPIPE on a large clipboard, and pipefail would make that no text.
+clipboard_has_text() {
+    pbpaste 2> /dev/null | grep '[^[:space:]]' > /dev/null
+}
+
+# Open an app, or bring it to the front. With "activate", a running app is told to activate rather
+# than opened: open sends a reopen event, which makes Chrome open a window when it has none, and
+# the new tab's Cmd+T would then add a second tab.
+open_app() {
+    if [ "${2:-}" == activate ] && app_running "$1"; then
+        applescript <<EOF
+tell application id "$1" to activate
+EOF
+    else
+        open -b "$1"
+    fi
+}
+
+# Wait for Chrome to come to the front, which includes starting it, then press Cmd+T, and with
+# "paste", Cmd+V and Cmd+A once the new tab's address bar has focus. With no window open, Cmd+T
+# opens one. SCRIPT_RESULT is "moved" when another app came to the front before the paste, which
+# then isn't pressed, as hammerspoon/init.lua does.
+new_tab() {
+    applescript "$1" <<EOF
+on run argv
+    tell application "System Events"
+        repeat 100 times
+            if bundle identifier of (first application process whose frontmost is true) is "$CHROME" then exit repeat
+            delay 0.1
+        end repeat
+        if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
+            error "Google Chrome didn't come to the front"
+        end if
+        keystroke "t" using command down
+        if item 1 of argv is "paste" then
+            delay 0.15
+            if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then return "moved"
+            keystroke "v" using command down
+            keystroke "a" using command down
+        end if
+    end tell
+end run
+EOF
+}
+
+# Select the first tab, front window first, whose URL is Gmail's, and raise its window, or open
+# Gmail in a new tab of the front window. Chrome's own AppleScript does this, so it needs no
+# Accessibility. SCRIPT_RESULT is "found" or "opened".
+gmail_tab() {
+    applescript "$GMAIL_URL" <<EOF
+on run argv
+    tell application id "$CHROME"
+        repeat with w in windows
+            set urls to URL of tabs of w
+            repeat with i from 1 to count of urls
+                if item i of urls starts with "https://mail.google.com/" then
+                    set active tab index of w to i
+                    if minimized of w then set minimized of w to false
+                    set index of w to 1
+                    activate
+                    return "found"
+                end if
+            end repeat
+        end repeat
+        if (count of windows) is 0 then make new window
+        tell window 1 to make new tab with properties {URL:item 1 of argv}
+        activate
+        return "opened"
+    end tell
+end run
+EOF
+}
+
+# open_target_app <claude|chrome|chrome-tab|gmail|t3-code|activity-monitor>
+open_target_app() {
+    local target="$1" bundle name paste=no how=""
+    case "$target" in
+        claude) bundle="$CLAUDE" name=Claude ;;
+        chrome | chrome-tab | gmail) bundle="$CHROME" name="Google Chrome" ;;
+        t3-code) bundle="$T3_CODE" name="T3 Code" ;;
+        activity-monitor) bundle="$ACTIVITY_MONITOR" name="Activity Monitor" ;;
+    esac
+    [ "$target" != chrome-tab ] || how=activate
+    if ! open_app "$bundle" "$how"; then
+        log "ERROR couldn't open $name"
+        FAILURE="Couldn't open $name. Is it installed?"
+        return
+    fi
+    case "$target" in
+        gmail)
+            if ! gmail_tab; then
+                FAILURE="Couldn't open Gmail. See $CALLER_LOG"
+            elif [ "$SCRIPT_RESULT" == found ]; then
+                log "$target: brought the Gmail tab to the front"
+            else
+                log "$target: opened Gmail in a new tab"
+            fi
+            ;;
+        chrome-tab)
+            ! clipboard_has_text || paste="paste"
+            if ! new_tab "$paste"; then
+                FAILURE="Couldn't open a new Chrome tab. See $CALLER_LOG"
+            elif [ "$SCRIPT_RESULT" == moved ]; then
+                log "$target: opened a new tab, but another app came to the front before the paste"
+            elif [ "$paste" == paste ]; then
+                log "$target: opened a new tab with the clipboard pasted"
+            else
+                log "$target: opened a new tab"
+            fi
+            ;;
+        *) log "$target: opened $name" ;;
+    esac
+}
+
+main() {
+    local target="${1:-}"
+    case "$target" in
+        files | editor | terminal) open_path "$target" ;;
+        claude | chrome | chrome-tab | gmail | t3-code | activity-monitor) open_target_app "$target" ;;
+        *)
+            echo "Usage: open-in files|editor|terminal|claude|chrome|chrome-tab|gmail|t3-code|activity-monitor" >&2
+            return 2
+            ;;
+    esac
+    if [ -n "$PERMISSION_ERROR" ]; then
+        notify "$CALLER lacks a permission: $PERMISSION_ERROR"
+        return 1
+    elif [ -n "$FAILURE" ]; then
+        notify "$FAILURE"
+        return 1
+    fi
 }
 
 main "$@"

@@ -3,6 +3,34 @@
 # edited conffiles, and the packages apt holds back.
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
+# Succeeds for an APT::Periodic interval that makes apt.systemd.daily run a job at least daily:
+# always, or a number of s, m, h, or d, which a bare number means, from 1 s to a day
+periodic_daily() {
+    local number="${1%[smhd]}" unit=d
+    [ "$1" != always ] || return 0
+    [ "$number" == "$1" ] || unit="${1#"$number"}"
+    # Up to nine digits, so the seconds can't overflow
+    [[ "$number" =~ ^[0-9]{1,9}$ ]] || return 1
+    number=$((10#$number))
+    case "$unit" in
+        m) number=$((number * 60)) ;;
+        h) number=$((number * 3600)) ;;
+        d) number=$((number * 86400)) ;;
+    esac
+    [ "$number" -gt 0 ] && [ "$number" -le 86400 ]
+}
+
+# Read the values the way apt.systemd.daily does, with apt-config shell and its defaults: Enable is
+# 1, so only 0 turns it off, and the two intervals are 0.
+unattended_upgrades_on() {
+    local values enable=1 update=0 upgrade=0
+    values="$(apt-config shell enable APT::Periodic::Enable update APT::Periodic::Update-Package-Lists \
+        upgrade APT::Periodic::Unattended-Upgrade 2>/dev/null)" || return 1
+    # apt-config quotes each value for the shell
+    eval "$values"
+    ! [[ "$enable" =~ ^0+$ ]] && periodic_daily "$update" && periodic_daily "$upgrade"
+}
+
 unattended_upgrades_running() {
     apt_installed unattended-upgrades && unattended_upgrades_on
 }
@@ -15,6 +43,10 @@ apt_timers_enabled() {
         [ "$(systemctl is-enabled "$timer" 2>/dev/null)" == enabled ] || return 1
         systemctl is-active -q "$timer" 2>/dev/null || return 1
     done
+}
+
+enable_apt_timers() {
+    sudo systemctl enable --now "${APT_TIMERS[@]}"
 }
 
 # Print $AUTO_UPGRADES_CONF with each line of $AUTO_UPGRADES_CONTENT in place of the lines that
@@ -70,6 +102,10 @@ turn_on_unattended_upgrades() {
 
 keep_conffiles_written() {
     file_is "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
+}
+
+write_keep_conffiles() {
+    write_root_file "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
 }
 
 # Print the packages apt-get upgrade would hold back, one per line. A simulation needs no root.

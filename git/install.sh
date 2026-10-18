@@ -135,8 +135,7 @@ configure_github_https() {
         return 0
     fi
     while IFS= read -r prefix; do
-        # Without a git dir, so a broken checkout as the current directory can't make it fail
-        git --git-dir=/dev/null config --file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
+        git_file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
     done <<< "$missing"
     echo "  GitHub SSH remotes now go over HTTPS, through gh's credential helper"
 }
@@ -171,17 +170,11 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     require_cmd gh || return 1
     local status=0
     echo "Copying git config..."
     git_files copy_file || status=1
-    chmod 755 "$HOME/.local/bin/git-wt" || status=1
     # git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and
     # the next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
     [ -e "$LOCAL_CONFIG" ] || touch "$LOCAL_CONFIG" || status=1

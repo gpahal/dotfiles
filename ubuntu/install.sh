@@ -36,6 +36,9 @@ source "$UBUNTU_LIB_DIR/tailscale.sh"
 source "$UBUNTU_LIB_DIR/alerts.sh"
 # shellcheck source=lib/ups.sh
 source "$UBUNTU_LIB_DIR/ups.sh"
+# SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE
+# shellcheck source=lib/paths.sh
+source "$UBUNTU_LIB_DIR/paths.sh"
 
 # Masking these stops every suspend, whether GNOME's idle timer, the login screen's, or a command
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
@@ -62,9 +65,13 @@ AllowHybridSleep=no
 AllowSuspendThenHibernate=no'
 # Packages write this, and their names to .pkgs, when an update needs a reboot
 REBOOT_REQUIRED=/var/run/reboot-required
+# systemd keeps a file here for each user who lingers, whose user services start at boot
+LINGER_DIR=/var/lib/systemd/linger
 # The timers that download and install updates, which unattended-upgrades relies on
 APT_TIMERS=(apt-daily.timer apt-daily-upgrade.timer)
 SYSCTL_CONF=/etc/sysctl.d/90-dotfiles.conf
+# Where sysctl --system reads settings from, to name the file that overrides one of the step's
+SYSCTL_SOURCES=(/etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf)
 # The file watchers agents run in many worktrees (dev servers, editors, test watchers) each open
 # inotify instances, so the default 128 instances run out before the watches do
 SYSCTL_CONTENT='# From the dotfiles ubuntu step: reboot 10 seconds after a kernel panic
@@ -74,11 +81,8 @@ fs.inotify.max_user_instances = 1024
 fs.inotify.max_user_watches = 1048576'
 # The unit smartmontools installs; smartd.service is its alias
 SMARTD_UNIT=smartmontools.service
-# smartd-runner runs each file in run.d on a warning. run-parts --lsbsysinit skips a name with a dot.
+# smartd's warning hook, installed as $SMARTD_HOOK
 SMARTD_HOOK_SRC="$DOTFILES_DIR/ubuntu/smartd-notify.sh"
-SMARTD_HOOK=/etc/smartmontools/run.d/50dotfiles-notify
-# The ntfy topic URL the smartd and UPS hooks and the health alerts push to, which bash ubuntu/setup-alerts.sh saves
-NTFY_URL_FILE=/etc/dotfiles/ntfy-url
 # NUT, which watches a UPS on USB. nut-server ships the drivers, upsd, nut-scanner, the udev rules
 # that name the UPSes it knows, and the system-shutdown hook that has the UPS cut its power when
 # upsmon left POWERDOWNFLAG. nut-client ships upsmon and upsc.
@@ -87,6 +91,7 @@ NUT_UNITS=(nut-server.service nut-monitor.service)
 NUT_DIR=/etc/nut
 # The files the step writes in $NUT_DIR, all readable only by root and the nut group
 NUT_FILES=(nut.conf ups.conf upsd.conf upsd.users upsmon.conf)
+NUT_GROUP=nut
 # upower's hwdb, whose UPOWER_BATTERY_TYPE=ups tag tells a UPS on USB (ups_plugged)
 UPOWER_HWDB=/usr/lib/udev/hwdb.d/95-upower-hid.hwdb
 # The UPS's name in ups.conf, as upsc ups@localhost reads it
@@ -98,9 +103,8 @@ UPS_POWERDOWN_FLAG=/etc/killpower
 UPS_RTC_HOOK=/usr/lib/systemd/system-shutdown/dotfiles-rtc-wake
 # Minutes after a UPS shutdown the alarm starts the machine, if the UPS didn't cut its output
 UPS_RTC_WAKE_MINUTES=15
-# upsmon's NOTIFYCMD, which pushes the UPS's events to ntfy
+# upsmon's NOTIFYCMD, installed as $UPS_NOTIFY
 UPS_NOTIFY_SRC="$DOTFILES_DIR/ubuntu/ups-notify.sh"
-UPS_NOTIFY=/usr/local/libexec/dotfiles-ups-notify
 # The ntfy code the UPS notifier and smartd's hook source
 NTFY_LIB_SRC="$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
 NTFY_LIB=/usr/local/lib/dotfiles/ntfy.sh
@@ -127,15 +131,20 @@ Dpkg::Options {
     "--force-confold";
 };'
 # The private address ranges ufw lets SSH in from: RFC 1918's, IPv6's unique local addresses, and
-# link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules.
-SSH_RANGES=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fd00::/8 fe80::/10)
+# link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules. RFC 1918's
+# 172.16.0.0/12 is left out: the docker step limits Docker's address pools to 172.17.0.0/16 to
+# 172.31.0.0/16, so allowing it would let any container try logins on sshd.
+SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
+# ufw's settings, which anyone may read: whether it's on, and its default policy and IPv6 setting
+UFW_CONF=/etc/ufw/ufw.conf
+UFW_DEFAULTS=/etc/default/ufw
 # Tailscale's port for direct connections. Without it, devices relay through DERP servers.
 TAILSCALE_PORT=41641
 TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
 # The keyring path and source file Tailscale's install script uses. Tailscale's updater rewrites
 # that file, so it has to stay a one-line .list rather than deb822.
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
-TAILSCALE_LIST="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}/tailscale.list"
+TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 # User services, such as tmux at boot and the T3 Code server, get the user manager's PATH, which
 # has neither Homebrew nor ~/.local/bin. The user manager doesn't see an XDG_CONFIG_HOME set in the
 # shell, so the file goes in ~/.config.
@@ -154,6 +163,57 @@ ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"
     "$1" "$NTFY_LIB_SRC" "$NTFY_LIB"
+}
+
+# root_copy_current <src> <dest>: succeeds when a file installed as root is a copy of the repo's,
+# executable when the repo's is
+root_copy_current() {
+    cmp -s "$1" "$2" && { [ ! -x "$1" ] || [ -x "$2" ]; }
+}
+
+# install_root_copy <src> <dest>: install a copy of the repo's file as root's, 755 when the repo's
+# is executable and 644 otherwise, unless it's already current
+install_root_copy() {
+    local mode=0644
+    [ ! -x "$1" ] || mode=0755
+    root_copy_current "$1" "$2" || install_root_file "$1" "$2" "$mode"
+}
+
+# Add the step's simple sudo items, which status and apply drive by their check functions. The
+# rest branch, so they stay in status and apply. Added at run time, since their texts name paths
+# tests point elsewhere.
+ubuntu_sudo_items() {
+    sudo_items_reset
+    sudo_item "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
+    sudo_item "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
+        "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
+    sudo_item "Linger, so user services start at boot" \
+        "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
+    # status_smartd_hook reports it, skipped in a VM and out of date apart
+    sudo_item "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
+        smartd_hook_ready install_smartd_hook
+    sudo_item "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
+        locale_installed install_locale
+    sudo_item "unattended-upgrades runs daily" \
+        "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
+        unattended_upgrades_running turn_on_unattended_upgrades
+    sudo_item "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
+        "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
+        keep_conffiles_written write_keep_conffiles
+    # status says how to turn them on
+    sudo_item "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
+        apt_timers_enabled enable_apt_timers
+}
+
+# status and apply run in_vm and key_login many times, some in subshells, so they declare
+# IN_VM_CACHE, KEY_LOGIN_CACHE, and KEY_LOGIN_STATUS local and call this first to set them once
+cache_checks() {
+    local vm=no status=0
+    ! in_vm || vm=yes
+    KEY_LOGIN_CACHE="$(key_login)" || status=$?
+    # Set last, since in_vm and key_login read them once set
+    IN_VM_CACHE="$vm"
+    KEY_LOGIN_STATUS="$status"
 }
 
 # Copy the environment.d file. When it changes, reload the user manager, which reads environment.d
@@ -182,25 +242,15 @@ install_locale() {
 
 # Print the UUID and name of each NetworkManager connection of a type, tab-separated, one per
 # line. Commands name a connection by UUID, since two can share a name. Extra arguments go to
-# nmcli connection show, e.g. --active. nmcli -t escapes a colon or backslash in a name with a
-# backslash, which is dropped here; the UUID and type have neither.
+# nmcli connection show, e.g. --active. -e no leaves a colon or backslash in a name unescaped, and
+# the name is the rest of the line, since the UUID and type have neither.
 # e.g. nm_connections 802-11-wireless --active
 nm_connections() {
     local type="$1"
     shift
     command -v nmcli &>/dev/null || return 0
-    nmcli -t -f UUID,TYPE,NAME connection show "$@" 2>/dev/null | awk -F: -v type="$type" '
-        $2 == type {
-            name = substr($0, length($1) + length($2) + 3)
-            out = ""
-            for (i = 1; i <= length(name); i++) {
-                c = substr(name, i, 1)
-                if (c == "\\") c = substr(name, ++i, 1)
-                out = out c
-            }
-            print $1 "\t" out
-        }
-    '
+    nmcli -t -e no -f UUID,TYPE,NAME connection show "$@" 2>/dev/null |
+        awk -F: -v type="$type" '$2 == type { print $1 "\t" substr($0, length($1) + length($2) + 3) }'
 }
 
 wired_connections() {
@@ -213,29 +263,35 @@ wake_on_lan_on() {
 }
 
 lingering() {
-    [ -e "/var/lib/systemd/linger/$(id -un)" ]
+    [ -e "$LINGER_DIR/$(id -un)" ]
+}
+
+enable_linger() {
+    sudo loginctl enable-linger "$(id -un)"
 }
 
 # Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
 # credentials are cached, and is otherwise unverified.
 status() {
-    local ufw=0 uuid name wired=false item packages todo problems="" rule where
-    local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+    local uuid name wired=false item packages overrides
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS=""
     if ! is_ubuntu; then
         status_item skipped "Running around the clock: Ubuntu only"
         return 0
     fi
-    status_check "Sleep masked" sleep_masked
-    status_check "Suspend and hibernation off in systemd ($SLEEP_CONF)" sleep_conf_written
+    cache_checks
+    ubuntu_sudo_items
+    sudo_items_status sleep_masked sleep_conf_written
     item="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
     if ! sysctl_file_written; then
         status_item missing "$item"
     elif ! sysctl_in_effect; then
-        status_item missing "$item: written but not in effect (re-run the ubuntu step)"
+        overrides="$(sysctl_overrides | join_lines '; ')"
+        status_item missing "$item: written but not in effect (${overrides:+$overrides; change or remove them there, and }re-run the ubuntu step)"
     else
         status_item ok "$item"
     fi
-    status_check "Linger, so user services start at boot" lingering
+    sudo_items_status lingering
     status_check "smartmontools, with smartd enabled at boot" smartd_enabled
     if in_vm; then
         status_item skipped "smartd running: this is a VM, whose host manages the disks"
@@ -246,10 +302,7 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    status_check "en_US.UTF-8 locale" locale_installed
-    status_check "unattended-upgrades runs daily" unattended_upgrades_running
-    status_check "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
-        keep_conffiles_written
+    sudo_items_status locale_installed unattended_upgrades_running keep_conffiles_written
     status_held_back
     if apt_timers_enabled; then
         status_item ok "apt's daily timers enabled and running"
@@ -263,48 +316,7 @@ status() {
         status_item ok "No reboot pending for updates"
     fi
     ubuntu_files status_file
-    local sshd_installed=false
-    apt_installed openssh-server && sshd_installed=true
-    status_check "openssh-server" "$sshd_installed"
-    if ! "$sshd_installed"; then
-        :
-    elif sshd_enabled; then
-        status_item ok "sshd starts at boot"
-    else
-        status_item missing "sshd starts at boot (run sudo systemctl enable --now $SSH_UNIT)"
-    fi
-    if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_cached; then
-        status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
-    else
-        status_check "$SSHD_DROP_IN" sshd_configured
-    fi
-    # Checked once the drop-in is in place, which a missing item above already reports
-    if "$sshd_installed" && sshd_configured 2>/dev/null; then
-        item="sshd's effective settings match $SSHD_DROP_IN"
-        if [ ! -d "$SSHD_RUN_DIR" ]; then
-            status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
-        elif ! sudo_cached; then
-            status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
-        elif ! problems="$(sshd_settings_problems "$(current_sshd_drop_in)" -n)"; then
-            status_item unverified "$item (sudo sshd -T -C $(sshd_login_spec) failed; run it to see why)"
-        elif [ -z "$problems" ]; then
-            status_item ok "$item"
-        else
-            status_item missing "$item ($(join_lines '; ' <<< "$problems"); another file sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
-        fi
-    fi
-    item="Password and keyboard-interactive SSH logins off"
-    if [ "$(id -u)" == 0 ]; then
-        status_item skipped "$item: the step leaves them to root"
-    elif ! todo="$(key_only_todo)"; then
-        status_item unverified "$item (only root can read $SSHD_DROP_IN; run sudo -v, then status, to check it)"
-    elif [ -z "$todo" ] && grep -qE '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems"; then
-        status_item missing "$item ($(grep -E '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems" | join_lines '; '))"
-    elif [ -z "$todo" ]; then
-        status_item ok "$item"
-    else
-        status_item missing "$item ($todo)"
-    fi
+    status_sshd
     if ! command -v tailscale &>/dev/null; then
         status_item missing "Tailscale"
     elif status_require_cmd jq "Tailscale's auto-update, operator, and connection"; then
@@ -318,39 +330,7 @@ status() {
             status_item missing "Tailscale connected (run sudo tailscale up)"
         fi
     fi
-    if ufw_enabled; then
-        status_item ok "ufw on, denying incoming connections"
-        if ! "$sshd_installed"; then
-            status_item missing "$rules: openssh-server isn't installed"
-        elif [ ! -d "$SSHD_RUN_DIR" ]; then
-            status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
-        else
-            if sudo_cached; then
-                ufw_configured -n || ufw=$?
-            else
-                ufw=2
-            fi
-            case "$ufw" in
-                0) status_item ok "$rules" ;;
-                1) status_item missing "$rules (re-run the ubuntu step)" ;;
-                *) status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)" ;;
-            esac
-            if [ "$ufw" -ne 2 ]; then
-                while IFS= read -r rule; do
-                    [ -n "$rule" ] || continue
-                    # The source is the rule's last field, as ufw_rule_broad_ssh reads it
-                    where=anywhere
-                    if [[ "${rule%% # *}" =~ \ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] &&
-                        [ "${BASH_REMATCH[3]}" != Anywhere ]; then
-                        where="${BASH_REMATCH[3]}, outside the private ranges"
-                    fi
-                    status_item missing "ufw rule lets SSH in from $where: $rule; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
-                done < <(ufw_broad_ssh_rules -n || true)
-            fi
-        fi
-    else
-        status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
-    fi
+    status_ufw
     if ! command -v nmcli &>/dev/null; then
         status_item skipped "Wake-on-LAN: NetworkManager (nmcli) isn't installed"
     else
@@ -365,19 +345,15 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Ubuntu to run around the clock..."
     if ! is_ubuntu; then
         echo "  Not Ubuntu; skipping."
         return 0
     fi
     local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false
+    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false unchecked=""
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
     # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
@@ -387,46 +363,48 @@ main() {
     fi
     if ! command -v tailscale &>/dev/null || [ -n "$tailscale_source" ]; then
         require_cmd curl || return 1
+        # add_apt_repo needs it, after other changes
+        require_cmd gpg || return 1
         ! apt_repo_published Tailscale "$(tailscale_release_url)" || tailscale_repo=true
     fi
+    cache_checks
+    ups_state
+    ubuntu_sudo_items
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
-    sleep_masked || pending+=("Never sleep: mask ${SLEEP_TARGETS[*]}")
-    sleep_conf_written || pending+=("Turn off suspend and hibernation in systemd: write $SLEEP_CONF")
+    sudo_items_pending sleep_masked sleep_conf_written
     if ! sysctl_file_written; then
         pending+=("Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF")
     elif ! sysctl_in_effect; then
         pending+=("Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system")
     fi
-    lingering || pending+=("Start your user services at boot, without a login: loginctl enable-linger")
+    sudo_items_pending lingering
     if ! smartd_enabled; then
         pending+=("Watch disk health: enable smartd, installing smartmontools without its recommends")
     elif ! smartd_ready; then
         pending+=("Watch disk health: start smartd, which is enabled but not running")
     fi
-    in_vm || smartd_hook_installed ||
-        pending+=("Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB")
+    sudo_items_pending smartd_hook_ready
     local ups_todo
-    ups_todo="$(ups_todo)"
+    ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    locale_installed || pending+=("Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8")
-    unattended_upgrades_running || pending+=("Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF")
-    keep_conffiles_written ||
-        pending+=("Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF")
-    apt_timers_enabled || pending+=("Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}")
+    sudo_items_pending locale_installed unattended_upgrades_running keep_conffiles_written apt_timers_enabled
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
         pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
     fi
-    sshd_configured || pending+=("Write $SSHD_DROP_IN: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')")
-    # Unreadable, the drop-in may already turn them off, which configure_sshd keeps
-    local key_only_todo="" key_only_why
+    # Unreadable, the drop-in may already turn them off, which configure_sshd keeps. Turning them
+    # off is a change to the drop-in, so the item for it names why.
+    local key_only_todo="" key_only_why="" drop_in_lines
     if key_only_todo="$(key_only_todo)" && [ -n "$key_only_todo" ] &&
         key_only_why="$(key_only_reason)"; then
-        pending+=("Turn off SSH password logins in $SSHD_DROP_IN: $key_only_why")
         key_only_todo=""
+    fi
+    if ! sshd_configured; then
+        drop_in_lines="$(sshd_drop_in | grep -v '^#' | tr '\n' ' ')"
+        pending+=("Write $SSHD_DROP_IN${key_only_why:+, turning off SSH password logins since $key_only_why}: $drop_in_lines")
     fi
     if "$tailscale_repo" && ! command -v tailscale &>/dev/null; then
         pending+=("Install Tailscale from its apt repo: write $TAILSCALE_LIST and its key")
@@ -442,7 +420,10 @@ main() {
     # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
-    if [ "$ufw" -eq 1 ]; then
+    # With ufw on, configure_ufw only adds the allow rules
+    if [ "$ufw" -eq 1 ] && ufw_enabled; then
+        pending+=("Firewall: add the missing ufw rules allowing SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
+    elif [ "$ufw" -eq 1 ]; then
         pending+=("Firewall: install and enable ufw, denying incoming connections except SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp")
     elif [ "$ufw" -eq 2 ] && [ ${#pending[@]} -gt 0 ]; then
         pending+=("Check the ufw rules for SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and add any that are missing")
@@ -455,35 +436,26 @@ main() {
     done < <(wired_connections)
 
     if [ ${#pending[@]} -eq 0 ]; then
-        if [ "$ufw" -eq 2 ] && [ ! -d "$SSHD_RUN_DIR" ]; then
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, and Tailscale are already set up."
-            echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
-        elif [ "$ufw" -eq 2 ]; then
-            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, and Tailscale are already set up."
-            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
-        else
+        if [ "$ufw" -eq 0 ]; then
             echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, Tailscale, and the firewall"
             echo "  are already set up."
+        else
+            unchecked="Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
+            [ -d "$SSHD_RUN_DIR" ] ||
+                unchecked="Its rules can't be checked until sshd has run, which the first SSH connection does."
+            echo "  Sleep, power, linger, smartd, the locale, updates, OpenSSH, and Tailscale are already set up."
+            echo "  ufw is on. $unchecked"
         fi
     elif confirm_sudo_changes "${pending[@]}"; then
         # Each part runs whether or not the one before it failed
-        sleep_masked || sudo systemctl mask "${SLEEP_TARGETS[@]}" || result=1
-        sleep_conf_written || write_root_file "$SLEEP_CONF" "$SLEEP_CONF_CONTENT" || result=1
-        # A failed sysctl --system leaves the file written, so the next run applies it. --system
-        # loads every file in boot order, so a later file's value still wins, where -p on the
-        # step's file would override it until the next reboot.
-        if ! sysctl_written; then
-            { sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT"; } &&
-                sudo sysctl --system > /dev/null || result=1
-        fi
-        lingering || sudo loginctl enable-linger "$(id -un)" || result=1
+        sudo_items_apply sleep_masked sleep_conf_written || result=1
+        sysctl_written || apply_sysctl || result=1
+        sudo_items_apply lingering || result=1
         smartd_ready || install_smartd || result=1
-        in_vm || smartd_hook_installed || install_smartd_hook || result=1
+        sudo_items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
-        locale_installed || install_locale || result=1
-        unattended_upgrades_running || turn_on_unattended_upgrades || result=1
-        keep_conffiles_written || write_root_file "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT" || result=1
-        apt_timers_enabled || sudo systemctl enable --now "${APT_TIMERS[@]}" || result=1
+        sudo_items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
+            apt_timers_enabled || result=1
         if ! apt_installed openssh-server; then
             apt_get install -y openssh-server || result=1
         fi
@@ -537,7 +509,7 @@ main() {
         echo "  the Tailscale admin console, so it doesn't drop off the tailnet after 180 days."
     fi
     # ups_todo is set only for a plugged-in UPS, which warn_no_ups doesn't report
-    [ -n "$ups_todo" ] || warn_no_ups
+    [ -n "$ups_todo" ] || UPS_STATE_CACHED=true warn_no_ups
     warn_wifi_needs_login
     warn_disk_encryption
     return "$result"

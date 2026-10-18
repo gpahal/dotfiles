@@ -120,7 +120,6 @@ brew info --json=v2 --cask rectangle
 brew list --cask rectangle
 brew info --json=v2 --cask rectangle
 brew install --cask rectangle
-brew cleanup
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed
 brew info --json=v2 --cask zed
@@ -150,7 +149,8 @@ claude plugin marketplace update
 claude plugin list --json
 claude plugin update a@m --scope user
 t3 update
-codex plugin marketplace upgrade" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
+codex plugin marketplace upgrade
+brew cleanup" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
 assert_file_contains "$SANDBOX/output" "Claude is running; quit it and run upgrade-ai-tools again to update it."
 
 # With HOME reached through a symlink, Claude Code still counts as the native install
@@ -215,7 +215,6 @@ brew upgrade
 brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
 brew list --cask -1
-brew cleanup
 fc-cache -f ~/.local/share/fonts
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed
@@ -235,7 +234,8 @@ claude plugin marketplace update
 claude plugin list --json
 claude plugin update a@m --scope user
 t3 update
-codex plugin marketplace upgrade" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
+codex plugin marketplace upgrade
+brew cleanup" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
 
 # A running Zed isn't replaced, which would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'

@@ -248,7 +248,6 @@ upgrade() {
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
     _install_new_formulae || _stage_failed "brew bundle" "$?"
     _install_new_casks || _stage_failed casks "$?"
-    brew cleanup || _stage_failed "brew cleanup" "$?"
     if [[ "$OSTYPE" == linux* ]]; then
         # Homebrew doesn't refresh fontconfig's cache for the fonts it upgrades on Linux, which go
         # where it put them: under XDG_DATA_HOME when that's set
@@ -322,6 +321,10 @@ upgrade() {
     fi
 
     upgrade_ai_tools || _stage_failed upgrade-ai-tools "$?"
+
+    # Last, so the old versions of every cask upgraded above, the AI tools' included, go now, not
+    # on the next run
+    brew cleanup || _stage_failed "brew cleanup" "$?"
 
     _upgrade_report ${failed[@]+"${failed[@]}"}
 }

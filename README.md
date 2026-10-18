@@ -497,7 +497,7 @@ Run these over SSH from the Mac.
 The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which updates everything installed. A stage that fails doesn't stop the rest, and `upgrade` lists the failed stages and returns 1:
 
 - Ubuntu's apt packages: `sudo apt-get update && sudo apt upgrade`.
-- Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step, then `brew cleanup`. On Ubuntu it then refreshes the font cache.
+- Homebrew: `brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade`, then `brew bundle install --no-upgrade` for formulae added to the Brewfile and `brew install --cask` for casks added to the homebrew step. On Ubuntu it then refreshes the font cache.
 - Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+): `brew upgrade --cask --greedy <cask>` when one is outdated and not running. Logi Options+ upgrades even while it runs.
 - App Store apps (macOS): `mas upgrade`.
 - vim plugins: vim-plug's `PlugUpdate`, which moves each plugin to the commit `~/.vimrc` pins. The vim step copies that file from `vim/vimrc`.
@@ -508,6 +508,7 @@ The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which upd
 - Python tools installed with uv: `uv tool upgrade --all`
 - Rust: `rustup update`
 - AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
+- Old Homebrew versions: `brew cleanup`, run last so it also removes the versions the cask upgrades above replaced.
 
 Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
 

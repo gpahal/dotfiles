@@ -1,10 +1,10 @@
 # Key icons
 
-The Stream Deck plugin's app keys use each app's official icon or logo. This folder keeps the
-upstream originals, so the keys can be rebuilt without the upstream URLs. The setup step doesn't
-install anything from here.
+The Stream Deck plugin's app keys use each app's official icon or logo. This folder keeps the SVG
+originals. The PNG originals aren't stored: fetch them from the pinned URLs below to rebuild a key.
+The setup step doesn't install anything from here.
 
-The plugin's PNG keys are these 1024px icons resized to 72px and 144px (`@2x`), as with
+The plugin's PNG keys are the 1024px icons resized to 72px and 144px (`@2x`), as with
 `sips -Z 144 zed.png --out key-editor@2x.png`. Its SVG keys put the logo on a tile the size of
 the PNG icons' tiles.
 

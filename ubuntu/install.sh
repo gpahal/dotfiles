@@ -328,7 +328,12 @@ status() {
     status_unattended_upgrades
     sudo_items_status keep_conffiles_written
     status_held_back
-    sudo_items_status apt_timers_enabled
+    # The sudo_item's text, with the command that turns them on
+    if apt_timers_enabled; then
+        status_item ok "apt's daily timers enabled and running"
+    else
+        status_item missing "apt's daily timers enabled and running (run sudo systemctl enable --now ${APT_TIMERS[*]})"
+    fi
     if [ -e "$REBOOT_REQUIRED" ]; then
         packages="$(reboot_packages)"
         status_item missing "Reboot pending for updates${packages:+: $packages}; reboot when no agent runs"

@@ -159,10 +159,10 @@ assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates; reboot whe
 assert_contains "$RUN_OUTPUT" "openssh-server"
 rm "$REBOOT_REQUIRED"
 
-# apt's daily timers off: status says so
+# apt's daily timers off: status says so, and how to turn them on
 echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running"
+assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running (run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer)"
 rm "$SANDBOX/units/apt-daily-upgrade.timer"
 # Enabled but stopped: a yes enables and starts both
 touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"

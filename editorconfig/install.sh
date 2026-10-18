@@ -13,20 +13,9 @@ editorconfig_files() {
     "$1" "$DOTFILES_DIR/editorconfig/editorconfig" "$HOME/.editorconfig"
 }
 
-status() {
-    editorconfig_files status_file
-    status_result
-}
+status() { copy_status editorconfig_files; }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
-    echo "Copying EditorConfig..."
-    editorconfig_files copy_file
-}
+apply() { copy_step "Copying EditorConfig..." editorconfig_files; }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"

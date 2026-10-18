@@ -6,6 +6,12 @@
 unset CDPATH
 DOTFILES_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DOTFILES_DIR
+# The script that sourced this file, which names a step that uses the default main in step_args's
+# usage line. Made absolute now, since a test that loads the step cd's to its sandbox after.
+case "${BASH_SOURCE[1]:-}" in
+    /*) _SOURCED_BY="${BASH_SOURCE[1]}" ;;
+    *) _SOURCED_BY="$PWD/${BASH_SOURCE[1]:-}" ;;
+esac
 
 is_macos() {
     [ "$(uname -s)" == "Darwin" ]
@@ -248,15 +254,47 @@ check_args() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local step_usage
+    local path="${BASH_SOURCE[1]}" step_usage
     # The script that defines the main calling this one: the step's, whether it runs directly or
-    # a test sourced it
-    step_usage="Usage: bash $(_repo_path "${BASH_SOURCE[1]}") [--status [--quick]] [--backup | --no-backup]"
+    # a test sourced it. The default main is this file's, so then it's the script that sourced it.
+    [ ! "$path" -ef "${BASH_SOURCE[0]}" ] || path="$_SOURCED_BY"
+    step_usage="Usage: bash $(_repo_path "$path") [--status [--quick]] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 
 # step_args's usage function, which reads its step_usage
 _step_usage() { echo "$step_usage"; }
+
+# The default main of a step: step_args, then with --status the step's read-only status report,
+# and otherwise its apply, which sets it up. A step defines status and apply, or its own main,
+# which replaces this one. Defined only while no main is, so a test that loads a step, then
+# lib/common.sh again to bring back a function it replaced, keeps the step's own main.
+if ! declare -F main > /dev/null; then
+    main() {
+        step_args "$@"
+        if status_requested "$@"; then
+            status
+            return $?
+        fi
+        apply
+    }
+fi
+
+# copy_step <message> <files function>: the apply of a step that only copies configs. Prints the
+# message, then copies each file the files function passes to copy_file.
+# e.g. apply() { copy_step "Copying EditorConfig..." editorconfig_files; }
+copy_step() {
+    echo "$1"
+    "$2" copy_file
+}
+
+# copy_status <files function>: the status of a step that only copies configs. Reports each file
+# the files function passes to status_file.
+# e.g. status() { copy_status editorconfig_files; }
+copy_status() {
+    "$1" status_file
+    status_result
+}
 
 # Print a script's path relative to the repo, as a usage line names it
 _repo_path() {

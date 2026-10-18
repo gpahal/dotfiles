@@ -108,6 +108,28 @@ assert_contains "$RUN_OUTPUT" "Unknown argument: status"
 assert_contains "$RUN_OUTPUT" "Usage: bash $step"
 assert_eq "" "$(find "$HOME" -mindepth 1)" "files a step wrote for -h, --stauts, or status"
 
+# A step with lib/common.sh's default main names itself too, run directly or loaded by a test that
+# has since cd'd elsewhere, and its main runs its status or apply
+step=editorconfig/install.sh
+assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
+assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
+assert_exit 2 "$BASH" "$REPO_DIR/$step" status
+assert_contains "$RUN_OUTPUT" "Unknown argument: status"
+default_main() {
+    export HOME="$SANDBOX/home-default-main"
+    mkdir -p "$HOME"
+    load_script "$step"
+    cd /
+    assert_exit 0 main -h
+    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step's main -h"
+    assert_exit 3 main --status
+    assert_eq "  missing    ~/.editorconfig" "$RUN_OUTPUT" "$step's main --status"
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "Copying EditorConfig..."
+    [ -f "$HOME/.editorconfig" ] || fail "$step's main didn't copy ~/.editorconfig"
+}
+subtest default_main
+
 # The runners start each step with the bash running them, not whichever bash is first on PATH,
 # such as Homebrew's
 stub bash 'exit 99'

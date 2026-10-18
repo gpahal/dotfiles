@@ -343,4 +343,12 @@ printf '{"a":1,  "mine":1}\n' > "$settings"
 assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_not_contains "$RUN_OUTPUT" "Back up" "json_merge with nothing to change"
 assert_eq '{"a":1,  "mine":1}' "$(cat "$settings")" "settings after json_merge with nothing to change"
+
+# COPIED turns true only when a copy happens, so a caller that resets it knows whether to reload
+printf 'copied\n' > "$SANDBOX/repo/copied.yml"
+for want in true false; do
+    COPIED=false
+    copy_file "$SANDBOX/repo/copied.yml" "$HOME/copied.yml" > /dev/null
+    assert_eq "$want" "$COPIED" "COPIED after copy_file"
+done
 test_done

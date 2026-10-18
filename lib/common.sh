@@ -425,22 +425,10 @@ installed_unedited() {
     [ "$sha" == "$(recorded_sha256 "$1")" ]
 }
 
-# copy_file and copy_file_ask's shared steps. Prints whether dest is up to date and returns 0
-# when it is, recording it if it isn't recorded yet. Returns 1 when dest needs copying, and 2
-# when it's up to date but that record couldn't be written: a later run would take the
-# unrecorded file for an edit.
-_copy_up_to_date() {
-    local src="$1" dest="$2"
-    if [ ! -e "$dest" ] || ! cmp -s "$src" "$dest" || { [ -x "$src" ] && [ ! -x "$dest" ]; }; then
-        return 1
-    fi
-    installed_unedited "$dest" || record_installed "$dest" || return 2
-    echo "  $dest is already up to date"
-}
-
 # Each command is checked, since a caller may run this under || or if, where set -e is off. A
 # new file gets 644, or 755 when the source is executable, the two modes the repo holds. An
-# existing one keeps its mode, plus the executable bits an executable source needs.
+# existing one keeps its mode, plus the executable bits an executable source needs. Sets COPIED
+# to true once the file is copied, so a caller that resets it can tell whether anything changed.
 _copy_and_record() {
     local src="$1" dest="$2" new_mode=644 exec=""
     mkdir -p "$(dirname "$dest")" || return 1
@@ -457,46 +445,47 @@ _copy_and_record() {
         echo "  Couldn't copy ${src#"$DOTFILES_DIR"/} to $dest, so left it unchanged." >&2
         return 1
     fi
+    # shellcheck disable=SC2034 # callers read it
+    COPIED=true
     record_installed "$dest" || return 1
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
 }
 
-# Copy a file, creating the destination directory, and record it. A file that already matches is
-# left alone. One that differs is replaced: silently when it's what setup last installed, and
-# after backup_edited otherwise. Fails, leaving it, when that backup does.
-copy_file() {
-    local src="$1" dest="$2" up_to_date=0
-    _copy_up_to_date "$src" "$dest" || up_to_date=$?
-    case "$up_to_date" in
-        0) return 0 ;;
-        2) return 1 ;;
-    esac
+# _copy_file <replace|ask> <src> <dest>: copy_file's and copy_file_ask's shared body. A file that
+# matches, executable bit included, is left alone, and recorded if it isn't yet: a later run would
+# take an unrecorded file for an edit, so failing to record it fails.
+_copy_file() {
+    local mode="$1" src="$2" dest="$3"
+    if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
+        installed_unedited "$dest" || record_installed "$dest" || return 1
+        echo "  $dest is already up to date"
+        return 0
+    fi
     # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
     if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
-        backup_edited "$dest" || return 1
+        if [ "$mode" != ask ]; then
+            maybe_backup "$dest" yes \
+                "  $dest was changed since setup installed it, and will be replaced. Back it up to {} first?" ||
+                return 1
+        # An empty file holds nothing to merge, so it's replaced without asking
+        elif [ -s "$dest" ]; then
+            if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
+                echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
+                return 0
+            fi
+            if [ "${DOTFILES_BACKUP:-}" != no ]; then
+                backup_file "$dest" || return 1
+            fi
+        fi
     fi
     _copy_and_record "$src" "$dest"
 }
 
-# Back up a file edited by hand before setup replaces it. --backup or --no-backup
-# (DOTFILES_BACKUP) decides; otherwise ask with a terminal, and back up without one, since the
-# edit would be lost.
-backup_edited() {
-    local file="$1" bak
-    [ -f "$file" ] || return 0
-    bak="$(backup_path "$file")"
-    case "${DOTFILES_BACKUP:-}" in
-        no) return 0 ;;
-        yes) ;;
-        *)
-            if is_interactive &&
-                ! confirm "  $file was changed since setup installed it, and will be replaced. Back it up to $bak first?"; then
-                return 0
-            fi
-            ;;
-    esac
-    backup_file "$file" "$bak"
-}
+# Copy a file, creating the destination directory, and record it. A file that already matches is
+# left alone. One that differs is replaced: silently when it's what setup last installed, and
+# otherwise after maybe_backup, which backs it up without a terminal, since the edit would be
+# lost. Fails, leaving it, when that backup does.
+copy_file() { _copy_file replace "$@"; }
 
 # Print where backup_file backs a file up: <file>.bak, unless that holds something else, then
 # <file>.bak.<timestamp>, adding -2, -3, ... until the name is free or holds the same content, as
@@ -556,24 +545,7 @@ install_user_instructions() {
 # edits. One that differs and isn't what setup last installed is replaced only when the user
 # agrees, and left alone without a terminal. Agreeing backs it up too, without a second question,
 # unless --no-backup is set. Fails, leaving it, when that backup does.
-copy_file_ask() {
-    local src="$1" dest="$2" up_to_date=0
-    _copy_up_to_date "$src" "$dest" || up_to_date=$?
-    case "$up_to_date" in
-        0) return 0 ;;
-        2) return 1 ;;
-    esac
-    if [ -s "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
-        if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
-            echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
-            return 0
-        fi
-        if [ "${DOTFILES_BACKUP:-}" != no ]; then
-            backup_file "$dest" || return 1
-        fi
-    fi
-    _copy_and_record "$src" "$dest"
-}
+copy_file_ask() { _copy_file ask "$@"; }
 
 # A setting you can change yourself, such as mise's global node, is one setup sets when it's unset.
 # When it holds a value of your own, setup asks each run whether to replace it with the repo's,
@@ -629,21 +601,30 @@ append_line() {
     printf '%s\n' "$line" >> "$file"
 }
 
+# maybe_backup <file> [<no-terminal answer: yes|no>] [<question>]
 # Before editing an existing file, ask whether to back it up, unless <file>.bak already matches
 # it. The backup goes where backup_file puts it, so an older, different .bak is kept. --backup or
-# --no-backup (DOTFILES_BACKUP) answers for you. Fails when the backup does; the caller must then
-# leave the file as it is.
+# --no-backup (DOTFILES_BACKUP) answers for you. Otherwise the question is asked with a terminal;
+# without one, yes backs the file up, and no leaves it to confirm, which says no unless
+# DOTFILES_ASSUME_YES=1. The question's {} is the backup's path. Fails when the backup does; the
+# caller must then leave the file as it is.
+# e.g. maybe_backup "$CODEX_CONFIG"
 maybe_backup() {
-    local bak
-    [ -f "$1" ] || return 0
-    cmp -s "$1" "$1.bak" && return 0
-    bak="$(backup_path "$1")"
+    local file="$1" default="${2:-no}" question="${3:-}" bak
+    [ -n "$question" ] || question="  Back up $file to {}?"
+    [ -f "$file" ] || return 0
+    cmp -s "$file" "$file.bak" && return 0
+    bak="$(backup_path "$file")"
     case "${DOTFILES_BACKUP:-}" in
         no) return 0 ;;
         yes) ;;
-        *) confirm "  Back up $1 to $bak?" || return 0 ;;
+        *)
+            if [ "$default" != yes ] || is_interactive; then
+                confirm "${question//\{\}/$bak}" || return 0
+            fi
+            ;;
     esac
-    backup_file "$1" "$bak"
+    backup_file "$file" "$bak"
 }
 
 # Succeeds when this script runs inside an app, e.g. in its built-in terminal

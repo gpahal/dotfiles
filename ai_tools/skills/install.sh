@@ -156,7 +156,7 @@ backup_skill_dir() {
 # ~/.agents/skills when it matches neither the repo nor the hash recorded when setup installed it,
 # and a real directory at ~/.claude/skills/<name>, where the CLI puts a link, unless it matches
 # the repo. --backup or --no-backup (DOTFILES_BACKUP) decides; otherwise ask with a terminal, and
-# back up without one, as backup_edited does. Fails when a backup does, so the add skips the skill.
+# back up without one, as copy_file does. Fails when a backup does, so the add skips the skill.
 backup_edited_skill() {
     local name="$1" src="$2" agents="$HOME/.agents/skills/$1" claude="$HOME/.claude/skills/$1"
     local repo_hash hash dir label edited=()

@@ -6,8 +6,8 @@
 unset CDPATH
 DOTFILES_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DOTFILES_DIR
-# The script that sourced this file, which names a step that uses the default main in step_args's
-# usage line. Made absolute now, since a test that loads the step cd's to its sandbox after.
+# The script that sourced this file, which names a step in step_args's usage line. Made absolute
+# now, since a test that loads the step cd's to its sandbox after.
 case "${BASH_SOURCE[1]:-}" in
     /*) _SOURCED_BY="${BASH_SOURCE[1]}" ;;
     *) _SOURCED_BY="$PWD/${BASH_SOURCE[1]:-}" ;;
@@ -92,6 +92,11 @@ install_root_file() {
     local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
     dir="$(dirname "$dest")"
     sudo mkdir -p "$dir" || return 1
+    # mv would move the new file into a directory, and succeed
+    if sudo test -d "$dest"; then
+        echo "  $dest is a directory; remove it and re-run." >&2
+        return 1
+    fi
     # Through sudo, since the file or its directory may be root-only
     if [ -z "$mode" ]; then
         mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
@@ -332,11 +337,9 @@ check_args() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local path="${BASH_SOURCE[1]}" step_usage
-    # The script that defines the main calling this one: the step's, whether it runs directly or
-    # a test sourced it. The default main is this file's, so then it's the script that sourced it.
-    [ ! "$path" -ef "${BASH_SOURCE[0]}" ] || path="$_SOURCED_BY"
-    step_usage="Usage: bash $(_repo_path "$path") [--status [--quick]] [--backup | --no-backup]"
+    local step_usage
+    # The step is the script that sourced this file, whether it runs directly or a test loaded it
+    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status [--quick]] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 
@@ -568,7 +571,7 @@ _copy_and_record() {
 # matches, executable bit included, is left alone, and recorded if it isn't yet: a later run would
 # take an unrecorded file for an edit, so failing to record it fails.
 _copy_file() {
-    local mode="$1" src="$2" dest="$3"
+    local mode="$1" src="$2" dest="$3" how
     if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
         installed_unedited "$dest" || record_installed "$dest" || return 1
         echo "  $dest is already up to date"
@@ -577,8 +580,9 @@ _copy_file() {
     # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
     if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
         if [ "$mode" != ask ]; then
-            maybe_backup "$dest" yes \
-                "  $dest was changed since setup installed it, and will be replaced. Back it up to {} first?" ||
+            how="exists and differs from the repo's copy"
+            [ -z "$(recorded_sha256 "$dest")" ] || how="was changed since setup installed it"
+            maybe_backup "$dest" yes "  $dest $how, and will be replaced. Back it up to {} first?" ||
                 return 1
         # An empty file holds nothing to merge, so it's replaced without asking
         elif [ -s "$dest" ]; then
@@ -719,8 +723,8 @@ append_line() {
 # it. The backup goes where backup_file puts it, so an older, different .bak is kept. --backup or
 # --no-backup (DOTFILES_BACKUP) answers for you. Otherwise the question is asked with a terminal;
 # without one, yes backs the file up, and no leaves it to confirm, which says no unless
-# DOTFILES_ASSUME_YES=1. The question's {} is the backup's path. Fails when the backup does; the
-# caller must then leave the file as it is.
+# DOTFILES_ASSUME_YES=1. The question's last {} is the backup's path. Fails when the backup does;
+# the caller must then leave the file as it is.
 # e.g. maybe_backup "$CODEX_CONFIG"
 maybe_backup() {
     local file="$1" default="${2:-no}" question="${3:-}" bak
@@ -733,7 +737,10 @@ maybe_backup() {
         yes) ;;
         *)
             if [ "$default" != yes ] || is_interactive; then
-                confirm "${question//\{\}/$bak}" || return 0
+                # Not ${question//\{\}/$bak}: bash 5.2's patsub_replacement would put the {} back
+                # in place of each & in $bak. The last {}, since the file's path before it may hold
+                # one.
+                confirm "${question%\{\}*}$bak${question##*\{\}}" || return 0
             fi
             ;;
     esac
@@ -921,9 +928,11 @@ tool_home_is() {
 }
 
 # Succeeds when a jq expression wouldn't change a JSON file, i.e. its settings are already there.
-# The newline ends a comment on the expression's last line, which would swallow the comparison.
+# The file must hold one value: jq -e takes its status from the last of several, so a file whose
+# last value had the settings would pass. The newline ends a comment on the expression's last
+# line, which would swallow the comparison.
 json_applied() {
-    [ -s "$1" ] && jq -e "($2"$'\n'") == ." "$1" &>/dev/null
+    [ -s "$1" ] && jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" "$1" &>/dev/null
 }
 
 # Print the HTTP status of a HEAD request for a URL: 200 when it's there, 404 when it isn't, and
@@ -1009,7 +1018,7 @@ add_apt_repo() {
         rm -f "$key"
         return 1
     fi
-    fingerprint="$(apt_key_fingerprint "$key" | paste -sd, - | sed 's/,/, /g')"
+    fingerprint="$(apt_key_fingerprint "$key" | join_lines ', ')"
     if [ "$fingerprint" != "$fpr" ]; then
         echo "  $name's apt key from $key_url has the fingerprint ${fingerprint:-(none)}, not $fpr, so" >&2
         echo "  nothing was changed. If $name has published a new key, check its fingerprint against" >&2
@@ -1150,13 +1159,14 @@ write_back() {
 # Merge a jq expression into a JSON file, creating the file if needed. A file the expression
 # doesn't change is left alone, unformatted and not backed up.
 json_merge() {
-    local file="$1" filter="$2" tmp input=""
+    local file="$1" filter="$2" tmp input="" values
     require_cmd jq || return 1
     ! json_applied "$file" "$filter" || return 0
     # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
-    # dangling symlink, fails rather than start from {} and lose what it holds. Back up and write
-    # nothing until jq succeeds with one JSON value, so a filter that fails, or yields no value or
-    # several, leaves the file as it was and asks nothing.
+    # dangling symlink, fails rather than start from {} and lose what it holds, and so does one
+    # that isn't one JSON value. Back up and write nothing until jq succeeds with one JSON value, so
+    # a filter that fails, or yields no value or several, leaves the file as it was and asks
+    # nothing.
     if [ -e "$file" ] || [ -L "$file" ]; then
         if ! input="$(cat -- "$file")"; then
             echo "  Couldn't read $file, so it was left as it is." >&2
@@ -1164,6 +1174,14 @@ json_merge() {
         fi
     fi
     [[ "$input" =~ [^[:space:]] ]] || input='{}'
+    # jq's own error says where invalid JSON goes wrong
+    if ! values="$(printf '%s\n' "$input" | jq -s length)"; then
+        echo "  $file isn't valid JSON, so it was left as it is." >&2
+        return 1
+    elif [ "$values" != 1 ]; then
+        echo "  $file holds $values JSON values, not one, so it was left as it is." >&2
+        return 1
+    fi
     tmp="$(mktemp)"
     if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         echo "  Couldn't update $file with jq." >&2
@@ -1443,10 +1461,13 @@ status_result() {
 }
 
 # Print the script of a step in the caller's MACOS_STEPS or UBUNTU_STEPS: $STEPS_DIR/manual-steps.sh
-# for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name. Either OS's
-# steps resolve, so a step named on the other OS reaches its own skip message.
+# for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name, such as
+# "git lazygit", which the list check alone would take. Either OS's steps resolve, so a step named
+# on the other OS reaches its own skip message.
 step_script() {
-    [ -n "$1" ] || return 1
+    case "$1" in
+        '' | *[[:space:]/]*) return 1 ;;
+    esac
     case " ${MACOS_STEPS[*]-} ${UBUNTU_STEPS[*]-} " in
         *" $1 "*) ;;
         *) return 1 ;;
@@ -1465,7 +1486,7 @@ step_script() {
 # <quick> ends the usage's --status sentence, saying what --quick skips. The caller sets
 # MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Sets RUNNER_STEPS to the steps named. Exits with the
 # --status result (3 when something needs attention, 1 when a step failed) and when a step fails;
-# returns after a successful run.
+# returns after a successful run. An interrupted run dies of the signal that stopped it.
 runner_main() {
     local name="$1" quick="$2" script status=0
     shift 2
@@ -1480,10 +1501,13 @@ runner_main() {
     if status_requested "$@"; then
         echo "=== $name status ==="
         run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
+        reraise_interrupt "$status"
         exit "$status"
     fi
     echo "=== $name setup ==="
-    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || exit $?
+    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
+    reraise_interrupt "$status"
+    [ "$status" -eq 0 ] || exit "$status"
     echo ""
     echo "=== $name setup complete! ==="
 }
@@ -1509,6 +1533,23 @@ interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
 }
 
+# Kill this shell with the signal an interrupted status stands for, with the signal's default
+# action, so whatever ran it stops too: bash carries on after a command that exited 130, but not
+# after one SIGINT killed. Returns for any other status. run_steps returns the status instead,
+# since $$ is the top shell's PID even in a subshell.
+reraise_interrupt() {
+    local sig
+    case "$1" in
+        129) sig=HUP ;;
+        130) sig=INT ;;
+        143) sig=TERM ;;
+        *) return 0 ;;
+    esac
+    trap - INT TERM HUP
+    kill -s "$sig" $$
+    exit "$1"
+}
+
 # run_steps <mode> [step...]
 # Run named steps in order, each in its own process, with the script step_script prints. With no
 # names, run every step in $STEPS. A failing step doesn't stop the rest; the failures are listed
@@ -1516,8 +1557,9 @@ interrupted_status() {
 #
 # With mode --status, run each step's read-only --status report instead, under a header with the
 # step's name. A step whose report has missing or unknown items exits 3; those are listed at the
-# end too, and the run returns 3 (or 1 when a step also failed). A report that exits 3 without
-# such an item failed. An empty mode runs the steps.
+# end too, and the run returns 3 (or 1 when a step also failed). A report with such an item that
+# exits 0 is listed too. A report that exits 3 without such an item failed. An empty mode runs the
+# steps.
 run_steps() {
     local mode="$1" step script status codes interrupted="" failed=() attention=()
     shift
@@ -1555,7 +1597,12 @@ run_steps() {
                 codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
             } || true
             status="${codes% *}"
-            [ "$status" -ne 3 ] || [ "${codes#* }" -eq 0 ] || status=1
+            if [ "${codes#* }" -eq 0 ]; then
+                # A report that forgot status_result exits 0 with an item needing attention
+                [ "$status" -ne 0 ] || status=3
+            elif [ "$status" -eq 3 ]; then
+                status=1
+            fi
         else
             "$BASH" "$script" || status=$?
         fi

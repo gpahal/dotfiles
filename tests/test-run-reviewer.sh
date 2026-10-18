@@ -56,9 +56,7 @@ no_sleeps_left() {
 # sends on a timeout or Ctrl-C doesn't reach, and the sleeps would run for days. The runner stops
 # its reviewer when it's stopped, and pkill gets any sleep left.
 RUNNER_PID=""
-# shellcheck disable=SC2016 # expanded at exit
 on_exit '[ -z "$RUNNER_PID" ] || kill -- "-$RUNNER_PID" 2> /dev/null'
-# shellcheck disable=SC2016
 on_exit '"$PKILL" -f "$SLEEP_PATTERN"'
 
 # Start the runner with a reviewer that sleeps, send it a signal, and check its exit status and

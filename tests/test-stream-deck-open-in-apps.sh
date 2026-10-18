@@ -23,11 +23,8 @@ OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
 # With FRONT_CHANGES, another app comes to the front during the delay before the paste: a script
 # that checks for that before pressing Cmd+V returns "moved". Gmail's script logs the URL it would
 # open and prints GMAIL_RESULT, or fails with GMAIL_ERROR. CHROME_RUNNING makes Chrome running.
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub pbpaste 'if [ -n "${BIG_CLIPBOARD:-}" ]; then yes https://example.com/a/long/path | head -n 20000; else printf "%s" "${CLIPBOARD:-}"; fi'
-# shellcheck disable=SC2016
 stub lsappinfo '[ -n "${CHROME_RUNNING:-}" ] && [ "$*" == "find bundleid=com.google.Chrome" ] && echo "ASN:0x0-0x3-\"Google Chrome\":"'
-# shellcheck disable=SC2016
 stub osascript 'script="$(cat)"
 case "$script" in
     *"keystroke \"t\""*)

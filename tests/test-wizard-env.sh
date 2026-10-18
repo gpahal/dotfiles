@@ -109,7 +109,6 @@ done
 # back in place after a write.
 printf 'KEEP=1\n' > "$ENV_FILE"
 for sig in INT TERM HUP; do
-    # shellcheck disable=SC2016 # expanded by the inner bash
     run "$BASH" -c 'sig="$3"; source "$1"; ENV_FILE="$2"; mv() { kill -s "$sig" "$$"; }; write_env ADDED 2' \
         _ "$SANDBOX/wizard-lib.sh" "$ENV_FILE" "$sig"
     [ "$RUN_STATUS" -gt 128 ] || fail "write_env's status on $sig is $RUN_STATUS"

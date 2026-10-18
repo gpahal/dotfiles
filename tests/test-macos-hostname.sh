@@ -20,7 +20,6 @@ status_filevault() { true; }
 status_app_firewall() { true; }
 
 # HOST_NAME is HostName, unset when empty
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub scutil 'case "$1 $2" in
     "--get HostName") [ -n "${HOST_NAME:-}" ] && echo "$HOST_NAME" ;;
     "--get LocalHostName") echo Garvits-MacBook-Pro ;;

@@ -38,7 +38,6 @@ mv "$STUB_DIR/rustup" "$RUST_STUB"
 export MISE_CONFIG_FILE="$HOME/.config/mise/config.toml"
 mkdir -p "$HOME/.config/mise"
 touch "$MISE_CONFIG_FILE"
-# shellcheck disable=SC2016 # expanded by the stub
 stub mise 'echo "mise-cwd $PWD" >> "$STUB_LOG"
 case "$1 ${2:-}" in
     "config get")
@@ -67,7 +66,6 @@ case "$1 ${2:-}" in
         [ -z "${MISE_LS_ERR:-}" ] || echo "$MISE_LS_ERR" >&2 ;;
 esac'
 # Writes an installer that logs its arguments to the file after -o
-# shellcheck disable=SC2016
 stub curl 'while [ $# -gt 0 ]; do
     if [ "$1" == -o ]; then
         echo "echo \"rustup-init \$*\" >> \"\$STUB_LOG\"" > "$2"

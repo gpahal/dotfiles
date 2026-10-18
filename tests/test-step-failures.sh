@@ -67,7 +67,6 @@ rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
 # The account's login shell is bash. The step reads it and the zsh to switch to from the system,
 # so those two functions are replaced. sudo -n true, which sudo_cached runs, succeeds only with
 # SUDO_CACHED set.
-# shellcheck disable=SC2016 # expanded by the stub
 stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 # It runs a command on the sandbox's files, and refuses one on a path outside it, as an argument
 # or a value, so a system path the test missed can't be written to

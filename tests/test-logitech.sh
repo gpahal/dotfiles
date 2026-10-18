@@ -16,9 +16,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script logitech/install.sh
 export SANDBOX
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub dpkg-query '[ "${*: -1}" == solaar ] && [ -e "$SANDBOX/solaar" ] && printf "install ok installed"'
-# shellcheck disable=SC2016
 stub apt-get '[ -z "${APT_FAILS:-}" ] || exit 100
 [ -z "${UPDATE_FAILS:-}" ] || [ "${*: -1}" != update ] || exit 100
 [ "${*: -1}" != solaar ] || touch "$SANDBOX/solaar"'

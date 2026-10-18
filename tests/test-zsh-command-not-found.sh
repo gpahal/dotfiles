@@ -20,7 +20,6 @@ chmod +x "$APT_CNF"
 
 # Run an unknown command in zsh with the handler loaded as on the given OS, and apt's
 # command-not-found at the given path, printing its output and exit status
-# shellcheck disable=SC2016 # expanded by zsh
 MISSING='OSTYPE=$1; source "$2/zsh/command-not-found.zsh"; _apt_command_not_found=$3; $4; print "status $?"'
 missing() {
     zsh -f -c "$MISSING" zsh "$1" "$REPO_DIR" "$2" "$3" 2>&1

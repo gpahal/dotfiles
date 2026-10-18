@@ -83,11 +83,9 @@ if [ -n "$REAL_MISE" ]; then
             PATH="$MISE_BIN:/usr/bin:/bin:$BREW/bin:$BREW/sbin" "$ZSH_BIN" "$1" "$2" \
             < /dev/null 2> /dev/null
     }
-    # shellcheck disable=SC2016 # expanded by zsh
     output="$(mise_shell -ic '_mise_hook; cd /; _mise_hook; print -rl -- $path')"
     assert_before "$output" "$HOME/.local/bin" "$MISE_TOOL" "zsh -ic after mise's hook"
     # A nested shell, such as a tmux pane, inherits the activated PATH
-    # shellcheck disable=SC2016
     output="$(mise_shell -ic 'zsh -ic "_mise_hook; print -rl -- \$path"')"
     assert_before "$output" "$HOME/.local/bin" "$MISE_TOOL" "nested zsh -ic after mise's hook"
     assert_eq "$(mise_shell -lc 'command -v both-cli')" \
@@ -135,7 +133,6 @@ is_ubuntu() { true; }
 is_macos() { false; }
 # shellcheck disable=SC2329
 login_zsh_path() { echo "$ZSH_BIN"; }
-# shellcheck disable=SC2016 # expanded by sh
 stock='if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
@@ -172,7 +169,6 @@ printf '#!/bin/sh\ntouch "%s"\n' "$SANDBOX/brew-ran" > "$BREW/bin/brew"
 chmod +x "$BREW/bin/brew"
 if [[ "$OSTYPE" == darwin* ]]; then repository="$BREW"; else repository="$BREW/Homebrew"; fi
 for flags in -ic -lc -c; do
-    # shellcheck disable=SC2016 # expanded by zsh
     assert_eq "$BREW $BREW/Cellar $repository $BREW/share/zsh/site-functions $BREW/share/info:" \
         "$(env -i HOME="$HOME" TERM=dumb PATH=/usr/bin:/bin "$ZSH_BIN" "$flags" \
             'print -r -- $HOMEBREW_PREFIX $HOMEBREW_CELLAR $HOMEBREW_REPOSITORY $fpath[1] $INFOPATH' \
@@ -180,7 +176,6 @@ for flags in -ic -lc -c; do
 done
 # A MANPATH gets a leading colon, so man searches its default path too. macOS's path_helper sets
 # MANPATH in a login shell, so this checks another.
-# shellcheck disable=SC2016
 assert_eq ":/a::/b" "$(env -i HOME="$HOME" TERM=dumb MANPATH=::/a::/b:: PATH=/usr/bin:/bin "$ZSH_BIN" -c \
     'print -r -- $MANPATH' < /dev/null 2> /dev/null)" "MANPATH"
 [ ! -e "$SANDBOX/brew-ran" ] || fail "a shell without HOMEBREW_PREFIX ran brew"

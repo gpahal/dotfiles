@@ -60,7 +60,6 @@ fetch() {
     [ ! -e "$SANDBOX/fetch-fails" ] || return 1
     cp "$SANDBOX/served-key" "$2"
 }
-# shellcheck disable=SC2016 # expanded by the stub
 stub gpg 'for key; do :; done
 [ "$1 $2" == "--show-keys --with-colons" ] || exit 2
 while IFS= read -r f; do

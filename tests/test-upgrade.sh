@@ -61,12 +61,10 @@ mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 # upgrade runs mise from ~, away from any project's mise.toml in the dir it was started in. After
 # mise upgrade, it applies mise's hook-env, so npm, and upgrade-ai-tools after it, run the new
 # Node. The hook-env stub puts $SANDBOX/new-node, whose npm logs as "new-node npm", first on PATH.
-# shellcheck disable=SC2016 # expanded by the stub
 stub mise '[ "$PWD" == "$HOME" ] || echo "mise ran in $PWD" >> "$STUB_LOG"
 [ "$*" != "hook-env --force -s bash" ] || echo "export PATH='"$SANDBOX/new-node"':\$PATH"'
 stub npm
 mkdir -p "$SANDBOX/new-node"
-# shellcheck disable=SC2016 # expanded by the script
 printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' > "$SANDBOX/new-node/npm"
 chmod +x "$SANDBOX/new-node/npm"
 stub claude '[ "$*" != "plugin list --json" ] || echo "[
@@ -425,7 +423,6 @@ stub brew 'case "$*" in
     "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
     "info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed.Dev.app\"}]}]}" ;;
 esac'
-# shellcheck disable=SC2016 # expanded by the stub
 stub pgrep 'echo "/Elsewhere/ZedxDev.app/Contents/MacOS/zed" | grep -E -- "${!#}"'
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"

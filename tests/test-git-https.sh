@@ -154,7 +154,6 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS, through gh's credential helper (a re-run after gh auth login and gh auth setup-git adds it)"
 # Logged in, with gh auth setup-git setting the helper in this run: the rewrite follows in the same
 # run
-# shellcheck disable=SC2016 # expanded by the stub
 stub gh 'case "$*" in
     "auth token") echo gho_SECRET ;;
     "auth setup-git") git config --file "$HOME/.gitconfig" credential.https://github.com.helper "!gh auth git-credential" ;;

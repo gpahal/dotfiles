@@ -81,7 +81,6 @@ rm -f "$STUB_DIR/tmux" "$SANDBOX/enabled" "$SANDBOX/broken"
 touch "$SANDBOX/manager"
 stub uname 'echo Linux'
 mkdir -p "$HOME/.tmux/plugins/tpm"
-# shellcheck disable=SC2016 # expanded by the fake tpm
 printf '#!/bin/sh\nsleep 0.3\n[ "$(tmux show-option -gqv @continuum-boot)" != on ] || systemctl --user enable tmux.service\n' \
     > "$HOME/.tmux/plugins/tpm/tpm"
 chmod +x "$HOME/.tmux/plugins/tpm/tpm"

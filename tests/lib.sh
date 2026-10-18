@@ -173,7 +173,6 @@ _stubs_first() {
 # e.g. stub systemctl '[ "$2" != is-active ] || echo active'
 stub() {
     local name="$1" body="${2:-}"
-    # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
     chmod +x "$STUB_DIR/$name"
 }
@@ -186,7 +185,6 @@ stub() {
 # with set --, as to drop options that need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
-    # shellcheck disable=SC2016 # expanded by the stub
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
@@ -231,7 +229,6 @@ EOF
 # sentinel. Every test writes about 60, so printf writes them and one chmod marks them all.
 _sentinels() {
     local cmd body
-    # shellcheck disable=SC2016 # expanded by the sentinel
     body="$(printf '#!/bin/bash\nlog=%q\n' "$SANDBOX/unstubbed.log")"'
 printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$log"
 echo "unstubbed command: ${0##*/}" >&2

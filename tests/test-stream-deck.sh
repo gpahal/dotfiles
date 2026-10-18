@@ -87,7 +87,6 @@ rm "$PLUGIN_DIR/plugin.js.bak"
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill
 stub sleep
-# shellcheck disable=SC2016 # expanded when the stub runs
 stub open '[ -f "$SANDBOX/opened-once" ] && exit 0; touch "$SANDBOX/opened-once"; exit 1'
 export SANDBOX
 : > "$STUB_LOG"

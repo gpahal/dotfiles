@@ -168,7 +168,6 @@ printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?
     > "$runner_dir/caller.sh"
 stub uname 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac'
 CALLER_PID=""
-# shellcheck disable=SC2016 # expanded at exit
 on_exit '[ -z "$CALLER_PID" ] || kill -KILL -- "-$CALLER_PID" 2> /dev/null'
 # Succeeds once a process has exited. A child that exited stays a zombie until waited for, and
 # kill -0 still finds it.

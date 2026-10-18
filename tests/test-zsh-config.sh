@@ -24,7 +24,6 @@ stub brew 'exit 1'
 # path_helper puts the system's dirs, /opt/homebrew/bin among them on macOS, ahead of the stubs,
 # so ~/.zprofile puts them back in front.
 stub mise
-# shellcheck disable=SC2016 # expanded by zsh
 printf 'path=(%q $path)\n' "$STUB_DIR" >> "$HOME/.zprofile"
 
 WORK="$SANDBOX/work"
@@ -35,7 +34,6 @@ ERR="$SANDBOX/stderr"
 # without carriage returns. Its stderr goes to $ERR. Usage: in_terminal <TERM> <commands>
 in_terminal() {
     local cmd
-    # shellcheck disable=SC2016 # expanded by sh
     cmd="$(printf '%q ' /bin/sh -c 'cd "$1" && TERM=$2 exec zsh -lic "$3" 2> "$4"' sh "$WORK" "$@" "$ERR")"
     if [[ "$OSTYPE" == darwin* ]]; then
         script -q /dev/null /bin/sh -c "$cmd"
@@ -51,7 +49,6 @@ stub eza
 # pattern ^ would make. eza reads a bare -F as --classify [WHEN], so it would take a path after it
 # as the WHEN.
 touch "$WORK/main.go" "$WORK/main_test.go"
-# shellcheck disable=SC2016 # expanded by zsh
 checks='echo loaded; print -r -- main^; [[ -o extendedglob ]] && echo extendedglob-on
 print -r -- "mise=$(whence -p mise)"; for a in l la ll lla; do alias $a; done; true'
 for term in xterm-256color dumb; do
@@ -104,7 +101,6 @@ export HOMEBREW_PREFIX="$SANDBOX/brew" HOMEBREW_REPOSITORY="$SANDBOX/brew"
 mkdir -p "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found"
 echo 'command_not_found_handler() { print "homebrew: $1"; return 127; }' \
     > "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
-# shellcheck disable=SC2016 # expanded by zsh
 stub mise '[ "$*" != "activate zsh" ] || echo '\''
 (( $+functions[command_not_found_handler] )) && functions[_command_not_found_handler]=$functions[command_not_found_handler]
 command_not_found_handler() { print "mise: $1"; _command_not_found_handler "$@"; }'\'

@@ -22,7 +22,6 @@ mkdir -p "$dir" "$HOME/notes"
 touch "$file" "$HOME/notes/todo.md"
 
 # FRONT is the front app's bundle ID; GHOSTTY_RUNNING, when set, makes Ghostty running
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub lsappinfo 'case "$1" in
     front) echo "ASN:0x0-0x1:" ;;
     info) echo "    bundleID=\"$FRONT\"" ;;
@@ -30,7 +29,6 @@ stub lsappinfo 'case "$1" in
 esac'
 # Prints what each app shows, GHOSTTY_CWD, ZED_TITLE, FINDER_PATH, or T3_URL, or fails with ZED_ERROR,
 # and logs which script ran
-# shellcheck disable=SC2016
 stub osascript 'script="$(cat)"
 case "$script" in
     *"working directory of focused terminal"*) printf "%s\n" "$GHOSTTY_CWD" ;;
@@ -47,7 +45,6 @@ esac'
 stub open
 stub zed-cli
 # Spotlight's type tree: a package for an app, a folder for anything else
-# shellcheck disable=SC2016
 stub mdls 'case "$4" in
     *.app) printf "(\n    \"com.apple.application-bundle\",\n    \"com.apple.package\"\n)\n" ;;
     *) printf "(\n    \"public.folder\"\n)\n" ;;

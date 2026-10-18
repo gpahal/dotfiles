@@ -7,6 +7,9 @@ set -euo pipefail
 # late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
 # installed, and starts the sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
 # fake spawn for macmon, apart from one real spawn of a file that isn't executable.
+# plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
+# hotkey does, and runs it again once that one exits. A fake Stream Deck socket and open-in stand
+# in for the real ones.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -200,4 +203,40 @@ const sample = await sampler.sample(["cpu"]);
 const before = sample.cpuHistory.length;
 sampler.reset();
 console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
+# A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
+# chrome-tab waits until $SANDBOX/release exists.
+PLUGIN="$SANDBOX/plugin"
+mkdir -p "$PLUGIN/bin"
+cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
+cat > "$PLUGIN/bin/open-in" << EOF
+echo "\$1" >> "$SANDBOX/open-in.log"
+if [ "\$1" == chrome-tab ]; then
+    while [ ! -e "$SANDBOX/release" ]; do sleep 0.05; done
+fi
+echo "done \$1"
+EOF
+# Press New Tab twice and Files twice, let New Tab's open-in exit, then press New Tab again
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const press = (key) =>
+  socket.onmessage({ data: JSON.stringify({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key }) });
+const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
+const until = async (test) => { while (!test()) await new Promise((r) => setTimeout(r, 20)); };
+(async () => {
+  press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
+  await until(() => done("files") === 2);
+  require("node:fs").writeFileSync(process.argv[2], "");
+  await until(() => done("chrome-tab") >= 1);
+  press("chrome-tab");
+  await until(() => done("chrome-tab") >= 2);
+  process.exit(0);
+})();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
+assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
+    "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
 test_done

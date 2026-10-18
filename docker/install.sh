@@ -35,9 +35,10 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
 # default-network-opts the user-defined networks, such as Compose's, created after the change.
 # Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
-# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps only the
-# 172 ones, so docker0 stays on 172.17.0.0/16, and a network created after the change stays out of
-# the SSH ranges. The trade-off: docker0 takes one of the 15, so a 15th network of your own fails.
+# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
+# 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
+# of the SSH ranges. docker0 keeps 172.17.0.0/16, which leaves room for 3,584 networks, where 15
+# /16s would run out with a Compose project per worktree.
 # ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
 # 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
 # a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
@@ -46,7 +47,9 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
-    | .["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]
+    | .["default-address-pools"] = [
+        {base: "172.17.0.0/16", size: 24}, {base: "172.18.0.0/15", size: 24},
+        {base: "172.20.0.0/14", size: 24}, {base: "172.24.0.0/13", size: 24}]
     | if has("log-opts") then .["log-opts"] |= with_entries(select(
         .key | IN("max-size", "max-file", "compress", "labels", "labels-regex",
                   "env", "env-regex", "tag", "mode", "max-buffer-size")
@@ -418,7 +421,7 @@ apply() {
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
         else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and keep new networks out of 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
+            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
         fi
     fi
     sudo_items_pending docker_auto_updates_configured

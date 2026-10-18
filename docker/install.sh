@@ -37,8 +37,10 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
 # and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
 # 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
-# of the SSH ranges. docker0 keeps 172.17.0.0/16, which leaves room for 3,584 networks, where 15
-# /16s would run out with a Compose project per worktree.
+# of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
+# Compose project per worktree. docker0 keeps the subnet Docker's network store has for it, through
+# a reboot or a deleted docker0: 172.17.0.0/16 where Docker ran before the change, and
+# 172.17.0.0/24 on a fresh install.
 # ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
 # 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
 # a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the

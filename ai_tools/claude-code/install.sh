@@ -133,7 +133,8 @@ claude_code_settings() {
     # Worktrees: ~/.claude/hooks/worktree-hook.sh creates them, branching from origin's default
     #   branch, and removes them under ~/.worktrees/<group>/<repo>/<name>, through git wt, and at
     #   SessionEnd removes the session's subagent worktrees that hold nothing to lose. It's added
-    #   unless already there, and only once git wt is installed. While another command holds WorktreeCreate or
+    #   only once git wt is installed, and one already there gets its type and timeout back.
+    #   While another command holds WorktreeCreate or
     #   WorktreeRemove, it's removed from all three events. Its 120 s timeout stops a stuck
     #   git wt from holding up claude -w for the default 10 minutes.
     # Status line: ~/.claude/statusline.sh (model, effort, context, 5-hour limit, git branch).
@@ -155,9 +156,13 @@ claude_code_settings() {
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
     local settings='
+        # A hand-edited short timeout would kill the hook mid-fetch
         def add_hook($command; $timeout):
             (. // []) as $groups
-            | if any($groups[].hooks[]?; .command == $command) then $groups
+            | if any($groups[].hooks[]?; .command == $command) then
+                $groups | map(if (.hooks | type) == "array" then
+                        .hooks |= map(if .command == $command then .type = "command" | .timeout = $timeout else . end)
+                    else . end)
               else $groups + [{"hooks": [{"type": "command", "command": $command, "timeout": $timeout}]}] end;
         # Remove $command from hooks.<$event>, then any group that leaves empty, then the event
         def remove_hook($event; $command):

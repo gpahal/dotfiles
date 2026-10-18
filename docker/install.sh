@@ -257,14 +257,15 @@ ports_on_every_address() {
 # to 127.0.0.1, but not on a network created before them, or for a port published on 0.0.0.0, so
 # status lists the running containers' ports that every address reaches. docker.socket would start
 # a stopped daemon, so a stopped one isn't asked. live-restore keeps containers running while it's
-# stopped, each under a containerd-shim-runc-v2 process, whose name the kernel cuts to 15
-# characters.
+# stopped, each under a containerd-shim-runc-v2 process in containerd's moby namespace, which
+# Docker's are; other containerd clients, such as k3s, use their own. The [m] keeps the pattern
+# from matching a shell whose command line holds it.
 status_docker_ports() {
     local label="Container ports published on every address, which ufw doesn't filter"
     local none="No container ports published on every address, which ufw doesn't filter"
     local out status=0 name ports open="" port DOCKER_OUT DOCKER_STATUS
     if ! systemctl is-active --quiet docker.service 2>/dev/null; then
-        if pgrep -x containerd-shim > /dev/null 2>&1; then
+        if pgrep -f 'containerd-shi[m].* -namespace moby( |$)' > /dev/null 2>&1; then
             status_item unknown "$label: containers are running while the Docker daemon is down, so their published ports can't be checked; start it with sudo systemctl start docker"
         else
             status_item ok "$none: the daemon isn't running"

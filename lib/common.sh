@@ -684,24 +684,28 @@ ensure_app_quit() {
 }
 
 # Install a Homebrew cask unless it, or the path it installs, is already there. Fails, saying
-# how to get brew, when it's missing.
+# how to get brew, when it's missing. Exits with brew's status when that's above 128: brew
+# catches Ctrl-C and exits 130, so the step's bash never sees the signal, and a caller's
+# `|| result=1` would carry on.
 install_cask() {
-    local cask="$1" from
+    local cask="$1" from status=0
     require_cmd brew || return 1
     IFS=$'\t' read -r from _ <<< "$(cask_state "$cask" "${2:-}")"
     case "$from" in
         brew) echo "  $cask already installed." ;;
         gone)
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
-            brew reinstall --cask "$cask"
+            brew reinstall --cask "$cask" || status=$?
             ;;
         # brew install would fail on the existing app, and `upgrade` skips casks brew doesn't list
         other) echo "  $cask already installed, but not by Homebrew, so upgrade won't update it." ;;
         *)
             echo "  Installing $cask..."
-            brew install --cask "$cask"
+            brew install --cask "$cask" || status=$?
             ;;
     esac
+    [ "$status" -le 128 ] || exit "$status"
+    return "$status"
 }
 
 # jq for the path of the app each cask in brew info --json=v2's output installs, or "" for a cask
@@ -1379,7 +1383,8 @@ unknown_step() {
 # Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so
 # the caller stops too. brew catches SIGINT and exits 130, so bash doesn't see the signal itself
 # and would carry on. Other codes above 128, such as 141 from SIGPIPE or 255 from ssh, are
-# failures like any other.
+# failures like any other. run_steps also traps the signals, since a step that runs brew under
+# `|| result=1` turns its 130 into 1.
 interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
 }
@@ -1393,7 +1398,7 @@ interrupted_status() {
 # step's name. A step whose report has missing or unknown items exits 3; those are listed at the
 # end too, and the run returns 3 (or 1 when a step also failed). An empty mode runs the steps.
 run_steps() {
-    local mode="$1" step script status failed=() attention=()
+    local mode="$1" step script status interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
     for step in "$@"; do
@@ -1405,6 +1410,11 @@ run_steps() {
     warn_untested_platform
     # shellcheck disable=SC2154 # STEPS is set by the caller
     [ $# -gt 0 ] || set -- "${STEPS[@]}"
+    # Ctrl-C reaches the whole process group, but bash takes a step that exits normally to have
+    # handled it, and would carry on. These run once the step exits.
+    trap 'interrupted=130' INT
+    trap 'interrupted=143' TERM
+    trap 'interrupted=129' HUP
     for step in "$@"; do
         script="$(step_script "$step")"
         status=0
@@ -1417,8 +1427,10 @@ run_steps() {
         else
             "$BASH" "$script" || status=$?
         fi
+        [ -z "$interrupted" ] || status="$interrupted"
         if interrupted_status "$status"; then
             echo "  The $step step was interrupted; stopping." >&2
+            trap - INT TERM HUP
             return "$status"
         elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then
             attention+=("$step")
@@ -1427,6 +1439,7 @@ run_steps() {
             failed+=("$step")
         fi
     done
+    trap - INT TERM HUP
     if [ ${#attention[@]} -gt 0 ]; then
         echo ""
         echo "Needs attention: ${attention[*]}. Run: bash $0 ${attention[*]}"

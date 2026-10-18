@@ -195,13 +195,9 @@ mas_app_missing() {
     return 1
 }
 
-# Install a cask, adding it to the caller's failed array when that fails. Exits on Ctrl-C, which
-# brew catches and exits 130 for, so bash wouldn't stop by itself.
+# Install a cask, adding it to the caller's failed array when that fails
 try_install_cask() {
-    local status=0
-    install_cask "$@" || status=$?
-    [ "$status" -le 128 ] || exit "$status"
-    [ "$status" -eq 0 ] || failed+=("$1")
+    install_cask "$@" || failed+=("$1")
 }
 
 # Fail after trying every cask, naming the ones that failed, so one failure doesn't skip the rest

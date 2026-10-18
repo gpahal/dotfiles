@@ -5,7 +5,8 @@ set -euo pipefail
 
 # run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
-# Ctrl-C, or SIGTERM, stops the run. With --status, a step that exits 3 is listed as needing
+# Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
+# step that carries on runs. With --status, a step that exits 3 is listed as needing
 # attention. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
 # macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
 # both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
@@ -31,6 +32,11 @@ fake_step interrupted 'kill -INT $$'
 fake_step attention '[ "${1:-}" != --status ] || exit 3'
 # Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
+# Ctrl-C reaches the runner too, but the step carries on and fails, as one does when brew catches
+# SIGINT and exits 130 under `|| result=1`. Each signal the runner traps.
+for sig in INT TERM HUP; do
+    fake_step "caught-$sig" "kill -$sig \$PPID; echo \"caught-$sig carried on\"; exit 1"
+done
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
@@ -71,6 +77,22 @@ assert_not_contains "$RUN_OUTPUT" "last ran"
 assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 interrupted" "$(cat "$SANDBOX/ran")" "steps run up to an interrupted one"
+
+# A signal the runner got stops it after the step, whatever the step's status, with the status
+# that signal gives
+for sig in INT:130 TERM:143 HUP:129; do
+    rm -f "$SANDBOX/ran"
+    assert_exit "${sig#*:}" run_steps "" first "caught-${sig%:*}" last
+    assert_contains "$RUN_OUTPUT" "caught-${sig%:*} carried on"
+    assert_contains "$RUN_OUTPUT" "The caught-${sig%:*} step was interrupted; stopping."
+    assert_not_contains "$RUN_OUTPUT" "Failed steps"
+    assert_eq "first
+caught-${sig%:*}" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIG${sig%:*}"
+done
+# With --status too
+rm -f "$SANDBOX/ran"
+assert_exit 130 run_steps --status caught-INT last
+assert_eq "caught-INT --status" "$(cat "$SANDBOX/ran")" "reports run up to one during which the runner got SIGINT"
 
 # Any other status above 128 is a failure, and the rest still run
 rm -f "$SANDBOX/ran"

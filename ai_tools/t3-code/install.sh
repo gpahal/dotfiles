@@ -105,8 +105,8 @@ t3_code_server_filter() {
         .defaultProjectScripts[]?,
         .projectSettingsOverrides[]?.defaultProjectScripts[]?
     ) |= if .runOnWorktreeCreate == true then .async = false else . end
-    | if (.defaultModelSelection.model // "") as $model
-        | $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
+    | (.defaultModelSelection.model // "") as $model
+    | if $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
       then
         (if .defaultModelSelection.instanceId != "claudeAgent"
           then .defaultModelSelection.options = []
@@ -117,13 +117,18 @@ t3_code_server_filter() {
       else .
       end
     # The 1M context window goes with the effort set here, so an effort of your own keeps your
-    # context window too
+    # context window too. A window of your own stays unless this run replaced your model or effort.
     | if .defaultModelSelection.model == "'"$T3_CODE_MODEL"'"
       then .defaultModelSelection.options |= ((. // [])
-          | if (map(select(.id == "effort") | .value) | . == [] or . == ["'"$T3_CODE_EFFORT"'"])
-              or '"$T3_CODE_REPLACE_EFFORT"'
+          | (map(select(.id == "effort") | .value)) as $efforts
+          | if $efforts == [] or $efforts == ["'"$T3_CODE_EFFORT"'"] or '"$T3_CODE_REPLACE_EFFORT"'
             then set_option("effort"; "'"$T3_CODE_EFFORT"'")
-              | set_option("contextWindow"; "1m")
+              | if (any(.[]; .id == "contextWindow") | not)
+                  or $model != "'"$T3_CODE_MODEL"'"
+                  or ($efforts != [] and $efforts != ["'"$T3_CODE_EFFORT"'"])
+                then set_option("contextWindow"; "1m")
+                else .
+                end
             else .
             end)
       else .

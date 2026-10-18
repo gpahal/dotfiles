@@ -171,7 +171,7 @@ The script merges these into `~/.t3/userdata/settings.json` and `client-settings
 
 - **New threads.** Claude Opus 5.5 at medium effort, in auto mode, each in its own worktree under `~/.t3/worktrees`.
   - A model or effort you pick in T3 Code is kept, unless you agree to replace it when the script asks.
-  - The context window starts at 1M. A window you pick is kept, unless the script replaces your model or effort.
+  - The context window starts at 1M when the model and effort are the script's, set now or earlier. With a model or effort of your own, the script leaves the window alone. A window you pick is kept, unless the script replaces your model or effort.
 - **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's.
   - Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run.
   - Keep dev servers in manual actions.

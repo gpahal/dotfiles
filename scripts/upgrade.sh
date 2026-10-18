@@ -103,28 +103,11 @@ _upgrade_self_updating_casks() {
     return "$exit_status"
 }
 
-# Print the app path brew recorded when it installed cask $1, in the dir of the app path $2 the
-# cask now gives. Fails when brew's install receipt names no app, or the cask's uninstall does
-# more than remove its app, which _readopt_renamed_cask's uninstall would then run.
-_recorded_cask_app() {
-    local receipt name
-    receipt="$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
-    name="$(jq -er '.uninstall_artifacts
-        | if all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))
-          then [.[] | select(has("app")) | .target // (.app[1].target? // .app[0])][0]
-          else empty end
-        | strings' "$receipt" 2>/dev/null)" || return 1
-    case "$name" in
-        /*) echo "$name" ;;
-        *) echo "${2%/*}/$name" ;;
-    esac
-}
-
 # Succeeds when the app brew recorded for cask $1 is gone but the app at $2, which the cask now
 # gives, is there: the app renamed itself as it updated
 _cask_app_renamed() {
     local recorded
-    recorded="$(_recorded_cask_app "$1" "$2")" || return 1
+    recorded="$(recorded_cask_app "$1" "$2")" || return 1
     [ "$recorded" != "$2" ] && [ ! -e "$recorded" ] && [ -d "$2" ]
 }
 

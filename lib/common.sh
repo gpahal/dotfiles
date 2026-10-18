@@ -831,6 +831,24 @@ cask_app_path() {
 CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
     "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
+# recorded_cask_app <cask> <app>: print the app path brew recorded when it installed <cask>, in
+# the dir of <app>, the path the cask now gives. Fails when brew's install receipt names no app, or
+# the cask's uninstall does more than remove its app, which scripts/upgrade.sh's re-record would
+# then run.
+recorded_cask_app() {
+    local receipt name
+    receipt="$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
+    name="$(jq -er '.uninstall_artifacts
+        | if all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))
+          then [.[] | select(has("app")) | .target // (.app[1].target? // .app[0])][0]
+          else empty end
+        | strings' "$receipt" 2>/dev/null)" || return 1
+    case "$name" in
+        /*) echo "$name" ;;
+        *) echo "${2%/*}/$name" ;;
+    esac
+}
+
 # cask_state <cask> [<app>] [<listing>]: print how a Homebrew cask is installed, a tab, and the
 # path of the app it installs: "brew" when brew lists it, "gone" when brew lists it but its app was
 # deleted (macOS only), "other" when brew doesn't list it but the app is there, as when an app
@@ -840,7 +858,7 @@ CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Appli
 # a listed cask is never gone.
 # e.g. IFS=$'\t' read -r state app <<< "$(cask_state raycast "" "$apps")"
 cask_state() {
-    local cask="$1" app="" listed=false entry state
+    local cask="$1" app="" listed=false entry state recorded
     if [ $# -ge 3 ]; then
         if app="$(printf '%s\n' "$3" |
             awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
@@ -864,7 +882,17 @@ cask_state() {
         fi
     fi
     if "$listed"; then
-        if [ -n "$app" ] && [ ! -e "$app" ]; then state=gone; else state=brew; fi
+        state=brew
+        # The cask's current definition can name the app differently from the one brew installed,
+        # as when T3 Code (Alpha) became T3 Code (Beta), so the app is gone only when the one the
+        # install receipt recorded is gone too
+        if [ -n "$app" ] && [ ! -e "$app" ]; then
+            if recorded="$(recorded_cask_app "$cask" "$app")" && [ -e "$recorded" ]; then
+                app="$recorded"
+            else
+                state=gone
+            fi
+        fi
     elif [ -n "$app" ] && [ -e "$app" ]; then
         state=other
     else

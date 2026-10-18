@@ -23,18 +23,26 @@ CASK_PKG_APPS=()
 cask_app_path() { :; }
 FONTS="$HOME/.local/share/fonts"
 
-# brew: the bundle is installed when $SANDBOX/bundle-ok exists, everything but its App Store apps
-# when $SANDBOX/rest-ok exists and HOMEBREW_BUNDLE_MAS_SKIP names all their ids, and bundle
-# install exits with $SANDBOX/bundle-status. The casks in $SANDBOX/casks are installed, each with its app at
-# $SANDBOX/apps/<cask>.app. Installing one exits with the status after its name in
+# brew: the bundle is installed when $SANDBOX/bundle-ok exists, or when $SANDBOX/rest-ok exists and
+# each App Store app is installed or its id is in HOMEBREW_BUNDLE_MAS_SKIP. bundle install creates
+# rest-ok when $SANDBOX/install-rest exists, and exits with $SANDBOX/bundle-status. The casks in
+# $SANDBOX/casks are installed, each with its app at $SANDBOX/apps/<cask>.app. Installing one exits with the status after its name in
 # $SANDBOX/cask-status, creates its app, and for font-monaspace adds a font where Homebrew would.
 stub brew 'S="'"$SANDBOX"'"
 app_json() { printf "{\"token\": \"%s\", \"artifacts\": [{\"app\": [\"x.app\"], \"target\": \"%s\"}]}" "$1" "$S/apps/$1.app"; }
 case "$1 $2" in
     "bundle check")
-        [ -e "$S/bundle-ok" ] || { [ -e "$S/rest-ok" ] &&
-            [ "${HOMEBREW_BUNDLE_MAS_SKIP:-}" == "'"$(mas_app_ids "$BREWFILE" | tr '\n' ' ')"'" ]; } ;;
-    "bundle install") exit "$(cat "$S/bundle-status" 2>/dev/null || echo 0)" ;;
+        [ -e "$S/bundle-ok" ] && exit 0
+        [ -e "$S/rest-ok" ] || exit 1
+        for id in '"$(mas_app_ids "$BREWFILE" | tr '\n' ' ')"'; do
+            case " ${HOMEBREW_BUNDLE_MAS_SKIP:-} " in *" $id "*) continue ;; esac
+            mas list | awk "{ print \$1 }" | grep -qxF "$id" || exit 1
+        done
+        ;;
+    "bundle install")
+        [ ! -e "$S/install-rest" ] || touch "$S/rest-ok"
+        exit "$(cat "$S/bundle-status" 2>/dev/null || echo 0)"
+        ;;
     "list --cask") if [ "$3" == -1 ]; then cat "$S/casks"; else grep -qxF "$3" "$S/casks"; fi ;;
     "info --json=v2")
         if [ "$3" == --installed ]; then
@@ -58,7 +66,7 @@ stub xcode-select
 stub fc-cache
 stub sudo 'exit 0'
 reset() {
-    rm -rf "$SANDBOX/bundle-ok" "$SANDBOX/rest-ok" "$SANDBOX/bundle-status" "$SANDBOX/apps" "$FONTS"
+    rm -rf "$SANDBOX/bundle-ok" "$SANDBOX/rest-ok" "$SANDBOX/install-rest" "$SANDBOX/bundle-status" "$SANDBOX/apps" "$FONTS"
     : > "$SANDBOX/casks"
     : > "$SANDBOX/cask-status"
     : > "$STUB_LOG"
@@ -103,14 +111,20 @@ assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "brew bundle install --no-upgrade
 $(printf 'brew install --cask %s\n' "${CASKS[@]}")" "$(installs)" "installs with only the App Store apps missing"
 
-# Only the optional Dato is missing: the step passes, saying it's optional, without the sign-in steps
+# The bundle install fails only on the optional Dato: the step passes, saying it's optional,
+# without the sign-in steps
 reset
 echo 1 > "$SANDBOX/bundle-status"
-touch "$SANDBOX/rest-ok"
+touch "$SANDBOX/install-rest"
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n1295203466  Windows App  (11.0)\n"'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
+# Then the bundle counts as installed without Dato, so a re-run doesn't install it again
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Brew formulae and App Store apps already installed."
+assert_eq "" "$(installs)" "installs with only the optional Dato missing"
 
 # One cask fails: the rest install, and the step fails naming it
 reset

@@ -146,9 +146,12 @@ install_homebrew() {
     load_brew
 }
 
-# --no-upgrade leaves outdated ones to `upgrade`
+# --no-upgrade leaves outdated ones to `upgrade`. An optional App Store app that isn't installed
+# doesn't count, or a Mac without it would reinstall the bundle on every run.
 bundle_installed() {
-    brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
+    local skip=""
+    ! is_macos || skip="$(missing_mas_apps optional id | tr '\n' ' ')"
+    HOMEBREW_BUNDLE_MAS_SKIP="$skip" brew bundle check --file="$BREWFILE" --no-upgrade &>/dev/null
 }
 
 # Run brew bundle <check|install> on everything in the Brewfile but its App Store apps
@@ -197,8 +200,9 @@ install_bundle() {
     fi
 }
 
-# missing_mas_apps <required|optional>: print the name of each of the Brewfile's App Store apps of
-# that kind (OPTIONAL_MAS) that isn't installed, one per line. Without mas, that's all of them.
+# missing_mas_apps <required|optional> [id]: print the name, or with id the id, of each of the
+# Brewfile's App Store apps of that kind (OPTIONAL_MAS) that isn't installed, one per line. Without
+# mas, that's all of them.
 missing_mas_apps() {
     local installed id name optional
     installed="$(mas list 2>/dev/null | awk '{ print $1 }')" || installed=""
@@ -206,6 +210,7 @@ missing_mas_apps() {
         optional=required
         ! has_arg "$name" "${OPTIONAL_MAS[@]}" || optional=optional
         [ "$optional" == "$1" ] || continue
+        [ "${2:-}" != id ] || name="$id"
         printf '%s\n' "$installed" | grep -qxF "$id" || printf '%s\n' "$name"
     done < <(sed -nE 's/^[[:space:]]*mas "([^"]*)", id: ([0-9]+).*/\2 \1/p' "$BREWFILE")
 }

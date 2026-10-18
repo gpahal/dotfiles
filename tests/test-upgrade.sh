@@ -370,6 +370,18 @@ assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_file_contains "$STUB_LOG" 'pgrep -af ^/Elsewhere/Zed Preview[^/]*\.app/Contents/MacOS/'
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
+# The app's path matches only itself: a . in it doesn't match another app's character, so another
+# running app doesn't hold the cask back
+stub brew 'case "$*" in
+    "list --cask zed") ;;
+    "outdated "*) echo "${!#}"; exit 1 ;;
+    "info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed.Dev.app\"}]}]}" ;;
+esac'
+# shellcheck disable=SC2016 # expanded by the stub
+stub pgrep 'echo "/Elsewhere/ZedxDev.app/Contents/MacOS/zed" | grep -E -- "${!#}"'
+assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+assert_not_contains "$RUN_OUTPUT" "is running"
 
 # An app that renamed itself as it updated, as T3 Code (Alpha) did to T3 Code (Beta), is re-recorded
 # in place, even while it runs, since brew upgrade would stop on the app it recorded being gone.

@@ -87,7 +87,7 @@ _upgrade_self_updating_casks() {
             # A cask with no app artifact has no name to check. Logi Options+, which keeps an
             # agent running, quits the app and agents in its uninstall steps before the upgrade,
             # and a CLI such as codex keeps running from the old binary.
-            if [ -n "$app" ] && pgrep -af "^${path%/*}/${app}[^/]*\.app/Contents/MacOS/" &>/dev/null; then
+            if [ -n "$app" ] && pgrep -af "^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/" &>/dev/null; then
                 running=true
             fi
         fi

@@ -143,7 +143,7 @@ TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
 # The keyring path and source file Tailscale's install script uses. Tailscale's updater rewrites
 # that file, so it has to stay a one-line .list rather than deb822.
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
-TAILSCALE_LIST="${APT_SOURCES_DIR:-/etc/apt/sources.list.d}/tailscale.list"
+TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 # User services, such as tmux at boot and the T3 Code server, get the user manager's PATH, which
 # has neither Homebrew nor ~/.local/bin. The user manager doesn't see an XDG_CONFIG_HOME set in the
 # shell, so the file goes in ~/.config.
@@ -434,13 +434,16 @@ main() {
     elif ! sshd_enabled; then
         pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
     fi
-    sshd_configured || pending+=("Write $SSHD_DROP_IN: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')")
-    # Unreadable, the drop-in may already turn them off, which configure_sshd keeps
-    local key_only_todo="" key_only_why
+    # Unreadable, the drop-in may already turn them off, which configure_sshd keeps. Turning them
+    # off is a change to the drop-in, so the item for it names why.
+    local key_only_todo="" key_only_why="" drop_in_lines
     if key_only_todo="$(key_only_todo)" && [ -n "$key_only_todo" ] &&
         key_only_why="$(key_only_reason)"; then
-        pending+=("Turn off SSH password logins in $SSHD_DROP_IN: $key_only_why")
         key_only_todo=""
+    fi
+    if ! sshd_configured; then
+        drop_in_lines="$(sshd_drop_in | grep -v '^#' | tr '\n' ' ')"
+        pending+=("Write $SSHD_DROP_IN${key_only_why:+, turning off SSH password logins since $key_only_why}: $drop_in_lines")
     fi
     if "$tailscale_repo" && ! command -v tailscale &>/dev/null; then
         pending+=("Install Tailscale from its apt repo: write $TAILSCALE_LIST and its key")

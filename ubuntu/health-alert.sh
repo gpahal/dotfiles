@@ -73,7 +73,6 @@ attention_lines() {
 # Print the first lines of stdin that fit in MESSAGE_MAX_BYTES, and a note when some didn't
 truncate_message() {
     LC_ALL=C awk -v max="$MESSAGE_MAX_BYTES" '
-        { n++ }
         !full && size + length($0) + 1 <= max { out = out $0 "\n"; size += length($0) + 1; next }
         { full = 1; left++ }
         END {

@@ -191,7 +191,8 @@ KEEP_CONFFILES_CONF="$SANDBOX/apt.conf.d/50dotfiles-keep-conffiles"
 KEEP_CONFFILES="Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)"
 # Tailscale's apt source, as its install script writes it
 TAILSCALE_ENTRY="deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu resolute main"
-echo "$TAILSCALE_ENTRY" > "$APT_SOURCES_DIR/tailscale.list"
+TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
+echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 
 # Not set up yet: status lists each new item as missing
 assert_exit 3 status
@@ -734,6 +735,7 @@ NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
 KEEP_CONFFILES_CONF="$SANDBOX/apt.conf.d/50dotfiles-keep-conffiles"
 # tailscale.list names this keyring, so the source stays the one the step writes
 TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
+TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 stub systemctl 'case "$1" in is-enabled) echo enabled ;; mask) exit 1 ;; esac'
 rm -f "$SANDBOX/ufw-on" "$SSHD_DROP_IN"
 : > "$STUB_LOG"
@@ -855,7 +857,9 @@ key_only_pending "the key this SSH session logged in with isn't in ~/.ssh/author
 key_session login-key
 assert_contains "$(sshd_drop_in)" "PasswordAuthentication no"
 DOTFILES_ASSUME_YES=0 run main
-assert_contains "$RUN_OUTPUT" "Turn off SSH password logins in $SSHD_DROP_IN: this SSH session logged in with your key SHA256:"
+assert_contains "$RUN_OUTPUT" "Write $SSHD_DROP_IN, turning off SSH password logins since this SSH session logged in with your key SHA256:"
+# One item for the drop-in, not one to write it and another to turn password logins off
+assert_eq 1 "$(grep -c "$SSHD_DROP_IN" <<< "$RUN_OUTPUT")" "pending items naming the drop-in"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
 run main
@@ -881,7 +885,7 @@ rm "$SSHD_DROP_IN"
 assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in without a key"
 export DOTFILES_SSH_KEY_ONLY=1
 run main
-assert_contains "$RUN_OUTPUT" "Turn off SSH password logins in $SSHD_DROP_IN: DOTFILES_SSH_KEY_ONLY=1 is set"
+assert_contains "$RUN_OUTPUT" "Write $SSHD_DROP_IN, turning off SSH password logins since DOTFILES_SSH_KEY_ONLY=1 is set: "
 assert_file_contains "$SSHD_DROP_IN" "PasswordAuthentication no"
 unset DOTFILES_SSH_KEY_ONLY
 run status

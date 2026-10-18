@@ -100,6 +100,7 @@ echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
+TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;

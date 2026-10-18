@@ -69,6 +69,7 @@ esac'
 echo 22 > "$SANDBOX/socket-ports"
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
+TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;

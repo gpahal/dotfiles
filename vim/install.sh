@@ -23,18 +23,15 @@ plug_vim_pinned() {
 # Not a copy_file: plug.vim is vendored, not edited, so a copy that differs, such as one
 # PlugUpgrade wrote, is replaced without a backup
 install_plug_vim() {
-    local tmp
     if plug_vim_pinned; then
         echo "  vim-plug is already at the pinned version"
         return 0
     fi
-    mkdir -p "$(dirname "$PLUG_VIM")" && tmp="$(mktemp)" || return 1
-    if cp "$DOTFILES_DIR/vim/plug.vim" "$tmp" && write_back "$tmp" "$PLUG_VIM"; then
-        echo "  Installed vim-plug $(cat "$DOTFILES_DIR/vim/plug.vim.version") at $PLUG_VIM"
-        return 0
+    if ! { mkdir -p "$(dirname "$PLUG_VIM")" && replace_file "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM" 644; }; then
+        echo "  Couldn't write $PLUG_VIM" >&2
+        return 1
     fi
-    rm -f "$tmp"
-    return 1
+    echo "  Installed vim-plug $(cat "$DOTFILES_DIR/vim/plug.vim.version") at $PLUG_VIM"
 }
 
 status() {

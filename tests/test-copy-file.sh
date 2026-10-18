@@ -304,8 +304,8 @@ assert_eq "v2" "$(cat "$f.bak.20260101-000000-2")" "second same-second backup"
 assert_eq "v3" "$(cat "$f.bak.20260101-000000-3")" "third same-second backup"
 assert_eq "v0" "$(cat "$f.bak")" "the .bak"
 echo v2 > "$f"
-backup_file "$f" > /dev/null
-assert_eq "$f.bak.20260101-000000-2" "$BACKUP_PATH" "backup path of a version already backed up"
+run backup_file "$f"
+assert_eq "  $f is already backed up to $f.bak.20260101-000000-2" "$RUN_OUTPUT" "backup of a version already backed up"
 # A path given that holds something else isn't overwritten
 echo v4 > "$f"
 backup_file "$f" "$f.bak" > /dev/null

@@ -216,10 +216,16 @@ T3_CODE_CLIENT_FILTER='
 
 # The app's name can change between releases. Ask brew which app the t3-code
 # cask installs, and otherwise take any T3 Code*.app beside where brew puts it, or in
-# /Applications, except the separate nightly build.
+# /Applications, except the separate nightly build. A caller that already asked brew passes its
+# answer, cask_app_path's output, so brew isn't asked again.
+# Usage: t3_code_app_path [cask app path]
 t3_code_app_path() {
     local app dir=/Applications
-    app="$(cask_app_path t3-code)"
+    if [ $# -gt 0 ]; then
+        app="$1"
+    else
+        app="$(cask_app_path t3-code)"
+    fi
     if [ -n "$app" ] && [ -d "$app" ]; then
         echo "$app"
         return 0
@@ -238,11 +244,17 @@ t3_code_app_path() {
 # cask now gives, and fail otherwise. T3 Code can rename itself in an update, which can get there
 # before the cask does. The app is then installed, not gone, and
 # brew's record catches up at the next upgrade-ai-tools once the cask does.
+# Usage: t3_code_renamed_app [cask app path], as t3_code_app_path takes it
 t3_code_renamed_app() {
-    local app
-    app="$(t3_code_app_path)" || return 1
+    local app cask_app
+    if [ $# -gt 0 ]; then
+        cask_app="$1"
+    else
+        cask_app="$(cask_app_path t3-code)"
+    fi
+    app="$(t3_code_app_path "$cask_app")" || return 1
     brew list --cask t3-code &>/dev/null || return 1
-    [ "$app" != "$(cask_app_path t3-code)" ] || return 1
+    [ "$app" != "$cask_app" ] || return 1
     echo "$app"
 }
 
@@ -701,15 +713,14 @@ status() {
         status_result
         return
     fi
-    # The app's path and the cask's state each ask brew which app it installs
-    local CASK_APP_CACHE=""
-    ! is_macos || ! command -v brew &>/dev/null || cache_cask_app_path t3-code
     if is_macos; then
-        local renamed
-        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app)"; then
+        # Asked once, for both the renamed app's check and the app's path
+        local renamed cask_app=""
+        ! command -v brew &>/dev/null || cask_app="$(cask_app_path t3-code || true)"
+        if command -v brew &>/dev/null && renamed="$(t3_code_renamed_app "$cask_app")"; then
             status_item ok "t3-code (cask), as ${renamed##*/}"
         else
-            status_cask t3-code "$(t3_code_app_path || true)"
+            status_cask t3-code "$(t3_code_app_path "$cask_app" || true)"
         fi
         status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$T3_CODE_SERVER_FILTER"
         t3_code_status_custom_values

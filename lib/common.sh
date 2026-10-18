@@ -4,7 +4,7 @@
 # A cd to a relative dir would search an exported CDPATH and print the dir it found, so every
 # script that sources this file, and the ones it runs, ignore it
 unset CDPATH
-DOTFILES_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOTFILES_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DOTFILES_DIR
 
 is_macos() {
@@ -248,7 +248,7 @@ step_args() {
     local path step_usage
     # The step's script is the outermost file, since main runs only when the script runs directly
     path="${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}"
-    path="$(CDPATH='' cd -- "$(dirname "$path")" && pwd)/${path##*/}"
+    path="$(cd -- "$(dirname "$path")" && pwd)/${path##*/}"
     step_usage="Usage: bash ${path#"$DOTFILES_DIR"/} [--status [--quick]] [--backup | --no-backup]"
     check_args _step_usage _unknown_step_argument "$@"
 }
@@ -515,15 +515,13 @@ backup_path() {
 }
 
 # Copy a file to the path given second, or else to backup_path's. Never copies over an existing
-# file that differs: it picks backup_path's name instead, so no older backup is overwritten. Sets
-# BACKUP_PATH to the backup. Fails when the copy does; the caller must then leave the file as it is.
+# file that differs: it picks backup_path's name instead, so no older backup is overwritten. Fails
+# when the copy does; the caller must then leave the file as it is.
 backup_file() {
     local file="$1" bak="${2:-}"
     if [ -z "$bak" ] || { [ -e "$bak" ] && ! cmp -s "$file" "$bak"; }; then
         bak="$(backup_path "$file")"
     fi
-    # shellcheck disable=SC2034 # callers read it
-    BACKUP_PATH="$bak"
     if cmp -s "$file" "$bak"; then
         echo "  $file is already backed up to $bak"
         return 0
@@ -728,35 +726,9 @@ install_cask() {
 # with no app, such as a font or one that runs an installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app. Callers run
-# it in $(...), where nothing it caches would last, so a report that asks about one cask several
-# times runs cache_cask_app_path first.
+# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app
 cask_app_path() {
-    if [ -n "${CASK_APP_CACHE:-}" ] && [ "${CASK_APP_CACHE%%$'\t'*}" == "$1" ]; then
-        printf '%s\n' "${CASK_APP_CACHE#*$'\t'}"
-        return 0
-    fi
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
-}
-
-# Ask brew once for the app cask $1 installs, and have cask_app_path answer from that for the
-# rest of the caller, which declares CASK_APP_CACHE local so the answer ends with it
-# e.g. local CASK_APP_CACHE; cache_cask_app_path t3-code
-# When brew fails, nothing is cached and cask_app_path asks brew each time, so the caller's report
-# still runs.
-cache_cask_app_path() {
-    local app
-    if app="$(cask_app_path "$1")"; then
-        CASK_APP_CACHE="$1"$'\t'"$app"
-    else
-        CASK_APP_CACHE=""
-    fi
-}
-
-# Print the app path installed_cask_apps's output gives for a cask, failing when it isn't listed
-# e.g. app="$(listed_cask_app raycast "$apps")"
-listed_cask_app() {
-    printf '%s\n' "$2" | awk -F '\t' -v cask="$1" '$1 == cask { print $2; found = 1 } END { exit !found }'
 }
 
 # The app each cask that runs an installer puts in place, as <cask>=<path>. brew's metadata lists
@@ -775,7 +747,8 @@ CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Appli
 cask_state() {
     local cask="$1" app="" listed=false entry state
     if [ $# -ge 3 ]; then
-        if app="$(listed_cask_app "$cask" "$3")"; then
+        if app="$(printf '%s\n' "$3" |
+            awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
             listed=true
         fi
     elif brew list --cask "$cask" &>/dev/null; then

@@ -120,6 +120,7 @@ stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n12952034
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
 assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
+assert_not_contains "$RUN_OUTPUT" "Everything else in the Brewfile is installed"
 # Then the bundle counts as installed without Dato, so a re-run doesn't install it again
 : > "$STUB_LOG"
 assert_exit 0 main

@@ -184,7 +184,8 @@ install_bundle() {
                 # On a new Mac, nobody has signed in to the App Store yet, so the App Store apps
                 # alone don't fail the step
                 if bundle_installed_except_mas; then
-                    echo "  Everything else in the Brewfile is installed, but not its App Store apps." >&2
+                    [ -z "$required" ] ||
+                        echo "  Everything else in the Brewfile is installed, but not its App Store apps." >&2
                     status=0
                 fi
                 if [ -n "$required" ]; then

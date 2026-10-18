@@ -164,7 +164,7 @@ printf '%s\n' '#!/bin/bash' "touch \"$SANDBOX/slow-started\"" 'sleep 30' > "$run
 printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.sh\"" \
     'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' \
     > "$runner_dir/setup.sh"
-printf '%s\n' '#!/bin/bash' "bash \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
+printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
 stub uname 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac'
 CALLER_PID=""
@@ -193,7 +193,7 @@ for mode in "" --status; do
     # Job control puts the caller in its own process group, as a terminal does, and keeps SIGINT
     # deliverable: without it, a background job ignores SIGINT
     set -m
-    bash "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
+    "$BASH" "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
     CALLER_PID=$!
     set +m
     if wait_until test -e "$SANDBOX/slow-started"; then

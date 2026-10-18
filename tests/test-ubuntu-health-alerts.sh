@@ -12,6 +12,8 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
@@ -254,6 +256,7 @@ assert_exit 2 "$BASH" "$ALERT"
 # --- the ubuntu step's status: a failed last run of an installed alert service ---
 # systemctl --user show -p Result --value prints $SANDBOX/result/<unit>, empty when it's missing
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 HEALTH_UNIT_DIR="$SANDBOX/units"
 mkdir -p "$HEALTH_UNIT_DIR" "$SANDBOX/result"
 stub systemctl '[ "$*" != "--user show -p Result --value ${!#}" ] || cat "'"$SANDBOX"'/result/${!#}" 2> /dev/null || true'

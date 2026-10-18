@@ -9,13 +9,15 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 
 # sudo runs the command
 stub sudo '[ "$1" != -n ] || shift; exec "$@"'
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
 mkdir -p "$SSHD_RUN_DIR"
 
 # --- sshd_ports: sshd -T's ports, and ssh.socket's while it's active ---

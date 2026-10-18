@@ -12,21 +12,32 @@ set -euo pipefail
 # installed from a git worktree), the locale, unattended-upgrades with the dpkg options that keep
 # edited conffiles, the packages apt holds back, Tailscale's apt source and UDP port, and
 # Wake-on-LAN.
-# Every path under /etc, /run, and /dev points into the sandbox, and sudo, systemctl, sysctl, sshd,
-# ss, ufw, nmcli, tailscale, apt-config, apt-get, locale, locale-gen, and git's worktree check are
-# stubs.
+# Every system path points into the sandbox (tests/ubuntu-sandbox.sh), and sudo, systemctl, sysctl,
+# sshd, ss, ufw, nmcli, tailscale, apt-config, apt-get, locale, locale-gen, and git's worktree
+# check are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
+# It fails the test when a constant still names a system path, as REBOOT_REQUIRED did once a test
+# loaded the step again
+leak_reboot_required() {
+    TEST_FAILURES=0
+    REBOOT_REQUIRED=/var/run/reboot-required
+    _ubuntu_system_paths_left
+    exit "$TEST_FAILURES"
+}
+leak_status=0
+leaks="$( (leak_reboot_required) 2>&1)" || leak_status=$?
+assert_eq 1 "$leak_status" "the failures for a constant left on a system path"
+assert_contains "$leaks" "REBOOT_REQUIRED=/var/run/reboot-required"
 is_ubuntu() { true; }
-# The system dirs sbin_cmd searches for sysctl and ufw, here the stubs
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
-UFW_DEFAULTS="$SANDBOX/default-ufw"
 echo IPV6=yes > "$UFW_DEFAULTS"
 lingering() { true; }
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
@@ -109,9 +120,8 @@ stub locale-gen 'touch "'"$SANDBOX"'/locale"'
 stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
 # No package is on hold with apt-mark
 stub apt-mark
-# unattended-upgrades runs daily once a file in apt.conf.d says so. As in apt, the last file
+# unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last file
 # that sets it wins.
-AUTO_UPGRADES_CONF="$SANDBOX/apt.conf.d/20auto-upgrades"
 stub_apt_config 'cat "'"$SANDBOX"'/apt.conf.d/"* 2> /dev/null | awk '"'"'{ values[$1] = $0 } END { for (key in values) print values[key] }'"'"''
 stub loginctl
 stub lsblk
@@ -128,11 +138,7 @@ echo Running > "$SANDBOX/tailscale-state"
 # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
 # user=<user>,..., a "Match User <user>" block's first value wins over those. sshd -T fails while
 # $SANDBOX/sshd-T-fails exists.
-mkdir -p "$SANDBOX/sshd_config.d"
-SSHD_DROP_IN="$SANDBOX/sshd_config.d/10-dotfiles.conf"
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-mkdir -p "$SSHD_RUN_DIR"
-SSHD_BIN="$STUB_DIR/sshd"
+mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
 # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
 stub ss
 stub sshd 'case "$1" in
@@ -180,18 +186,9 @@ stub nmcli 'case "$*" in
 esac'
 echo default > "$SANDBOX/wol"
 mkdir "$SANDBOX/units" "$SANDBOX/user-units"
-REBOOT_REQUIRED="$SANDBOX/reboot-required"
-SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"
-SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
-SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
-SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
-NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
-NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
-KEEP_CONFFILES_CONF="$SANDBOX/apt.conf.d/50dotfiles-keep-conffiles"
 KEEP_CONFFILES="Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)"
 # Tailscale's apt source, as its install script writes it
-TAILSCALE_ENTRY="deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu resolute main"
-TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
+TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/stable/ubuntu resolute main"
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 
 # Not set up yet: status lists each new item as missing
@@ -484,7 +481,6 @@ rm "$SANDBOX/tailscale-reset"
 # Tailscale's apt source for an older release, as a release upgrade leaves it: status says so, and
 # a yes writes the key and the one-line tailscale.list for this release, and updates from it alone.
 # test-apt-sources.sh covers the other states apt_source_state reports.
-TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
 mkdir -p "$SANDBOX/keyrings"
 fetch() {
     echo "fetch $1" >> "$STUB_LOG"
@@ -706,11 +702,9 @@ unset -f sshd_drop_in
 # The override above took the real sshd_drop_in with it, so reload the step and point it back into
 # the sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
-UFW_DEFAULTS="$SANDBOX/default-ufw"
 lingering() { true; }
 status_smart() { :; }
 status_firmware() { :; }
@@ -718,24 +712,6 @@ ups_todo() { :; }
 status_ups() { :; }
 warn_no_ups() { :; }
 in_git_worktree() { false; }
-SSHD_DROP_IN="$SANDBOX/sshd_config.d/10-dotfiles.conf"
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-# shellcheck disable=SC2034 # the step reads it
-SSHD_BIN="$STUB_DIR/sshd"
-SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"
-SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
-# shellcheck disable=SC2034 # sysctl_overrides reads it
-SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
-AUTO_UPGRADES_CONF="$SANDBOX/apt.conf.d/20auto-upgrades"
-# shellcheck disable=SC2034
-SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
-# shellcheck disable=SC2034
-NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
-# shellcheck disable=SC2034
-KEEP_CONFFILES_CONF="$SANDBOX/apt.conf.d/50dotfiles-keep-conffiles"
-# tailscale.list names this keyring, so the source stays the one the step writes
-TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
-TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 stub systemctl 'case "$1" in is-enabled) echo enabled ;; mask) exit 1 ;; esac'
 rm -f "$SANDBOX/ufw-on" "$SSHD_DROP_IN"
 : > "$STUB_LOG"
@@ -767,7 +743,6 @@ assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase. Every bo
 assert_contains "$RUN_OUTPUT" "binding the disk to the TPM (systemd-cryptenroll)"
 assert_not_contains "$RUN_OUTPUT" "Only a reinstall"
 # Bound to the TPM with systemd-cryptenroll, which keeps the label: nothing to say
-CRYPTTAB="$SANDBOX/crypttab"
 echo "dm_crypt-0 UUID=1234 none luks,tpm2-device=auto" > "$CRYPTTAB"
 run warn_disk_encryption
 assert_eq "" "$RUN_OUTPUT" "warn_disk_encryption with a disk bound to the TPM"

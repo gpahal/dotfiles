@@ -12,6 +12,8 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -110,12 +112,11 @@ assert_contains "$RUN_OUTPUT" "unknown    Free space on /: df couldn't read it"
 read_only
 
 # --- the ubuntu step: SMART ---
+# sbin_cmd searches only the stubs
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 in_vm() { false; }
-# The system dirs sbin_cmd searches, here the stubs
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
 # sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise
 stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
 [ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
@@ -237,10 +238,9 @@ assert_exit 3 diag status_smart
 assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART): smartctl isn't installed"
 assert_contains "$RUN_OUTPUT" "smartmontools"
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 in_vm() { false; }
-# shellcheck disable=SC2034 # sbin_cmd reads it
-SBIN_PATH="$STUB_DIR"
 read_only
 
 # --- the ubuntu step: firmware ---
@@ -254,7 +254,6 @@ fwupd() {
     printf '%b' "$1" > "$SANDBOX/fwupd"
     echo "${2:-0}" > "$SANDBOX/fwupd.status"
 }
-FWUPD_METADATA_DIRS="$SANDBOX/fwupd-metadata"
 mkdir -p "$FWUPD_METADATA_DIRS/lvfs"
 touch "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
 

@@ -6,6 +6,8 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -66,6 +68,7 @@ no_prompting_sudo() {
 # The ubuntu step, on a machine where everything else is set up. ufw's and linger's state come
 # from files under /etc and /var, so those two checks are replaced.
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 lingering() { true; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
@@ -92,26 +95,19 @@ apt_timers_enabled() { true; }
 health_units_written() { true; }
 health_units_loaded() { true; }
 sshd_enabled() { true; }
-# shellcheck disable=SC2034 # the step reads it
-REBOOT_REQUIRED="$SANDBOX/no-reboot-required"
 ufw_enabled() { true; }
-UFW_DEFAULTS="$SANDBOX/default-ufw"
 echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
-TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 # The rest is set up too, through sandbox paths
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-mkdir -p "$SSHD_RUN_DIR"
-SLEEP_CONF="$SANDBOX/10-sleep.conf"
+mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
-SYSCTL_CONF="$SANDBOX/90-sysctl.conf"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 stub nmcli
 # sshd -T prints the port, and the drop-in's settings as sshd takes them

@@ -13,18 +13,14 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 
-NUT_DIR="$SANDBOX/nut"
-UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
-NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
-UPS_RTC_HOOK="$SANDBOX/system-shutdown/dotfiles-rtc-wake"
-UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
-# The test runs as you, without a nut group, so NUT's files get your own
-NUT_GROUP="$(id -gn)"
 # shellcheck disable=SC2012 # ls -l is the portable way to read a file's group
 file_group() { ls -ld "$1" | awk '{ print $4 }'; }
 mkdir -p "$NUT_DIR" "$SANDBOX/udev"

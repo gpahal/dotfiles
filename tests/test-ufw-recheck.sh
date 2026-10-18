@@ -11,9 +11,12 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script ubuntu/install.sh
+ubuntu_sandbox_paths
 is_ubuntu() { true; }
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
@@ -21,7 +24,6 @@ status_firmware() { :; }
 # ufw's on state and linger come from files under /etc and /var, so those checks are replaced.
 # Linger is on when $SANDBOX/linger exists, and loginctl turns it on.
 ufw_enabled() { [ ! -e "$SANDBOX/ufw-off" ]; }
-UFW_DEFAULTS="$SANDBOX/default-ufw"
 echo IPV6=yes > "$UFW_DEFAULTS"
 lingering() { [ -e "$SANDBOX/linger" ]; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
@@ -43,8 +45,6 @@ unattended_upgrades_running() { true; }
 # test-ubuntu-step.sh covers apt's timers, sshd at boot, and a pending reboot
 apt_timers_enabled() { true; }
 sshd_enabled() { true; }
-# shellcheck disable=SC2034 # the step reads it
-REBOOT_REQUIRED="$SANDBOX/no-reboot-required"
 touch "$SANDBOX/linger"
 
 # sudo without -n runs the command, as if you typed your password. sudo -n works only while
@@ -69,7 +69,6 @@ esac'
 echo 22 > "$SANDBOX/socket-ports"
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
-TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
@@ -86,11 +85,8 @@ SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
 # Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 # The rest is set up too, through sandbox paths
-SSHD_RUN_DIR="$SANDBOX/run-sshd"
-mkdir -p "$SSHD_RUN_DIR"
-SLEEP_CONF="$SANDBOX/10-sleep.conf"
+mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
-SYSCTL_CONF="$SANDBOX/90-sysctl.conf"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
 # A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status

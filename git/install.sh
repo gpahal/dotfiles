@@ -135,8 +135,7 @@ configure_github_https() {
         return 0
     fi
     while IFS= read -r prefix; do
-        # Without a git dir, so a broken checkout as the current directory can't make it fail
-        git --git-dir=/dev/null config --file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
+        git_file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
     done <<< "$missing"
     echo "  GitHub SSH remotes now go over HTTPS, through gh's credential helper"
 }
@@ -171,12 +170,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     require_cmd gh || return 1
     local status=0
     echo "Copying git config..."

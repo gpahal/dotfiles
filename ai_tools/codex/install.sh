@@ -418,12 +418,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up Codex..."
     if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2

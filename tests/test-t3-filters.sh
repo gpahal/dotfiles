@@ -16,9 +16,9 @@ load_script ai_tools/t3-code/install.sh
 
 settings="$HOME/settings.json"
 
-# apply <fixture>: merge the filter into a settings file holding the fixture, check a second run
+# merge_fixture <fixture>: merge the filter into a settings file holding the fixture, check a second run
 # would change nothing, and print the result compactly
-apply() {
+merge_fixture() {
     printf '%s\n' "$1" > "$settings"
     json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
     json_applied "$settings" "$(t3_code_server_filter)" || fail "a second run would change: $1"
@@ -26,12 +26,12 @@ apply() {
 
 # Worktree cleanup: a global "off" becomes custom with the five rules
 rules='{"worktreeAfterDays":30,"worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":15,"worktreeUnchanged":true}'
-apply '{"worktreeCleanup": {"mode": "off"}}'
+merge_fixture '{"worktreeCleanup": {"mode": "off"}}'
 assert_eq "{\"mode\":\"custom\",\"rules\":$rules}" "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup from off"
 
 # Custom rules that differ are replaced. Project overrides are left alone, and the storage settings
 # get only browser captures' and logs' retention: worktreeCleanup replaces the worktree fields.
-apply '{
+merge_fixture '{
   "worktreeCleanup": {"mode": "custom", "rules": {"worktreeAfterDays": 7, "worktreeOnMerge": false, "worktreeOnDelete": false, "worktreeUnchanged": false}},
   "projectSettingsOverrides": {"p1": {"worktreeCleanup": {"mode": "off"}}},
   "storageCleanup": {"browserArtifactsAfterDays": 10}
@@ -43,13 +43,13 @@ assert_eq '{"browserArtifactsAfterDays":30,"logsAfterDays":30}' \
 
 # A rule T3 Code 0.1.0 added that the filter doesn't set, which T3 writes out in full, keeps its
 # value and settles
-apply '{"worktreeCleanup": {"mode": "custom", "rules": {"worktreeKeepWhen": "tracked-changes", "worktreeAfterDays": 7, "worktreeSettledAfterDays": null}}}'
+merge_fixture '{"worktreeCleanup": {"mode": "custom", "rules": {"worktreeKeepWhen": "tracked-changes", "worktreeAfterDays": 7, "worktreeSettledAfterDays": null}}}'
 assert_eq '{"mode":"custom","rules":{"worktreeAfterDays":30,"worktreeKeepWhen":"tracked-changes","worktreeOnDelete":true,"worktreeOnMerge":true,"worktreeSettledAfterDays":15,"worktreeUnchanged":true}}' \
     "$(jq -cS '.worktreeCleanup' "$settings")" "worktreeCleanup with rules from a newer T3 Code"
 
 # Writing style: mode and custom instructions are set, and a field the app adds, such as the
 # "Follow change request templates" toggle, keeps your value
-apply '{"sourceControlWritingStyle": {"mode": "default", "followChangeRequestTemplates": false}}'
+merge_fixture '{"sourceControlWritingStyle": {"mode": "default", "followChangeRequestTemplates": false}}'
 assert_eq '{"customInstructions":"Keep titles concise. Use short bullet points in the description.","followChangeRequestTemplates":false,"mode":"custom"}' \
     "$(jq -cS '.sourceControlWritingStyle' "$settings")" "sourceControlWritingStyle"
 

@@ -258,12 +258,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     # Anthropic's installer prints "Setting up Claude Code..." itself
     echo "Claude Code:"
     if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then

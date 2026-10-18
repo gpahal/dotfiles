@@ -105,10 +105,10 @@ print_section() {
     print_doc_section "$DOTFILES_DIR/ai_tools/README.md" "## Manual steps" "### $1"
 }
 
-main() {
-    step_args "$@"
-    # Nothing to check: the list is what scripts can't do
-    ! status_requested "$@" || return 0
+# Nothing to check: the list is what scripts can't do
+status() { return 0; }
+
+apply() {
     if is_macos; then
         open_manual_steps
     else

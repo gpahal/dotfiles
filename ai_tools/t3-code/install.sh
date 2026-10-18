@@ -758,12 +758,7 @@ status() {
     status_result
 }
 
-main() {
-    step_args "$@"
-    if status_requested "$@"; then
-        status
-        return $?
-    fi
+apply() {
     echo "Setting up T3 Code..."
     require_cmd jq || return 1
     if is_macos; then

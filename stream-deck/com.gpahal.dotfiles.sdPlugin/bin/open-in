@@ -370,7 +370,7 @@ open_target_app() {
             fi
             ;;
         chrome-tab)
-            ! clipboard_has_text || paste=paste
+            ! clipboard_has_text || paste="paste"
             if ! new_tab "$paste"; then
                 FAILURE="Couldn't open a new Chrome tab. See $CALLER_LOG"
             elif [ "$SCRIPT_RESULT" == moved ]; then

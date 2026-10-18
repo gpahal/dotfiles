@@ -89,6 +89,7 @@ $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local"
 assert_eq "-r--r--r--" "$(/bin/ls -l "$SUDO_LOCAL" | cut -c 1-10)" "sudo_local's mode"
 assert_file_not_contains "$STUB_LOG" "brew install"
 # Status asks brew for its prefix once, however often it needs the module's source
+# shellcheck disable=SC2034 # pam.sh reads it
 REATTACH_SOURCE_READ=false
 : > "$STUB_LOG"
 assert_exit 0 main --status

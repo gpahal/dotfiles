@@ -65,15 +65,22 @@ remove_stale_plugin_files() {
 # while the old process is still quitting, so wait for it to go first. LaunchServices can still
 # report -600 for a moment after the process is gone, so open is tried a few times.
 restart_stream_deck() {
-    local opened=false
+    local opened=false quit=false
     if ! pkill -x "Stream Deck"; then
         echo "  Stream Deck isn't running; it loads the plugin when it starts."
         return 0
     fi
     for _ in $(seq 1 20); do
-        pgrep -x "Stream Deck" > /dev/null || break
+        if ! pgrep -x "Stream Deck" > /dev/null; then
+            quit=true
+            break
+        fi
         sleep 0.5
     done
+    if ! "$quit"; then
+        echo "  Stream Deck didn't quit; quit and reopen it to load the plugin." >&2
+        return 1
+    fi
     for _ in 1 2 3 4 5; do
         if open -g -b com.elgato.StreamDeck; then
             opened=true

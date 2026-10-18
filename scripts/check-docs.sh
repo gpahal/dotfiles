@@ -162,9 +162,8 @@ package_section() {
 brewfile="$REPO_DIR/homebrew/Brewfile"
 {
     brewfile_formulae "$brewfile" | sed 's/^/formula /; s/ [^ ]*$//'
-    # MAS_APPS's lines read "<id> <name>", with "optional" after some
-    awk '$0 == "MAS_APPS=(" { on = 1; next } on && /^\)/ { exit }
-        on && NF { gsub(/"/, ""); sub(/^ *[0-9]+ /, ""); sub(/ optional$/, ""); print "mas " $0 }' "$REPO_DIR/homebrew/install.sh"
+    # MAS_APPS's entries read "<id> <name>", with "optional" after some
+    array_entries "$REPO_DIR/homebrew/install.sh" MAS_APPS | sed -E 's/^[0-9]+ /mas /; s/ optional$//'
     cask_list "$REPO_DIR/homebrew/install.sh" CASKS | sed 's/^/cask /'
 } > "$tmp/packages"
 [ -s "$tmp/packages" ] || fail "Couldn't read the packages from homebrew/Brewfile and homebrew/install.sh"

@@ -356,12 +356,6 @@ join_lines() {
     printf '%s\n' "$out"
 }
 
-# The ids of the App Store apps a Brewfile lists, one per line. brew bundle skips the ids in
-# HOMEBREW_BUNDLE_MAS_SKIP; names would split on their spaces.
-mas_app_ids() {
-    sed -nE 's/^[[:space:]]*mas "[^"]*", id: ([0-9]+).*/\1/p' "$1"
-}
-
 # The record of the files copy_file and copy_file_ask installed, so a later run can tell a file
 # setup put there from one edited by hand since. One line per file, as sha256sum prints it:
 # "<sha256>  <absolute path>". Paths may contain spaces.
@@ -933,34 +927,6 @@ ubuntu_codename() {
         . "${OS_RELEASE:-/etc/os-release}" 2>/dev/null || true
         echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
     )
-}
-
-# Succeeds for an APT::Periodic interval that makes apt.systemd.daily run a job at least daily:
-# always, or a number of s, m, h, or d, which a bare number means, from 1 s to a day
-periodic_daily() {
-    local number="${1%[smhd]}" unit=d
-    [ "$1" != always ] || return 0
-    [ "$number" == "$1" ] || unit="${1#"$number"}"
-    # Up to nine digits, so the seconds can't overflow
-    [[ "$number" =~ ^[0-9]{1,9}$ ]] || return 1
-    number=$((10#$number))
-    case "$unit" in
-        m) number=$((number * 60)) ;;
-        h) number=$((number * 3600)) ;;
-        d) number=$((number * 86400)) ;;
-    esac
-    [ "$number" -gt 0 ] && [ "$number" -le 86400 ]
-}
-
-# Read the values the way apt.systemd.daily does, with apt-config shell and its defaults: Enable is
-# 1, so only 0 turns it off, and the two intervals are 0.
-unattended_upgrades_on() {
-    local values enable=1 update=0 upgrade=0
-    values="$(apt-config shell enable APT::Periodic::Enable update APT::Periodic::Update-Package-Lists \
-        upgrade APT::Periodic::Unattended-Upgrade 2>/dev/null)" || return 1
-    # apt-config quotes each value for the shell
-    eval "$values"
-    ! [[ "$enable" =~ ^0+$ ]] && periodic_daily "$update" && periodic_daily "$upgrade"
 }
 
 # Print a file's permission bits in octal, e.g. 644. It asks stat which form it takes rather than

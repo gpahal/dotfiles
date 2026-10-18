@@ -18,6 +18,12 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 
 BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
+# The ids of the App Store apps a Brewfile lists, one per line. brew bundle skips the ids in
+# HOMEBREW_BUNDLE_MAS_SKIP; names would split on their spaces.
+mas_app_ids() {
+    sed -nE 's/^[[:space:]]*mas "[^"]*", id: ([0-9]+).*/\1/p' "$1"
+}
+
 # Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
 # them all. The path is empty for a cask with no app, and for every cask off macOS or without jq.
 installed_cask_apps() {

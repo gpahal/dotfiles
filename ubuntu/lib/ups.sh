@@ -126,7 +126,10 @@ nut_config() {
 # Print the system-shutdown hook that sets the RTC alarm. When the UPS cuts its power, the BIOS's
 # power-on after AC loss starts the machine once mains returns, and the alarm, which needs power,
 # does nothing. When it doesn't, as some don't when mains came back during the shutdown, the alarm
-# starts the machine.
+# starts the machine. A UPS that ignores the command while mains is still out makes a loop: the
+# alarm starts the machine on battery, upsmon sees a low battery and shuts it down again, setting
+# the alarm again, until the battery dies. The hook can't tell that case apart, since the UPS's
+# status is gone by then, so the Power cuts manual step has you check the UPS cuts its power.
 ups_rtc_hook() {
     printf '%s\n' "#!/bin/sh" \
         "# From the dotfiles ubuntu step: after a UPS shutdown, which leaves $UPS_POWERDOWN_FLAG, start the" \

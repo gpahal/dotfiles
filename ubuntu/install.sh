@@ -305,7 +305,9 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    sudo_items_status locale_installed unattended_upgrades_running keep_conffiles_written
+    sudo_items_status locale_installed
+    status_unattended_upgrades
+    sudo_items_status keep_conffiles_written
     status_held_back
     sudo_items_status apt_timers_enabled
     if [ -e "$REBOOT_REQUIRED" ]; then

@@ -42,6 +42,8 @@ assert_contains "$RUN_OUTPUT" "ok         Google's apt source"
 # Any interval up to a day counts as daily.
 # shellcheck source=../ubuntu/lib/updates.sh
 source "$REPO_DIR/ubuntu/lib/updates.sh"
+# ubuntu/install.sh sets it, and the file's absent here
+AUTO_UPGRADES_CONF="$SANDBOX/20auto-upgrades"
 for value in always 1d 24h 90m 3600s; do
     periodic "$value"
     assert_exit 0 unattended_upgrades_on

@@ -7,6 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/keepable.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
 
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
@@ -19,22 +21,11 @@ CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); u
 # `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
 
-# Values you can change, such as with /model or /effort: each is set only when unset, and one of
-# your own is replaced only when replace_custom_value agrees. Each has a jq path, the repo's value
-# as JSON, the name prompts and status give it, and whether it's set only on Ubuntu.
-# configure_claude_code sets CLAUDE_CODE_REPLACE to whether to write each over yours.
-CLAUDE_CODE_KEEP_PATHS=()
-CLAUDE_CODE_KEEP_VALUES=()
-CLAUDE_CODE_KEEP_NAMES=()
-CLAUDE_CODE_KEEP_UBUNTU=()
-CLAUDE_CODE_REPLACE=()
+# Values you can change, such as with /model or /effort (ai_tools/lib/keepable.sh), each with a jq
+# path and the repo's value as JSON
 # Usage: claude_code_keepable <jq path> <JSON value> <name> [ubuntu]
 claude_code_keepable() {
-    CLAUDE_CODE_KEEP_PATHS+=("$1")
-    CLAUDE_CODE_KEEP_VALUES+=("$2")
-    CLAUDE_CODE_KEEP_NAMES+=("Claude Code's $3")
-    CLAUDE_CODE_KEEP_UBUNTU+=("$([ "${4:-}" == ubuntu ] && echo true || echo false)")
-    CLAUDE_CODE_REPLACE+=(false)
+    keepable claude_code "$1" "$2" "Claude Code's $3" "${4:-}"
 }
 claude_code_keepable .model '"claude-opus-5-5"' "model (model)"
 claude_code_keepable '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"' \
@@ -51,21 +42,14 @@ claude_code_keepable .statusLine.refreshInterval 5 \
 # Ghostty's channel, which sends OSC 777, wrapped for tmux, back to the Mac.
 claude_code_keepable .preferredNotifChannel '"ghostty"' "notification channel (preferredNotifChannel)" ubuntu
 
-# Succeeds when value $1 of CLAUDE_CODE_KEEP_PATHS applies on this OS
-claude_code_keep_applies() {
-    ! "${CLAUDE_CODE_KEEP_UBUNTU[$1]}" || is_ubuntu
-}
-
 # Print the settings' value at jq path $1, or nothing when it's unset or the file can't be read
-claude_code_value() {
+claude_code_keep_current() {
     jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Print the repo's value $1 of CLAUDE_CODE_KEEP_VALUES as claude_code_value prints it
+# Print a JSON value as claude_code_keep_current prints it
 claude_code_keep_wanted() {
-    local value="${CLAUDE_CODE_KEEP_VALUES[$1]}"
-    value="${value#\"}"
-    printf '%s\n' "${value%\"}"
+    keepable_unquote "$1"
 }
 
 claude_code_have_git_wt() {
@@ -148,11 +132,10 @@ claude_code_settings() {
     #   mobile pushes stop.
     # Each value you can change, with = to write over yours or //= to set it only when unset
     local i op keepable=""
-    for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-        claude_code_keep_applies "$i" || continue
+    for i in $(keepable_indexes claude_code); do
         op="//="
-        if "${CLAUDE_CODE_REPLACE[i]}"; then op="="; fi
-        keepable+="| ${CLAUDE_CODE_KEEP_PATHS[i]} $op ${CLAUDE_CODE_KEEP_VALUES[i]}"
+        if "${KEEP_REPLACE[i]}"; then op="="; fi
+        keepable+="| ${KEEP_PATHS[i]} $op ${KEEP_VALUES[i]}"
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
     local settings='
@@ -209,15 +192,8 @@ claude_code_settings() {
 # Usage: configure_claude_code [<register the worktree hook: true|false>]
 configure_claude_code() {
     echo "Configuring Claude Code..."
-    local settings i
-    for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-        CLAUDE_CODE_REPLACE[i]=false
-        claude_code_keep_applies "$i" || continue
-        if replace_custom_value "${CLAUDE_CODE_KEEP_NAMES[i]}" "$(claude_code_value "${CLAUDE_CODE_KEEP_PATHS[i]}")" \
-            "$(claude_code_keep_wanted "$i")"; then
-            CLAUDE_CODE_REPLACE[i]=true
-        fi
-    done
+    local settings
+    keepable_choose claude_code
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
         echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
@@ -250,7 +226,7 @@ install_scripts() {
 }
 
 status() {
-    local value wanted i line claude
+    local line claude
     if claude="$(claude_code_path)"; then
         status_item ok "Claude Code"
         if status_require_cmd jq "Signed in to Claude Code"; then
@@ -271,14 +247,7 @@ status() {
     fi
     if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
         status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
-        for i in "${!CLAUDE_CODE_KEEP_PATHS[@]}"; do
-            claude_code_keep_applies "$i" || continue
-            value="$(claude_code_value "${CLAUDE_CODE_KEEP_PATHS[i]}")"
-            wanted="$(claude_code_keep_wanted "$i")"
-            if [ -n "$value" ] && [ "$value" != "$wanted" ]; then
-                status_custom_value "${CLAUDE_CODE_KEEP_NAMES[i]}" "$value" "$wanted"
-            fi
-        done
+        keepable_status claude_code
     fi
     claude_code_have_git_wt || status_item missing "Worktree hook: $CLAUDE_CODE_NO_GIT_WT"
     while IFS= read -r line; do

@@ -12,6 +12,8 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/keepable.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
 
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG="$CODEX_DIR/config.toml"
@@ -26,21 +28,11 @@ BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
-# Settings you may keep your own values of (replace_custom_value), each a yq path, the repo's
-# value as TOML (see codex_set), and a name. configure_codex sets CODEX_REPLACE to whether to write
-# each over yours. Values only Ubuntu gets are marked ubuntu.
+# Settings you may keep your own values of (ai_tools/lib/keepable.sh), each with a yq path and
+# the repo's value as TOML (see codex_set)
 # Usage: codex_keepable <yq path> <TOML value> <name> [ubuntu]
-CODEX_KEEP_PATHS=()
-CODEX_KEEP_VALUES=()
-CODEX_KEEP_NAMES=()
-CODEX_KEEP_UBUNTU=()
-CODEX_REPLACE=()
 codex_keepable() {
-    CODEX_KEEP_PATHS+=("$1")
-    CODEX_KEEP_VALUES+=("$2")
-    CODEX_KEEP_NAMES+=("Codex's $3")
-    CODEX_KEEP_UBUNTU+=("$([ "${4:-}" == ubuntu ] && echo true || echo false)")
-    CODEX_REPLACE+=(false)
+    keepable codex "$1" "$2" "Codex's $3" "${4:-}"
 }
 # The default model and high reasoning effort, which /model changes
 codex_keepable .model '"gpt-6.1-sol"' "model (model)"
@@ -55,28 +47,17 @@ codex_keepable .tui.status_line '["model-with-reasoning", "current-dir", "git-br
 # panes, so `auto` finds Ghostty.
 codex_keepable .tui.notification_method '"osc9"' "notification method (tui.notification_method)" ubuntu
 
-# Succeeds when value $1 of CODEX_KEEP_PATHS applies on this OS
-codex_keep_applies() {
-    ! "${CODEX_KEEP_UBUNTU[$1]}" || is_ubuntu
-}
-
-# Print one line of JSON without a string's quotes
-codex_unquote() {
-    local value="${1#\"}"
-    printf '%s\n' "${value%\"}"
-}
-
-# Print the config's value at path $1 of CODEX_KEEP_PATHS as one line of JSON, without a string's
-# quotes, or nothing when it's unset or the config can't be read
+# Print the config's value at yq path $1 as one line of JSON, without a string's quotes, or
+# nothing when it's unset or the config can't be read
 codex_keep_current() {
     local value
-    value="$(yq -p toml -o json -I=0 "${CODEX_KEEP_PATHS[$1]}" "$CODEX_CONFIG" 2>/dev/null)" || return 0
-    [ "$value" == null ] || codex_unquote "$value"
+    value="$(yq -p toml -o json -I=0 "$1" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    [ "$value" == null ] || keepable_unquote "$value"
 }
 
-# Print the repo's value $1 of CODEX_KEEP_VALUES as codex_keep_current prints it
+# Print a TOML value as codex_keep_current prints it
 codex_keep_wanted() {
-    codex_unquote "$(printf 'v = %s\n' "${CODEX_KEEP_VALUES[$1]}" | yq -p toml -o json -I=0 '.v')"
+    keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
 }
 
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
@@ -92,10 +73,9 @@ codex_settings() {
     CODEX_PATHS=()
     CODEX_VALUES=()
     # The settings you may keep, unless you chose your own and keep them
-    for i in "${!CODEX_KEEP_PATHS[@]}"; do
-        codex_keep_applies "$i" || continue
-        if "${CODEX_REPLACE[i]}" || [ -z "$(codex_keep_current "$i")" ]; then
-            codex_set "${CODEX_KEEP_PATHS[i]}" "${CODEX_KEEP_VALUES[i]}"
+    for i in $(keepable_indexes codex); do
+        if "${KEEP_REPLACE[i]}" || [ -z "$(keepable_current codex "$i")" ]; then
+            codex_set "${KEEP_PATHS[i]}" "${KEEP_VALUES[i]}"
         fi
     done
     # Short answers and reasoning summaries
@@ -266,14 +246,8 @@ codex_config_matches() {
 
 configure_codex() {
     echo "Configuring Codex..."
-    local edited i
-    for i in "${!CODEX_KEEP_PATHS[@]}"; do
-        CODEX_REPLACE[i]=false
-        if codex_keep_applies "$i" && replace_custom_value "${CODEX_KEEP_NAMES[i]}" \
-            "$(codex_keep_current "$i")" "$(codex_keep_wanted "$i")"; then
-            CODEX_REPLACE[i]=true
-        fi
-    done
+    local edited
+    keepable_choose codex
     local settings="model, output, sandbox, approval, data-sharing, and status line settings"
     if is_macos; then
         settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
@@ -417,7 +391,6 @@ setup_codex_sandbox() {
 }
 
 status() {
-    local wanted value i
     if is_macos; then
         status_cask chatgpt /Applications/ChatGPT.app
     else
@@ -432,14 +405,7 @@ status() {
     else
         if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
-            for i in "${!CODEX_KEEP_PATHS[@]}"; do
-                codex_keep_applies "$i" || continue
-                value="$(codex_keep_current "$i")"
-                wanted="$(codex_keep_wanted "$i")"
-                if [ -n "$value" ] && [ "$value" != "$wanted" ]; then
-                    status_custom_value "${CODEX_KEEP_NAMES[i]}" "$value" "$wanted"
-                fi
-            done
+            keepable_status codex
         fi
         user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
         ! is_ubuntu || codex_status_credentials

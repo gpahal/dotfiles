@@ -289,6 +289,7 @@ restart_nut() {
 # differ
 setup_ups() {
     local scan driver vendor product password file content changed=false notifier=false rtc=false
+    local target=false
     if ! nut_installed; then
         apt_get install -y "${NUT_PACKAGES[@]}" || return 1
         # nut-server's udev rules give the nut group the UPS, but its postinst re-runs udev only
@@ -320,6 +321,7 @@ setup_ups() {
         install_ups_rtc_hook || return 1
         rtc=true
     fi
+    nut_target_enabled || target=true
     sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
@@ -335,6 +337,8 @@ setup_ups() {
         echo "  Updated the UPS notifier, $UPS_NOTIFY."
     elif "$rtc"; then
         echo "  Installed the RTC wake hook, $UPS_RTC_HOOK."
+    elif "$target"; then
+        echo "  Enabled nut.target, so NUT starts at boot."
     else
         echo "  NUT is already set up for the UPS on USB ($vendor:$product)."
     fi

@@ -295,6 +295,8 @@ assert_contains "$RUN_OUTPUT" "missing    nut.target enabled, so NUT starts at b
 : > "$STUB_LOG"
 assert_exit 0 setup_ups
 assert_file_contains "$STUB_LOG" "sudo systemctl enable nut.target nut-server.service nut-monitor.service"
+assert_contains "$RUN_OUTPUT" "Enabled nut.target, so NUT starts at boot."
+assert_not_contains "$RUN_OUTPUT" "already set up"
 [ ! -e "$SANDBOX/disabled-nut.target" ] || fail "nut.target wasn't enabled"
 assert_exit 0 status_ups
 

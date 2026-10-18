@@ -444,7 +444,7 @@ apply() {
     # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
     # and asking for sudo only to read them isn't worth it.
     ufw_configured -n || ufw=$?
-    # With ufw on, configure_ufw only adds the rules
+    # With ufw on, configure_ufw only adds the rules that are missing or out of place
     if [ "$ufw" -eq 1 ] && ufw_enabled; then
         ufw_todo="add the missing ufw rules"
     elif [ "$ufw" -eq 1 ]; then

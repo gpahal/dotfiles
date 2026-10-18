@@ -274,7 +274,11 @@ for misplaced in false true; do
     assert_not_contains "$RUN_OUTPUT" "ALLOW"
     : > "$STUB_LOG"
     assert_exit 0 main
-    assert_file_contains "$STUB_LOG" "sudo ufw delete deny in on docker0 to any port 22 proto tcp"
+    if "$misplaced"; then
+        assert_file_contains "$STUB_LOG" "sudo ufw delete deny in on docker0 to any port 22 proto tcp"
+    else
+        assert_file_not_contains "$STUB_LOG" "ufw delete"
+    fi
     assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on docker0 to any port 22 proto tcp"
     assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
     assert_exit 0 ufw_configured -n
@@ -283,6 +287,30 @@ done
 # place
 { ufw_header; deny_rules | grep -v v6; range_rules | grep -v :; deny_rules | grep v6; range_rules | grep :; } > "$SANDBOX/ufw-rules"
 printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+assert_exit 0 ufw_configured -n
+# With the deny rules in place, a run that adds a missing allow rule leaves them alone, so SSH on
+# the bridges is denied throughout
+rules_present
+grep -v "41641/udp" "$SANDBOX/ufw-rules" > "$SANDBOX/ufw-rules.new"
+mv "$SANDBOX/ufw-rules.new" "$SANDBOX/ufw-rules"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
+assert_file_not_contains "$STUB_LOG" "ufw delete"
+assert_file_not_contains "$STUB_LOG" "ufw prepend"
+assert_exit 0 ufw_configured -n
+# Any rule above the deny rules that lets the SSH port in counts against them, whatever its form:
+# a port without a protocol, a range or list, OpenSSH, an address alone, or an IPv6 rule with a
+# comment. One on another interface doesn't.
+for rule in "22 ALLOW 192.168.0.0/16" "20:30/tcp ALLOW 10.0.0.0/8" "80,22/tcp ALLOW 10.0.0.0/8" \
+    "OpenSSH ALLOW 10.0.0.0/8" "192.168.1.5 ALLOW 10.0.0.0/8" "22/tcp ALLOW fd00::/8 # lan" \
+    "Anywhere on br-1a2b3c ALLOW 10.0.0.0/8"; do
+    { ufw_header; echo "$rule"; deny_rules; range_rules; } > "$SANDBOX/ufw-rules"
+    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+    assert_exit 1 ufw_configured -n
+done
+{ ufw_header; echo "Anywhere on tailscale0 ALLOW Anywhere"; echo "22/udp ALLOW 10.0.0.0/8"; deny_rules; range_rules; } > "$SANDBOX/ufw-rules"
+echo "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
 assert_exit 0 ufw_configured -n
 unset DOTFILES_ASSUME_YES
 rules_present

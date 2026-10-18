@@ -65,7 +65,7 @@ ufw_wanted_rules() {
     echo "$TAILSCALE_PORT/udp ALLOW Anywhere"
 }
 
-# The allow rules ufw has, with runs of spaces squeezed. Takes sudo's flags.
+# The rules ufw has, with runs of spaces squeezed. Takes sudo's flags.
 ufw_rules() {
     sudo "$@" ufw status 2>/dev/null | sed -E 's/ +/ /g; s/ $//'
 }
@@ -93,20 +93,68 @@ ufw_missing_rules() {
 }
 
 # ufw_rule_in_place <rule> <rules>: succeeds when ufw's rules, as ufw_rules prints them, list the
-# rule, and a deny rule comes before each rule that allows its port over the same IP version, since
-# ufw takes the first rule that matches. `ufw status` lists the IPv4 rules, then the IPv6 ones.
+# rule, and a deny rule of the step's, "<port>/tcp [(v6)] on <bridge> DENY ...", comes before each
+# rule that lets its port in on its bridge over the same IP version, since ufw takes the first rule
+# that matches. `ufw status` lists the IPv4 rules, then the IPv6 ones.
 ufw_rule_in_place() {
-    local line v6=0
-    line="$(grep -m 1 -nxF -- "$1" <<< "$2")" || return 1
-    case "$1" in
-        *" DENY "*"(v6)") v6=1 ;;
-        *" DENY "*) ;;
-        *) return 0 ;;
+    local deny="$1" line v6=false bridge
+    grep -qxF -- "$deny" <<< "$2" || return 1
+    case "$deny" in *" DENY "*) ;; *) return 0 ;; esac
+    case "$deny" in *"(v6)"*) v6=true ;; esac
+    bridge="${deny#* on }"
+    bridge="${bridge%% *}"
+    while IFS= read -r line; do
+        [ "$line" != "$deny" ] || return 0
+        ufw_allow_rule "$line" && [ "$UFW_RULE_V6" == "$v6" ] || continue
+        # A rule on another interface, such as tailscale0, never sees the bridge's traffic
+        case "$UFW_RULE_IFACE" in
+            "" | "$bridge") ;;
+            br-*) [ "$bridge" == br-+ ] || continue ;;
+            *) continue ;;
+        esac
+        ! ufw_to_includes_port "$UFW_RULE_TO" "${deny%%/*}" || return 1
+    done <<< "$2"
+    return 1
+}
+
+# ufw_allow_rule <rule>: succeeds for an allow or limit rule, as `ufw status` lists it with runs of
+# spaces squeezed, and sets UFW_RULE_TO to its "To" without the (v6) or the interface,
+# UFW_RULE_SOURCE to its "From", UFW_RULE_IFACE to the interface it's on, or "", and UFW_RULE_V6 to
+# true for an IPv6 rule. "To" is [address] [ports[/proto] | app] [(v6)] [on <interface>]. A
+# comment, after " # ", is left out.
+ufw_allow_rule() {
+    local rule="${1%% # *}" to v6
+    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
+    to="${BASH_REMATCH[1]}" UFW_RULE_SOURCE="${BASH_REMATCH[4]}" v6="${BASH_REMATCH[5]}"
+    UFW_RULE_V6=false
+    case "$to $v6 $UFW_RULE_SOURCE" in *"(v6)"* | *:*) UFW_RULE_V6=true ;; esac
+    to="${to/ (v6)/}"
+    UFW_RULE_IFACE=""
+    case "$to" in *" on "*) UFW_RULE_IFACE="${to##* on }" ;; esac
+    UFW_RULE_TO="${to%% on *}"
+}
+
+# ufw_to_includes_port <to> <port>...: succeeds when a rule's "To", as ufw_allow_rule sets
+# UFW_RULE_TO, covers any of the ports over TCP. An address alone, or Anywhere, means every port.
+# Of the app profiles, only OpenSSH's port is known.
+ufw_to_includes_port() {
+    local to="$1" spec port
+    shift
+    spec="${to##* }"
+    case "$spec" in
+        OpenSSH) spec=22/tcp ;;
+        Anywhere) return 0 ;;
     esac
-    awk -v n="${line%%:*}" -v port="${1%% *}" -v v6="$v6" '
-        NR >= n { exit }
-        $1 == port && / (ALLOW|LIMIT)( IN)? / && ((/\(v6\)/ || $NF ~ /:/) ? 1 : 0) == v6 { bad = 1 }
-        END { exit bad }' <<< "$2"
+    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
+        # An address alone covers every port; another app profile, ufw can't say here
+        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
+        return
+    fi
+    [ "${spec#*/}" != udp ] || return 1
+    for port in "$@"; do
+        ufw_ports_include "${spec%/*}" "$port" && return 0
+    done
+    return 1
 }
 
 # Print each allow or limit rule ufw has that lets SSH in from beyond the private ranges, other
@@ -125,34 +173,14 @@ ufw_broad_ssh_rules() {
 
 # ufw_rule_broad_ssh <rule> <port>...: succeeds when the rule, as `ufw status` lists it with runs
 # of spaces squeezed, lets any of the ports in over TCP from beyond the private ranges, other than
-# on tailscale0, and sets UFW_RULE_SOURCE to where it lets them in from. "To" is [address]
-# [ports[/proto] | app] [(v6)] [on <interface>], and an address alone, or Anywhere, means every
-# port. Of the app profiles, only OpenSSH's port is known.
+# on tailscale0, and sets UFW_RULE_SOURCE to where it lets them in from
 ufw_rule_broad_ssh() {
-    local rule="${1%% # *}" to from spec port
+    local rule="$1"
     shift
-    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
-    to="${BASH_REMATCH[1]}" from="${BASH_REMATCH[4]}"
-    UFW_RULE_SOURCE="$from"
-    to="${to/ (v6)/}"
-    case "$to" in *" on tailscale0") return 1 ;; esac
-    to="${to%% on *}"
-    ! private_source "$from" || return 1
-    spec="${to##* }"
-    case "$spec" in
-        OpenSSH) spec=22/tcp ;;
-        Anywhere) return 0 ;;
-    esac
-    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
-        # An address alone covers every port; another app profile, ufw can't say here
-        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
-        return
-    fi
-    [ "${spec#*/}" != udp ] || return 1
-    for port in "$@"; do
-        ufw_ports_include "${spec%/*}" "$port" && return 0
-    done
-    return 1
+    ufw_allow_rule "$rule" || return 1
+    [ "$UFW_RULE_IFACE" != tailscale0 ] || return 1
+    ! private_source "$UFW_RULE_SOURCE" || return 1
+    ufw_to_includes_port "$UFW_RULE_TO" "$@"
 }
 
 # ufw_ports_include <list> <port>: succeeds when ufw's port list, such as 22, 80,443, or 8000:8100,
@@ -281,11 +309,11 @@ outside_ssh_peers() {
 # --force skips the question about dropping SSH connections, which the rules keep. Changes nothing
 # and fails while the SSH ports can't be read, or, to turn ufw on, while an SSH session comes from
 # outside the private ranges and the tailnet, which the firewall would cut off. With ufw already
-# on, it only adds the allow rules that are missing, which can't cut anyone off.
+# on, it only adds the rules that are missing or out of place, which can't cut anyone off.
 # apply runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command checks
 # its own failure.
 configure_ufw() {
-    local ports port range bridge outside="" on=false
+    local ports port range bridge deny4 deny6 rules outside="" on=false
     # ufw rejects every IPv6 rule while IPV6=no, so it would end up half set up. Before ufw is
     # installed, the file is missing, and the package writes IPV6=yes.
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
@@ -315,14 +343,22 @@ configure_ufw() {
         apt_get install -y ufw || return 1
     fi
     "$on" || sudo ufw default deny incoming > /dev/null || return 1
+    # Off, ufw lists no rules, so each deny rule is put back in place
+    rules=""
+    ! "$on" || rules="$(ufw_rules)" || return 1
     for port in $ports; do
         # Containers on a network in the private ranges, or with IPv6 addresses, would otherwise
-        # reach sshd through the allow rules. Deleted first, since ufw prepend skips a rule it has
-        # anywhere, and ufw_rule_in_place needs it ahead of them. A delete that finds no rule
-        # succeeds.
+        # reach sshd through the allow rules, so a deny goes ahead of them. One out of place is
+        # deleted first, since ufw prepend skips a rule it has anywhere. A delete that finds no
+        # rule succeeds.
         for bridge in "${DOCKER_BRIDGES[@]}"; do
-            sudo ufw delete deny in on "$bridge" to any port "$port" proto tcp > /dev/null &&
-                sudo ufw prepend deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
+            deny4="$port/tcp on $bridge DENY Anywhere"
+            deny6="$port/tcp (v6) on $bridge DENY Anywhere (v6)"
+            ! ufw_rule_in_place "$deny4" "$rules" || ! ufw_rule_in_place "$deny6" "$rules" || continue
+            if ! "$on" || grep -qxF -e "$deny4" -e "$deny6" <<< "$rules"; then
+                sudo ufw delete deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
+            fi
+            sudo ufw prepend deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
         done
         for range in "${SSH_RANGES[@]}"; do
             sudo ufw allow from "$range" to any port "$port" proto tcp > /dev/null || return 1

@@ -5,8 +5,9 @@ set -euo pipefail
 # The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
 # sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves
 # rules you added by hand alone. While a logged-in SSH session comes from outside the private ranges
-# and the tailnet, it doesn't turn ufw on or add its rules, and fails. A connection that hasn't
-# logged in doesn't count. The SSH ports include ssh.socket's.
+# and the tailnet, it doesn't turn ufw on, and fails; with ufw on, it adds the missing rules, which
+# can't cut anyone off. A connection that hasn't logged in doesn't count. The SSH ports include
+# ssh.socket's.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -172,7 +173,7 @@ rm -f "$SANDBOX/linger"
 rules_missing
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
+assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 
 # Without $SSHD_RUN_DIR, which only the install path creates, the rules can't be read even with
 # cached credentials. With nothing else pending, the step says why and asks for nothing.
@@ -362,19 +363,21 @@ assert_eq 1 "$RUN_STATUS" "the step with a session named by host"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
 firewall_unchanged
 
-# Adding the rules to a firewall that's on is skipped too while a session comes from outside
+# With ufw on, a session from outside doesn't stop the missing rules: allow rules can't cut anyone
+# off. ufw isn't turned on again, nor its policy set.
+rm -f "$SANDBOX/ufw-off"
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 203.0.113.9
 rules_missing
 : > "$STUB_LOG"
-assert_exit 1 main
-firewall_unchanged
-# Once that session ends, a re-run adds them
-no_sessions
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
+assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
+assert_file_not_contains "$STUB_LOG" "ufw default deny"
+assert_file_not_contains "$STUB_LOG" "ufw --force enable"
+assert_not_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_exit 0 ufw_configured -n
+no_sessions
 
 # The connections can't be listed: ufw stays as it is, and the rest of the step still runs
 touch "$SANDBOX/ss-fails"

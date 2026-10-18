@@ -250,18 +250,20 @@ outside_ssh_peers() {
 }
 
 # --force skips the question about dropping SSH connections, which the rules keep. Changes nothing
-# and fails while the SSH ports can't be read, or an SSH session comes from outside the private
-# ranges and the tailnet, which the firewall would cut off.
+# and fails while the SSH ports can't be read, or, to turn ufw on, while an SSH session comes from
+# outside the private ranges and the tailnet, which the firewall would cut off. With ufw already
+# on, it only adds the allow rules that are missing, which can't cut anyone off.
 # setup_ufw runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command
 # checks its own failure.
 configure_ufw() {
-    local ports port range outside
+    local ports port range outside="" on=false
     ports="$(sshd_ports)" && [ -n "$ports" ] || {
         echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
         return 1
     }
+    ! ufw_enabled || on=true
     # shellcheck disable=SC2086 # one port per word
-    if ! outside="$(outside_ssh_peers $ports)"; then
+    if ! "$on" && ! outside="$(outside_ssh_peers $ports)"; then
         echo "  Couldn't list the established SSH connections with ss, so the firewall is left unchanged." >&2
         return 1
     fi
@@ -276,7 +278,7 @@ configure_ufw() {
     if ! apt_installed ufw; then
         apt_get install -y ufw || return 1
     fi
-    sudo ufw default deny incoming > /dev/null || return 1
+    "$on" || sudo ufw default deny incoming > /dev/null || return 1
     for port in $ports; do
         for range in "${SSH_RANGES[@]}"; do
             sudo ufw allow from "$range" to any port "$port" proto tcp > /dev/null || return 1
@@ -284,7 +286,7 @@ configure_ufw() {
     done
     sudo ufw allow in on tailscale0 > /dev/null || return 1
     sudo ufw allow "$TAILSCALE_PORT/udp" > /dev/null || return 1
-    sudo ufw --force enable > /dev/null
+    "$on" || sudo ufw --force enable > /dev/null
 }
 
 # Set up the firewall once sudo is in use

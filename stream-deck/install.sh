@@ -5,9 +5,9 @@ set -euo pipefail
 # Terminal, and Files actions open the folder or file in front in Zed, Ghostty, or Finder. Its
 # bin/open-in says how it finds them. Its Chrome, New Tab, Gmail, T3 Code, and Claude actions
 # run bin/open-app, which does what the matching Hammerspoon hotkeys do, and also finds Chrome's
-# Gmail tab. The hammerspoon step copies bin/open-in too, for its Ctrl+Opt+T and E. The plugin's
-# stat keys, which plugin.js describes, show live CPU, memory, and other stats, and its Overview
-# key opens a page of them. Stream Deck loads plugins when it starts, so a run that changes the
+# Gmail tab. The hammerspoon step copies bin/open-in too, for its Ctrl+Opt+Cmd+T and E. The
+# plugin's stat keys, which plugin.js describes, show live CPU, memory, and other stats, and its
+# Overview key opens a page of them. Stream Deck loads plugins when it starts, so a run that changes the
 # plugin restarts a running Stream Deck. macOS only, since Stream Deck has no Linux app. The
 # homebrew step installs Stream Deck.
 #

@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, turn off Spotlight's
-# Cmd+Space shortcut, so Raycast can take it, and the next input source's Ctrl+Opt+Space, so
-# Hammerspoon can, and set the hostname when it's unset or invalid.
+# Cmd+Space shortcut, so Raycast can take it, and set the hostname when it's unset or invalid.
 # Only writes values that differ, and only restarts Finder, Dock, or SystemUIServer when one of
 # theirs changed.
 #
@@ -30,11 +29,9 @@ hotkey_off_plist() {
 
 # The shortcuts the step turns off, as symbolic hotkey, modifiers, description, and the app that
 # takes the shortcut. Spotlight's "Show Spotlight search" is Cmd+Space (Cmd is 1048576); Raycast's
-# own setting binds it once it's free. "Select next source in Input menu" is Ctrl+Opt+Space (Ctrl
-# 262144 plus Opt 524288), which hammerspoon/init.lua binds.
+# own setting binds it once it's free.
 symbolic_hotkeys() {
     "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Raycast"
-    "$@" 61 786432 "the next input source's Ctrl+Opt+Space shortcut" "Hammerspoon"
 }
 
 # Each changed setting as " domain:key", and each one whose write failed as " domain key": in
@@ -250,7 +247,7 @@ status_app_firewall() {
 # hostname, and Ghostty drops a URL it can't parse. A Mac with no HostName takes one from the
 # network, which can be a name such as Unknown_d6:96:0e:05:c6:0a, whose colons break the URL.
 # Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys and Hammerspoon's
-# Ctrl+Opt+T and E find no folder. So HostName is set to LocalHostName, the name in System
+# Ctrl+Opt+Cmd+T and E find no folder. So HostName is set to LocalHostName, the name in System
 # Settings → General → Sharing, which macOS keeps to letters, digits, and hyphens.
 hostname_valid() {
     local name

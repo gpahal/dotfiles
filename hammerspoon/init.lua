@@ -1,11 +1,13 @@
 -- Global hotkeys. Each opens its app, or brings it to the front when it's running:
---   Ctrl+Opt+Space  Claude
---   Ctrl+Opt+B      Google Chrome
---   Ctrl+Opt+N      a new Chrome tab, with the clipboard's text pasted into the address bar and
---                   selected, so typing or Delete replaces it
---   Ctrl+Opt+T      Ghostty at the folder in front, as the Stream Deck's Terminal key does
---   Ctrl+Opt+C      T3 Code
---   Ctrl+Opt+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
+--   Ctrl+Opt+Cmd+Space  Claude
+--   Ctrl+Opt+Cmd+B      Google Chrome
+--   Ctrl+Opt+Cmd+N      a new Chrome tab, with the clipboard's text pasted into the address bar
+--                       and selected, so typing or Delete replaces it
+--   Ctrl+Opt+Cmd+T      Ghostty at the folder in front, as the Stream Deck's Terminal key does
+--   Ctrl+Opt+Cmd+C      T3 Code
+--   Ctrl+Opt+Cmd+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
+-- Ctrl+Opt alone would clash with Rectangle's recommended shortcuts (Ctrl+Opt+C, E, and T), which
+-- Rectangle uses with Cmd only on the arrow keys.
 -- The hammerspoon step copies this file to ~/.hammerspoon/init.lua, and the Stream Deck plugin's
 -- bin/open-in, which finds the folder or file, to ~/.hammerspoon/bin/open-in. Hammerspoon needs
 -- Accessibility, a manual step, to send the new tab's keystrokes and read Zed's window title and
@@ -16,7 +18,7 @@ local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
 local T3_CODE = "com.t3tools.t3code"
 local OPEN_IN = hs.configdir .. "/bin/open-in"
-local MODS = { "ctrl", "alt" }
+local MODS = { "ctrl", "alt", "cmd" }
 -- How long Chrome gets to come to the front, which includes starting it
 local FRONT_TIMEOUT = 10
 -- How long Chrome gets to focus the new tab's address bar before the paste
@@ -53,7 +55,7 @@ local function chromeInFront()
     return app ~= nil and app:isFrontmost()
 end
 
--- The hotkey's Ctrl+Opt, still held, would turn the Cmd+T sent below into Ctrl+Opt+Cmd+T
+-- The hotkey's modifiers, still held, would turn the Cmd+T sent below into Ctrl+Opt+Cmd+T
 local function modifiersHeld()
     local mods = hs.eventtap.checkKeyboardModifiers()
     return mods.cmd or mods.alt or mods.ctrl or mods.shift

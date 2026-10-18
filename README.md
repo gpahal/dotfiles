@@ -217,7 +217,7 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 - [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
 - Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
-- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+T` and `Ctrl+Opt+E` read
+- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` read
 
 ### Stream Deck
 
@@ -235,7 +235,7 @@ The keys of apps show each app's official icon or logo, taken from the app's own
 
 Sometimes there's no path to use: another app is in front, Zed has no file open, T3 Code shows no thread, or the folder is on another machine over SSH. The key then opens a new window instead: Finder or Ghostty at your home folder, or an empty Zed window. The key shows a warning when a permission is missing or nothing opened. Each press adds a line to Stream Deck's log for the plugin, `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log`.
 
-The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`, and Hammerspoon's `Ctrl+Opt+T` and `Ctrl+Opt+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
+The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do what the [Hammerspoon](#hammerspoon) hotkeys do, through the plugin's `bin/open-app`, and Hammerspoon's `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` do what **Terminal** and **Editor** do. **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab when none is open.
 
 **Overview** shows CPU and memory use, and a press opens the **System** page of live stats. The plugin bundles the page as a profile, and **Back** returns to the profile you came from:
 
@@ -255,14 +255,14 @@ macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets 
 
 | Hotkey | What it does |
 | :- | :- |
-| `Ctrl+Opt+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
-| `Ctrl+Opt+B` | Opens Google Chrome |
-| `Ctrl+Opt+N` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
-| `Ctrl+Opt+T` | Opens Ghostty at the folder in front, as the Stream Deck's **Terminal** key does |
-| `Ctrl+Opt+C` | Opens T3 Code |
-| `Ctrl+Opt+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
+| `Ctrl+Opt+Cmd+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
+| `Ctrl+Opt+Cmd+B` | Opens Google Chrome |
+| `Ctrl+Opt+Cmd+N` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
+| `Ctrl+Opt+Cmd+T` | Opens Ghostty at the folder in front, as the Stream Deck's **Terminal** key does |
+| `Ctrl+Opt+Cmd+C` | Opens T3 Code |
+| `Ctrl+Opt+Cmd+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
 
-The [Stream Deck](#stream-deck) has keys for the same six. `Ctrl+Opt+T` and `Ctrl+Opt+E` run a copy of the plugin's `bin/open-in`, which the step puts in `~/.hammerspoon/bin`, and print its log line to Hammerspoon's console. A running Hammerspoon reloads the config when the step changes it, and the config sets Hammerspoon to open at login. The new tab's keystrokes, and reading Zed's window title and T3 Code's thread, need Accessibility, a [manual step](#macos-1). `Ctrl+Opt+Space` is macOS's shortcut for the next input source, so the `macos` step turns that off.
+The [Stream Deck](#stream-deck) has keys for the same six. `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` run a copy of the plugin's `bin/open-in`, which the step puts in `~/.hammerspoon/bin`, and print its log line to Hammerspoon's console. A running Hammerspoon reloads the config when the step changes it, and the config sets Hammerspoon to open at login. The new tab's keystrokes, and reading Zed's window title and T3 Code's thread, need Accessibility, a [manual step](#macos-1). The hotkeys use `Ctrl+Opt+Cmd` because [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`.
 
 ### tmux
 
@@ -378,7 +378,7 @@ Installed from the Mac App Store with mas, once you're signed in to the App Stor
 The `macos` step sets these:
 
 - **Finder:** hidden files, extensions, path and status bars, the full path in the window title, list view, folders first, search the current folder, no warning when changing an extension
-- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, no next input source on `Ctrl+Opt+Space`, so [Hammerspoon](#hammerspoon) can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
+- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
 - **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
 - **Screenshots:** PNG in `~/Screenshots`, without window shadows
 - **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
@@ -414,7 +414,7 @@ Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS 
 11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
 12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
 13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press **Editor**, **Terminal**, and **Files** once each with Ghostty, Zed, and Finder in front, then press **New Tab** and **Gmail**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and T3 Code's thread, and paste into the new tab.
-14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+N` can paste into the new tab and `Ctrl+Opt+T` and `Ctrl+Opt+E` can read Zed's window title and T3 Code's thread. Press `Ctrl+Opt+T` and `Ctrl+Opt+E` once each with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. The config sets Hammerspoon to open at login.
+14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+Cmd+N` can paste into the new tab and `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` can read Zed's window title and T3 Code's thread. Press `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` once each with Ghostty, Zed, and Finder in front, and click **Allow** on each prompt. The config sets Hammerspoon to open at login.
 
 **Shell**
 
@@ -480,7 +480,7 @@ Run these once setup and the manual steps are done. The AI tools have their own 
 - After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
 - If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
 - With a file open in Zed, the Stream Deck **Files** key reveals it in Finder, and **Terminal** opens Ghostty at its folder. In that Ghostty tab, **Editor** opens the folder in Zed. With a thread open in T3 Code, **Editor**, **Terminal**, and **Files** open its worktree.
-- With a URL copied, `Ctrl+Opt+N` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Space` and the **Claude** key bring Claude to the front, and `Ctrl+Opt+C` and the **T3 Code** key bring T3 Code to the front. With a file open in Zed, `Ctrl+Opt+T` opens Ghostty at its folder, and in that Ghostty tab, `Ctrl+Opt+E` opens the folder in Zed. With a thread open in T3 Code, `Ctrl+Opt+T` and `Ctrl+Opt+E` open its worktree. With Gmail open in a background tab, the **Gmail** key switches Chrome to that tab instead of opening another.
+- With a URL copied, `Ctrl+Opt+Cmd+N` and the Stream Deck **New Tab** key each open a new Chrome tab with the URL selected in the address bar. `Ctrl+Opt+Cmd+Space` and the **Claude** key bring Claude to the front, and `Ctrl+Opt+Cmd+C` and the **T3 Code** key bring T3 Code to the front. With a file open in Zed, `Ctrl+Opt+Cmd+T` opens Ghostty at its folder, and in that Ghostty tab, `Ctrl+Opt+Cmd+E` opens the folder in Zed. With a thread open in T3 Code, `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` open its worktree. With Gmail open in a background tab, the **Gmail** key switches Chrome to that tab instead of opening another.
 - The Stream Deck **Overview** key shows CPU and memory. Pressing it opens the **System** page, where every key shows a number within a few seconds, a stat key opens Activity Monitor, and **Back** returns to your keys.
 
 ### Ubuntu

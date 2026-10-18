@@ -289,8 +289,18 @@ is_clean() {
     files="$(kept_ignored "$1" | while IFS= read -r file; do find "$1/${file%/}" ! -type d || exit 1; done)" ||
         return 1
     while IFS= read -r file; do
-        [ -z "$file" ] || cmp -s "$file" "$main/${file#"$1"/}" || return 1
+        [ -z "$file" ] || same_file "$file" "$main/${file#"$1"/}" || return 1
     done <<< "$files"
+}
+
+# Succeeds when $1 is a copy of $2. cmp follows symlinks, so two links to different files with the
+# same bytes would match: a link matches only a link to the same place.
+same_file() {
+    if [ -L "$1" ] || [ -L "$2" ]; then
+        [ -L "$1" ] && [ -L "$2" ] && [ "$(readlink "$1")" = "$(readlink "$2")" ]
+    else
+        cmp -s "$1" "$2"
+    fi
 }
 
 # Succeeds when another branch, local or remote, has every commit branch $1 has. The list is read

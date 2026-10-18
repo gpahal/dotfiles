@@ -167,10 +167,11 @@ mark() {
     touch "$gitdir/worktree-hook-created-branch"
     printf '%s\n' "$2" > "$gitdir/worktree-hook-session"
 }
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-other p-unmarked p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-other p-unmarked \
+    p-here; do
     git wt add "$name" > /dev/null 2>&1 || fail "git wt add $name failed"
 done
-for name in p-clean p-built p-cache p-changed p-committed p-draft p-here; do
+for name in p-clean p-built p-cache p-changed p-committed p-draft p-link p-samelink p-here; do
     mark "$name" s1
 done
 mark p-other s2
@@ -190,15 +191,25 @@ printf '/Draft notes.txt\n/zz.local\n' >> "$repo/.git/info/exclude"
 echo draft > "$dir/p-draft/Draft notes.txt"
 echo same > "$repo/zz.local"
 echo same > "$dir/p-draft/zz.local"
+# An ignored symlink is a copy of the main checkout's only when it points at the same place, even
+# when what each points at holds the same bytes
+printf '/env-a\n/env-b\n' >> "$repo/.git/info/exclude"
+for path in "$repo" "$dir/p-link" "$dir/p-samelink"; do
+    echo same > "$path/env-a"
+    echo same > "$path/env-b"
+done
+ln -s env-a "$repo/.env"
+ln -s env-b "$dir/p-link/.env"
+ln -s env-a "$dir/p-samelink/.env"
 commit_in "$dir/p-committed" mine
 # The worktree prune runs from stays, as git can't remove it
 out="$(cd "$dir/p-here" && git wt prune --session s1 2>&1)" || fail "git wt prune --session s1 failed: $out"
-for name in p-clean p-built p-cache; do
+for name in p-clean p-built p-cache p-samelink; do
     [ ! -e "$dir/$name" ] || fail "git wt prune --session s1 kept $name"
     git show-ref --verify --quiet "refs/heads/$name" && fail "git wt prune --session s1 kept branch $name"
 done
 assert_contains "$out" "git wt: removed $(cd -P "$dir" && pwd)/p-clean and branch p-clean"
-for name in p-changed p-committed p-draft p-other p-unmarked p-here; do
+for name in p-changed p-committed p-draft p-link p-other p-unmarked p-here; do
     [ -d "$dir/$name" ] || fail "git wt prune --session s1 removed $name"
     git show-ref --verify --quiet "refs/heads/$name" || fail "git wt prune --session s1 deleted branch $name"
 done
@@ -207,15 +218,15 @@ git wt prune 2> /dev/null || fail "git wt prune failed"
 for name in p-other p-here; do
     [ ! -e "$dir/$name" ] || fail "git wt prune kept $name"
 done
-for name in p-changed p-committed p-draft p-unmarked; do
+for name in p-changed p-committed p-draft p-link p-unmarked; do
     [ -d "$dir/$name" ] || fail "git wt prune removed $name"
 done
 assert_exit 1 git wt prune --session
 assert_exit 1 git wt prune --bogus
-for name in p-changed p-committed p-draft p-unmarked; do
+for name in p-changed p-committed p-draft p-link p-unmarked; do
     git wt rm -f "$name" 2> /dev/null
 done
-rm "$repo/zz.local"
+rm "$repo/zz.local" "$repo/.env" "$repo/env-a" "$repo/env-b"
 
 # A --separate-git-dir repo is keyed by its checkout, not by the git dir's parent
 git init -q -b main --separate-git-dir "$SANDBOX/sep.git" "$HOME/Dev/x/sep"

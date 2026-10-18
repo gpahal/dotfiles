@@ -35,6 +35,7 @@ codex_keepable() {
     keepable codex "$1" "$2" "Codex's $3" "${4:-}"
 }
 # The default model and high reasoning effort, which /model changes
+keepable_forget codex
 codex_keepable .model '"gpt-6.1-sol"' "model (model)"
 codex_keepable .model_reasoning_effort '"high"' "reasoning effort (model_reasoning_effort)"
 # The CLI footer: model with reasoning effort, directory, git branch, and context used. /statusline

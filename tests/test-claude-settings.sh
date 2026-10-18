@@ -184,4 +184,16 @@ assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 echo '"maybe"' > "$SANDBOX/logged-in"
 run status
 assert_contains "$RUN_OUTPUT" "unknown    Signed in to Claude Code: claude auth status didn't say"
+
+# Loading the codex step after this one, as check-ai-settings.sh does, keeps Claude Code's
+# keepable values, and loading this step again adds them once
+load_script ai_tools/claude-code/install.sh
+claude_rows="$(keepable_indexes claude_code | wc -l)"
+[ "$claude_rows" -gt 0 ] || fail "no keepable values for Claude Code"
+load_script ai_tools/codex/install.sh
+assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading codex"
+assert_contains "$(claude_code_settings)" "claude-opus-5-5"
+load_script ai_tools/claude-code/install.sh
+assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading it again"
+[ "$(keepable_indexes codex | wc -l)" -gt 0 ] || fail "loading claude-code again dropped codex's values"
 test_done

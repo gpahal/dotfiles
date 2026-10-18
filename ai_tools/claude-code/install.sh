@@ -27,6 +27,7 @@ CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the w
 claude_code_keepable() {
     keepable claude_code "$1" "$2" "Claude Code's $3" "${4:-}"
 }
+keepable_forget claude_code
 claude_code_keepable .model '"claude-opus-5-5"' "model (model)"
 claude_code_keepable '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"' \
     "claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"

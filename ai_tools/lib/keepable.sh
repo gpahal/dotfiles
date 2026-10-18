@@ -10,13 +10,35 @@
 
 # One row per value: its tool, its path in the tool's settings, the repo's value in the settings'
 # own syntax, the name prompts and status give it, and whether only Ubuntu gets it.
-# keepable_choose sets KEEP_REPLACE to whether to write each over yours.
-KEEP_TOOLS=()
-KEEP_PATHS=()
-KEEP_VALUES=()
-KEEP_NAMES=()
-KEEP_UBUNTU=()
-KEEP_REPLACE=()
+# keepable_choose sets KEEP_REPLACE to whether to write each over yours. Sourcing this file again,
+# as for a second step in the same shell, keeps the rows the first step added.
+KEEP_TOOLS=(${KEEP_TOOLS[@]+"${KEEP_TOOLS[@]}"})
+KEEP_PATHS=(${KEEP_PATHS[@]+"${KEEP_PATHS[@]}"})
+KEEP_VALUES=(${KEEP_VALUES[@]+"${KEEP_VALUES[@]}"})
+KEEP_NAMES=(${KEEP_NAMES[@]+"${KEEP_NAMES[@]}"})
+KEEP_UBUNTU=(${KEEP_UBUNTU[@]+"${KEEP_UBUNTU[@]}"})
+KEEP_REPLACE=(${KEEP_REPLACE[@]+"${KEEP_REPLACE[@]}"})
+
+# Drop a tool's rows, so a step loaded again adds its values once
+# Usage: keepable_forget <tool>
+keepable_forget() {
+    local i tools=() paths=() values=() names=() ubuntu=() replace=()
+    for i in ${KEEP_TOOLS[@]+"${!KEEP_TOOLS[@]}"}; do
+        [ "${KEEP_TOOLS[i]}" != "$1" ] || continue
+        tools+=("${KEEP_TOOLS[i]}")
+        paths+=("${KEEP_PATHS[i]}")
+        values+=("${KEEP_VALUES[i]}")
+        names+=("${KEEP_NAMES[i]}")
+        ubuntu+=("${KEEP_UBUNTU[i]}")
+        replace+=("${KEEP_REPLACE[i]}")
+    done
+    KEEP_TOOLS=(${tools[@]+"${tools[@]}"})
+    KEEP_PATHS=(${paths[@]+"${paths[@]}"})
+    KEEP_VALUES=(${values[@]+"${values[@]}"})
+    KEEP_NAMES=(${names[@]+"${names[@]}"})
+    KEEP_UBUNTU=(${ubuntu[@]+"${ubuntu[@]}"})
+    KEEP_REPLACE=(${replace[@]+"${replace[@]}"})
+}
 
 # Usage: keepable <tool> <path> <value> <name> [ubuntu]
 keepable() {

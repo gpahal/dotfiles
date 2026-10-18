@@ -25,7 +25,7 @@ Set up the Mac first, then the Ubuntu machine: Ubuntu's **SSH key** manual step 
 ### macOS
 
 1. Run `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. The first `git` command asks to install the Command Line Tools. Install them, then run the clone again.
-2. Sign in to the App Store, so the `homebrew` step can install the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional: buy it there once if you want it. Without it, the `homebrew` step notes it isn't installed, and `--status` lists it as `info`, which doesn't need attention.
+2. Sign in to the App Store, so the `homebrew` step can install the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional. Buy it there once if you want it. Without it, the `homebrew` step notes it isn't installed, and `--status` lists it as `info`, which doesn't need attention.
 3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
 4. Give Ghostty Full Disk Access, then quit and reopen it. The first of the macOS [manual steps](#macos-1) says how.
 5. Do the rest of the macOS [manual steps](#macos-1), commit signing included.
@@ -202,7 +202,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 
 - [Ghostty](https://ghostty.org/) with the GitHub Dark theme and Monaspace, a native tab bar, copy-on-select, and SSH integration, which installs Ghostty's terminfo on remote hosts
 - Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), and `Cmd+Shift+Enter` zooms a split
-- `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME
+- `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME. It takes over macOS's `` Cmd+` ``, which switches between an app's windows. That's intended
 - A notification when a command that ran over 10 seconds finishes while Ghostty is unfocused
 - Copied to `~/.config/ghostty/config.ghostty`
 
@@ -247,7 +247,7 @@ The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** actions do w
 
 Each stat key updates every 2 seconds while it's on screen, and a press opens Activity Monitor. Green, yellow, and red show how close each stat is to trouble. Memory's color is macOS's memory pressure, as in Activity Monitor, since macOS fills free memory with cache. CPU and GPU draw the last minute as a line. GPU, Temperature, and Power come from [macmon](#cli-tools-installed-via-brew), and show a dash without it. The stat keys are also in the category, to put on any page. The page is laid out for the 15-key Stream Deck. Stream Deck installs it the first time you press **Overview** and keeps its own copy after, so a change to `stream-deck/profile` reaches Stream Deck only once you delete the **System** profile in Stream Deck's settings and press **Overview** again. After editing the page, run `bash stream-deck/build-profile.sh`.
 
-Stream Deck runs the plugin's `bin/open-in` for every key, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title and the thread T3 Code shows, and press the new tab's keys, and Automation lets it control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
+Stream Deck runs the plugin's `bin/open-in` for every key, so macOS asks Stream Deck for the permissions it needs. Accessibility lets it read Zed's window title and the thread T3 Code shows, and press the new tab's keys. Automation lets it control Ghostty, Finder, System Events, and Chrome. Re-running the step keeps them. [Manual steps](#macos-1) has the one-time setup. Ghostty's shell integration tells Ghostty the tab's folder, which needs a hostname a URL can hold, so the `macos` step sets one.
 
 ### Hammerspoon
 
@@ -370,7 +370,7 @@ macOS only. Installed with brew casks:
 Installed from the Mac App Store with mas, once you're signed in to the App Store (see [First run](#macos)):
 
 - [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704): keeps the Mac awake
-- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar. Paid and optional, so it installs only once you've bought it
+- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar. It's paid and optional, and installs only once you buy it
 - [Windows App](https://apps.apple.com/app/windows-app/id1295203466): Microsoft's RDP client, to reach the Ubuntu desktop through GNOME's Remote Login
 
 ### macOS defaults

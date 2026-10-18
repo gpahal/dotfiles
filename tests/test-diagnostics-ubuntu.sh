@@ -474,13 +474,19 @@ echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "info       Container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
-# A stopped daemon runs no containers, and isn't started
+# A stopped daemon isn't started. With no containerd shim running, it runs no containers. With one,
+# live-restore kept containers running, whose ports can't be checked.
 touch "$SANDBOX/docker-inactive"
+stub pgrep '[ "$*" == "-x containerd-shim" ] && [ -e "'"$SANDBOX"'/shim" ]'
 : > "$STUB_LOG"
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 assert_file_not_contains "$STUB_LOG" "docker ps"
-rm "$SANDBOX/docker-inactive"
+touch "$SANDBOX/shim"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: containers are running while the Docker daemon is down, so their published ports can't be checked; start it with sudo systemctl start docker"
+assert_file_not_contains "$STUB_LOG" "docker ps"
+rm "$SANDBOX/docker-inactive" "$SANDBOX/shim"
 read_only
 # The docker step's report includes both once Docker is installed
 docker_installed() { true; }

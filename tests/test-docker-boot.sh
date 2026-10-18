@@ -11,6 +11,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script docker/install.sh
+# No containerd shim runs, so a stopped daemon runs no containers
+stub pgrep 'exit 1'
 is_macos() { false; }
 is_ubuntu() { true; }
 

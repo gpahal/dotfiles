@@ -166,12 +166,42 @@ daemon_restart_note() {
     printf '%s' " binding applies to the default bridge, and to networks created from now on"
 }
 
+# docker_status_run <label> <docker args>...: run docker for a status check, stopped after 30 s,
+# leaving its output in DOCKER_OUT and its exit status in DOCKER_STATUS, which the caller declares
+# local. Outside the docker group it goes through sudo -n, which runs only while sudo credentials
+# are cached, since logging in again can't help. Returns 0 when docker succeeded; 1 when it
+# reported, under the label, why docker couldn't be asked; and 2 when docker failed otherwise,
+# which the caller reports.
+docker_status_run() {
+    local label="$1" docker=(docker)
+    shift
+    DOCKER_OUT=""
+    DOCKER_STATUS=0
+    if ! in_docker_group; then
+        if ! sudo_cached; then
+            status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
+            return 1
+        fi
+        docker=(sudo -n docker)
+    fi
+    DOCKER_OUT="$(run_bounded 30 "${docker[@]}" "$@" 2>&1)" || DOCKER_STATUS=$?
+    [ "$DOCKER_STATUS" -ne 0 ] || return 0
+    case "$DOCKER_OUT" in
+        # In the group, but this session started before joining it
+        *"permission denied"*)
+            status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
+            ;;
+        *) return 2 ;;
+    esac
+    return 1
+}
+
 # Information, not something the step sets up: what images, containers, volumes, and the build
 # cache take on disk, so you can prune before the disk fills. docker.socket would start a stopped
 # daemon on the first docker command, so it's only asked when docker.service is already running.
 # It prunes nothing.
 status_docker_usage() {
-    local label="Docker disk usage" out status=0 type count size reclaimable summary=""
+    local label="Docker disk usage" out status=0 type count size reclaimable summary="" DOCKER_OUT DOCKER_STATUS
     if status_quick; then
         status_item unverified "$label: skipped by --quick"
         return 0
@@ -182,17 +212,16 @@ status_docker_usage() {
     fi
     # One line per type: Images, Containers, Local Volumes, and Build Cache. Docker's output has
     # had these fields since 17.06; the reclaimable space may end in a percentage.
-    out="$(run_bounded 30 docker system df --format '{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}' 2>&1)" || status=$?
+    docker_status_run "$label" system df --format '{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}' || status=$?
+    [ "$status" -ne 1 ] || return 0
+    out="$DOCKER_OUT"
     if [ "$status" -ne 0 ]; then
         case "$out" in
-            *"permission denied"*)
-                status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
-                ;;
             *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
                 status_item info "$label: the daemon isn't running"
                 ;;
             *)
-                [ "$status" -ne 124 ] || out="docker system df didn't answer within 30 s"
+                [ "$DOCKER_STATUS" -ne 124 ] || out="docker system df didn't answer within 30 s"
                 status_item info "$label: couldn't check ($(grep -v '^ *$' <<< "$out" | head -n 1))"
                 ;;
         esac
@@ -228,22 +257,17 @@ ports_on_every_address() {
 status_docker_ports() {
     local label="Container ports published on every address, which ufw doesn't filter"
     local none="No container ports published on every address, which ufw doesn't filter"
-    local out status=0 name ports open="" port
+    local out status=0 name ports open="" port DOCKER_OUT DOCKER_STATUS
     if ! systemctl is-active --quiet docker.service 2>/dev/null; then
         status_item ok "$none: the daemon isn't running"
         return 0
     fi
-    out="$(run_bounded 30 docker ps --format '{{.Names}}\t{{.Ports}}' 2>&1)" || status=$?
+    docker_status_run "$label" ps --format '{{.Names}}\t{{.Ports}}' || status=$?
+    [ "$status" -ne 1 ] || return 0
+    out="$DOCKER_OUT"
     if [ "$status" -ne 0 ]; then
-        case "$out" in
-            *"permission denied"*)
-                status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
-                ;;
-            *)
-                [ "$status" -ne 124 ] || out="docker ps didn't answer within 30 s"
-                status_item unknown "$label: couldn't list the containers ($(grep -v '^ *$' <<< "$out" | head -n 1))"
-                ;;
-        esac
+        [ "$DOCKER_STATUS" -ne 124 ] || out="docker ps didn't answer within 30 s"
+        status_item unknown "$label: couldn't list the containers ($(grep -v '^ *$' <<< "$out" | head -n 1))"
         return 0
     fi
     while IFS=$'\t' read -r name ports; do

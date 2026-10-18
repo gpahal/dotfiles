@@ -351,6 +351,15 @@ subtest ubuntu_report
 # --- the docker step: disk usage, and ports published on every address ---
 load_script docker/install.sh
 is_macos() { false; }
+# You're in the docker group while $SANDBOX/in-group exists. sudo -n runs a command while
+# $SANDBOX/sudo-cached exists, and fails without asking otherwise.
+stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
+touch "$SANDBOX/in-group"
+stub sudo '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
+[ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }
+shift
+exec "$@"'
+rm -f "$SANDBOX/sudo-cached"
 # docker.service is active unless $SANDBOX/docker-inactive exists; docker.socket always is
 stub systemctl 'case "$*" in
     "is-active --quiet docker.service") [ ! -e "'"$SANDBOX"'/docker-inactive" ] ;;
@@ -381,8 +390,23 @@ assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 0, 0B; conta
 # Permission denied on the socket is unverified, and says why
 docker_df 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock\n' 1
 assert_exit 0 diag status_docker_usage
-assert_contains "$RUN_OUTPUT" "unverified Docker disk usage"
-assert_contains "$RUN_OUTPUT" "docker group"
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: me can't reach the daemon's socket yet; log out and back in"
+# Outside the docker group, logging in again can't help: the check goes through sudo -n while sudo
+# credentials are cached, and is unverified otherwise, without running docker
+rm "$SANDBOX/in-group"
+: > "$STUB_LOG"
+assert_exit 0 diag status_docker_usage
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: me isn't in the docker group; run sudo -v, then status, to check it"
+assert_file_not_contains "$STUB_LOG" "docker system"
+read_only
+docker_df 'Images\t1\t1GB\t0B\n'
+touch "$SANDBOX/sudo-cached"
+assert_exit 0 diag status_docker_usage
+assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 1, 1GB"
+assert_file_contains "$STUB_LOG" "sudo -n docker system df --format"
+read_only
+rm "$SANDBOX/sudo-cached"
+touch "$SANDBOX/in-group"
 # A daemon that went away, a failure, and output it can't read are information
 docker_df 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n' 1
 assert_exit 0 diag status_docker_usage
@@ -424,7 +448,24 @@ assert_contains "$RUN_OUTPUT" "ok         No container ports published on every 
 echo 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock' > "$SANDBOX/docker-ps"
 echo 1 > "$SANDBOX/docker-ps.status"
 assert_exit 0 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: $(id -un) can't reach the daemon's socket yet"
+assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me can't reach the daemon's socket yet; log out and back in"
+# Outside the docker group, it goes through sudo -n while sudo credentials are cached
+rm "$SANDBOX/in-group"
+: > "$STUB_LOG"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me isn't in the docker group; run sudo -v, then status, to check it"
+assert_file_not_contains "$STUB_LOG" "docker ps"
+read_only
+printf '%b\n' 'web\t0.0.0.0:8080->80/tcp' > "$SANDBOX/docker-ps"
+echo 0 > "$SANDBOX/docker-ps.status"
+touch "$SANDBOX/sudo-cached"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp"
+assert_file_contains "$STUB_LOG" "sudo -n docker ps --format"
+read_only
+rm "$SANDBOX/sudo-cached"
+touch "$SANDBOX/in-group"
+echo 1 > "$SANDBOX/docker-ps.status"
 echo 'Error response from daemon: something broke' > "$SANDBOX/docker-ps"
 assert_exit 3 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: couldn't list the containers (Error response from daemon: something broke)"

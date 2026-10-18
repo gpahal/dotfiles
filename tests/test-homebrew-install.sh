@@ -77,6 +77,16 @@ for code in 130 143 129 1; do
     fi
 done
 
+# A cask that runs an installer names no app in brew's metadata, so cask_state takes its app from
+# CASK_PKG_APPS, on macOS. Without it, an app installed outside brew would count as missing.
+load_script homebrew/install.sh
+is_macos() { true; }
+stub brew 'exit 1'
+for entry in "elgato-stream-deck=/Applications/Elgato Stream Deck.app" "tailscale-app=/Applications/Tailscale.app"; do
+    IFS=$'\t' read -r _ app <<< "$(cask_state "${entry%%=*}")"
+    assert_eq "${entry#*=}" "$app" "the app cask_state finds for ${entry%%=*}"
+done
+
 # shellcheck disable=SC2034 # missing_ubuntu_commands reads it
 UBUNTU_COMMANDS=(sh)
 expected=""

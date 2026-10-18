@@ -701,7 +701,8 @@ install_cask() {
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
             brew reinstall --cask "$cask" || status=$?
             ;;
-        # brew install would fail on the existing app, and `upgrade` skips casks brew doesn't list
+        # brew install would fail on an existing app, or rerun a pkg cask's installer over it, and
+        # `upgrade` skips casks brew doesn't list
         other) echo "  $cask already installed, but not by Homebrew, so upgrade won't update it." ;;
         *)
             echo "  Installing $cask..."
@@ -749,7 +750,8 @@ listed_cask_app() {
 
 # The app each cask that runs an installer puts in place, as <cask>=<path>. brew's metadata lists
 # no app for them.
-CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app")
+CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
+    "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
 # cask_state <cask> [<app>] [<listing>]: print how a Homebrew cask is installed, a tab, and the
 # path of the app it installs: "brew" when brew lists it, "gone" when brew lists it but its app was

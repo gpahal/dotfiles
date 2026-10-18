@@ -8,12 +8,12 @@ set -uo pipefail
 # window instead: Finder and Ghostty at home, Zed empty.
 # The others open Claude, Google Chrome, T3 Code, or Activity Monitor, or bring it to the front
 # when it's running. chrome-tab then opens a new Chrome tab, and when the clipboard holds text,
-# pastes it into the address bar and selects it, as hammerspoon/init.lua does. gmail brings
-# Chrome's first Gmail tab to the front, or opens Gmail in a new tab when none is open.
-# The Stream Deck plugin runs it for each key press, and Hammerspoon's Ctrl+Opt+Cmd+T and E run a
-# copy, so macOS asks each for its permissions: Automation for Ghostty, Finder, System Events, and
-# Google Chrome, and Accessibility to read Zed's window title and T3 Code's page, and to send the
-# new tab's keystrokes. OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log
+# pastes it into the address bar and selects it. gmail brings Chrome's first Gmail tab to the
+# front, or opens Gmail in a new tab when none is open.
+# The Stream Deck plugin runs it for each key press, and Hammerspoon's Ctrl+Opt+Cmd+T, E, and N
+# run a copy, so macOS asks each for its permissions: Automation for Ghostty, Finder, System
+# Events, and Google Chrome, and Accessibility to read Zed's window title and T3 Code's page, and
+# to send the new tab's keystrokes. OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log
 # goes, for the notifications.
 #
 # Each run prints a line to stderr, which the caller adds to its log. It exits 1 when it couldn't
@@ -289,12 +289,18 @@ EOF
     fi
 }
 
-# Wait for Chrome to come to the front, which includes starting it, then press Cmd+T, and with
-# "paste", Cmd+V and Cmd+A once the new tab's address bar has focus. With no window open, Cmd+T
-# opens one. SCRIPT_RESULT is "moved" when another app came to the front before the paste, which
-# then isn't pressed, as hammerspoon/init.lua does.
+# Wait for Chrome to come to the front, which includes starting it, and for the keys pressed to
+# run this to be released, then press Cmd+T, and with "paste", Cmd+V and Cmd+A once the new tab's
+# address bar has focus. With no window open, Cmd+T opens one. SCRIPT_RESULT is "moved" when
+# another app came to the front before the paste, which then isn't pressed.
+# Hammerspoon's Ctrl+Opt+Cmd+N runs it while those keys are still down, which would turn Cmd+T
+# into Ctrl+Opt+Cmd+T. Shift, Control, Option, and Command are bits 17 to 20 of NSEvent's
+# modifierFlags; the wait for them gives up after a second.
 new_tab() {
     applescript "$1" <<EOF
+use framework "AppKit"
+use scripting additions
+
 on run argv
     tell application "System Events"
         repeat 100 times
@@ -303,6 +309,15 @@ on run argv
         end repeat
         if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
             error "Google Chrome didn't come to the front"
+        end if
+    end tell
+    repeat 50 times
+        if (((current application's NSEvent's modifierFlags()) as integer) div 131072) mod 16 is 0 then exit repeat
+        delay 0.02
+    end repeat
+    tell application "System Events"
+        if bundle identifier of (first application process whose frontmost is true) is not "$CHROME" then
+            error "Google Chrome didn't stay in front"
         end if
         keystroke "t" using command down
         if item 1 of argv is "paste" then

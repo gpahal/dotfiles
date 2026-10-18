@@ -115,6 +115,13 @@ assert_exit 0 copy_file "$src2" "$dest2" < /dev/null
 unset DOTFILES_BACKUP
 assert_not_contains "$RUN_OUTPUT" "Back it up"
 assert_eq "edit" "$(cat "$dest2.bak")" ".bak after --backup"
+# An & in the path stays in the question, where bash 5.2's patsub_replacement would put the {} it
+# replaced
+amp="$HOME/a&b/config"
+mkdir -p "$HOME/a&b"
+printf 'mine\n' > "$amp"
+assert_exit 0 copy_file "$src2" "$amp" <<< n
+assert_contains "$RUN_OUTPUT" "Back it up to $amp.bak first?"
 # Put the real is_interactive and confirm back
 load_script lib/common.sh
 

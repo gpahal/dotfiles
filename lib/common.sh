@@ -738,7 +738,9 @@ maybe_backup() {
         yes) ;;
         *)
             if [ "$default" != yes ] || is_interactive; then
-                confirm "${question//\{\}/$bak}" || return 0
+                # Not ${question//\{\}/$bak}: bash 5.2's patsub_replacement would put the {} back
+                # in place of each & in $bak
+                confirm "${question%%\{\}*}$bak${question#*\{\}}" || return 0
             fi
             ;;
     esac

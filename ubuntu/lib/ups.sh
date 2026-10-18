@@ -155,10 +155,22 @@ nut_password() {
     echo "$password"
 }
 
+# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and the nut
+# group, which upsd and upsmon read it through. Returns 2 when it can't be read without sudo.
+nut_file_current() {
+    local current group
+    current="$(nut_read "$1")" || return 2
+    [ "$current" == "$2" ] || return 1
+    # Through sudo -n, as nut_read reads, when $NUT_DIR is closed to you
+    group="$({ ls -ld "$NUT_DIR/$1" || sudo -n ls -ld "$NUT_DIR/$1"; } 2>/dev/null | awk '{ print $4 }')"
+    [ -n "$group" ] || return 2
+    [ "$group" == "$NUT_GROUP" ]
+}
+
 # Succeeds when each file in $NUT_DIR is what the step writes for the configured UPS. Returns 2
 # when they can't be read without sudo.
 nut_files_current() {
-    local conf users driver vendor product password file current
+    local conf users driver vendor product password file
     conf="$(nut_read ups.conf)" && users="$(nut_read upsd.users)" || return 2
     driver="$(nut_value "$UPS_NAME" driver <<< "$conf")"
     vendor="$(nut_value "$UPS_NAME" vendorid <<< "$conf")"
@@ -166,8 +178,8 @@ nut_files_current() {
     password="$(nut_value upsmon password <<< "$users")"
     [ -n "$driver" ] && [ -n "$password" ] || return 1
     for file in "${NUT_FILES[@]}"; do
-        current="$(nut_read "$file")" || return 2
-        [ "$current" == "$(nut_config "$file" "$driver" "$vendor" "$product" "$password")" ] || return 1
+        nut_file_current "$file" "$(nut_config "$file" "$driver" "$vendor" "$product" "$password")" ||
+            return
     done
 }
 
@@ -258,9 +270,10 @@ warn_no_ups() {
     esac
 }
 
-# Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them
+# Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them. The
+# group is set in the same install, so no failure leaves the file without it.
 write_nut_file() {
-    write_root_file "$NUT_DIR/$1" "$2" 0640 && sudo chgrp nut "$NUT_DIR/$1"
+    write_root_file "$NUT_DIR/$1" "$2" 0640 "$NUT_GROUP"
 }
 
 # The enumerator turns ups.conf's sections into nut-driver@<name> units, so it runs before the
@@ -293,7 +306,7 @@ setup_ups() {
     }
     for file in "${NUT_FILES[@]}"; do
         content="$(nut_config "$file" "$driver" "$vendor" "$product" "$password")"
-        [ "$(nut_read "$file" 2>/dev/null)" != "$content" ] || continue
+        ! nut_file_current "$file" "$content" || continue
         write_nut_file "$file" "$content" || return 1
         changed=true
     done

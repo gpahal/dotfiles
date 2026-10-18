@@ -89,6 +89,7 @@ NUT_UNITS=(nut-server.service nut-monitor.service)
 NUT_DIR=/etc/nut
 # The files the step writes in $NUT_DIR, all readable only by root and the nut group
 NUT_FILES=(nut.conf ups.conf upsd.conf upsd.users upsmon.conf)
+NUT_GROUP=nut
 # upower's hwdb, whose UPOWER_BATTERY_TYPE=ups tag tells a UPS on USB (ups_plugged)
 UPOWER_HWDB=/usr/lib/udev/hwdb.d/95-upower-hid.hwdb
 # The UPS's name in ups.conf, as upsc ups@localhost reads it

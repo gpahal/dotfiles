@@ -78,6 +78,10 @@ case "$url" in
 esac
 tag="${url#https://raw.githubusercontent.com/junegunn/vim-plug/}"
 cp "'"$SANDBOX"'/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
+# The next two minor releases after the repo's, so their tags never match a real one
+IFS=. read -r plug_major plug_minor _ < "$PLUG_VERSION"
+NEXT="$plug_major.$((plug_minor + 1)).0"
+AFTER="$plug_major.$((plug_minor + 2)).0"
 release() {
     git -C "$REMOTES/junegunn/vim-plug" tag "$1"
     printf '%s\n' '" vim-plug: Vim plugin manager' "\" release $1" > "$SANDBOX/plug-$1.vim"
@@ -112,18 +116,18 @@ old_tpm="$(pin_of tmux-plugins/tpm)"
 sensible="$(commit tpope/vim-sensible 2)"
 navigator="$(commit christoomey/vim-tmux-navigator 2)"
 yank="$(commit tmux-plugins/tmux-yank 2)"
-release 0.15.0
+release "$NEXT"
 expected_vimrc="$(sed -e "s/$(pin_of tpope/vim-sensible)/$sensible/" \
     -e "s/$(pin_of christoomey/vim-tmux-navigator)/$navigator/" "$VIMRC")"
 expected_lock="$(sed -e "s/$(pin_of christoomey/vim-tmux-navigator)/$navigator/" \
     -e "s/$(pin_of tmux-plugins/tmux-yank)/$yank/" "$LOCK")"
 bump 0
 assert_contains "$RUN_OUTPUT" "https://github.com/tpope/vim-sensible/compare/"
-assert_contains "$RUN_OUTPUT" "vim-plug: $old_version -> 0.15.0"
+assert_contains "$RUN_OUTPUT" "vim-plug: $old_version -> $NEXT"
 assert_eq "$expected_vimrc" "$(cat "$VIMRC")" "vimrc after the bump"
 assert_eq "$expected_lock" "$(cat "$LOCK")" "plugins.lock after the bump"
-assert_eq "$(cat "$SANDBOX/plug-0.15.0.vim")" "$(cat "$PLUG_VIM")" "plug.vim after the bump"
-assert_eq 0.15.0 "$(cat "$PLUG_VERSION")" "plug.vim.version after the bump"
+assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after the bump"
+assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after the bump"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "an unmoved vim pin"
 assert_eq "$old_tpm" "$(pin_of tmux-plugins/tpm)" "an unmoved tmux pin"
 
@@ -131,21 +135,21 @@ assert_eq "$old_tpm" "$(pin_of tmux-plugins/tpm)" "an unmoved tmux pin"
 # keeps plug.vim. The rest still move, and the run fails.
 rm -rf "$REMOTES/preservim/nerdtree"
 surround="$(commit tpope/vim-surround 2)"
-git -C "$REMOTES/junegunn/vim-plug" tag 0.16.0
-echo "<html>Not Found</html>" > "$SANDBOX/plug-0.16.0.vim"
+git -C "$REMOTES/junegunn/vim-plug" tag "$AFTER"
+echo "<html>Not Found</html>" > "$SANDBOX/plug-$AFTER.vim"
 bump 1
 assert_contains "$RUN_OUTPUT" "Couldn't read preservim/nerdtree's HEAD"
-assert_contains "$RUN_OUTPUT" "vim-plug stays at 0.15.0"
+assert_contains "$RUN_OUTPUT" "vim-plug stays at $NEXT"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "the pin whose HEAD couldn't be read"
 assert_eq "$surround" "$(pin_of tpope/vim-surround)" "a pin that moved beside a failure"
-assert_eq "$(cat "$SANDBOX/plug-0.15.0.vim")" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
-assert_eq 0.15.0 "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
+assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
+assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
 
 # A failed download keeps plug.vim too, and replaces nothing else
-rm "$SANDBOX/plug-0.16.0.vim"
+rm "$SANDBOX/plug-$AFTER.vim"
 before="$(snapshot)"
 bump 1
-assert_contains "$RUN_OUTPUT" "Couldn't download vim-plug 0.16.0"
+assert_contains "$RUN_OUTPUT" "Couldn't download vim-plug $AFTER"
 assert_eq "$before" "$(snapshot)" "the files after a failed download"
 
 assert_eq "$REAL_BEFORE" "$(real_sums)" "the repo's own files"

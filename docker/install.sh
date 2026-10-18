@@ -356,7 +356,6 @@ main() {
     "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    in_docker_group || pending+=("Add $(id -un) to the docker group, so docker runs without sudo. The group is root-equivalent: anything running as you, agents included, can get root with docker run -v /:/host")
     # Freshly installed packages enable and start both units
     if "$installed" && ! starts_at_boot; then
         pending+=("Start Docker at boot, so containers with a restart policy come back: enable docker.service")
@@ -375,34 +374,52 @@ main() {
 
     local result=0
     if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Docker is already installed and set up."
+        if in_docker_group; then
+            echo "  Docker is already installed and set up."
+            return 0
+        fi
+    elif confirm_sudo_changes "${pending[@]}"; then
+        if ! "$installed"; then
+            # The rest needs Docker's packages, and the docker group they add
+            install_docker || return 1
+            installed=true
+        elif "$repair_source"; then
+            add_docker_repo || result=1
+        fi
+        # Each part from here on runs whether or not the one before it failed
+        socket_ready || sudo systemctl enable --now docker.socket || result=1
+        daemon_configured || configure_daemon || result=1
+        # After the config, so a daemon this starts reads it rather than restarting for it
+        starts_at_boot || sudo systemctl enable --now docker.service || result=1
+        docker_auto_updates_configured ||
+            write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT" || result=1
+        if [ "$result" -ne 0 ]; then
+            echo "  Applied the rest. Some changes failed; see the errors above." >&2
+        else
+            echo "  Applied."
+        fi
+    fi
+    # Docker's packages add the group
+    if "$installed" && ! in_docker_group; then
+        add_to_docker_group || result=1
+    fi
+    return "$result"
+}
+
+# The group is root-equivalent, so it gets its own question: Docker works without it, through sudo
+# docker. T3 Code's agents need it to run docker.
+add_to_docker_group() {
+    echo "  The docker group lets docker run without sudo, for you and T3 Code's agents. It's"
+    echo "  root-equivalent: anything running as you, agents included, can get root with"
+    echo "  docker run -v /:/host. Without it, run sudo docker."
+    if ! confirm "  Add $(id -un) to the docker group, with sudo?"; then
+        echo "  Left $(id -un) out of the docker group."
         return 0
     fi
-    confirm_sudo_changes "${pending[@]}" || return 0
-    if ! "$installed"; then
-        # The rest needs Docker's packages, and the docker group they add
-        install_docker || return 1
-    elif "$repair_source"; then
-        add_docker_repo || result=1
-    fi
-    # Each part from here on runs whether or not the one before it failed
-    if ! in_docker_group; then
-        sudo usermod -aG docker "$(id -un)" || result=1
-        echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
-        echo "  service and its agents) and a running tmux server keep their old groups until you"
-        echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."
-    fi
-    socket_ready || sudo systemctl enable --now docker.socket || result=1
-    daemon_configured || configure_daemon || result=1
-    # After the config, so a daemon this starts reads it rather than restarting for it
-    starts_at_boot || sudo systemctl enable --now docker.service || result=1
-    docker_auto_updates_configured ||
-        write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT" || result=1
-    if [ "$result" -ne 0 ]; then
-        echo "  Applied the rest. Some changes failed; see the errors above." >&2
-        return 1
-    fi
-    echo "  Applied."
+    sudo usermod -aG docker "$(id -un)" || return 1
+    echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
+    echo "  service and its agents) and a running tmux server keep their old groups until you"
+    echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

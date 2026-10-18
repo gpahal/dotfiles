@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Docker starts at boot, so containers with a restart policy come back after a reboot:
 # docker.service is enabled, and docker.socket is enabled and listening. The docker step enables
-# either one that's off, and status reports each.
+# either one that's off, and status reports each. It asks about the docker group on its own.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -83,4 +83,50 @@ assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.socket"
 assert_file_not_contains "$STUB_LOG" "systemctl disable"
 assert_exit 0 status
+
+# --- the docker group, asked on its own, since it's root-equivalent ---
+# You're in the group once $SANDBOX/in-group exists, which usermod makes. confirm answers yes to
+# every question but the group's while $SANDBOX/no-group exists.
+stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
+stub usermod 'touch "'"$SANDBOX"'/in-group"'
+eval "real_$(declare -f confirm)"
+confirm() {
+    if [[ "$1" == *"docker group"* ]] && [ -e "$SANDBOX/no-group" ]; then
+        echo "$1 n"
+        return 1
+    fi
+    real_confirm "$@"
+}
+unset DOTFILES_ASSUME_YES
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    me in the docker group"
+# Only the group is missing: no list of sudo changes, just its own question, declined without a
+# terminal
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_not_contains "$RUN_OUTPUT" "These need sudo"
+assert_not_contains "$RUN_OUTPUT" "already installed and set up"
+assert_contains "$RUN_OUTPUT" "It's"
+assert_contains "$RUN_OUTPUT" "root-equivalent"
+assert_contains "$RUN_OUTPUT" "Left me out of the docker group."
+assert_file_not_contains "$STUB_LOG" "usermod"
+# The rest approved and the group declined: the rest is applied, and you stay out
+unit service off
+touch "$SANDBOX/no-group"
+export DOTFILES_ASSUME_YES=1
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Applied."
+assert_not_contains "$RUN_OUTPUT" "Add me to the docker group, so"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.service"
+assert_contains "$RUN_OUTPUT" "Left me out of the docker group."
+assert_file_not_contains "$STUB_LOG" "usermod"
+# The group approved: you're added, and told when it applies
+rm "$SANDBOX/no-group"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
+assert_contains "$RUN_OUTPUT" "Added you to the docker group."
+assert_exit 0 status
+unset DOTFILES_ASSUME_YES
 test_done

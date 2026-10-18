@@ -23,7 +23,9 @@ PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLU
 # Print each file in a plugin dir, the repo's by default, relative to it. A .DS_Store Finder
 # leaves isn't one.
 plugin_file_list() {
-    (cd "${1:-$DOTFILES_DIR/stream-deck/$PLUGIN}" && find . -type f ! -name .DS_Store | sed 's|^\./||')
+    # Backups copy_file makes of edited files aren't plugin files, so they never count as stale
+    (cd "${1:-$DOTFILES_DIR/stream-deck/$PLUGIN}" &&
+        find . -type f ! -name .DS_Store ! -name '*.bak' ! -name '*.bak.*' | sed 's|^\./||')
 }
 
 # Print each file in the installed plugin that the repo's plugin no longer has

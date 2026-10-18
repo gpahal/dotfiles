@@ -73,6 +73,15 @@ assert_contains "$RUN_OUTPUT" "Stream Deck isn't running; it loads the plugin wh
 assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
 cmp -s "$src/plugin.js" "$PLUGIN_DIR/plugin.js" || fail "plugin.js wasn't restored"
 
+# An edit backed up in the same run stays: the backup isn't a stale plugin file
+echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Backed up $PLUGIN_DIR/plugin.js to $PLUGIN_DIR/plugin.js.bak"
+assert_not_contains "$RUN_OUTPUT" "Removed plugin.js.bak"
+grep -q "an edit" "$PLUGIN_DIR/plugin.js.bak" || fail "the step removed the backup it made"
+assert_exit 0 status
+rm "$PLUGIN_DIR/plugin.js.bak"
+
 # open fails with -600 just after Stream Deck quits: the step tries again
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill

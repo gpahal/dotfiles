@@ -78,7 +78,9 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo install -d -o root -g wheel -m 755 $DOTFILES_PAM_LOCAL_MODULES_DIR"
-assert_file_contains "$STUB_LOG" "sudo install -o root -g wheel -m 444 $SOURCE $MODULE"
+assert_file_contains "$STUB_LOG" "sudo install -o root -g wheel -m 444 $SOURCE $MODULE.new"
+assert_file_contains "$STUB_LOG" "sudo mv -fh $MODULE.new $MODULE"
+[ ! -e "$MODULE.new" ] || fail "the copy's temp name was left behind"
 assert_eq "reattach 1.0" "$(cat "$MODULE")" "the copy"
 assert_eq "-r--r--r--" "$(/bin/ls -l "$MODULE" | cut -c 1-10)" "the copy's mode"
 assert_eq "$HEADER
@@ -108,8 +110,8 @@ assert_file_not_contains "$STUB_LOG" "$SUDO_LOCAL"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
-# A copy, or its dir, that root doesn't own, or that others can write, needs attention, and main
-# installs it again
+# A copy that root doesn't own, or that others can write, needs attention, and main installs it
+# again
 chmod 664 "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE"
@@ -125,7 +127,7 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: sudo can't safely load $MODULE: $DOTFILES_PAM_LOCAL_MODULES_DIR isn't root's alone to write; run sudo chown root $DOTFILES_PAM_LOCAL_MODULES_DIR && sudo chmod go-w $DOTFILES_PAM_LOCAL_MODULES_DIR"
 : > "$STUB_LOG"
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo can't safely load pam-reattach from $DOTFILES_PAM_LOCAL_MODULES_DIR: $DOTFILES_PAM_LOCAL_MODULES_DIR isn't root's alone to write"
+assert_contains "$RUN_OUTPUT" "Touch ID in tmux: sudo can't safely load $MODULE: $DOTFILES_PAM_LOCAL_MODULES_DIR isn't root's alone to write"
 assert_file_not_contains "$STUB_LOG" "sudo"
 chmod 755 "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 chmod 775 "$SANDBOX"
@@ -133,7 +135,7 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: sudo can't safely load $MODULE: $SANDBOX isn't root's alone to write"
 assert_contains "$RUN_OUTPUT" "sudo chmod go-w $SANDBOX"
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo can't safely load pam-reattach from $DOTFILES_PAM_LOCAL_MODULES_DIR: $SANDBOX isn't root's alone to write"
+assert_contains "$RUN_OUTPUT" "Touch ID in tmux: sudo can't safely load $MODULE: $SANDBOX isn't root's alone to write"
 chmod 700 "$SANDBOX"
 # shellcheck disable=SC2034 # macos/pam.sh reads it
 PAM_ROOT_UID=99999
@@ -240,19 +242,31 @@ ln -s "$SOURCE" "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is a symlink; re-run just touch-id"
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo rm -f $MODULE"
+assert_file_contains "$STUB_LOG" "sudo mv -fh $MODULE.new $MODULE"
 [ ! -L "$MODULE" ] && [ -f "$MODULE" ] || fail "the linked module wasn't replaced with a copy"
 assert_eq "reattach 1.0" "$(cat "$SOURCE")" "Homebrew's module, after the link was replaced"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
-# Without Homebrew's module, a link can't be replaced
+# Without Homebrew's module, a link sudo_local loads can't be replaced: status and main both say
+# to install pam-reattach
 rm -f "$MODULE"
+echo "elsewhere" > "$SANDBOX/elsewhere.so"
 ln -s "$SANDBOX/elsewhere.so" "$MODULE"
 rm -rf "$SANDBOX/brew"
 : > "$STUB_LOG"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is a symlink; run brew install pam-reattach, then just touch-id"
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "brew install pam-reattach"
+assert_contains "$RUN_OUTPUT" "$MODULE, which sudo loads, is a symlink; run brew install pam-reattach"
 assert_file_not_contains "$STUB_LOG" "sudo"
+# A link that points nowhere isn't loaded, so it doesn't stand in the way of Touch ID alone
+rm "$SANDBOX/elsewhere.so"
+assert_exit 0 main
+assert_eq "$HEADER
+$TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local beside a dangling link"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "skipped    Touch ID in tmux: pam-reattach isn't installed"
+assert_not_contains "$RUN_OUTPUT" "missing"
 
 # The copy's dir a link, or a parent of it: refused, since whoever controls where it points can
 # swap it, and main changes nothing
@@ -275,6 +289,7 @@ linked_dir() {
 subtest linked_dir
 linked_parent() {
     # The copy's dir two levels down, under a parent that's a link
+    # shellcheck disable=SC2034 # macos/pam.sh reads it
     PAM_LOCAL_MODULES_DIR="$SANDBOX/lib/pam" REATTACH_MODULE="$SANDBOX/lib/pam/pam_reattach.so"
     MODULE="$REATTACH_MODULE"
     reset
@@ -283,7 +298,7 @@ linked_parent() {
     put_reattach
     export DOTFILES_ASSUME_YES=1
     assert_exit 1 main
-    assert_contains "$RUN_OUTPUT" "sudo can't safely load pam-reattach from $PAM_LOCAL_MODULES_DIR: $SANDBOX/lib is a symlink"
+    assert_contains "$RUN_OUTPUT" "sudo can't safely load $MODULE: $SANDBOX/lib is a symlink"
     assert_file_not_contains "$STUB_LOG" "sudo"
     [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written under a linked parent"
 }
@@ -327,6 +342,12 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "$MODULE.2 exists, and OpenPAM loads it instead of the copy"
 assert_file_not_contains "$STUB_LOG" "sudo"
 assert_eq "old reattach" "$(cat "$MODULE.2")" "pam_reattach.so.2"
+# with the copy gone too, which pam_module_exists accepts the .so.2 for
+rm "$MODULE"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE.2 exists"
+assert_exit 1 main
+assert_file_not_contains "$STUB_LOG" "sudo"
 # a link counts too, even one that points nowhere
 rm "$MODULE.2"
 ln -s "$SANDBOX/nowhere" "$MODULE.2"

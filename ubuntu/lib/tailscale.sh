@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Tailscale for the ubuntu step.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sources this file and sets the constants it uses. It defines functions, and
+# the fingerprint of Tailscale's key beside the one that adds it.
 
 # Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
 # operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
@@ -37,9 +38,13 @@ tailscale_release_url() {
     echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
 }
 
+# Tailscale's package signing key. Tailscale doesn't publish its fingerprint, so this one is the
+# key pkgs.tailscale.com served in October 2026, the same for every Ubuntu release.
+TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
+
 # Run it once apt_repo_published says Tailscale has packages for this release. The key's URL names
 # the release, as in Tailscale's install script.
 add_tailscale_repo() {
     add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
-        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING"
+        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$TAILSCALE_KEY_FPR"
 }

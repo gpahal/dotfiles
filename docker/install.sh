@@ -16,6 +16,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
+# The fingerprint of Docker's release key, "Docker Release (CE deb)"
+DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
 # unattended-upgrades only installs from Ubuntu's own repos unless told otherwise. The origin and
 # label come from Docker's Release file, e.g.
@@ -74,7 +76,7 @@ docker_source_ok() {
 
 # Run it once apt_repo_published says Docker has packages for this release
 add_docker_repo() {
-    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
+    add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
 # main runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure

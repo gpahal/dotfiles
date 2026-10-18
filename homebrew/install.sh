@@ -31,7 +31,7 @@ installed_cask_apps() {
 # The apt packages that provide UBUNTU_COMMANDS (lib/common.sh), which Ubuntu needs before
 # Homebrew, locales for locale-gen, which the ubuntu step runs to add the en_US.UTF-8 locale, and
 # fontconfig for fc-cache, which lets apps find the Monaspace cask's fonts. Minimal images lack them.
-UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq locales fontconfig"
+UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
 
 CASKS=(
     font-monaspace

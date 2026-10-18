@@ -276,9 +276,10 @@ confirm() {
 
 # Commands Ubuntu needs before Homebrew (https://docs.brew.sh/Homebrew-on-Linux#requirements),
 # plus zsh for the login shell, lsof for port and killport, col for MANPAGER, unzip for casks
-# such as font-monaspace, and jq, which steps use to edit JSON settings even if Homebrew breaks.
-# The homebrew step installs them with apt. They're listed here so missing_cmd_hint can say so.
-UBUNTU_COMMANDS=(cc make curl file git ps zsh lsof col unzip jq)
+# such as font-monaspace, jq, which steps use to edit JSON settings even if Homebrew breaks, and
+# gpg, which checks third-party apt keys' fingerprints. The homebrew step installs them with apt.
+# They're listed here so missing_cmd_hint can say so.
+UBUNTU_COMMANDS=(cc make curl file git ps zsh lsof col unzip jq gpg)
 
 # Print that a command is missing and how to get it. Every command the steps check for comes from
 # the homebrew step, which installs the UBUNTU_COMMANDS with apt on Ubuntu, except ssh-keygen,
@@ -849,42 +850,58 @@ apt_repo_published() {
     return 1
 }
 
-# Put back an apt key from the copy at $1, or remove the key at $2 when $1 is empty, since there
-# was none before
-restore_apt_key() {
-    if [ -n "$1" ]; then
-        install_root_file "$1" "$2" 0644
-    else
-        sudo rm -f "$2"
-    fi
+# Print the fingerprint of the first key in an OpenPGP key file, its primary key's, uppercase, or
+# nothing when it holds none. gpg gets a temp home, since --show-keys would create ~/.gnupg.
+apt_key_fingerprint() {
+    local home
+    home="$(mktemp -d)" || return 1
+    GNUPGHOME="$home" gpg --show-keys --with-colons "$1" 2>/dev/null |
+        awk -F: '$1 == "fpr" { print toupper($10); exit }' || true
+    rm -rf "$home"
 }
 
 # Add a third-party apt repo whose source file a step owns: install its key, write the source when
-# its content differs, and update from that file alone, so a failure is the repo's. A source apt
-# can't use fails every later apt-get update, so on failure the previous source and key come
-# back, or the new ones go. Callers first check apt_repo_published, before asking for sudo, so
-# they ask for nothing they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so
-# each command checks its own failure.
-# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING"
+# its content differs, and update from that file alone, so a failure is the repo's. The key must
+# have the fingerprint the step pins, so a swapped key, which unattended-upgrades would then trust
+# as root, fails before anything changes. A source apt can't use fails every later apt-get update,
+# so on failure the previous source and key come back, or the new ones go. A previous source that
+# already held this content isn't known to work, as when a held lists lock kept it untested, so it
+# goes too. Callers first check apt_repo_published, before asking for sudo, so they ask for nothing
+# they can't do. Run it as `add_apt_repo ... || ...`, where set -e is off, so each command checks
+# its own failure.
+# e.g. add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 add_apt_repo() {
-    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5"
-    local key old_key="" output="" previous="" reason=""
+    local name="$1" file="$2" content="$3" key_url="$4" keyring="$5" fpr="$6"
+    local key fingerprint old_key="" output="" previous="" reason="" untested=false
+    require_cmd gpg || return 1
     # Read the source to restore before the key changes, so failing to read it changes nothing
     if [ -e "$file" ]; then
         previous="$(sudo cat "$file")" || return 1
     fi
+    if [ -n "$previous" ] && [ "$previous" == "$content" ]; then
+        previous=""
+        untested=true
+    fi
     key="$(mktemp)" || return 1
-    if [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
-        rm -f "$key" "$old_key"
+    if ! fetch "$key_url" "$key" "$name's apt key"; then
+        rm -f "$key"
         return 1
     fi
-    if ! fetch "$key_url" "$key" "$name's apt key" ||
-        ! sudo install -m 0755 -d "$(dirname "$keyring")"; then
+    fingerprint="$(apt_key_fingerprint "$key")"
+    if [ "$fingerprint" != "$fpr" ]; then
+        echo "  $name's apt key from $key_url has the fingerprint ${fingerprint:-(none)}, not $fpr, so" >&2
+        echo "  nothing was changed. If $name has published a new key, check its fingerprint against" >&2
+        echo "  $name's docs, then update the step's pinned one." >&2
+        rm -f "$key"
+        return 1
+    fi
+    # An untested source's key goes with it
+    if ! "$untested" && [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
         rm -f "$key" "$old_key"
         return 1
     fi
     # A failed write leaves the old key
-    if ! install_root_file "$key" "$keyring" 0644; then
+    if ! sudo install -m 0755 -d "$(dirname "$keyring")" || ! install_root_file "$key" "$keyring" 0644; then
         rm -f "$key" "$old_key"
         return 1
     fi
@@ -917,13 +934,20 @@ add_apt_repo() {
                 echo "  $reason, and putting the old one back failed too. Fix $file by hand, or delete it, then re-run." >&2
             fi
         elif sudo rm -f "$file"; then
-            echo "  $reason, so it was removed. Fix the error above and re-run." >&2
+            if "$untested"; then
+                echo "  $reason. An earlier run left it, and it still fails, so it was removed. Fix the error above and re-run." >&2
+            else
+                echo "  $reason, so it was removed. Fix the error above and re-run." >&2
+            fi
         else
             echo "  $reason, and removing it failed too. Delete $file by hand, then re-run." >&2
         fi
-        if ! restore_apt_key "$old_key" "$keyring"; then
-            echo "  Couldn't put $name's old key back at $keyring. Re-run to install it again." >&2
-        fi
+        # Put the old key back, or remove the new one when there was none to keep
+        if [ -n "$old_key" ]; then
+            install_root_file "$old_key" "$keyring" 0644
+        else
+            sudo rm -f "$keyring"
+        fi || echo "  Couldn't put $name's old key back at $keyring. Re-run to install it again." >&2
         rm -f "$old_key"
         return 1
     fi

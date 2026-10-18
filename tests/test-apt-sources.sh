@@ -5,7 +5,9 @@ set -euo pipefail
 # lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off
 # all count. apt_repo_published says to wait while the repo's Release file for this release is a
-# 404, and add_apt_repo keeps the old key and source when the key's download fails. The chrome
+# 404. add_apt_repo keeps the old key and source when the key's download fails or its fingerprint
+# isn't the one pinned, and on a failed update puts back a previous source, unless it's the one
+# that fails. The chrome
 # step's google_source_exists only checks that the .deb's source file is there and on.
 # test-docker-sources.sh covers add_apt_repo's other failures through the docker step.
 # shellcheck source=lib.sh
@@ -49,16 +51,26 @@ assert_eq "  missing    Example's apt source ($file): missing; re-run the exampl
     "$(status_apt_source Example "$file" "$content" example "$release")" "status, missing"
 
 # --- add_apt_repo ---
-# fetch writes the key, or fails when $SANDBOX/fetch-fails exists. apt-get update succeeds.
+# fetch writes the key, $SANDBOX/served-key, or fails when $SANDBOX/fetch-fails exists. A key
+# holds its fingerprint, which gpg prints as --with-colons does: the primary key's fpr record,
+# then its subkey's. apt-get update succeeds.
+fpr=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+echo "$fpr" | tr 'A-F' 'a-f' > "$SANDBOX/served-key"
 fetch() {
     echo "fetch $1" >> "$STUB_LOG"
     [ ! -e "$SANDBOX/fetch-fails" ] || return 1
-    echo new-key > "$2"
+    cp "$SANDBOX/served-key" "$2"
 }
+# shellcheck disable=SC2016 # expanded by the stub
+stub gpg 'for key; do :; done
+[ "$1 $2" == "--show-keys --with-colons" ] || exit 2
+printf "pub:-:4096:1:%s:1487788586:::-:::scESC::::::23::0:\n" "$(cut -c 25- "$key")"
+printf "fpr:::::::::%s:\n" "$(cat "$key")"
+printf "sub:-:4096:1:7EA0A9C3F273FCD8:1487788586::::::s::::::23:\nfpr:::::::::D3306A018370199E527AE7997EA0A9C3F273FCD8:\n"'
 stub apt-get
 keyring="$SANDBOX/keyrings/example.gpg"
 add() {
-    add_apt_repo Example "$file" "$content" https://example.com/key.gpg "$keyring"
+    add_apt_repo Example "$file" "$content" https://example.com/key.gpg "$keyring" "$fpr"
 }
 release_url=https://example.com/ubuntu/dists/resolute/Release
 
@@ -76,8 +88,49 @@ done
 echo "${content/resolute/stale-suite}" > "$file"
 assert_exit 0 add
 assert_eq "$content" "$(cat "$file")" "the source after adding the repo"
-assert_eq new-key "$(cat "$keyring")" "the key after adding the repo"
+assert_eq "$(cat "$SANDBOX/served-key")" "$(cat "$keyring")" "the key after adding the repo"
 assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$file -o Dir::Etc::sourceparts=-"
+
+# A key with another fingerprint fails before anything is written, naming both fingerprints
+echo old-key > "$keyring"
+echo "${content/resolute/stale-suite}" > "$file"
+echo 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/served-key"
+: > "$STUB_LOG"
+assert_exit 1 add
+assert_contains "$RUN_OUTPUT" "Example's apt key from https://example.com/key.gpg has the fingerprint 0123456789ABCDEF0123456789ABCDEF01234567, not $fpr"
+assert_eq old-key "$(cat "$keyring")" "the key after a key with another fingerprint"
+assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a key with another fingerprint"
+# Only the source was read
+assert_eq "sudo cat $file" "$(grep '^sudo' "$STUB_LOG")" "sudo calls for a key with another fingerprint"
+assert_file_not_contains "$STUB_LOG" "apt-get"
+# So does a download that isn't a key
+echo "<html>" > "$SANDBOX/served-key"
+stub_gpg="$(cat "$STUB_DIR/gpg")"
+stub gpg 'echo "gpg: no valid OpenPGP data found." >&2; exit 2'
+assert_exit 1 add
+assert_contains "$RUN_OUTPUT" "has the fingerprint (none), not $fpr"
+assert_eq old-key "$(cat "$keyring")" "the key after a download that isn't a key"
+printf '%s\n' "$stub_gpg" > "$STUB_DIR/gpg"
+echo "$fpr" > "$SANDBOX/served-key"
+
+# An update that fails with the source already there, as one left by a run whose update never
+# got apt's lock: that source isn't known to work, so it and the key are removed, not restored
+echo "$content" > "$file"
+echo "$fpr" > "$keyring"
+stub apt-get 'echo "E: The repository is not signed."; exit 100'
+assert_exit 1 add
+[ ! -e "$file" ] || fail "a source that still fails was put back"
+[ ! -e "$keyring" ] || fail "the key of a source that still fails was put back"
+assert_contains "$RUN_OUTPUT" "An earlier run left it, and it still fails, so it was removed."
+assert_not_contains "$RUN_OUTPUT" "the old one is back"
+# A different source before is put back, with its key
+echo "${content/resolute/stale-suite}" > "$file"
+echo old-key > "$keyring"
+assert_exit 1 add
+assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a failed update"
+assert_eq old-key "$(cat "$keyring")" "the key after a failed update"
+assert_contains "$RUN_OUTPUT" "so the old one is back"
+stub apt-get
 
 # While another update holds apt's lock, the wait shows as it happens, not once the update is
 # done: apt-get reports the lock once, then copies what the step has printed so far

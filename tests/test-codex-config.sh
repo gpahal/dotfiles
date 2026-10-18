@@ -202,6 +202,16 @@ assert_eq '# [profiles.fast]|# model = "y"||[analytics]' \
 first="$(cat "$CODEX_CONFIG")"
 assert_exit 0 configure_codex
 assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run with trailing comments"
+# Also when yq adds a table above the last one, as a new [tui] above [tui.model_availability_nux]
+printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n# "gpt-7" = 1\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq 'gpt-6 = 1||# "gpt-7" = 1||[analytics]' \
+    "$(grep -B2 -A2 -F '# "gpt-7"' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment below a new parent table"
+# And when yq rewrites the headers, here to [tui] and [desktop]
+printf 'model = "x"\n\n[ "tui" ] # mine\nnotifications = true\n  [\x27desktop\x27]\nx = 1\n# y = 2\n' > "$CODEX_CONFIG"
+assert_exit 0 configure_codex
+assert_eq 'x = 1||# y = 2||[analytics]' \
+    "$(grep -B2 -A2 -F '# y = 2' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment under a rewritten header"
 # A # line inside a multi-line string isn't a comment, though yq turns the string into one line
 printf 'developer_instructions = """\n# Style\nBe brief.\n"""\nx = '"'''"'\n# raw\n'"'''"'\n# real\n[tui]\nnotifications = true\n' \
     > "$CODEX_CONFIG"

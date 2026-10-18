@@ -172,26 +172,54 @@ codex_comments_kept() {
 }
 
 # Add the comments and blank lines after the source's last key back into the edited copy, given
-# first. They go above the first table the edit added, which yq puts after the source's tables,
-# so a commented-out key stays under the table it was written in.
+# first. They go at the end of the last table in the copy that the source has too, so a
+# commented-out key stays under the table it was written in. yq may put a table the edit added
+# before or after that one, such as a new [tui] above [tui.x], and rewrites headers, such as
+# [ "tui" ] # note to [tui], so headers are compared by their table path.
 codex_add_tail() {
     local edited="$1" tmp
     tmp="$(mktemp)" || return 1
-    awk -v source="$2" '
+    awk -v source="$2" -v q="'" '
+        # A header as yq writes it: no spaces or trailing comment, and quotes only where needed
+        function path(s,   key) {
+            sub(/^[[:space:]]+/, "", s)
+            sub(/\][[:space:]]*#.*$/, "]", s)
+            sub(/[[:space:]]+$/, "", s)
+            gsub(/[[:space:]]*\.[[:space:]]*/, ".", s)
+            gsub(/\[[[:space:]]+/, "[", s)
+            gsub(/[[:space:]]+\]/, "]", s)
+            while (match(s, q "[^" q "\"\\\\]*" q)) {
+                s = substr(s, 1, RSTART - 1) "\"" substr(s, RSTART + 1, RLENGTH - 2) "\"" \
+                    substr(s, RSTART + RLENGTH)
+            }
+            while (match(s, /"[A-Za-z0-9_-]+"/)) {
+                s = substr(s, 1, RSTART - 1) substr(s, RSTART + 1, RLENGTH - 2) \
+                    substr(s, RSTART + RLENGTH)
+            }
+            return s
+        }
         FILENAME == source {
-            if (/^[[:space:]]*\[/) header[$0] = 1
+            if (/^[[:space:]]*\[/) header[path($0)] = 1
             if (/^[[:space:]]*(#|$)/) tail = tail $0 "\n"; else tail = ""
             next
         }
-        !done && /^[[:space:]]*\[/ && !($0 in header) {
+        # First pass over the copy: find the header that ends the last table the source has
+        FNR == 1 { pass++ }
+        pass == 1 {
+            if (/^\[/) {
+                if (path($0) in header) { at = 0; last = FNR }
+                else if (!at) at = FNR
+            }
+            next
+        }
+        FNR == at {
             # The edit already left a blank line above this table
             sub(/^\n+/, "", tail)
             if (tail != "") printf "%s\n", tail
-            done = 1
         }
         { print }
-        END { if (!done) printf "%s", tail }
-    ' "$2" "$edited" > "$tmp" && mv "$tmp" "$edited"
+        END { if (!at) printf "%s", tail }
+    ' "$2" "$edited" "$edited" > "$tmp" && mv "$tmp" "$edited"
 }
 
 # Write a copy of the Codex config with the settings applied, and print its path. yq rewrites the

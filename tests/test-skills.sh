@@ -312,6 +312,19 @@ assert_exit 3 "$BASH" "$STEP" --status
 assert_contains "$RUN_OUTPUT" "one isn't lowercase letters, digits, and dashes"
 rm -rf "$FIXTURE/ai_tools/skills/productivity/bad"
 
+# Two skills with one name fail the step, naming both files, and only the first, by path, is
+# installed. Otherwise each run would install one over the other.
+mkdir -p "$FIXTURE/ai_tools/skills/productivity/zz-grill"
+printf -- '---\nname: grill\n---\ncopy\n' > "$FIXTURE/ai_tools/skills/productivity/zz-grill/SKILL.md"
+step
+assert_eq 1 "$RUN_STATUS" "status with two skills named grill"
+assert_contains "$RUN_OUTPUT" "ai_tools/skills/productivity/zz-grill/SKILL.md names the skill 'grill', as ai_tools/skills/productivity/grill/SKILL.md does; skipping it."
+assert_file_not_contains "$STUB_LOG" " add "
+assert_file_not_contains "$AGENTS_DIR/grill/SKILL.md" "copy"
+assert_exit 3 "$BASH" "$STEP" --status
+assert_contains "$RUN_OUTPUT" "Skill names in ai_tools/skills"
+rm -rf "$FIXTURE/ai_tools/skills/productivity/zz-grill"
+
 # Run from inside a project that has its own skills package, at the pinned version, the step runs
 # the skills CLI from an empty directory of its own, for add and for remove, so npm can't pick the
 # project's package or its .npmrc. The directory is gone afterwards.

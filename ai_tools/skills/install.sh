@@ -68,10 +68,11 @@ SKILL_DIRS=()
 SKILL_HASHES=()
 SKILL_PROBLEM=()
 
-# Fill the arrays above. Fails, naming it, for a skill whose name valid_skill_name rejects; that
-# skill is left out.
+# Fill the arrays above. Fails, naming it, for a skill whose name valid_skill_name rejects, or
+# that an earlier skill, by path, already has; that skill is left out, so a name never installs
+# one skill over another on alternate runs.
 load_repo_skills() {
-    local file name result=0
+    local file name result=0 i
     SKILL_NAMES=()
     SKILL_DIRS=()
     SKILL_HASHES=()
@@ -83,6 +84,12 @@ load_repo_skills() {
             result=1
             continue
         fi
+        for i in ${SKILL_NAMES[@]+"${!SKILL_NAMES[@]}"}; do
+            [ "${SKILL_NAMES[i]}" == "$name" ] || continue
+            echo "  ${file#"$DOTFILES_DIR"/} names the skill '$name', as ${SKILL_DIRS[i]#"$DOTFILES_DIR"/}/SKILL.md does; skipping it." >&2
+            result=1
+            continue 2
+        done
         SKILL_NAMES+=("$name")
         SKILL_DIRS+=("$(dirname "$file")")
         SKILL_HASHES+=("")
@@ -430,7 +437,7 @@ status() {
     fi
     local i name problems
     load_repo_skills 2>/dev/null ||
-        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes; run the step to see which"
+        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
     claude_skills_on || status_item skipped "Skills for Claude Code: CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude"
     check_skills
     problems="$(problem_skills)"

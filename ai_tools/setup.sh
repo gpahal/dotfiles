@@ -19,16 +19,5 @@ UBUNTU_STEPS=(claude-code codex t3-code skills manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR/ai_tools"
 
-usage() {
-    echo "Usage: bash ai_tools/setup.sh [--status [--quick]] [--backup | --no-backup] [step...]"
-    echo "Steps, run in this order by default: ${STEPS[*]}"
-    echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
-    echo "unknown items. --quick skips its slowest check: on Ubuntu, whether the"
-    echo "T3 Code service stays up."
-    echo "A config file edited since setup installed it is backed up before it's replaced: setup"
-    echo "asks with a terminal, and backs it up without one. Settings merges also ask whether to"
-    echo "back up an existing file. --backup or --no-backup answers every backup question yes or no."
-    echo "Flags may come before or after the step names."
-}
-
-runner_main "AI tools" "$@"
+runner_main "AI tools" "--quick skips its slowest check: on Ubuntu, whether the
+T3 Code service stays up." "$@"

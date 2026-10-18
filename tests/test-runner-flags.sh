@@ -71,7 +71,7 @@ assert_file_contains "$HOME/.vimrc" "$(head -1 "$REPO_DIR/vim/vimrc")"
 read_flags() {
     env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
         . "$0/lib/common.sh"
-        check_args : : "$@"
+        check_args : words "$@"
         echo "${HOMEBREW_NO_AUTO_UPDATE:-unset} ${DOTFILES_STATUS_QUICK:-unset}"' "$REPO_DIR" "$@"
 }
 run read_flags vim --status

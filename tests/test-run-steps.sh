@@ -140,7 +140,7 @@ stub uname '[ "$1" != -m ] || echo arm64'
 
 # An unknown step stops the run before any step runs. step_script takes either OS's steps, so the
 # error lists both.
-# shellcheck disable=SC2034 # unknown_step reads them
+# shellcheck disable=SC2034 # run_steps reads them
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first nope

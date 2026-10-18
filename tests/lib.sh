@@ -12,14 +12,6 @@
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-
-# A test run by a relative path, as bash tests/test-vim.sh or tests/run.sh runs it, starts again
-# by its absolute path. step_args finds a step's path from the outermost script, which is the test
-# when it loads a step, and the test cd's into its sandbox, where the relative path is gone.
-case "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}" in
-    /*) ;;
-    */test-*.sh | test-*.sh) exec "$BASH" "$TESTS_DIR/${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]##*/}" "$@" ;;
-esac
 TEST_FAILURES=0
 TEST_SKIPPED=false
 TEST_DONE=false

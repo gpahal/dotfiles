@@ -194,16 +194,18 @@ status_requested() { has_arg --status "$@"; }
 # e.g. if status_quick; then status_item unverified "...: skipped by --quick"; fi
 status_quick() { [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; }
 
-# check_args <usage function> <word function> [arg...]: check a step's or runner's arguments. -h or
-# --help prints the usage and exits 0. Any flag but these exits 2, and each other argument goes to
-# the word function. --quick without --status exits 2 too, since it would otherwise run the steps
-# instead of reporting. What the flags set is exported, so the steps a runner starts get it too.
+# check_args <usage function> <words|no-words> [arg...]: check a step's or runner's arguments. -h
+# or --help prints the usage and exits 0. Any flag but these exits 2. With words, each other
+# argument goes in ARG_WORDS, in order; with no-words, one exits 2. --quick without --status exits
+# 2 too, since it would otherwise run the steps instead of reporting. What the flags set is
+# exported, so the steps a runner starts get it too.
 # - --status: a status report changes nothing, and that includes Homebrew's own update.
 # - --quick: a status report skips its slowest checks (status_quick).
 # - --backup or --no-backup answers every backup question yes or no (maybe_backup).
 check_args() {
-    local usage_fn="$1" word_fn="$2" arg
+    local usage_fn="$1" words="$2" arg
     shift 2
+    ARG_WORDS=()
     for arg in "$@"; do
         case "$arg" in
             -h | --help)
@@ -223,7 +225,14 @@ check_args() {
                 "$usage_fn" >&2
                 exit 2
                 ;;
-            *) "$word_fn" "$arg" ;;
+            *)
+                if [ "$words" != words ]; then
+                    echo "Unknown argument: $arg" >&2
+                    "$usage_fn" >&2
+                    exit 2
+                fi
+                ARG_WORDS+=("$arg")
+                ;;
         esac
     done
     if ! status_requested "$@" && has_arg --quick "$@"; then
@@ -239,20 +248,21 @@ check_args() {
 # which would otherwise run the step. Steps take no other arguments.
 # e.g. step_args "$@"
 step_args() {
-    local path step_usage
-    # The step's script is the outermost file, since main runs only when the script runs directly
-    path="${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}"
-    path="$(cd -- "$(dirname "$path")" && pwd)/${path##*/}"
-    step_usage="Usage: bash ${path#"$DOTFILES_DIR"/} [--status [--quick]] [--backup | --no-backup]"
-    check_args _step_usage _unknown_step_argument "$@"
+    local step_usage
+    # The script that defines the main calling this one: the step's, whether it runs directly or
+    # a test sourced it
+    step_usage="Usage: bash $(_repo_path "${BASH_SOURCE[1]}") [--status [--quick]] [--backup | --no-backup]"
+    check_args _step_usage no-words "$@"
 }
 
-# step_args's usage and word functions, which read its step_usage
+# step_args's usage function, which reads its step_usage
 _step_usage() { echo "$step_usage"; }
-_unknown_step_argument() {
-    echo "Unknown argument: $1" >&2
-    _step_usage >&2
-    exit 2
+
+# Print a script's path relative to the repo, as a usage line names it
+_repo_path() {
+    local path
+    path="$(cd -- "$(dirname "$1")" && pwd)/${1##*/}"
+    echo "${path#"$DOTFILES_DIR"/}"
 }
 
 # Succeeds when stdin is a terminal, so a question can be answered. stdout may be piped, as in
@@ -1273,20 +1283,6 @@ status_result() {
     return 0
 }
 
-# Read a runner's arguments: flags and step names, in any order. Sets RUNNER_MODE to --status or
-# "", and RUNNER_STEPS to the step names. Exits as check_args does, with the caller's usage
-# function. The loop above already read the other flags.
-# e.g. runner_args "$@"; run_steps "$RUNNER_MODE" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"}
-# shellcheck disable=SC2034 # the runners read RUNNER_MODE
-runner_args() {
-    RUNNER_MODE=""
-    RUNNER_STEPS=()
-    check_args usage _add_runner_step "$@"
-    ! status_requested "$@" || RUNNER_MODE=--status
-}
-
-_add_runner_step() { RUNNER_STEPS+=("$1"); }
-
 # Print the script of a step in the caller's MACOS_STEPS or UBUNTU_STEPS: $STEPS_DIR/manual-steps.sh
 # for manual-steps, otherwise $STEPS_DIR/<step>/install.sh. Fails for any other name. Either OS's
 # steps resolve, so a step named on the other OS reaches its own skip message.
@@ -1304,21 +1300,25 @@ step_script() {
     fi
 }
 
-# runner_main <name> [arg...]
-# The runners' shared body: pick STEPS for this OS, read the arguments, then run the steps, or
-# with --status their reports, under headers naming <name>. The caller sets MACOS_STEPS,
-# UBUNTU_STEPS, STEPS_DIR, and a usage function. Exits with the --status result (3 when something
-# needs attention, 1 when a step failed) and when a step fails; returns after a successful run.
+# runner_main <name> <quick> [arg...]
+# The runners' shared body: pick STEPS for this OS, read the arguments, flags and step names in
+# any order, then run the steps, or with --status their reports, under headers naming <name>.
+# <quick> ends the usage's --status sentence, saying what --quick skips. The caller sets
+# MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Sets RUNNER_STEPS to the steps named. Exits with the
+# --status result (3 when something needs attention, 1 when a step failed) and when a step fails;
+# returns after a successful run.
 runner_main() {
-    local name="$1" status=0
-    shift
+    local name="$1" quick="$2" script status=0
+    shift 2
+    script="$(_repo_path "${BASH_SOURCE[1]}")"
     if is_macos; then
         STEPS=("${MACOS_STEPS[@]}")
     else
         STEPS=("${UBUNTU_STEPS[@]}")
     fi
-    runner_args "$@"
-    if [ "$RUNNER_MODE" == "--status" ]; then
+    check_args _runner_usage words "$@"
+    RUNNER_STEPS=(${ARG_WORDS[@]+"${ARG_WORDS[@]}"})
+    if status_requested "$@"; then
         echo "=== $name status ==="
         run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
         exit "$status"
@@ -1329,10 +1329,16 @@ runner_main() {
     echo "=== $name setup complete! ==="
 }
 
-# Say a step name is unknown, listing the caller's MACOS_STEPS and UBUNTU_STEPS, since step_script
-# takes either OS's
-unknown_step() {
-    echo "Unknown step: $1. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
+# runner_main's usage function, which reads its script and quick
+_runner_usage() {
+    echo "Usage: bash $script [--status [--quick]] [--backup | --no-backup] [step...]"
+    echo "Steps, run in this order by default: ${STEPS[*]}"
+    echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
+    echo "unknown items. $quick"
+    echo "A config file edited since setup installed it is backed up before it's replaced: setup"
+    echo "asks with a terminal, and backs it up without one. Settings merges also ask whether to"
+    echo "back up an existing file. --backup or --no-backup answers every backup question yes or no."
+    echo "Flags may come before or after the step names."
 }
 
 # Succeeds when exit status $1 means SIGHUP, SIGINT (Ctrl-C), or SIGTERM stopped the command, so
@@ -1357,9 +1363,10 @@ run_steps() {
     local mode="$1" step script status codes interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
+    # step_script takes either OS's steps, so the error lists both
     for step in "$@"; do
         step_script "$step" > /dev/null || {
-            unknown_step "$step"
+            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
             return 1
         }
     done

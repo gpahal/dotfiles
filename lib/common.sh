@@ -936,13 +936,15 @@ apt_repo_published() {
     return 1
 }
 
-# Print the fingerprint of the first key in an OpenPGP key file, its primary key's, uppercase, or
-# nothing when it holds none. gpg gets a temp home, since --show-keys would create ~/.gnupg.
+# Print the fingerprint of each key in an OpenPGP key file, its primary key's, uppercase, one per
+# line, or nothing when it holds none. Every key counts, since apt trusts every key in the file.
+# gpg gets a temp home, since --show-keys would create ~/.gnupg.
 apt_key_fingerprint() {
     local home
     home="$(mktemp -d)" || return 1
     GNUPGHOME="$home" gpg --show-keys --with-colons "$1" 2>/dev/null |
-        awk -F: '$1 == "fpr" { print toupper($10); exit }' || true
+        awk -F: '$1 == "pub" { primary = 1; next } $1 == "fpr" && primary { print toupper($10); primary = 0 }' ||
+        true
     rm -rf "$home"
 }
 
@@ -973,7 +975,7 @@ add_apt_repo() {
         rm -f "$key"
         return 1
     fi
-    fingerprint="$(apt_key_fingerprint "$key")"
+    fingerprint="$(apt_key_fingerprint "$key" | paste -sd, - | sed 's/,/, /g')"
     if [ "$fingerprint" != "$fpr" ]; then
         echo "  $name's apt key from $key_url has the fingerprint ${fingerprint:-(none)}, not $fpr, so" >&2
         echo "  nothing was changed. If $name has published a new key, check its fingerprint against" >&2

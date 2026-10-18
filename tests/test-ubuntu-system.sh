@@ -47,7 +47,7 @@ fetch() {
     echo key > "$2"
 }
 # The key has the fingerprint the step pins
-stub gpg "echo fpr:::::::::$TAILSCALE_KEY_FPR:"
+stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $TAILSCALE_KEY_FPR"
 # curl answers the HEAD request for Tailscale's Release file with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 echo 200 > "$SANDBOX/http-status"

@@ -52,8 +52,8 @@ assert_eq "  missing    Example's apt source ($file): missing; re-run the exampl
 
 # --- add_apt_repo ---
 # fetch writes the key, $SANDBOX/served-key, or fails when $SANDBOX/fetch-fails exists. A key
-# holds its fingerprint, which gpg prints as --with-colons does: the primary key's fpr record,
-# then its subkey's. apt-get update succeeds.
+# holds a fingerprint per line, one per key, which gpg prints as --with-colons does: each primary
+# key's fpr record, then its subkey's. apt-get update succeeds.
 fpr=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 echo "$fpr" | tr 'A-F' 'a-f' > "$SANDBOX/served-key"
 fetch() {
@@ -64,9 +64,11 @@ fetch() {
 # shellcheck disable=SC2016 # expanded by the stub
 stub gpg 'for key; do :; done
 [ "$1 $2" == "--show-keys --with-colons" ] || exit 2
-printf "pub:-:4096:1:%s:1487788586:::-:::scESC::::::23::0:\n" "$(cut -c 25- "$key")"
-printf "fpr:::::::::%s:\n" "$(cat "$key")"
-printf "sub:-:4096:1:7EA0A9C3F273FCD8:1487788586::::::s::::::23:\nfpr:::::::::D3306A018370199E527AE7997EA0A9C3F273FCD8:\n"'
+while IFS= read -r f; do
+    printf "pub:-:4096:1:%s:1487788586:::-:::scESC::::::23::0:\n" "$(echo "$f" | cut -c 25-)"
+    printf "fpr:::::::::%s:\n" "$f"
+    printf "sub:-:4096:1:7EA0A9C3F273FCD8:1487788586::::::s::::::23:\nfpr:::::::::D3306A018370199E527AE7997EA0A9C3F273FCD8:\n"
+done < "$key"'
 stub apt-get
 keyring="$SANDBOX/keyrings/example.gpg"
 add() {
@@ -103,6 +105,11 @@ assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a
 # Only the source was read
 assert_eq "sudo cat $file" "$(grep '^sudo' "$STUB_LOG")" "sudo calls for a key with another fingerprint"
 assert_file_not_contains "$STUB_LOG" "apt-get"
+# So does the pinned key with another key after it, which apt would trust too
+printf '%s\n' "$fpr" 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/served-key"
+assert_exit 1 add
+assert_contains "$RUN_OUTPUT" "has the fingerprint $fpr, 0123456789ABCDEF0123456789ABCDEF01234567, not $fpr"
+assert_eq old-key "$(cat "$keyring")" "the key after a download with a second key"
 # So does a download that isn't a key
 echo "<html>" > "$SANDBOX/served-key"
 stub_gpg="$(cat "$STUB_DIR/gpg")"

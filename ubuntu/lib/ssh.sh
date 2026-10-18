@@ -149,9 +149,16 @@ sshd_configured() {
 
 # Print an address in a range given as an address, a CIDR range, or a pattern with * or ?: the
 # first host for IPv4 (10.0.0.0/8 gives 10.0.0.1), ::1 after an IPv6 prefix (fd00::/8 gives
-# fd00::1), and 1 for each wildcard
+# fd00::1), and 1 for each wildcard. 10.* gives 10.1, which sshd reads as 10.0.0.1, as inet_aton
+# does, and matches against the pattern as a string. An IPv6 address needs all 8 groups or a ::, so
+# the first * in a pattern short of both gives 1::1 (fd00:* gives fd00:1::1).
 range_sample() {
-    local addr="${1%/*}"
+    local addr="${1%/*}" first=1
+    case "$addr" in
+        *::*) ;;
+        *:*) [ "${addr//[!:]/}" == ::::::: ] || first=1::1 ;;
+    esac
+    addr="${addr/\*/$first}"
     addr="${addr//\*/1}"
     addr="${addr//\?/1}"
     case "$addr" in

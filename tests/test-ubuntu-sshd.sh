@@ -175,7 +175,16 @@ for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
 assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
+# A wildcard pattern samples an address sshd parses; an IPv6 one short of 8 groups gets a ::
+printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
+: > "$STUB_LOG"
+assert_exit 0 status
+assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
+for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \
+    "fd00:*:1 fd00:1::1:1" "2001:db8:0:0:0:0:0:* 2001:db8:0:0:0:0:0:1" "fe80::1 fe80::1"; do
+    assert_eq "${match##* }" "$(range_sample "${match% *}")" "range_sample ${match% *}"
+done
 # This SSH session's client is checked too
 export SSH_CONNECTION="198.51.100.4 51000 192.168.1.5 22"
 : > "$STUB_LOG"

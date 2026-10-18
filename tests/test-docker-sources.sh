@@ -49,8 +49,9 @@ stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.service" | try-restart*) exit 0 ;; *) exit 1 ;; esac'
 stub dockerd
 stub sudo 'exec env "$@"'
-# fetch downloads Docker's key
+# fetch downloads Docker's key, which has the fingerprint the step pins
 fetch() { echo key > "$2"; }
+stub gpg "echo fpr:::::::::$DOCKER_KEY_FPR:"
 # The key goes under /etc/apt/keyrings
 DOCKER_KEYRING="$SANDBOX/keyrings/docker.asc"
 # curl answers the HEAD request for Docker's Release file with $SANDBOX/http-status

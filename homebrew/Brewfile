@@ -1,6 +1,6 @@
-# Formulae and App Store apps for the homebrew step. Casks stay in homebrew/install.sh, which
-# skips apps installed outside Homebrew, where brew bundle would fail. So brew bundle cleanup with
-# this file would uninstall every cask: don't run it.
+# Formulae for the homebrew step. Casks and App Store apps stay in homebrew/install.sh's CASKS and
+# MAS_APPS, since it skips apps installed outside Homebrew, where brew bundle would fail. So brew
+# bundle cleanup with this file would uninstall every cask: don't run it.
 
 # Core
 brew "git"

@@ -140,6 +140,7 @@ SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
 # The tailnet's addresses, Tailscale's CGNAT range
 TAILNET_RANGE=100.64.0.0/10
 # Docker's bridges: the default one, and each user-defined network's br-<ID>, which ufw's + matches.
+# A bridge given its own name, or Swarm's docker_gwbridge, isn't among them.
 # ufw denies SSH on them ahead of the allow rules, since a network created with an explicit
 # subnet, or with IPv6, gives containers addresses in $SSH_RANGES.
 DOCKER_BRIDGES=(docker0 br-+)

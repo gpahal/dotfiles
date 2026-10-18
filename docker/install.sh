@@ -343,9 +343,11 @@ configure_daemon() {
         [ -z "${original//[[:space:]]/}" ] || current="$original"
     fi
     tmp="$(mktemp)" || return 1
-    if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp"; then
+    # A file with several JSON values would come out as several, which dockerd may not reject
+    if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp" ||
+        [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         rm -f "$tmp"
-        echo "  $DOCKER_DAEMON_CONFIG isn't valid JSON; fix it and re-run." >&2
+        echo "  $DOCKER_DAEMON_CONFIG isn't one valid JSON object; fix it and re-run." >&2
         return 1
     fi
     if daemon_settings_applied <<< "$current"; then

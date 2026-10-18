@@ -128,8 +128,17 @@ assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json from
 echo '{"dns": [' > "$DOCKER_DAEMON_CONFIG"
 : > "$STUB_LOG"
 assert_exit 1 configure_daemon
-assert_contains "$RUN_OUTPUT" "isn't valid JSON"
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_eq '{"dns": [' "$(cat "$DOCKER_DAEMON_CONFIG")" "invalid daemon.json"
+assert_file_not_contains "$STUB_LOG" "systemctl"
+# So is a file with two JSON values, which jq would turn into two
+printf '%s\n' '{"dns": ["1.1.1.1"]}' '{"debug": true}' > "$DOCKER_DAEMON_CONFIG"
+cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+: > "$STUB_LOG"
+assert_exit 1 configure_daemon
+assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
+assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_file_not_contains "$STUB_LOG" "dockerd"
 assert_file_not_contains "$STUB_LOG" "systemctl"
 
 # A running daemon: the pending item says the restart stops containers

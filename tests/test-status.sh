@@ -95,6 +95,8 @@ sshd_enabled() { true; }
 # shellcheck disable=SC2034 # the step reads it
 REBOOT_REQUIRED="$SANDBOX/no-reboot-required"
 ufw_enabled() { true; }
+UFW_DEFAULTS="$SANDBOX/default-ufw"
+echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes

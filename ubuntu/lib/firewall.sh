@@ -7,8 +7,14 @@
 # Succeeds when ufw is on and denies incoming connections, which its config files show to anyone
 ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
-        grep -qx 'ENABLED=yes' /etc/ufw/ufw.conf 2>/dev/null &&
-        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' /etc/default/ufw 2>/dev/null
+        grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
+        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null
+}
+
+# Succeeds when ufw filters IPv6 too. With IPV6=no, it leaves sshd open on the global IPv6
+# address while ufw_enabled still succeeds. The step leaves the file to you, and status reports it.
+ufw_ipv6_on() {
+    grep -qx 'IPV6=yes' "$UFW_DEFAULTS" 2>/dev/null
 }
 
 # The ports ssh.socket listens on while it's active, one per line. systemctl show lists each

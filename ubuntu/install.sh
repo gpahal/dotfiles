@@ -131,6 +131,9 @@ Dpkg::Options {
 # 172.16.0.0/12 is left out: Docker's bridges take their subnets from it (172.17.0.0/16 and up), so
 # allowing it would let any container try logins on sshd.
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
+# ufw's settings, which anyone may read: whether it's on, and its default policy and IPv6 setting
+UFW_CONF=/etc/ufw/ufw.conf
+UFW_DEFAULTS=/etc/default/ufw
 # Tailscale's port for direct connections. Without it, devices relay through DERP servers.
 TAILSCALE_PORT=41641
 TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
@@ -322,6 +325,11 @@ status() {
     fi
     if ufw_enabled; then
         status_item ok "ufw on, denying incoming connections"
+        if ufw_ipv6_on; then
+            status_item ok "ufw filters IPv6"
+        else
+            status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
+        fi
         if ! "$sshd_installed"; then
             status_item missing "$rules: openssh-server isn't installed"
         elif [ ! -d "$SSHD_RUN_DIR" ]; then

@@ -20,6 +20,8 @@ status_firmware() { :; }
 # ufw's on state and linger come from files under /etc and /var, so those checks are replaced.
 # Linger is on when $SANDBOX/linger exists, and loginctl turns it on.
 ufw_enabled() { [ ! -e "$SANDBOX/ufw-off" ]; }
+UFW_DEFAULTS="$SANDBOX/default-ufw"
+echo IPV6=yes > "$UFW_DEFAULTS"
 lingering() { [ -e "$SANDBOX/linger" ]; }
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check and reload
@@ -193,6 +195,15 @@ printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
+assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
+# ufw on with IPV6=no leaves sshd open on the global IPv6 address: status says so, and the step
+# leaves the file to you
+echo IPV6=no > "$UFW_DEFAULTS"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
+assert_exit 0 main
+assert_eq IPV6=no "$(cat "$UFW_DEFAULTS")" "ufw's defaults after a run"
+echo IPV6=yes > "$UFW_DEFAULTS"
 printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \
     "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-rules"

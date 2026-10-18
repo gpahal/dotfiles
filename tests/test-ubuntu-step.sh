@@ -26,6 +26,8 @@ is_ubuntu() { true; }
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
+UFW_DEFAULTS="$SANDBOX/default-ufw"
+echo IPV6=yes > "$UFW_DEFAULTS"
 lingering() { true; }
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
 status_smart() { :; }
@@ -672,6 +674,7 @@ is_ubuntu() { true; }
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$STUB_DIR"
 ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
+UFW_DEFAULTS="$SANDBOX/default-ufw"
 lingering() { true; }
 status_smart() { :; }
 status_firmware() { :; }

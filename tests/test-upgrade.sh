@@ -118,8 +118,6 @@ brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
 brew info --json=v2 --installed --cask
 brew info --json=v2 --cask rectangle
-brew list --cask rectangle
-brew info --json=v2 --cask rectangle
 brew install --cask rectangle
 brew list --cask zed
 brew outdated --cask --greedy --quiet zed

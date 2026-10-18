@@ -341,6 +341,9 @@ load_script() {
             exit 2
         fi
     done
+    # lib/common.sh defines its default main only when none exists, so a step loaded earlier with
+    # its own main would hide a later step's default one. Reloading lib/common.sh alone keeps main.
+    [ "$script" == "$REPO_DIR/lib/common.sh" ] || unset -f main
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first

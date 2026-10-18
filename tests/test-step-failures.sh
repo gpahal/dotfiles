@@ -134,9 +134,6 @@ assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt
 # --- ghostty ---
 # On Ubuntu. pkill is stubbed, so no running Ghostty gets a signal.
 stub pkill 'exit 1'
-# The zsh step's own main would otherwise stay, since lib/common.sh defines its default main only
-# while none is defined
-unset -f main
 load_script ghostty/install.sh
 is_ubuntu() { true; }
 is_macos() { false; }

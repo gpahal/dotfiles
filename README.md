@@ -211,17 +211,17 @@ Claude Code, Codex, and long builds send notifications through Ghostty, inside t
 
 ### Stream Deck
 
-macOS only. The `stream-deck` step installs a plugin into Stream Deck. Its **Dotfiles** category has three actions that act on the app in front:
+macOS only. The `stream-deck` step installs a plugin whose **Dotfiles** category has three keys that act on the app in front:
 
 | Key | From Ghostty | From Zed | From Finder | From T3 Code |
 | :- | :- | :- | :- | :- |
-| **Editor** | Opens the tab's folder in Zed | Shows the open file | Opens the selection, or the window's folder, in Zed | Opens the thread's folder in Zed |
-| **Terminal** | Opens a new tab at the tab's folder | Opens a Ghostty window at the file's folder | Opens a Ghostty window at the selected folder, the selected file's folder, or the window's folder | Opens a Ghostty window at the thread's folder |
-| **Files** | Opens the tab's folder in Finder | Reveals the open file in Finder | Opens the selected folder or reveals the selected file, or opens the window's folder | Opens the thread's folder in Finder |
+| **Editor** | Zed at the tab's folder | Shows the open file | Zed at the selection, or the window's folder | Zed at the thread's folder |
+| **Terminal** | A new tab at the tab's folder | Ghostty at the file's folder | Ghostty at the selected folder, the selected file's folder, or the window's folder | Ghostty at the thread's folder |
+| **Files** | Finder at the tab's folder | Reveals the file in Finder | Opens the selected folder, reveals the selected file, or opens the window's folder | Finder at the thread's folder |
 
-A T3 Code thread's folder is its worktree, or its project's folder when it has none. With no folder to use, such as when another app is in front or the folder is on another machine over SSH, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. The category's **Chrome**, **New Tab**, **T3 Code**, and **Claude** keys do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. App keys show each app's own icon, and [`stream-deck/icons`](stream-deck/icons/README.md) lists where each came from.
+A thread's folder is its worktree, or else its project's folder. With no folder to use, as when another app is in front or the folder is on another machine, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. **Chrome**, **New Tab**, **T3 Code**, and **Claude** do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. [`stream-deck/icons`](stream-deck/icons/README.md) lists where the app icons came from.
 
-**Overview** shows CPU and memory use, and a press opens the **System** page of live stats, laid out for the 15-key Stream Deck:
+**Overview** shows CPU and memory use, and a press opens the **System** page, laid out for the 15-key Stream Deck:
 
 | | | | | |
 | :- | :- | :- | :- | :- |
@@ -229,22 +229,15 @@ A T3 Code thread's folder is its worktree, or its project's folder when it has n
 | Top Process | GPU | Temperature | Power | Disk |
 | Network | | | | |
 
-Each stat key updates every 2 seconds while it's on screen, and turns yellow or red as the stat nears trouble. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need [macmon](#cli-tools-installed-via-brew). A press opens Activity Monitor, and **Back** returns to the profile you came from. The stat keys are also in the category, to put on any page.
+A stat key updates every 2 seconds while it's on screen, turns yellow or red as the stat nears trouble, and opens Activity Monitor when pressed. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need [macmon](#cli-tools-installed-via-brew). **Back** returns to the profile you came from. The stat keys are also in the category, for any page.
 
 ### Hammerspoon
 
-macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets these global hotkeys. Each opens its app, or brings it to the front when it's running:
+macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets global hotkeys on `Ctrl+Opt+Cmd`, since [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`. Each opens its app, or brings it to the front:
 
-| Hotkey | What it does |
-| :- | :- |
-| `Ctrl+Opt+Cmd+Space` | Opens Claude. Claude's own `Option+Space` opens quick entry |
-| `Ctrl+Opt+Cmd+B` | Opens Google Chrome |
-| `Ctrl+Opt+Cmd+N` | Opens a new Chrome tab. When the clipboard holds text, pastes it into the address bar and selects it, so Enter opens it, and typing or Delete replaces it |
-| `Ctrl+Opt+Cmd+T` | Opens Ghostty at the folder in front, as the Stream Deck's **Terminal** key does |
-| `Ctrl+Opt+Cmd+C` | Opens T3 Code |
-| `Ctrl+Opt+Cmd+E` | Opens Zed at the folder or file in front, as the Stream Deck's **Editor** key does |
-
-The hotkeys use `Ctrl+Opt+Cmd` because [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`.
+- `Ctrl+Opt+Cmd+Space` opens Claude, whose own `Option+Space` opens quick entry. `Ctrl+Opt+Cmd+B` opens Google Chrome, and `Ctrl+Opt+Cmd+C` T3 Code.
+- `Ctrl+Opt+Cmd+T` opens Ghostty, and `Ctrl+Opt+Cmd+E` Zed, at the folder in front, as the Stream Deck's **Terminal** and **Editor** keys do.
+- `Ctrl+Opt+Cmd+N` opens a new Chrome tab. When the clipboard holds text, it pastes it into the address bar and selects it, so Enter opens it and typing or Delete replaces it. It waits for you to release the hotkey's keys. If they're still held, or Chrome isn't in front, after 10 seconds, it shows a notification instead. A second press while the tab is on its way does nothing.
 
 ### tmux
 
@@ -438,7 +431,10 @@ Once, before or right after setup:
 11. **Logitech.** At the Ubuntu desktop, open Solaar and pair your devices.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need a desktop session, and a reboot ends it. Turn on GNOME's Remote Login in **Settings → System → Remote Desktop**, set its username and password, and connect over Tailscale with the Mac's Windows App. Or turn on automatic login in GDM, which starts a session at boot but leaves the login keyring locked.
 13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts`. Paste the topic name at its prompt, which hides it, or a full `https://` URL for a topic on another ntfy server. Then run `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
-14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Test it: unplug the UPS from the wall and wait for the low-battery push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` starts the shutdown at once). Plug it back in, and check that the machine starts and `just status` reports the UPS on mains. Separately, check the fallback for a UPS that keeps its power on, at the machine: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power. If the UPS keeps its power on while mains is still out, the fallback loops. The machine starts on battery, shuts down again on the low battery, and repeats until the battery runs out. So in the test, make sure the UPS cuts its output. If it doesn't, look in its settings for one that turns the output off on shutdown.
+14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Then test it:
+    1. Unplug the UPS from the wall, and wait for the low-battery push, the shutdown, and the UPS cutting its output. `sudo upsmon -c fsd` starts the shutdown at once. If the UPS doesn't cut its output, look in its settings for one that turns the output off on shutdown. Otherwise, while mains is still out, the fallback below starts the machine on battery, and it shuts down and starts again until the battery runs out.
+    2. Plug the UPS back in, and check that the machine starts and `just status` reports the UPS on mains.
+    3. At the machine, check the fallback for a UPS that keeps its power on: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power.
 15. **Backups.** Back up `~`, including `~/.t3` and `~/.worktrees`, and `/var/lib/docker/volumes` off the machine, with restic or Borg on a schedule. Restore a few files once to check it.
 16. **Livepatch (optional).** With a free Ubuntu Pro token, run `sudo pro attach <token>` and `sudo pro enable livepatch` for kernel fixes without a reboot.
 

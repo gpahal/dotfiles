@@ -169,23 +169,23 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 The script merges these into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
-- **New threads.** Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks. A context window you pick is kept too, unless the script replaces your model or effort.
-- **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
+- **New threads.** Claude Opus 5.5 at medium effort, in auto mode, each in its own worktree under `~/.t3/worktrees`.
+  - A model or effort you pick in T3 Code is kept, unless you agree to replace it when the script asks.
+  - The context window starts at 1M. A window you pick is kept, unless the script replaces your model or effort.
+- **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's.
+  - Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run.
+  - Keep dev servers in manual actions.
+- **Worktree cleanup.** T3 removes a worktree it made:
+  - 30 days after its thread was last active, or 15 days after the thread settles.
+  - Once its pull request is merged into the remote default branch.
+  - When its last thread is deleted, or it has no commits beyond the default branch.
+
+  It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It deletes ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 - **Projects.** They pull automatically, and **Add project** starts in `~/Dev`.
 - **Threads.** A mid-turn message steers the turn. Threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets.
 - **Pull requests.** They squash-merge and drop the agent's credits on merge. Commit and PR text has concise titles and short bullet points.
 - **Interface.** Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap.
 - **Cleanup.** T3 deletes browser artifacts and logs after 30 days.
-
-Worktree cleanup **(script)** removes a worktree T3 made:
-
-- 30 days after its thread was last active.
-- 15 days after its thread settles.
-- Once its pull request is merged into the remote default branch.
-- When its last thread is deleted.
-- When it has no commits beyond the default branch.
-
-It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It does delete ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 
 ## Privacy
 

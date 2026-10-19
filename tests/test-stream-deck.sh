@@ -4,9 +4,8 @@ set -euo pipefail
 # On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
 # longer has, and restarts a running Stream Deck only when the plugin changed, trying again when
 # it doesn't reopen at first, carries on when Stream Deck isn't running, and fails when it doesn't
-# quit. Each of the
-# manifest's actions is a target of open-in, a stat key stats.js draws, or Back. The bundled
-# System profile is built from stream-deck/profile and holds only the plugin's actions.
+# quit. Each of the manifest's actions is a target of open-in, a stat key stats.js draws, or Back.
+# The bundled System profile is built from stream-deck/profile and holds only the plugin's actions.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

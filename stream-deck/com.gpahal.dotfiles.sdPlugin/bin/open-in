@@ -13,8 +13,8 @@ set -uo pipefail
 # The Stream Deck plugin runs it for each key press, and Hammerspoon's Ctrl+Opt+Cmd+T, E, and N
 # run a copy, so macOS asks each for its permissions: Automation for Ghostty, Finder, System
 # Events, and Google Chrome, and Accessibility to read Zed's window title and T3 Code's page, and
-# to send the new tab's keystrokes. OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and where its log
-# goes, for the notifications.
+# to send the new tab's keystrokes. OPEN_IN_CALLER and OPEN_IN_LOG name the app running it and
+# where its log goes, for the notifications.
 #
 # Each run prints a line to stderr, which the caller adds to its log. It exits 1 when it couldn't
 # open anything, or when a missing permission kept it from reading the path, though it still opens

@@ -32,10 +32,10 @@ T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # or Finder gets launchd's, not the shell's. At each login this LaunchAgent sets the variable in
 # launchd's environment, then opens T3 Code: one agent does both, so it can't open T3 Code before
 # the variable is set. macOS's "Reopen windows when logging back in" can still start T3 Code
-# first, so the README says to quit and reopen it then. It opens T3 Code because T3 Connect, which
-# the phone app goes through, runs only while the app is open. The app also reads the variable from
-# the login shell, but gives that read 5 s, so a slow shell would leave telemetry on without
-# launchd's copy. The app's name carries its release stage, so the agent opens it by bundle ID.
+# first, and open then only brings that copy forward, so the README says to quit and reopen it
+# then. It opens T3 Code because T3 Connect, which the phone app goes through, runs only while
+# the app is open. The app also reads the variable from the login shell, but gives that read 5 s,
+# so a slow shell would leave telemetry on without launchd's copy. The app's name carries its release stage, so the agent opens it by bundle ID.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 
 # The LaunchAgent isn't loaded now, since it would open T3 Code, which must be quit for the
@@ -49,7 +49,8 @@ T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # A drop-in, since `t3 service install` and `t3 update` rewrite the unit itself. It pins the port:
 # without one, `t3 serve` falls back to a free port when 3773 is taken, and T3 has no lock against
 # a second server on the same data, while `tailscale serve` and pairing links point at 3773. Pinned,
-# the service fails its bind instead, and T3's unit stops retrying after about 25 s, while status
+# the service fails its bind instead, and T3's unit (StartLimitIntervalSec=300,
+# StartLimitBurst=5, RestartSec=5) stops retrying after about 25 s, while status
 # names the other server. It binds the server to loopback, since `t3 serve` otherwise listens on
 # every interface and ufw lets the tailnet reach every port: `tailscale serve` is the way in, over
 # HTTPS. It leaves systemd-oomd's preference to T3, since sparing the server would spare a runaway
@@ -211,8 +212,8 @@ T3_CODE_CLIENT_FILTER='
     | .wordWrap = false
 '
 
-# The app's name can change between releases. Ask brew which app the t3-code cask installs, and otherwise take any T3 Code*.app beside where brew puts it, or in
-# /Applications, except the separate nightly build. A caller that already asked brew passes its
+# The app's name can change between releases. Ask brew which app the t3-code cask installs, and
+# otherwise take any T3 Code*.app beside where brew puts it, or in /Applications, except the separate nightly build. A caller that already asked brew passes its
 # answer, cask_app_path's output, so brew isn't asked again.
 # Usage: t3_code_app_path [cask app path]
 t3_code_app_path() {

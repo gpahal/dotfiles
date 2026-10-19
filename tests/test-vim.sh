@@ -31,6 +31,33 @@ fi
 chmod 755 "$HOME/.vim/autoload"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 
+# An installed plugin whose checkout isn't at its pin, as after just bump-plugins, is missing until
+# a re-run moves it there; a plugin vim hasn't installed yet isn't
+plugin_pins() {
+    local origin="$SANDBOX/vim-plugin" plug="$HOME/.vim/plugged/vim-plugin" old new
+    git init -q -b main "$origin"
+    git_commit "$origin" --allow-empty -m one
+    old="$(git -C "$origin" rev-parse HEAD)"
+    git_commit "$origin" --allow-empty -m two
+    new="$(git -C "$origin" rev-parse HEAD)"
+    git clone -q "file://$origin" "$plug"
+    git -C "$plug" checkout -q --detach "$old"
+    load_script vim/install.sh
+    replace_fn vim_plugins "echo 'me/vim-plugin $new'; echo 'me/not-installed $new'"
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "missing    vim plugins at their pinned commits (~/.vim/plugged)"
+    assert_exit 0 apply
+    assert_contains "$RUN_OUTPUT" "Moved vim plugin me/vim-plugin to ${new:0:7}"
+    assert_eq "$new" "$(git -C "$plug" rev-parse HEAD)" "the plugin's commit after a re-run"
+    assert_exit 0 status
+    assert_exit 0 apply
+    assert_contains "$RUN_OUTPUT" "vim plugins already at their pinned commits"
+    rm -rf "$HOME/.vim/plugged"
+}
+subtest plugin_pins
+# The repo's own pins, with no plugin installed
+assert_exit 0 bash "$REPO_DIR/vim/install.sh" --status
+
 # vim-plug ships with the repo, so the vimrc never downloads it, and vims starting at once can't
 # race to write it
 assert_file_not_contains "$REPO_DIR/vim/vimrc" "curl"

@@ -59,7 +59,7 @@ bash setup.sh
 | `lazygit` | Copies the lazygit config |
 | `ssh` | Makes `~/.ssh` private. On macOS, keeps your keys in the keychain and loads them at login |
 | `zsh` | Copies the zsh and starship config, adds its lines to `~/.zshrc` and the other startup files, and offers to make zsh the login shell |
-| `vim` | Copies the vim config and installs vim-plug |
+| `vim` | Copies the vim config, installs vim-plug, and moves installed plugins to their pins |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
 | `zed` | Copies the Zed settings and keymap, replacing ones Zed edited |
@@ -173,7 +173,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
   - [vim-airline](https://github.com/vim-airline/vim-airline) with [vim-airline-themes](https://github.com/vim-airline/vim-airline-themes)
 - Relative line numbers, persistent undo, smart case search, a space leader key, and the mouse in tmux too
 - `Space e` toggles NERDTree. `Space f` finds files, `Space /` searches contents with ripgrep, and `Space b` lists buffers
-- Copied to `~/.vimrc`, with the vim-plug release the repo vendors. vim installs missing plugins when it starts, at the commits `vim/vimrc` pins
+- Copied to `~/.vimrc`, with the vim-plug release the repo vendors. vim installs missing plugins when it starts, at the commits `vim/vimrc` pins, and the step moves installed ones to those commits
 
 ### zsh
 
@@ -528,7 +528,7 @@ With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Gho
 
 Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, and each to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 
-Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the tmux plugins. It leaves installed vim plugins at their old commits, so then run `upgrade`, or only `vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa`, to move them.
+Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the installed plugins to them.
 
 **Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+N`, `Ctrl+Opt+Cmd+T`, and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
 

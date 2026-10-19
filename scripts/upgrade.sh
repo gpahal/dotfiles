@@ -161,19 +161,13 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Install the formulae added to this repo's Brewfile since setup last ran. Sourcing the step only
-# defines its functions, but it also sets -euo pipefail, so this and _install_new_casks run in a
-# subshell.
-_install_new_formulae() (
-    # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && install_bundle
-)
-
-# Install the casks added to the homebrew step since setup last ran
-_install_new_casks() (
+# Run the homebrew step's function $1, such as install_bundle, which installs the formulae added
+# to the Brewfile since setup last ran. Sourcing the step only defines its functions, but it also
+# sets -euo pipefail, so this runs in a subshell.
+_homebrew_step() (
     # Not followed: shellcheck would flag the lib/common.sh variables it sets again as lost
     # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && install_casks
+    source "$DOTFILES_DIR/homebrew/install.sh" && "$1"
 )
 
 # Add stage $1, which exited $2, to the caller's failed array, or stop the script when it was
@@ -316,8 +310,9 @@ upgrade() {
     fi
 
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
-    _install_new_formulae || _stage_failed "brew bundle" "$?"
-    _install_new_casks || _stage_failed casks "$?"
+    # The formulae added to the Brewfile, and the casks added to the step, since setup last ran
+    _homebrew_step install_bundle || _stage_failed "brew bundle" "$?"
+    _homebrew_step install_casks || _stage_failed casks "$?"
     if [[ "$OSTYPE" == linux* ]]; then
         # Homebrew doesn't refresh fontconfig's cache for the fonts it upgrades on Linux, which go
         # where it put them: under XDG_DATA_HOME when that's set

@@ -29,8 +29,10 @@ authorized_key_fingerprints() {
 # logs in: sshd's ExposeAuthInfo writes a "<method>[/<submethod>] [<key type> <key> ...]" line for
 # each method the session logged in with to the file $SSH_USER_AUTH names, and removes the file
 # when the session ends. Every method must be publickey, since sshd can require a password too
-# (AuthenticationMethods), with a key ~/.ssh/authorized_keys lists. Otherwise prints why not, and
-# fails. status and apply work it out once (cache_checks), since it runs ssh-keygen per key.
+# (AuthenticationMethods), and every key one ~/.ssh/authorized_keys lists, since sshd can require
+# several (publickey,publickey), and a fresh login then needs each of them. With several, it prints
+# the first. Otherwise prints why not, and fails. status and apply work it out once
+# (cache_checks), since it runs ssh-keygen per key.
 key_login() {
     if [ -n "${KEY_LOGIN_STATUS:-}" ]; then
         printf '%s\n' "$KEY_LOGIN_CACHE"
@@ -58,17 +60,16 @@ read_key_login() {
         fi
         fp="$(printf '%s %s\n' "$type" "$key" | key_fingerprint)"
         if [ -z "$fp" ] || ! grep -qxF "$fp" <<< "$authorized"; then
-            found="${found:-missing}"
-        else
-            found="$fp"
+            echo "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys"
+            return 1
         fi
+        found="${found:-$fp}"
     done < "$auth"
-    case "$found" in
-        "") echo "sshd recorded no key login for this SSH session" ;;
-        missing) echo "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys" ;;
-        *) echo "$found" && return 0 ;;
-    esac
-    return 1
+    if [ -z "$found" ]; then
+        echo "sshd recorded no key login for this SSH session"
+        return 1
+    fi
+    echo "$found"
 }
 
 # Print the drop-in as it is, with sudo -n when only root can read it (read_root_file)

@@ -185,17 +185,49 @@ stub() {
 # Stub sudo to run its command as you, as sudo with cached credentials would, after dropping a
 # leading -n. It refuses a command with an absolute path, alone or after an =, outside the sandbox
 # (which holds $STUB_DIR), other than /dev/null and the repo's files. So a system path the test
-# didn't point into the sandbox fails the command, rather than being written to as you. The
-# optional body runs first, with sudo's arguments as "$@", as a stub's does, and may change them
-# with set --, as to drop options that need root.
+# didn't point into the sandbox fails the command, rather than being written to as you. A repo
+# file passes only as one the command reads: an argument before the last, as install's or cp's
+# source, or any argument of a command that only reads, such as cat or bash. It's refused as the
+# last argument, the destination or target of most commands, and anywhere for a command that
+# changes each file it's given, such as rm, chmod, or tee. The optional body runs first, with
+# sudo's arguments as "$@", as a stub's does, and may change them with set --, as to drop options
+# that need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
+# The command, after any VAR=value words, and which of its files it reads: all, all but the last,
+# or none, as install -d makes each dir it is given
+cmd=""
 for arg in "$@"; do
     case "$arg" in
-        /dev/null | "$sandbox" | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/* | *="$repo"/*) ;;
+        *=*) ;;
+        *)
+            cmd="${arg##*/}"
+            break
+            ;;
+    esac
+done
+case "$cmd" in
+    cat | bash | sh | head | tail | grep | diff | cmp | stat | test | \[) reads=all ;;
+    rm | rmdir | mv | chmod | chown | chgrp | touch | tee | truncate | mkdir | unlink | sed) reads=none ;;
+    *) reads=all-but-last ;;
+esac
+case " $* " in *" -d "*) [ "$cmd" != install ] || reads=none ;; esac
+i=0
+for arg in "$@"; do
+    i=$((i + 1))
+    case "$arg" in
+        /dev/null | "$sandbox" | "$sandbox"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/*) ;;
+        "$repo"/* | *="$repo"/*)
+            case "$reads" in
+                all) continue ;;
+                all-but-last) [ "$i" -eq $# ] || continue ;;
+            esac
+            echo "refused: $cmd would change $arg, in the repo" >&2
+            exit 1
+            ;;
         /* | *=/*)
             echo "refused: $arg is outside the sandbox" >&2
             exit 1

@@ -66,4 +66,23 @@ expect_failure "answer: 'maybe' isn't yes or no" answer maybe
 unset -f confirm
 expect_failure "replace_fn: no function confirm to replace" answer yes
 
+# stub_sudo_exec runs a command that only reads the repo's files, and refuses one that would
+# change them, or reach outside the sandbox. The refused ones name a missing repo dir, so they'd
+# fail even if they ran.
+stub_sudo_exec
+echo hi > "$SANDBOX/file"
+gone="$REPO_DIR/no-such-dir/file"
+assert_exit 0 sudo -n install -m 0644 "$REPO_DIR/tests/lib.sh" "$SANDBOX/copy"
+cmp -s "$REPO_DIR/tests/lib.sh" "$SANDBOX/copy" || fail "sudo install didn't copy from the repo"
+assert_exit 0 sudo cat "$REPO_DIR/tests/lib.sh"
+assert_exit 0 sudo DEBIAN_FRONTEND=noninteractive bash -n "$REPO_DIR/tests/lib.sh"
+for cmd in "cp $SANDBOX/file $gone" "install -d $gone" "install -m 0644 $SANDBOX/file $gone" \
+    "rm -f $gone" "mv $gone $SANDBOX/moved" "chmod 600 $gone $SANDBOX/file" "tee $gone"; do
+    # shellcheck disable=SC2086 # split into arguments
+    assert_exit 1 sudo $cmd
+    assert_contains "$RUN_OUTPUT" "refused: ${cmd%% *} would change $gone, in the repo" "sudo $cmd"
+done
+assert_exit 1 sudo cat /etc/hosts
+assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
+
 test_done

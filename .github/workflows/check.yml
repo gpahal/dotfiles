@@ -181,10 +181,13 @@ jobs:
           fi
           bwrap --unshare-all --ro-bind / / true
 
-      # Claude Code from the native installer, as the claude-code step installs it
+      # Claude Code from the native installer, as the claude-code step installs it. Downloaded
+      # first, so a truncated download fails here rather than running part of the script.
       - name: Install the latest Claude Code and Codex
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash
+          f="$RUNNER_TEMP/claude-install.sh"
+          curl -fsSL -o "$f" https://claude.ai/install.sh
+          bash "$f"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           npm install -g @openai/codex@latest
 

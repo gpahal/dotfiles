@@ -6,9 +6,9 @@ set -euo pipefail
 # The ubuntu step's UPS part (ubuntu/lib/ups.sh): no UPS on USB, which installs nothing, a UPS
 # plugged in on a later run, which installs NUT and sets it up, an unchanged second run, a stale
 # notifier or RTC wake hook, NUT's files unreadable without sudo, a stopped service or driver, a
-# changed UPS, NUT removed, no upower hwdb, and a VM. And upsmon's notifier (ubuntu/ups-notify.sh), which pushes each event to ntfy.
-# /etc/nut, the notifier's and RTC wake hook's install paths, and upower's hwdb point into the
-# sandbox, and every command they'd run is a stub.
+# changed UPS, NUT removed, no upower hwdb, and a VM. And upsmon's notifier (ubuntu/ups-notify.sh),
+# which pushes each event to ntfy. /etc/nut, the notifier's and RTC wake hook's install paths, and
+# upower's hwdb point into the sandbox, and every command they'd run is a stub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -18,10 +18,9 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
+as_os ubuntu
 
-# shellcheck disable=SC2012 # ls -l is the portable way to read a file's group
-file_group() { ls -ld "$1" | awk '{ print $4 }'; }
+file_group() { owner_group_mode "$1" | awk '{ print $2 }'; }
 mkdir -p "$NUT_DIR" "$SANDBOX/udev"
 touch "$UPOWER_HWDB"
 
@@ -58,7 +57,7 @@ stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
 # nut-scanner prints $SANDBOX/scan, as nut-scanner -U -q prints what it finds
 stub nut-scanner 'cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
 # NUT 2.8.2 and later name, after the driver, others that could serve the UPS
-scan() {
+ups_scan() {
     printf '%s\n' "[nutdev-usb1]" "	driver = \"$1\"	# alternately: apc_modbus" '	port = "auto"' "	vendorid = \"$2\"" \
         "	productid = \"$3\"" '	product = "CP1500PFCLCD"' '	serial = "CXXNV2000123"' '	vendor = "CPS"' \
         '	# bus = "001"' '	# device = "004"' '	# busport = "002"' > "$SANDBOX/scan"
@@ -118,7 +117,7 @@ assert_contains "$RUN_OUTPUT" "No UPS found on USB"
 [ -z "$(ls "$NUT_DIR")" ] || fail "NUT's config was written for a UPS nut-scanner didn't find"
 [ ! -e "$UPS_NOTIFY" ] || fail "the notifier was installed for a UPS nut-scanner didn't find"
 assert_file_not_contains "$STUB_LOG" "systemctl"
-scan usbhid-ups 0764 0501
+ups_scan usbhid-ups 0764 0501
 assert_contains "$(ups_todo)" "UPS: set up NUT for the UPS on USB (0764:0501)"
 run status_ups
 assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
@@ -137,14 +136,16 @@ assert_eq '# From the dotfiles ubuntu step: the UPS nut-scanner found on USB
 	productid = "0501"' "$(cat "$NUT_DIR/ups.conf")" "ups.conf"
 assert_eq "# From the dotfiles ubuntu step: upsd answers only this machine
 LISTEN 127.0.0.1" "$(cat "$NUT_DIR/upsd.conf")" "upsd.conf"
-PASSWORD="$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")"
+# upsmon's password, as NUT reads it from upsd.users
+upsmon_password() { nut_value upsmon password < "$NUT_DIR/upsd.users"; }
+PASSWORD="$(upsmon_password)"
 [ "${#PASSWORD}" -ge 24 ] || fail "upsmon's password is short: '$PASSWORD'"
 assert_eq "# From the dotfiles ubuntu step: upsmon's login to upsd
 [upsmon]
-	password = $PASSWORD
+	password = \"$PASSWORD\"
 	upsmon primary" "$(cat "$NUT_DIR/upsd.users")" "upsd.users"
 assert_eq "# From the dotfiles ubuntu step: watch the UPS, push its events, and shut down on a low battery
-MONITOR ups@localhost 1 upsmon $PASSWORD primary
+MONITOR ups@localhost 1 upsmon \"$PASSWORD\" primary
 SHUTDOWNCMD \"/sbin/shutdown -h +0\"
 POWERDOWNFLAG /etc/killpower
 NOTIFYCMD $UPS_NOTIFY
@@ -213,7 +214,35 @@ assert_exit 0 setup_ups
 assert_file_not_contains "$STUB_LOG" "install -m"
 assert_file_not_contains "$STUB_LOG" "restart"
 assert_contains "$RUN_OUTPUT" "already set up"
-assert_eq "$PASSWORD" "$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")" "upsmon's password after a second run"
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password after a second run"
+
+# A password of your own is kept, and written quoted and escaped to both files, so a space, #, ",
+# or \ stays in it: NUT reads an unquoted space as the end of the password, and # as a comment
+USERS="$(cat "$NUT_DIR/upsd.users")"
+for password in 'two words' 'pass#word' 'say "hi"' 'back\slash' 'all "of" #th\is'; do
+    # As you'd write it by hand: quoted, with a backslash before each " and \
+    escaped="$(printf '%s' "$password" | sed 's/[\\"]/\\&/g')"
+    printf '%s\n' "[upsmon]" "	password = \"$escaped\"" "	upsmon primary" > "$NUT_DIR/upsd.users"
+    assert_eq "$password" "$(upsmon_password)" "the password NUT reads from upsd.users"
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_eq "$password" "$(upsmon_password)" "the password kept in upsd.users"
+    assert_file_contains "$NUT_DIR/upsd.users" "	password = \"$escaped\""
+    assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$escaped\" primary"
+    # A second run reads it back as it wrote it, so it changes nothing
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_file_not_contains "$STUB_LOG" "install -m"
+    assert_contains "$RUN_OUTPUT" "already set up"
+    assert_exit 0 nut_files_current
+done
+# An unquoted password ends at a space or #, as NUT reads it
+printf '%s\n' "[upsmon]" "	password = plain # a comment" > "$NUT_DIR/upsd.users"
+assert_eq plain "$(upsmon_password)" "an unquoted password"
+# Back to the generated one, for the rest of the test
+printf '%s\n' "$USERS" > "$NUT_DIR/upsd.users"
+assert_exit 0 setup_ups
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password, put back"
 
 # A notifier out of date: the step reinstalls it, and nut-scanner finds the same UPS, so ups.conf
 # stays as it is and NUT isn't restarted
@@ -262,6 +291,26 @@ else
     assert_exit 1 nut_files_current
     NUT_GROUP="$(id -gn)"
 fi
+
+# A file with another mode: 0644 or 0666 lets other users read upsmon's password, or rewrite the
+# file, and 0600 shuts the nut group out. It isn't current, and the step rewrites it alone, 0640.
+for mode in 644 666 600; do
+    chmod "$mode" "$NUT_DIR/upsd.users"
+    assert_exit 1 nut_files_current
+    run status_ups
+    assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
+    assert_contains "$(ups_todo)" "UPS: set up NUT"
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_eq 640 "$(file_mode "$NUT_DIR/upsd.users")" "upsd.users's mode after a re-run from $mode"
+    assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for mode $mode"
+    assert_exit 0 nut_files_current
+done
+# Another owner: the step writes them as root, and the test as you
+NUT_OWNER=root
+assert_exit 1 nut_files_current
+# shellcheck disable=SC2034 # nut_file_current reads it
+NUT_OWNER="$(id -un)"
 
 # The RTC wake hook out of date: status says so, and the step replaces it alone
 echo "# edited" >> "$UPS_RTC_HOOK"
@@ -313,7 +362,7 @@ upsc_answers OL 0764 0501
 # --- a changed UPS ---
 unplug 1-3
 usb_device 1-4 0463 ffff ups
-scan usbhid-ups 0463 ffff
+ups_scan usbhid-ups 0463 ffff
 rm "$SANDBOX/upsc"
 assert_contains "$(ups_todo)" "UPS: set up NUT for the UPS on USB (0463:ffff)"
 : > "$STUB_LOG"
@@ -321,7 +370,7 @@ assert_exit 0 setup_ups
 assert_file_contains "$NUT_DIR/ups.conf" 'vendorid = "0463"'
 assert_file_contains "$NUT_DIR/ups.conf" 'productid = "ffff"'
 assert_file_not_contains "$NUT_DIR/ups.conf" "0764"
-assert_eq "$PASSWORD" "$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")" "upsmon's password after a new UPS"
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password after a new UPS"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver-enumerator.service"
 # Only ups.conf changed
 assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for a new UPS"

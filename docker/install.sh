@@ -5,9 +5,10 @@ set -euo pipefail
 # Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
 # rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
 # networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. The run that installs Docker
-# then asks on its own whether to add you to the docker group, which lets `docker` run without sudo
-# but is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides Docker.
+# These need sudo, so the step lists what's missing and asks once. The run that installs Docker then
+# asks on its own whether to add you to the docker group, which lets `docker` run without sudo but
+# is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS,
+# OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -17,6 +18,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=../lib/system.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
+STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
@@ -43,9 +45,9 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
 # 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
 # of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
-# Compose project per worktree. docker0 keeps the subnet Docker's network store has for it, through
-# a reboot or a deleted docker0: 172.17.0.0/16 where Docker ran before the change, and
-# 172.17.0.0/24 on a fresh install.
+# Compose project per worktree. docker0 keeps the subnet Docker's network store gave it when the
+# daemon first started, through a reboot or a deleted docker0: 172.17.0.0/16, since the packages
+# start Docker before the step writes this file.
 # ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
 # 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
 # a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
@@ -98,7 +100,8 @@ add_docker_repo() {
     add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
+# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own
+# failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -109,8 +112,19 @@ install_docker() {
     apt_get install -y "${DOCKER_PACKAGES[@]}"
 }
 
+# From the group database, so it's true once you've joined, before a new login gives your
+# processes the group
 in_docker_group() {
-    id -nG "$(id -un)" | tr ' ' '\n' | grep -qx docker
+    case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
+}
+
+# sudo_cached, as status found it once, for its checks that run docker or read the config
+sudo_ready() {
+    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
+        [ "$SUDO_CACHED_CACHE" == yes ]
+        return
+    fi
+    sudo_cached
 }
 
 # docker.service wants containerd.service, so it starts containerd too
@@ -195,7 +209,7 @@ docker_status_run() {
     DOCKER_OUT=""
     DOCKER_STATUS=0
     if ! in_docker_group; then
-        if ! sudo_cached; then
+        if ! sudo_ready; then
             status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
             return 1
         fi
@@ -306,11 +320,8 @@ status_docker_ports() {
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
-    if is_macos; then
-        status_item skipped "Docker: OrbStack, from the homebrew step, provides it on macOS"
-        return 0
-    fi
-    local installed=false
+    local installed=false SUDO_CACHED_CACHE=no
+    ! sudo_cached || SUDO_CACHED_CACHE=yes
     docker_installed && installed=true
     docker_items
     items_status docker_installed
@@ -323,7 +334,7 @@ status() {
     fi
     items_status socket_ready starts_at_boot
     # A config only root can read, or no jq, can't be checked
-    if daemon_config_unreadable && ! sudo_cached; then
+    if daemon_config_unreadable && ! sudo_ready; then
         status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         items_status daemon_configured
@@ -397,11 +408,6 @@ configure_daemon() {
 
 apply() {
     echo "Setting up Docker..."
-    if is_macos; then
-        echo "  OrbStack, from the homebrew step, provides Docker; skipping."
-        return 0
-    fi
-    require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
     # add_apt_repo needs it, after other changes
@@ -447,8 +453,8 @@ apply() {
             echo "  Applied."
         fi
     fi
-    # Asked only once, in the run that installs Docker, whose packages add the group. A no then lasts,
-    # and status's info item says how to join later.
+    # Asked only once, in the run that installs Docker, whose packages add the group. A no then
+    # lasts, and status's info item says how to join later.
     if "$fresh" && ! in_docker_group; then
         add_to_docker_group || result=1
     fi

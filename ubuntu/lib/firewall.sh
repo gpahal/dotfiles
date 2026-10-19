@@ -5,13 +5,14 @@
 # ufw goes on only while no SSH session comes from elsewhere.
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
-# Succeeds when ufw is on and denies incoming connections: its config files say so, and
-# ufw.service, which loads the rules at boot, is enabled and active. systemctl stop ufw, or a unit
-# that failed at boot, unloads the rules but leaves the files as they were. Anyone may read both.
+# Succeeds when ufw is on and denies incoming connections, dropping or rejecting them: its config
+# files say so, and ufw.service, which loads the rules at boot, is enabled and active. systemctl
+# stop ufw, or a unit that failed at boot, unloads the rules but leaves the files as they were.
+# Anyone may read both.
 ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
         grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
-        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null &&
+        grep -qxE 'DEFAULT_INPUT_POLICY="(DROP|REJECT)"' "$UFW_DEFAULTS" 2>/dev/null &&
         systemctl is-enabled -q ufw.service 2>/dev/null &&
         systemctl is-active -q ufw.service 2>/dev/null
 }
@@ -46,7 +47,7 @@ ssh_socket_ports() {
 sshd_ports() {
     local config
     [ -d "$SSHD_RUN_DIR" ] || return 1
-    config="$(sudo "$@" sshd -T 2>/dev/null)" || return 1
+    config="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null)" || return 1
     {
         awk '
             $1 == "port" { print $2 }
@@ -399,7 +400,7 @@ status_ufw() {
         return 0
     fi
     # Without cached credentials, the rules item below is unverified, which covers this too
-    if sudo_cached && ufw_stopped -n; then
+    if sudo_ready && ufw_stopped -n; then
         status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
         return 0
     fi
@@ -412,7 +413,7 @@ status_ufw() {
         status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         return 0
     fi
-    if sudo_cached; then
+    if sudo_ready; then
         ufw_configured -n || ufw=$?
     else
         ufw=2

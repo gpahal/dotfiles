@@ -13,28 +13,28 @@
 ubuntu_step_load() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
-    is_ubuntu() { true; }
-    ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
-    lingering() { true; }
+    as_os ubuntu
+    replace_fn ufw_enabled '[ -e "$SANDBOX/ufw-on" ]'
+    replace_fn lingering true
     # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
-    status_smart() { :; }
-    status_firmware() { :; }
+    replace_fn status_smart :
+    replace_fn status_firmware :
     # test-ubuntu-ups.sh covers the UPS
-    ups_todo() { :; }
-    status_ups() { :; }
-    warn_no_ups() { :; }
+    replace_fn ups_todo :
+    replace_fn status_ups :
+    replace_fn warn_no_ups :
     # This checkout may be a worktree, so the check is replaced, and test-ubuntu-step.sh tests the
     # real one
     declare -F real_in_git_worktree > /dev/null || eval "real_$(declare -f in_git_worktree)"
-    in_git_worktree() { false; }
+    replace_fn in_git_worktree false
 }
 
 # systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
-# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled.
-# A unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers
-# enables and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
-# ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is enabled
-# once systemctl --user enable ran, and active once enable --now did. A user unit needs a
+# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled. A
+# unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables
+# and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl
+# enable --now ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is
+# enabled once systemctl --user enable ran, and active once enable --now did. A user unit needs a
 # daemon-reload while $SANDBOX/reload-needed exists, which daemon-reload removes, unless
 # $SANDBOX/reload-fails exists. A test's own lines go first.
 stub_systemctl() {
@@ -81,19 +81,24 @@ esac'
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without cached
-    # credentials.
+    # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without
+    # cached credentials.
     not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
     not_cached_sudo
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'
-    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails when
-    # $SANDBOX/sysctl-fails exists. sysctl -n prints one setting.
+    # Ubuntu's default smartd.conf, which runs smartd-runner, and so the hook, on a warning
+    echo "DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
+    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails,
+    # setting none, when $SANDBOX/sysctl-fails exists, and after setting them when
+    # $SANDBOX/sysctl-key-fails does, as for a key another file sets that the kernel lacks. sysctl
+    # -n prints one setting.
     stub sysctl 'live="'"$SANDBOX"'/sysctl-live"
     case "$1" in
         --system) [ ! -e "'"$SANDBOX"'/sysctl-fails" ] || exit 1
-            cat "'"$SANDBOX"'/sysctl.d/"*.conf | grep "=" | tr -d " " >> "$live" ;;
+            cat "'"$SANDBOX"'/sysctl.d/"*.conf | grep "=" | tr -d " " >> "$live"
+            [ ! -e "'"$SANDBOX"'/sysctl-key-fails" ] ;;
         -n) grep "^$2=" "$live" 2> /dev/null | tail -n 1 | cut -d= -f2 ;;
     esac'
     # The en_US.UTF-8 locale is there once locale-gen ran
@@ -103,13 +108,13 @@ ubuntu_step_setup() {
     stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
     # No package is on hold with apt-mark
     stub apt-mark
-    # unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last file
-    # that sets it wins.
+    # unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last
+    # file that sets it wins.
     stub_apt_config 'cat "'"$SANDBOX"'/apt.conf.d/"* 2> /dev/null | awk '"'"'{ values[$1] = $0 } END { for (key in values) print values[key] }'"'"''
     stub loginctl
     stub lsblk
-    # Tailscale auto-updates, with you as its operator, until $SANDBOX/tailscale-reset exists, as after
-    # its first login, and its state is in $SANDBOX/tailscale-state
+    # Tailscale auto-updates, with you as its operator, until $SANDBOX/tailscale-reset exists, as
+    # after its first login, and its state is in $SANDBOX/tailscale-state
     stub tailscale 'case "$1" in
         debug) if [ -e "'"$SANDBOX"'/tailscale-reset" ]; then echo "{}"
             else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}"; fi ;;
@@ -119,8 +124,10 @@ ubuntu_step_setup() {
     # sshd -t fails on any drop-in with a "Bogus" line, naming the file the way sshd does. sshd -T
     # prints the port, and the settings the drop-in sets as sshd reads them: the first value in the
     # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
-    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" or "Match Address
-    # <address>" block, or one whose list has a /24 the address is in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
+    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" block, or a "Match
+    # Address" block whose list has the address, a pattern with * or ? that matches it, or a /24
+    # it's in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
+    # test-ubuntu-sshd-real.sh checks the step against the real sshd -T.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
     stub ss
@@ -133,10 +140,20 @@ ubuntu_step_setup() {
             cat "'"$SANDBOX"'"/sshd_config.d/*.conf 2> /dev/null | awk -v user="$user" -v addr="$addr" '"'"'
                 { k = tolower($1) }
                 k == "match" {
-                    matched = (tolower($2) == "user" && $3 == user) || (tolower($2) == "address" && $3 == addr)
-                    # A /24, or a list that has one, as the step samples them
-                    if (tolower($2) == "address" && match($3, /[0-9.]+\.0\/24/))
-                        matched = matched || index(addr, substr($3, RSTART, RLENGTH - 4)) == 1
+                    matched = tolower($2) == "user" && $3 == user
+                    n = tolower($2) == "address" ? split($3, entries, ",") : 0
+                    for (i = 1; i <= n; i++) {
+                        entry = entries[i]
+                        if (entry ~ /^!/) continue
+                        if (entry ~ /\.0\/24$/) {
+                            matched = matched || index(addr, substr(entry, 1, length(entry) - 4)) == 1
+                            continue
+                        }
+                        gsub(/\./, "\\.", entry)
+                        gsub(/\*/, ".*", entry)
+                        gsub(/\?/, ".", entry)
+                        matched = matched || addr ~ ("^" entry "$")
+                    }
                     inmatch = 1
                     next
                 }

@@ -13,13 +13,9 @@ NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
 # upsmon's PATH starts with /usr/local, so a curl or logger there would run instead of the system's
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-log() {
-    logger -t dotfiles-ups -- "$*" 2> /dev/null || true
-}
-
 [ -s "$NTFY_URL_FILE" ] || exit 0
 if [ ! -r "$NTFY_LIB" ]; then
-    log "couldn't push the UPS event to ntfy: $NTFY_LIB is missing"
+    logger -t dotfiles-ups -- "couldn't push the UPS event to ntfy: $NTFY_LIB is missing" 2> /dev/null
     exit 0
 fi
 # shellcheck source=lib/ntfy.sh
@@ -37,8 +33,5 @@ case "${NOTIFYTYPE:-}" in
     COMMOK) title="Back in contact with the UPS" priority=default tags=white_check_mark ;;
     *) title="UPS event ${NOTIFYTYPE:-}" priority=default tags=electric_plug ;;
 esac
-if ! out="$(ntfy_push "$(head -n 1 "$NTFY_URL_FILE")" "$title on $host" "$message" \
-    "Priority: $priority" "Tags: $tags" 2>&1)"; then
-    log "couldn't push the UPS event to ntfy: ${out:-curl failed}"
-fi
+ntfy_hook_push dotfiles-ups "the UPS event" "$title on $host" "$message" "Priority: $priority" "Tags: $tags"
 exit 0

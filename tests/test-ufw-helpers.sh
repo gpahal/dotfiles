@@ -119,4 +119,16 @@ assert_exit 1 ufw_broad_ssh_rules -n
 stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
 stub sshd 'exit 255'
 assert_exit 1 ufw_broad_ssh_rules -n
+
+# --- ufw_enabled: on, and denying incoming connections, by dropping or rejecting them ---
+stub ufw
+stub systemctl
+mkdir -p "$(dirname "$UFW_CONF")"
+echo ENABLED=yes > "$UFW_CONF"
+for policy in DROP REJECT; do
+    echo "DEFAULT_INPUT_POLICY=\"$policy\"" > "$UFW_DEFAULTS"
+    assert_exit 0 ufw_enabled
+done
+echo 'DEFAULT_INPUT_POLICY="ACCEPT"' > "$UFW_DEFAULTS"
+assert_exit 1 ufw_enabled
 test_done

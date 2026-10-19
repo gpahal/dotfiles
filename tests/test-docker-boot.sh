@@ -13,8 +13,7 @@ setup_sandbox
 load_script docker/install.sh
 # No containerd shim runs, so a stopped daemon runs no containers
 stub pgrep 'exit 1'
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 
 # Docker's packages are installed, you're in the docker group, and the daemon config is set.
 # docker.service is enabled when $SANDBOX/service says "on", and docker.socket is enabled and

@@ -66,6 +66,10 @@ auto_updates_configured() {
     file_is "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
 }
 
+write_auto_updates() {
+    write_root_file "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
+}
+
 # Set repo_add_once="true" in Chrome's defaults file, keeping its other settings, so the next
 # install of the .deb adds Google's repo again
 allow_repo_readd() {
@@ -79,6 +83,26 @@ allow_repo_readd() {
 # upgrade adds. The .deb owns the file's content, so nothing else is checked.
 google_source_exists() {
     [ -r "$GOOGLE_SOURCES" ] && ! grep -qiE '^Enabled:[[:space:]]*no[[:space:]]*$' "$GOOGLE_SOURCES"
+}
+
+# Reinstall the .deb with repo_add_once set, which writes Google's source again
+readd_google_repo() {
+    allow_repo_readd && install_chrome --reinstall || return 1
+    google_source_exists && return 0
+    echo "  Reinstalling Chrome's .deb didn't add Google's apt repo. Add it by hand:" >&2
+    echo "  https://www.google.com/linux/linuxrepositories/" >&2
+    return 1
+}
+
+# The step's items. Installing Chrome isn't one: it branches on whether Google has a .deb for this
+# CPU. The source is driven only once Chrome is installed, since installing it writes the source.
+chrome_items() {
+    items_reset
+    item --sudo "Google's apt source ($GOOGLE_SOURCES)" \
+        "Re-add Google's apt repo, which Chrome updates from: set repo_add_once in $CHROME_DEFAULTS and reinstall Google's .deb" \
+        google_source_exists readd_google_repo
+    item --sudo "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" \
+        "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" auto_updates_configured write_auto_updates
 }
 
 status() {
@@ -95,8 +119,8 @@ status() {
             *) status_item unknown "google-chrome-stable: couldn't reach dl.google.com to check for its .deb" ;;
         esac
     fi
-    status_check "Google's apt source ($GOOGLE_SOURCES)" google_source_exists
-    status_check "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" auto_updates_configured
+    chrome_items
+    items_status google_source_exists auto_updates_configured
     status_result
 }
 
@@ -121,25 +145,22 @@ apply() {
     if apt_installed google-chrome-stable && ! google_source_exists; then
         require_cmd curl || return 1
     fi
-    local pending=() result=0
-    if ! apt_installed google-chrome-stable; then
+    local pending=() result=0 installed=false
+    ! apt_installed google-chrome-stable || installed=true
+    chrome_items
+    if "$installed"; then
+        items_pending google_source_exists auto_updates_configured
+    else
         pending+=("Install google-chrome-stable from Google's .deb, which adds Google's apt repo")
-    elif ! google_source_exists; then
-        pending+=("Re-add Google's apt repo, which Chrome updates from: set repo_add_once in $CHROME_DEFAULTS and reinstall Google's .deb")
+        items_pending auto_updates_configured
     fi
-    auto_updates_configured || pending+=("Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF")
     if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        if ! apt_installed google-chrome-stable; then
+        if "$installed"; then
+            items_apply google_source_exists auto_updates_configured || result=1
+        else
             install_chrome || result=1
-        elif ! google_source_exists; then
-            allow_repo_readd && install_chrome --reinstall || result=1
-            if [ "$result" -eq 0 ] && ! google_source_exists; then
-                echo "  Reinstalling Chrome's .deb didn't add Google's apt repo. Add it by hand:" >&2
-                echo "  https://www.google.com/linux/linuxrepositories/" >&2
-                result=1
-            fi
+            items_apply auto_updates_configured || result=1
         fi
-        auto_updates_configured || write_root_file "$UNATTENDED_CONF" "$UNATTENDED_CONTENT" || result=1
         [ "$result" -ne 0 ] || echo "  Applied. A running Chrome keeps the old version until you restart it."
     elif [ ${#pending[@]} -eq 0 ]; then
         echo "  Chrome is already installed and updates automatically."

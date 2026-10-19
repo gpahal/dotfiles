@@ -8,11 +8,12 @@ set -euo pipefail
 #           when one exits 1 (a step failed) or 3 (something needs attention), push its "Needs
 #           attention" and "Failed steps" lines and its missing and unknown items, and when one
 #           exits with any other status, as on a syntax error or a kill, push that it couldn't run
-#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the message changes (ignoring
-#           digits) or a week has passed, and pushes "All clear" once when nothing needs attention;
-#           $HEALTH_STATE_FILE records the last push. sudo's cached credentials don't reach a user
-#           service, so the checks only root can make come back unverified here, which needs no
-#           attention; a push that has them ends with $ROOT_ONLY_NOTE.
+#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the
+#           message changes (ignoring digits) or a week has passed, and pushes "All clear" once when
+#           nothing needs attention; $HEALTH_STATE_FILE records the last push. sudo's cached
+#           credentials don't reach a user service, so the checks only root can make come back
+#           unverified here, which needs no attention; a push that has them ends with
+#           $ROOT_ONLY_NOTE.
 #   boot    push "<host> started at <time>", so an unexpected reboot gets noticed
 #           (dotfiles-boot-notice.service), once per boot: the user manager also starts it when
 #           it restarts, as after the first login before linger is on, or a restart of
@@ -150,7 +151,6 @@ status_alert() {
     read -r last_time last_hash 2>/dev/null < "$HEALTH_STATE_FILE" || true
     case "$last_time" in '' | *[!0-9]*) last_time="" last_hash="" ;; esac
     if [ -z "$message" ]; then
-        [ "$result" -eq 0 ] || return "$result"
         # Never pushed, or the last push was the all-clear: nothing to clear
         if [ -z "$last_hash" ] || [ "$last_hash" == clear ]; then
             echo "Nothing needs attention."

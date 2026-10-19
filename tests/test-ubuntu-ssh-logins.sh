@@ -85,6 +85,16 @@ key_only_pending "the SSH session this shell started in has ended" "in a stale t
 # A key that authorized_keys doesn't list, or no longer does
 key_session other-key
 key_only_pending "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys" "with another key"
+# AuthenticationMethods publickey,publickey: a fresh login needs both keys, so one that
+# authorized_keys lacks, first or last, is no proof, though the other is listed
+for keys in "other-key login-key" "login-key other-key"; do
+    : > "$SSH_AUTH_FILE"
+    for key in $keys; do
+        printf 'publickey %s\n' "$(cut -d' ' -f1,2 "$SANDBOX/$key.pub")" >> "$SSH_AUTH_FILE"
+    done
+    export SSH_USER_AUTH="$SSH_AUTH_FILE"
+    key_only_pending "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys" "with keys $keys"
+done
 # A key session: password logins go off, once you agree
 key_session login-key
 assert_contains "$(sshd_drop_in)" "PasswordAuthentication no"

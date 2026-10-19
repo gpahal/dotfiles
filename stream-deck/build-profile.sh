@@ -23,5 +23,11 @@ for page in "$tmp"/*.sdProfile/Profiles/*/; do
 done
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
-(cd "$tmp" && zip -q -r -X "$OUT" -- *.sdProfile)
+# The same profile always zips to the same bytes, so a rebuild with no edits leaves the zip, and
+# the installed plugin, unchanged: fixed modes and times (in UTC, since zip stores local time),
+# entries in sorted order, no extra attributes (-X), and stored rather than deflated (-0), since
+# zlib builds can deflate the same file differently
+chmod -R u=rwX,go=rX "$tmp"
+find "$tmp" -exec env TZ=UTC touch -t 202001010000 {} +
+(cd "$tmp" && find -- *.sdProfile | LC_ALL=C sort | TZ=UTC zip -q -X -0 "$OUT" -@)
 echo "Built $OUT"

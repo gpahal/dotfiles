@@ -18,11 +18,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
-usage() {
-    echo "Usage: bash macos/setup-touch-id-sudo.sh [--status] (or: just touch-id)"
-    echo "Turns on Touch ID for sudo in $SUDO_LOCAL, and in tmux with pam-reattach. macOS only."
-}
-
 # Copy Homebrew's module to the root-owned dir, read-only like the modules macOS ships. It goes in
 # under a temp name that mv then renames over the copy, so between the sudo runs sudo_local never
 # names a missing module, which would keep the next sudo from starting PAM. The rename replaces a
@@ -43,23 +38,8 @@ status() {
     status_result
 }
 
-main() {
-    local desired copy=false write=false
-    case "${1:-}" in
-        --status)
-            status
-            return $?
-            ;;
-        -h | --help)
-            usage
-            return 0
-            ;;
-        "") ;;
-        *)
-            usage >&2
-            return 2
-            ;;
-    esac
+apply() {
+    local desired copy=false write=false blocker reason pending=()
     if ! is_macos; then
         echo "Touch ID for sudo is macOS only. Nothing to do here."
         return 0
@@ -68,7 +48,6 @@ main() {
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
-    local blocker reason
     if blocker="$(reattach_blocker)"; then
         echo "Touch ID in tmux: $blocker." >&2
         return 1
@@ -87,16 +66,14 @@ main() {
         return 0
     fi
     if "$copy"; then
-        echo "  pam-reattach's module will be copied, root-owned and read-only, to $REATTACH_MODULE."
+        pending+=("Copy pam-reattach's module, root-owned and read-only, to $REATTACH_MODULE")
     fi
     if "$write"; then
         echo "  $SUDO_LOCAL will read:"
         printf '%s\n' "$desired" | sed 's/^/    /'
+        pending+=("Write $SUDO_LOCAL as shown above")
     fi
-    if ! confirm "  Do it with sudo?"; then
-        echo "  Left unchanged. Run this script from a terminal to do it."
-        return 0
-    fi
+    confirm_sudo_changes "${pending[@]}" || return 0
     # The copy goes first, so sudo_local never loads a module that isn't there
     if "$copy"; then
         if ! install_reattach_module; then

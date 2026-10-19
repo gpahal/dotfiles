@@ -59,16 +59,22 @@ put_reattach() {
     echo "${1:-reattach 1.0}" > "$SOURCE"
 }
 
-# Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
-# nothing, and doesn't fail.
+# Arguments are checked as a step's are: a typo, or an extra one after --status, changes nothing
 reset
 put_reattach
+assert_exit 2 main --stauts
+assert_exit 2 main --status extra
+assert_contains "$RUN_OUTPUT" "Usage: bash macos/setup-touch-id-sudo.sh"
+assert_eq "" "$(cat "$STUB_LOG")" "commands run for bad arguments"
+
+# Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
+# nothing, and doesn't fail.
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: off"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "$MODULE"
 assert_contains "$RUN_OUTPUT" "$TID_LINE"
-assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written without asking"
 [ ! -e "$MODULE" ] || fail "the module was copied without asking"
 assert_file_not_contains "$STUB_LOG" "sudo"

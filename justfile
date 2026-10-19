@@ -8,7 +8,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Lint shell scripts (including */bin/*), and check they use no bash 4 features, since they target /bin/bash 3.2, and on macOS that its /bin/bash 3.2 parses them, syntax-check zsh files, check the docs against the code they describe, check the skills' metadata and links, and check the keys the claude-code step writes against the known Claude Code settings
+# Lint shell scripts (including */bin/*), and check they use no bash 4 features, since they target /bin/bash 3.2, and on macOS that its /bin/bash 3.2 parses them, syntax-check zsh files, check the docs against the code they describe, check the skills' metadata and links, check the keys the claude-code step writes against the known Claude Code settings, and check the tests replace repo functions only through replace_fn, as_os, and answer
 check:
     #!/bin/bash
     set -euo pipefail
@@ -25,6 +25,7 @@ check:
     bash scripts/check-docs.sh
     bash scripts/check-skills.sh
     bash scripts/check-claude-keys.sh > /dev/null
+    bash scripts/check-test-overrides.sh
 
 # Run the tests in tests/: every one, or only the named ones (e.g. just test vim), in parallel. The scripts target /bin/bash 3.2 on macOS, so the tests run under it.
 [positional-arguments]

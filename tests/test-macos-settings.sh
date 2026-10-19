@@ -1,21 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Activity Monitor is set to All Processes after quitting it, with consent if it is running.
-# The macos step turns off Spotlight's Cmd+Space shortcut (symbolic hotkey 64), so Raycast can
-# take it, and applies it with activateSettings. Its status checks it. The next input source's
-# Ctrl+Opt+Space (61) is left as it is, since Hammerspoon's hotkeys add Cmd. The step says to log
-# out only after a change that needs it: an NSGlobalDomain key, or a shortcut when
-# activateSettings can't apply it.
+# The macos step's defaults, Activity Monitor's ShowCategory, and Spotlight's Cmd+Space shortcut.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 
-# A defaults that keeps each value in a file. AppleSymbolicHotKeys reads back in the old-style
-# plist format defaults prints, with hotkey 64 on until a -dict-add turns it off. 61 starts unset,
-# as on a Mac whose input source shortcuts were never changed, and a -dict-add of it is logged.
+# defaults prints AppleSymbolicHotKeys as an old-style plist; 61 starts unset, as on a fresh Mac
 DEFAULTS_DIR="$SANDBOX/defaults"
 mkdir -p "$DEFAULTS_DIR"
 stub defaults 'file="'"$DEFAULTS_DIR"'/$2.$3"
@@ -46,9 +39,8 @@ stub killall
 stub activateSettings
 stub pgrep '[ -e "'"$SANDBOX"'/running" ]'
 stub osascript 'rm -f "'"$SANDBOX"'/running"'
-# test-diagnostics-macos.sh covers what status reports about FileVault and the firewall
+# test-diagnostics-macos.sh and test-macos-hostname.sh cover these
 stub fdesetup 'echo "FileVault is On."'
-# test-macos-hostname.sh covers the hostname
 stub scutil 'echo Garvits-MacBook-Pro'
 stub socketfilterfw 'echo "Firewall is enabled. (State = 1)"'
 
@@ -56,8 +48,6 @@ load_script macos/install.sh
 as_os macos
 SHOW_CATEGORY="$DEFAULTS_DIR/com.apple.ActivityMonitor.ShowCategory"
 
-# Running, and confirm says no without a terminal: the other settings are written, ShowCategory
-# isn't, and the step says why
 touch "$SANDBOX/running"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Activity Monitor is running"
@@ -67,7 +57,6 @@ assert_contains "$RUN_OUTPUT" "Set com.apple.dock autohide to true"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    com.apple.ActivityMonitor ShowCategory = 100"
 
-# Not running: it's set to 100, and a re-run has nothing to do
 rm "$SANDBOX/running"
 assert_exit 0 main
 assert_eq 100 "$(cat "$SHOW_CATEGORY")" "ShowCategory"
@@ -75,7 +64,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
 assert_exit 0 status
 
-# Approved: it quits Activity Monitor, then writes ShowCategory
 touch "$SANDBOX/running"
 rm "$SHOW_CATEGORY"
 answer yes
@@ -84,7 +72,6 @@ assert_eq 0 "$RUN_STATUS" "exit status after quitting Activity Monitor: $RUN_OUT
 assert_file_contains "$STUB_LOG" 'osascript -e quit app "Activity Monitor"'
 assert_eq 100 "$(cat "$SHOW_CATEGORY")" "ShowCategory after quitting Activity Monitor"
 
-# Start the shortcuts cases with unset preferences and the default noninteractive answer.
 rm -f "$DEFAULTS_DIR"/*
 : > "$STUB_LOG"
 load_script macos/install.sh
@@ -92,8 +79,7 @@ as_os macos
 
 HOTKEYS="$DEFAULTS_DIR/com.apple.symbolichotkeys.AppleSymbolicHotKeys"
 
-# First run: the shortcut goes off and applies now, and the global keys need a logout. The input
-# source shortcut stays on, and status doesn't mention it.
+# Ctrl+Opt+Space (61) stays on, since Hammerspoon's hotkeys add Cmd
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Spotlight's Cmd+Space shortcut off, so Raycast can take it"
 assert_not_contains "$RUN_OUTPUT" "input source"
@@ -108,7 +94,6 @@ assert_contains "$RUN_OUTPUT" "log out"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Spotlight's Cmd+Space shortcut off"
 
-# Re-run: nothing to do, nothing applied, no logout note
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
@@ -116,20 +101,17 @@ assert_file_not_contains "$STUB_LOG" "activateSettings"
 assert_file_not_contains "$STUB_LOG" "defaults write"
 assert_not_contains "$RUN_OUTPUT" "log out"
 
-# The shortcut turned back on, and activateSettings fails: log out to apply it
 rm "$HOTKEYS.64"
 stub activateSettings 'exit 1'
 assert_exit 0 main
 assert_eq 0 "$(cat "$HOTKEYS.64")" "hotkey 64's enabled"
 assert_contains "$RUN_OUTPUT" "log out"
 
-# An entry with no enabled key is on, even when the next entry's is off
 stub defaults '[ "$1" == read ] || exit 1
 printf "{\n    64 =     {\n        value =         {\n            type = standard;\n        };\n    };\n    65 =     {\n        enabled = 0;\n    };\n}\n"'
 hotkey_off 64 && fail "hotkey 64 read as off from the next entry's enabled key"
 hotkey_off 65 || fail "hotkey 65 read as on"
 
-# A failed write fails the step
 rm "$HOTKEYS.64"
 stub defaults '[ "$1 $2" != "write com.apple.symbolichotkeys" ] || exit 1
 [ "$1" != read ] || [ "$2" == com.apple.symbolichotkeys ] || exit 1

@@ -2,11 +2,7 @@
 # shellcheck disable=SC2088 # ~ in the output it checks
 set -euo pipefail
 
-# scripts/copy-back.sh copies each installed config that differs back over the repo's, printing its
-# diff, and --dry-run only lists them. Files that match, or aren't installed, are left alone, and
-# two installed copies of one repo file that differ from it and from each other fail it. A repo
-# file with uncommitted changes is skipped, failing it. It runs on a copy of the repo, committed to
-# a new git repo, since it writes into the one it's in.
+# copy-back writes into the repo it's in, so it runs on a copy committed to a new git repo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -29,11 +25,9 @@ commit_all() {
     git_commit "$repo" -m "$1"
 }
 
-# Nothing installed
 assert_exit 0 bash "$copy_back"
 assert_contains "$RUN_OUTPUT" "Every installed config matches the repo's."
 
-# ~/.editorconfig edited, ~/.vimrc as the repo has it
 printf 'edited = 1\n' > "$HOME/.editorconfig"
 cp "$repo/vim/vimrc" "$HOME/.vimrc"
 cp "$repo/editorconfig/editorconfig" "$SANDBOX/editorconfig"
@@ -50,13 +44,11 @@ assert_contains "$RUN_OUTPUT" "Copied 1 file(s) back."
 assert_not_contains "$RUN_OUTPUT" ".vimrc"
 assert_eq "edited = 1" "$(cat "$repo/editorconfig/editorconfig")" "the repo's copy"
 
-# A second run finds nothing
 assert_exit 0 bash "$copy_back"
 assert_contains "$RUN_OUTPUT" "Every installed config matches the repo's."
 commit_all "editorconfig"
 
-# A repo file with uncommitted changes is skipped, so they survive, and the run fails, with and
-# without --dry-run. So is one git doesn't track.
+# A repo file with uncommitted changes, or untracked, is skipped and fails the run
 printf 'repo edit\n' > "$repo/editorconfig/editorconfig"
 printf 'home edit\n' > "$HOME/.editorconfig"
 assert_exit 1 bash "$copy_back" --dry-run
@@ -74,8 +66,7 @@ assert_exit 0 bash "$copy_back"
 assert_eq "home edit" "$(cat "$repo/editorconfig/editorconfig")" "the repo's copy once committed"
 commit_all "home edit"
 
-# The user instructions, installed twice: copies that agree are taken once, and copies that
-# differ fail it, naming the second
+# Two installed copies of the user instructions: agreeing ones count once, differing ones fail
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 printf 'mine\n' > "$HOME/.claude/CLAUDE.md"
 printf 'mine\n' > "$HOME/.codex/AGENTS.md"
@@ -84,8 +75,7 @@ assert_contains "$RUN_OUTPUT" "Copied 1 file(s) back."
 assert_eq "mine" "$(cat "$repo/ai_tools/user-instructions.md")" "the repo's user instructions"
 commit_all "mine"
 
-# Only one copy edited: it's taken, and the unedited one, which now differs from the repo file,
-# isn't a conflict, with or without --dry-run
+# One edited copy is taken; the unedited one isn't a conflict
 printf 'edited\n' > "$HOME/.claude/CLAUDE.md"
 assert_exit 0 bash "$copy_back" --dry-run
 assert_contains "$RUN_OUTPUT" "~/.claude/CLAUDE.md differs from ai_tools/user-instructions.md"
@@ -106,7 +96,7 @@ git -C "$repo" checkout -q -- ai_tools/user-instructions.md
 assert_exit 1 bash "$copy_back" --dry-run
 assert_contains "$RUN_OUTPUT" "~/.codex/AGENTS.md differs from ~/.claude/CLAUDE.md"
 
-# A repo inside HOME prints repo paths relative to the repo
+# A repo inside HOME prints repo-relative paths
 mv "$repo" "$HOME/repo"
 assert_exit 1 bash "$HOME/repo/scripts/copy-back.sh" --dry-run
 assert_contains "$RUN_OUTPUT" "~/.claude/CLAUDE.md differs from ai_tools/user-instructions.md"

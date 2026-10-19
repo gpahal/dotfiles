@@ -1,12 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
-# longer has, and restarts a running Stream Deck only when the plugin changed, trying again when
-# it doesn't reopen at first, carries on when Stream Deck isn't running, and fails when it doesn't
-# quit. Each of the manifest's actions is a target of open-in, a stat key stats.js draws, or Back.
-# The bundled System profile is built from stream-deck/profile and holds only the plugin's actions.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -15,13 +9,11 @@ load_script stream-deck/install.sh
 as_os macos
 src="$REPO_DIR/stream-deck/$PLUGIN"
 
-# The plugin's files, found in the repo, leave out a .DS_Store Finder leaves there
 mkdir -p "$SANDBOX/repo/stream-deck/$PLUGIN/bin"
 touch "$SANDBOX/repo/stream-deck/$PLUGIN/"{manifest.json,.DS_Store,bin/open-in,bin/.DS_Store}
 assert_eq "bin/open-in
 manifest.json" "$(DOTFILES_DIR="$SANDBOX/repo" plugin_file_list | LC_ALL=C sort)" "plugin_file_list"
 
-# A new plugin: copied, and the running Stream Deck restarts to load it
 stub pkill
 stub pgrep 'exit 1'
 stub open
@@ -37,14 +29,12 @@ open -g -b com.elgato.StreamDeck" "$(cat "$STUB_LOG")" "commands run for a new p
 assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
-# Unchanged: no restart
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
 
-# Files the repo's plugin no longer has: status lists them, and the step removes them, and a
-# folder that leaves empty, but nothing outside the plugin, then restarts Stream Deck
+# Stale files go, with folders left empty, but nothing outside the plugin
 mkdir -p "$PLUGIN_DIR/old" "$PLUGIN_DIR/../other.sdPlugin"
 touch "$PLUGIN_DIR/bin/open-app" "$PLUGIN_DIR/old/x.js" "$PLUGIN_DIR/../other.sdPlugin/x.js"
 assert_exit 3 status
@@ -59,8 +49,6 @@ assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin."
 [ -f "$PLUGIN_DIR/bin/open-in" ] || fail "bin/open-in was removed"
 assert_exit 0 status
 
-# Changed while Stream Deck isn't running: status reports the edit, and the step restores the
-# file and still succeeds
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "plugin.js differs from the repo's"
@@ -75,7 +63,7 @@ assert_not_contains "$RUN_OUTPUT" "Backed up"
 [ ! -e "$PLUGIN_DIR/plugin.js.bak" ] || fail "the step backed up the edit"
 assert_exit 0 status
 
-# open fails with -600 just after Stream Deck quits: the step tries again
+# open fails with -600 just after Stream Deck quits
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill
 stub sleep
@@ -86,14 +74,11 @@ assert_exit 0 main --no-backup
 assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin."
 assert_eq 2 "$(grep -c '^open ' "$STUB_LOG")" "tries to reopen Stream Deck"
 
-# Stream Deck doesn't reopen: the step fails
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
 
-# Stream Deck doesn't quit within the wait: the step fails without reopening it, rather than
-# claiming a restart
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pgrep
 stub open
@@ -104,8 +89,6 @@ assert_not_contains "$RUN_OUTPUT" "Restarted"
 assert_file_not_contains "$STUB_LOG" "open -g"
 stub pgrep 'exit 1'
 
-# Each of the manifest's actions is a script's target, a stat key, or Back, and their images are in
-# the plugin
 if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
     open_in_targets="|$(sed -n 's/^# Usage: open-in //p' "$src/bin/open-in")|"
@@ -125,8 +108,7 @@ else
     skip_rest "the manifest checks: jq isn't installed"
 fi
 
-# The System profile's zip is what build-profile.sh builds from stream-deck/profile now, byte for
-# byte, so it ran after the last edit, and its keys are the plugin's actions
+# The committed profile must match a fresh build-profile.sh run byte for byte
 if command -v zip &> /dev/null && command -v jq &> /dev/null; then
     profile_src="$REPO_DIR/stream-deck/profile"
     assert_exit 0 bash "$REPO_DIR/stream-deck/build-profile.sh" "$SANDBOX/System.streamDeckProfile"

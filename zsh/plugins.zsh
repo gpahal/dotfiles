@@ -1,4 +1,3 @@
-# Source a plugin Homebrew installed, failing when it isn't there
 _source_plugin() {
     [[ -n ${HOMEBREW_PREFIX:-} ]] || return 1
     local file="$HOMEBREW_PREFIX/share/$1/$1.zsh"
@@ -13,11 +12,7 @@ then
     ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
 fi
 
-# fzf: Ctrl-T (files) and Alt-C (directories). atuin, below, takes over Ctrl-R.
-# The widgets read FZF_CTRL_T_* and FZF_ALT_C_* when they run, so setting them after the
-# source line works. Without a terminal (e.g. `zsh -i -c` from a script) there's no line
-# editor, and fzf's script warns twice that it can't change the zle option. $TTY is empty then;
-# the zle option still reads as on, so it can't tell.
+# Without a terminal fzf's script warns it can't set the zle option, which still reads as on
 if [[ -n $TTY ]] && _cached_init fzf --zsh; then
 
     if command -v fd &>/dev/null; then
@@ -33,16 +28,13 @@ if [[ -n $TTY ]] && _cached_init fzf --zsh; then
     fi
 fi
 
-# atuin (better shell history): Ctrl-R and the Up arrow. --disable-ai leaves ? on an empty
-# prompt as a plain ?, instead of opening Atuin AI. The init script depends on atuin's config too.
+# --disable-ai: ? on an empty prompt stays a plain ?
 _cached_init -f ${ATUIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/atuin}/config.toml atuin init zsh --disable-ai
 
-# mise (dev tool version manager: node, go, ...). Not cached: its output embeds the current PATH.
+# Not cached: the output embeds the current PATH
 if command -v mise &>/dev/null; then
-    # mise puts its tool dirs ahead of the PATH it saw at activation, so a CLI installed both ways
-    # (claude with npm and natively) would resolve to mise's copy here and to ~/.local/bin's in
-    # login shells. In its default (non-aggressive) mode, entries added after activation stay in
-    # front at every prompt, so take ~/.local/bin out first and add it back after.
+    # Keep ~/.local/bin ahead of mise's tools, as in login shells: entries added after
+    # activation stay in front
     path=(${path:#$HOME/.local/bin})
     eval "$(mise activate zsh)"
     path=("$HOME/.local/bin" $path)

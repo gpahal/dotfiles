@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Completion initializes with an insecure directory on fpath, skips its commands, and keeps
-# git's g alias working on both the first load and a cached load. An empty dump is rebuilt.
+# compinit with an insecure fpath dir skips it, and keeps g's git completion with any dump state.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox

@@ -1,271 +1,165 @@
 # dotfiles
 
-Configuration and setup scripts for my Mac, and for the Ubuntu desktop I use from it over SSH. See [Ubuntu](#ubuntu-1) for what differs there.
-
-The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS on x86_64. On an Intel Mac, `setup.sh` and `ai_tools/setup.sh` stop before any step runs. On ARM Ubuntu, they warn and carry on. A package with no ARM build then fails its step, except Chrome, which the chrome step skips.
+Setup for my Mac (Apple Silicon, macOS 27) and the Ubuntu 26.04 x86_64 desktop I use from it over SSH. Setup stops on an Intel Mac, and warns on ARM Ubuntu, where a package with no ARM build fails its step.
 
 ![zsh prompt](./resources/prompt.png)
 
-## Table of contents
-
-- [First run](#first-run)
-- [How setup works](#how-setup-works)
-- [Ubuntu](#ubuntu-1)
-- [What's included](#whats-included)
-- [Manual steps](#manual-steps)
-- [Check it works](#check-it-works)
-- [Updating](#updating)
-- [Maintenance](#maintenance)
-
 ## First run
 
-Set up the Mac first, then the Ubuntu machine: Ubuntu's **SSH key** manual step runs commands on the Mac.
+Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ### macOS
 
-1. Run `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. The first `git` command asks to install the Command Line Tools. Install them, then run the clone again.
-2. Sign in to the App Store, so the `homebrew` step can install the free [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional. Buy it there once if you want it. Without it, the `homebrew` step notes it isn't installed, and `--status` lists it as `info`, which doesn't need attention.
+1. `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. If `git` asks to install the Command Line Tools, install them and clone again.
+2. Sign in to the App Store, so the `homebrew` step can install Amphetamine and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional; buy it there first if you want it.
 3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
-4. Give Ghostty Full Disk Access, then quit and reopen it. The first of the macOS [manual steps](#macos-1) says how.
-5. Do the rest of the macOS [manual steps](#macos-1), commit signing included.
-6. From Ghostty, do the AI tools' [First run](./ai_tools/README.md#first-run).
-7. Run the [checks](#check-it-works).
+4. Do the macOS [manual steps](#macos-1), starting with Ghostty's Full Disk Access.
+5. From Ghostty, do the AI tools' [First run](./ai_tools/README.md#first-run).
+6. Run the [checks](#check-it-works).
 
 ### Ubuntu
 
-1. In the Ubuntu installer, choose TPM-backed disk encryption without a PIN ([Encrypt your disk with TPM](https://ubuntu.com/desktop/docs/en/latest/how-to/encrypt-your-disk-with-tpm/)), or none. A LUKS passphrase makes every boot wait at the console, so the machine can't come back by itself after a power cut. The `ubuntu` step warns about one, which binding the disk to the TPM with `systemd-cryptenroll`, or reinstalling, fixes.
-2. At the machine, run `sudo apt update && sudo apt install git`, then clone the repo as on macOS. Ubuntu Desktop has no `git` and no SSH server until setup runs.
-3. Do the **BIOS/UEFI** [manual step](#ubuntu-2), and use Ethernet until setup prints the Wi-Fi commands (**Network** manual step).
-4. From a terminal at the machine, run `bash setup.sh`. Then, at the machine or over SSH, run `bash ai_tools/setup.sh`. Steps that need `sudo` ask for it.
-5. Do the rest of the Ubuntu [manual steps](#ubuntu-2), which include the AI tools' ones.
+1. In the installer, choose TPM-backed disk encryption without a PIN ([guide](https://ubuntu.com/desktop/docs/en/latest/how-to/encrypt-your-disk-with-tpm/)), or none. A LUKS passphrase stops the machine booting unattended after a power cut.
+2. At the machine, `sudo apt update && sudo apt install git`, then clone as on macOS.
+3. Do the **BIOS/UEFI** [manual step](#ubuntu-2), and use Ethernet until setup prints the Wi-Fi commands.
+4. At the machine, run `bash setup.sh`, then, there or over SSH, `bash ai_tools/setup.sh`.
+5. Do the rest of the Ubuntu [manual steps](#ubuntu-2).
 6. Reboot once, so the T3 Code service and tmux get the `docker` group.
 7. Run the [checks](#check-it-works) over SSH from the Mac.
 
 ## How setup works
 
-```sh
-cd ~/Dev/setup/dotfiles
-bash setup.sh
-```
-
-`setup.sh` runs one script per step, in this order. Each is `<step>/install.sh` and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
 
 | Step | What it does |
 | :- | :- |
-| `homebrew` | Installs [Homebrew](https://brew.sh/) and the [packages](#packages). On Ubuntu, first the apt packages Homebrew needs |
+| `homebrew` | Installs [Homebrew](https://brew.sh/) and the [packages](#packages), after the apt packages it needs on Ubuntu |
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
-| `git` | Copies the git config, the global ignore file, and `git wt`, and offers to log in to GitHub with `gh` |
+| `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
-| `ssh` | Makes `~/.ssh` and `~/.ssh/config` private. On macOS, keeps your keys in the keychain and loads them at login |
-| `zsh` | Copies the zsh and starship config, adds its lines to `~/.zshrc` and the other startup files, and offers to make zsh the login shell |
-| `vim` | Copies the vim config, installs vim-plug, and moves installed plugins to their pins |
-| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
-| `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
-| `zed` | Copies the Zed settings and keymap, replacing ones Zed edited |
-| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and restarts Stream Deck to load it. macOS only |
-| `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config, whose hotkeys open Claude, Chrome, a new Chrome tab, Ghostty, T3 Code, and Zed. macOS only |
+| `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login |
+| `zsh` | Copies the zsh and starship config, hooks it into the startup files, and offers zsh as the login shell |
+| `vim` | Copies the vim config and vim-plug, and moves installed plugins to their pins |
+| `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
+| `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap |
+| `zed` | Copies the Zed settings and keymap |
+| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin. macOS only |
+| `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets macOS defaults, frees the shortcuts Raycast and Hammerspoon take, and, when needed, sets the hostname. macOS only |
+| `macos` | Sets [macOS defaults](./macos/install.sh) and, if needed, the hostname. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
-| `docker` | Installs Docker Engine, started at boot. Ubuntu only; OrbStack provides Docker on macOS |
-| `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only; the `homebrew` step installs it on macOS |
-| `logitech` | Installs Solaar, since Logi Options+ has no Linux version. Ubuntu only |
-| `manual-steps` | Prints this OS's [manual steps](#manual-steps). Its script is `manual-steps.sh` |
+| `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
+| `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only |
+| `logitech` | Installs Solaar in place of Logi Options+. Ubuntu only |
+| `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
 
-Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them, each with what it does. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, apart from a step that needs it, which is skipped and listed. The run ends by listing the failed steps and the command that re-runs them.
-
-**Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
-
-**Files you also edit.** Setup copies configs over the installed ones whenever they differ, with no backup, so run `just copy-back` first to keep your changes ([Maintenance](#maintenance)). Settings merged into files other tools also edit ask whether to back up the file first, and `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
-
-**Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
-
-**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's first `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs the installers and the `.deb` without a pinned checksum, as each vendor's instructions do, so the vendor's HTTPS server decides what runs. An apt key must match the fingerprint its step pins. The Ghostty snap comes from the Snap Store.
-
-**XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
-
-The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md).
-
-After Homebrew is installed, `just` in the repo lists the [justfile](./justfile)'s recipes, which wrap the setup scripts and the ones this README names. `just status` runs both setup scripts with `--status`.
+- `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
+- `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached. `--quick` skips the slowest checks.
+- Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup (`--backup`, `--no-backup`).
+- Settings that are yours, such as mise's global versions and the AI tools' models, are set only when unset.
+- Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.
+- The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
+- `just` lists the [justfile](./justfile)'s recipes. `just status` runs both scripts with `--status`.
 
 ## Ubuntu
 
-The same `bash setup.sh` sets up Ubuntu, the only Linux supported, with the steps the [table](#how-setup-works) doesn't mark macOS only. Run setup as your own user, not root. On Ubuntu Server, leave out `ghostty`, `zed`, `logitech`, and `chrome` by naming the other steps, and install `upower`, which the UPS detection needs. The `homebrew` step still installs the Zed cask.
+Run setup as your own user, not root. On Ubuntu Server, name the steps to leave out `ghostty`, `zed`, `logitech`, and `chrome`, and install `upower` for UPS detection.
 
-What differs from macOS:
-
-- **System packages.** Before Homebrew, the `homebrew` step asks to install the apt packages in `UBUNTU_PACKAGES` in [`homebrew/install.sh`](homebrew/install.sh).
-- **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only ones in its `if OS.mac?` block. zsh comes from apt. Of the casks, Ubuntu gets those in `UBUNTU_CASKS` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
-- **PATH.** Homebrew comes first, as on macOS, so brew's `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
-- **Clipboard.** Copying in tmux and yanking in vim go through OSC 52, which Ghostty puts on the Mac's clipboard.
-- **GitHub.** `gh` keeps its token in `~/.config/gh/hosts.yml`, since the desktop keyring is locked over SSH, and git reaches GitHub over HTTPS. To push a change under `.github/workflows`, run `gh auth refresh -h github.com -s workflow --insecure-storage` once.
+- Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
+- Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
+- tmux and vim copy through OSC 52 to the Mac's clipboard.
+- `gh` stores its token in `~/.config/gh/hosts.yml`, since the keyring is locked over SSH, and git uses HTTPS. To push `.github/workflows` changes, run `gh auth refresh -h github.com -s workflow --insecure-storage` once.
+- Both machines' tmux use the `Ctrl+a` prefix, so press it twice for the inner one.
 
 ### Running around the clock
 
-The Ubuntu machine stays on so the Mac and the phone can reach its agents at any time. The `ubuntu` step does most of this, and the `docker` step the Docker part:
+The `ubuntu` and `docker` steps keep the machine reachable:
 
-- **No sleep.** Suspend is off.
-- **Power cuts.** With a UPS on USB, the machine shuts down on a low battery and starts again when power returns. The **Power cuts** manual step tests it.
-- **Kernel panics.** The machine reboots 10 seconds after one.
-- **Disk health.** smartd pushes drive warnings to your phone. It may not repeat one, so act on the first.
-- **Health alerts.** A daily check pushes what needs attention to your phone, and each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
-- **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
-- **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
-- **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
-- **Tailscale.** Tailscale updates itself, and you, or anything running as you, can run `tailscale serve`, `funnel`, and `set --ssh` without `sudo`. The **Tailscale** manual step covers the policy that limits them.
-- **Firewall.** ufw lets SSH in only from private ranges outside Docker's and from the tailnet, and `just status` flags any rule that lets in more.
-- **Docker.** Docker starts at boot, and published ports listen on `127.0.0.1` unless you give an address. The step asks once before adding you to the `docker` group, which is root-equivalent.
-- **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
-
-Over SSH from the Mac, both machines' tmux use the `Ctrl+a` prefix, so press it twice to reach the inner one.
+- Suspend is off, and a kernel panic reboots after 10 seconds.
+- With a USB UPS, the machine shuts down on low battery and starts when power returns.
+- smartd, a daily health check, and each boot push alerts to your phone. Re-run setup after moving the checkout, which they run from.
+- Security, Chrome, and Docker updates install daily without rebooting.
+- User services, such as the T3 Code server and tmux, start at boot without a login.
+- sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.
+- You can run `tailscale serve`, `funnel`, and `set --ssh` without `sudo`.
+- ufw lets SSH in only from private ranges and the tailnet.
+- Docker's published ports listen on `127.0.0.1` unless given an address. Joining the `docker` group is root-equivalent, so the step asks.
+- Wired connections wake on LAN, with the BIOS setting on.
 
 ## What's included
 
-### Fonts
-
-- [Monaspace](https://monaspace.githubnext.com/), from the `font-monaspace` cask on both OSes
-
 ### git
 
-- [Git](https://git-scm.com/) config with the [delta](https://github.com/dandavison/delta) pager, `zdiff3` and `histogram` diffs, `rerere`, auto-squash and `updateRefs` on rebase, rebase on pull, and object checks on fetch
-- [difftastic](https://github.com/Wilfred/difftastic) as the diff tool: `git dft`, `git dd`, and `git dlog`
-- `git cob` and `git cobr` pick a local or remote branch with fzf and switch to it. `git co` runs `switch`, `git unstage` runs `restore --staged`, and `git del` deletes a merged branch
-- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](./AGENTS.md#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt base` prints the ref `git wt add` branches from when you give no base. `git wt rm --delete-merged-branch <name>` also deletes the branch when another branch has all its commits. `git wt path`, `list`, and `prune` do the rest; `git wt` alone prints its usage
-- Copied to `~/.config/git/config`, with a global ignore file at `~/.config/git/ignore`
-- Put settings for one machine in `~/.gitconfig.local`. To clone a repo with malformed objects, run `git -c transfer.fsckObjects=false clone <url>`
+Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig.local`.
+
+- `git dft`, `git dd`, `git dlog`: difftastic diffs.
+- `git cob`, `git cobr`: pick a local or remote branch with fzf.
+- `git wt` manages worktrees under `~/.worktrees` ([Code layout](./AGENTS.md#code-layout)). `cd "$(git wt add <name> [<base>])"`; `git wt` alone prints usage.
 
 #### Commit signing
 
-`just git-signing`, a [manual step](#manual-steps), signs commits and tags with an SSH key and prints the `gh` commands that add it to GitHub. `git tag --no-sign <name>` makes a lightweight tag. Agents can't type a passphrase, so macOS signs with `~/.ssh/id_ed25519` from the keychain, and Ubuntu with `~/.ssh/id_ed25519_signing`, a separate key without a passphrase that GitHub gets only as a signing key.
-
-### lazygit
-
-- [lazygit](https://github.com/jesseduffield/lazygit) shows diffs through delta
+`just git-signing` signs commits and tags with an SSH key and prints the `gh` commands that add it to GitHub. macOS uses `~/.ssh/id_ed25519` from the keychain; Ubuntu uses `~/.ssh/id_ed25519_signing`, with no passphrase, since agents can't type one.
 
 ### SSH
 
-- On macOS, `~/.ssh/config` gets a `Host *` block that keeps key passphrases in the keychain, and a LaunchAgent loads the keys at each login, so commits sign after a reboot. The block starts with `IgnoreUnknown UseKeychain`, so an ssh other than Apple's, such as Homebrew's, still reads the file
-- `just ssh-host <alias> [hostname]` adds a block for a host you SSH to, such as the Ubuntu machine by its tailnet name, with keepalives and one shared connection per host, kept open a minute after the last session closes. `ssh -O exit <alias>` closes it
+`just ssh-host <alias> [hostname]` adds a `~/.ssh/config` block with keepalives and a shared connection. `ssh -O exit <alias>` closes it.
 
 ### vim
 
-- [Vim](https://www.vim.org/) config with [vim-plug](https://github.com/junegunn/vim-plug) and plugins:
-  - [vim-sensible](https://github.com/tpope/vim-sensible) defaults
-  - [NERDTree](https://github.com/preservim/nerdtree) with [nerdtree-git-plugin](https://github.com/Xuyuanp/nerdtree-git-plugin), [fzf.vim](https://github.com/junegunn/fzf.vim), [vim-gitgutter](https://github.com/airblade/vim-gitgutter), [vim-fugitive](https://github.com/tpope/vim-fugitive)
-  - [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator): Ctrl+hjkl between vim and tmux
-  - [vim-commentary](https://github.com/tpope/vim-commentary), [vim-surround](https://github.com/tpope/vim-surround), [vim-repeat](https://github.com/tpope/vim-repeat), [auto-pairs](https://github.com/jiangmiao/auto-pairs), [vim-matchup](https://github.com/andymass/vim-matchup)
-  - [vim-go](https://github.com/fatih/vim-go), [rust.vim](https://github.com/rust-lang/rust.vim)
-  - [vim-airline](https://github.com/vim-airline/vim-airline) with [vim-airline-themes](https://github.com/vim-airline/vim-airline-themes)
-- Relative line numbers, persistent undo, smart case search, a space leader key, and the mouse in tmux too
-- `Space e` toggles NERDTree. `Space f` finds files, `Space /` searches contents with ripgrep, and `Space b` lists buffers
-- Copied to `~/.vimrc`, with the vim-plug release the repo vendors. vim installs missing plugins when it starts, at the commits `vim/vimrc` pins, and the step moves installed ones to those commits
+[`vim/vimrc`](vim/vimrc) with vim-plug, plugins pinned by commit. Leader is `Space`: `e` NERDTree, `f` files, `/` ripgrep, `b` buffers.
 
 ### zsh
 
-- zsh itself is the system's, so the login shell works if Homebrew breaks
-- [starship](https://starship.rs/) prompt
-- Plugins: [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [fzf](https://github.com/junegunn/fzf) (`Ctrl+T` for files, `Alt+C` for directories), [zoxide](https://github.com/ajeetdsouza/zoxide), [atuin](https://github.com/atuinsh/atuin) (`Ctrl+R` and the Up arrow search history), [mise](https://mise.jdx.dev/), and [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)
-- `Ctrl+X Ctrl+E` edits the command in `$EDITOR`, and `Ctrl+Z` on an empty line runs `fg`
-- An unknown command gets Homebrew's suggestion of the formula that provides it, then on Ubuntu apt's
-- Aliases and functions include `g` (`git`, or `git status -sb`), `c` (`bat -pp`), `t` (`eza --tree`), `port <n>` and `killport <n>`, `o [path]`, `scratch` (a shell in a temp dir), `reload`, and `ts` (`tmux-sessionizer`)
-- `rm` deletes immediately. On macOS, use `trash` for a delete you can undo
-- `~/.zshrc.local`, if it exists, is sourced near the end. Put secrets and settings for one machine there
-- zsh config goes in `~/.zsh/`, with `~/.zshrc` sourcing `main.zsh`. `~/.zprofile`, `main.zsh`, and on Ubuntu `~/.zshenv` source `path.zsh`, which sets PATH. On Ubuntu, `~/.profile` sources `profile.sh`, which sets PATH for `sh` login shells and the desktop session. Starship reads `~/.config/starship.toml`
+[`zsh/`](zsh/), copied to `~/.zsh/`, with starship. The login shell is the system zsh, so it survives a broken Homebrew. Put secrets and per-machine settings in `~/.zshrc.local`.
+
+- `Ctrl+T` files, `Alt+C` directories, `Ctrl+R` and Up search history (atuin).
+- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `ts` (`tmux-sessionizer`).
+- `rm` deletes immediately. On macOS, `trash` can be undone.
 
 ### Ghostty
 
-- [Ghostty](https://ghostty.org/) with the GitHub Dark theme and Monaspace, a native tab bar, copy-on-select, and SSH integration, which installs Ghostty's terminfo on remote hosts
-- Left Option acts as Alt. `Cmd+Shift+S` opens the visible screen's text in the default text app (TextEdit), `Cmd+Ctrl+arrows` resize a split, `Cmd+Shift+=` makes the splits equal, and Ghostty's own `Cmd+Shift+Enter` zooms one
-- `` Cmd+` `` shows or hides the quick terminal from any app. It needs Accessibility permission, and it may not work on GNOME. It takes over macOS's `` Cmd+` ``, which switches between an app's windows. That's intended
-- A notification when a command that ran over 10 seconds finishes while Ghostty is unfocused
-- Copied to `~/.config/ghostty/config.ghostty`
+[`ghostty/`](ghostty/). `` Cmd+` `` toggles the quick terminal (needs Accessibility). `Cmd+Shift+S` opens the screen's text in TextEdit.
 
 #### Ghostty notifications
 
-Claude Code, Codex, and long builds send notifications through Ghostty, inside tmux too. To get them:
+Claude Code, Codex, and long builds notify through Ghostty, inside tmux too:
 
-1. Run `~/Dev/setup/dotfiles/scripts/test-notification.sh` in Ghostty and click **Allow**. Then, in **System Settings → Notifications → Ghostty**, turn on **Allow notifications** and set the alert style to **Persistent**.
-2. An active Focus mode silences them. Add Ghostty to the mode's **Allowed Apps** to keep them.
+1. Run `~/Dev/setup/dotfiles/scripts/test-notification.sh` in Ghostty and click **Allow**. In **System Settings → Notifications → Ghostty**, allow notifications with the **Persistent** style.
+2. Add Ghostty to any Focus mode's **Allowed Apps**.
 
 ### Zed
 
-- [Zed](https://zed.dev/), from the `zed` cask on both OSes. Its own updater is off, so `upgrade` updates it
-- Settings and keymap copied to `~/.config/zed/`. AI features and telemetry, crash reports included, are off
-- In Zed's terminal, `Shift+Enter` adds a newline in the Claude Code and Codex CLIs
-- The window title ends with the open file's full path, which the [Stream Deck](#stream-deck) keys and [Hammerspoon](#hammerspoon)'s `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` read
+[`zed/`](zed/). AI features and telemetry are off, and so is its updater, so `upgrade` updates it. The window title ends with the file's path, which Stream Deck and Hammerspoon read.
 
 ### Stream Deck
 
-macOS only. The `stream-deck` step installs a plugin whose **Dotfiles** category has three keys that act on the app in front:
+macOS only. The **Dotfiles** category has keys that act on the folder of the app in front (Ghostty tab, Zed file, Finder selection, or T3 Code thread):
 
-| Key | From Ghostty | From Zed | From Finder | From T3 Code |
-| :- | :- | :- | :- | :- |
-| **Editor** | Zed at the tab's folder | Shows the open file | Zed at the selection, or the window's folder | Zed at the thread's folder |
-| **Terminal** | A new tab at the tab's folder | Ghostty at the file's folder | Ghostty at the selected folder, the selected file's folder, or the window's folder | Ghostty at the thread's folder |
-| **Files** | Finder at the tab's folder | Reveals the file in Finder | Opens the selected folder, reveals the selected file, or opens the window's folder | Finder at the thread's folder |
+- **Editor** opens Zed, **Terminal** Ghostty, and **Files** Finder there.
+- **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
+- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. GPU, temperature, and power need macmon.
 
-A thread's folder is its worktree, or else its project's folder. With no folder to use, as when another app is in front or the folder is on another machine, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. **Chrome**, **New Tab**, **T3 Code**, and **Claude** do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. [`stream-deck/icons`](stream-deck/icons/README.md) lists where the app icons came from.
-
-**Overview** shows CPU and memory use. On the 15-key Stream Deck, a press opens the **System** page. The plugin has no page for other models, so there a press shows a warning on the key. The page:
-
-| | | | | |
-| :- | :- | :- | :- | :- |
-| Back | CPU | Memory | Swap | Activity Monitor |
-| Top Process | GPU | Temperature | Power | Disk |
-| Network | | | | |
-
-A stat key updates every 2 seconds while it's on screen, turns yellow or red as the stat nears trouble, and opens Activity Monitor when pressed. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need macmon, from the [Brewfile](homebrew/Brewfile). **Back** returns to the profile you came from. The stat keys are also in the category, for any page.
+[`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
 
 ### Hammerspoon
 
-macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets global hotkeys on `Ctrl+Opt+Cmd`, since Rectangle's recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`. Each opens its app, or brings it to the front:
+macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 
-- `Ctrl+Opt+Cmd+Space` opens Claude, whose own `Option+Space` opens quick entry. `Ctrl+Opt+Cmd+B` opens Google Chrome, and `Ctrl+Opt+Cmd+C` T3 Code.
-- `Ctrl+Opt+Cmd+T` opens Ghostty, and `Ctrl+Opt+Cmd+E` Zed, at the folder in front, as the Stream Deck's **Terminal** and **Editor** keys do.
-- `Ctrl+Opt+Cmd+N` opens a new Chrome tab. When the clipboard holds text, it pastes it into the address bar and selects it, so Enter opens it and typing or Delete replaces it. It waits for you to release the hotkey's keys. If they're still held, or Chrome isn't in front, after 10 seconds, it shows a notification instead. A second press while the tab is on its way does nothing.
+- `Space` Claude, `B` Chrome, `C` T3 Code.
+- `T` Ghostty and `E` Zed, at the folder in front.
+- `N` a new Chrome tab, with the clipboard's text pasted and selected.
 
 ### tmux
 
-- [tmux](https://github.com/tmux/tmux) with the `Ctrl+a` prefix, mouse support, and vi copy mode
-- `prefix+|` and `prefix+-` split in the current directory. `prefix+hjkl` moves between panes and `prefix+HJKL` resizes them
-- `prefix+Ctrl+h` and `prefix+Ctrl+l` go to the previous and next window
-- `prefix+v` enters copy mode, where `v` selects and `y` copies
-- vim-tmux-navigator takes `Ctrl+hjkl` in every pane, so use `prefix+Ctrl+k` to clear the screen
-- `prefix+S` creates a session and `prefix+X` kills one. `prefix+f` runs `tmux-sessionizer`, which opens or switches to a session for a project
-- [tpm](https://github.com/tmux-plugins/tpm) with [vim-tmux-navigator](https://github.com/christoomey/vim-tmux-navigator), [tmux-yank](https://github.com/tmux-plugins/tmux-yank), [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect), [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum), which restores sessions and on Ubuntu starts tmux at boot, and [tmux-open](https://github.com/tmux-plugins/tmux-open)
-- Copied to `~/.config/tmux/tmux.conf`, and `tmux-sessionizer` to `~/.local/bin`
-
-### EditorConfig
-
-- `~/.editorconfig` applies to every project without its own `root = true`: UTF-8, LF, a final newline, no trailing whitespace outside Markdown and patches, 4-space indents, 2 for JSON, YAML, JavaScript, and TypeScript, and tabs for Go and Makefiles
-
-### Runtimes
-
-The `runtimes` step installs these:
-
-- [Node.js](https://nodejs.org/) LTS and [Go](https://go.dev/), with mise, as the global versions
-- [Rust](https://www.rust-lang.org/) with [rustup](https://rustup.rs/), with the stable toolchain
+Prefix `Ctrl+a`. `|` and `-` split, `hjkl` move, `HJKL` resize, `Ctrl+h`/`Ctrl+l` switch windows, `v` copy mode, `S` new session, `X` kill session, `f` `tmux-sessionizer`. vim-tmux-navigator takes `Ctrl+hjkl`, so clear the screen with `prefix+Ctrl+k`.
 
 ### Packages
 
-The `homebrew` step installs the CLI tools in [`homebrew/Brewfile`](homebrew/Brewfile), and on macOS the apps in `CASKS` and the App Store apps in `MAS_APPS` in [`homebrew/install.sh`](homebrew/install.sh). A comment beside each says what it is. The App Store apps install once you're signed in to the App Store (see [First run](#macos)). Dato is paid and optional, and installs only once you buy it.
-
-### macOS defaults
-
-The `macos` step sets these:
-
-- **Finder:** hidden files, extensions, path and status bars, the full path in the window title, list view, folders first, search the current folder, no warning when changing an extension
-- **Keyboard and typing:** no Spotlight on `Cmd+Space`, so Raycast can take it, fast key repeat, no press-and-hold, no autocorrect, auto-capitalization, smart quotes or dashes, or period on double-space
-- **Dock:** auto-hide with no delay, minimize into the app's icon, no recent apps. Spaces keep their order
-- **Screenshots:** PNG in `~/Screenshots`, without window shadows
-- **Hostname:** when it's unset or invalid, the name in System Settings → General → Sharing, so Ghostty's shell integration can report the folder. It asks first, since it needs `sudo`
-- **Misc:** no `.DS_Store` on network or USB volumes, expanded save and print dialogs, new documents saved to disk rather than iCloud, plain-text TextEdit, all processes in Activity Monitor
+The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS apps in `CASKS` and `MAS_APPS` in [`homebrew/install.sh`](homebrew/install.sh). The `runtimes` step installs Node LTS and Go with mise, and Rust with rustup.
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
-
-If a module `sudo_local` loads goes missing and `sudo` stops working, `just touch-id` can't fix it, since it needs `sudo`. Remove the file with an admin password instead, then re-run `just touch-id`:
+`just touch-id` makes `sudo` take Touch ID, inside tmux too. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
 
 ```sh
 osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'
@@ -273,148 +167,119 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 
 ## Manual steps
 
-Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS from this section, so edit the steps here. The AI tools' steps are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).
+`bash setup.sh manual-steps` prints these from this section. The AI tools' are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).
 
 ### macOS
 
 **Permissions**
 
-1. Give Ghostty Full Disk Access in **System Settings → Privacy & Security → Full Disk Access**, then quit and reopen it. From Ghostty, run `cd ~/Dev/setup/dotfiles && bash setup.sh macos` again, which makes TextEdit default to plain text now that it can. Do the rest of the setup from Ghostty.
+1. Give Ghostty Full Disk Access in **System Settings → Privacy & Security → Full Disk Access**, reopen it, and run `cd ~/Dev/setup/dotfiles && bash setup.sh macos` again. Do the rest from Ghostty.
 2. Turn on [Ghostty notifications](#ghostty-notifications).
-3. Add Ghostty in **System Settings → Privacy & Security → Accessibility**, so the `` Cmd+` `` quick terminal works.
+3. Add Ghostty in **System Settings → Privacy & Security → Accessibility**.
 
 **Apps**
 
 4. Set Google Chrome as the default browser.
-5. Open [Logi Options+](https://www.logitech.com/software/logi-options-plus.html), grant the permissions it asks for, and pair your devices.
-6. Open OrbStack once and finish its setup, so `docker` works.
-7. Open [Raycast](https://www.raycast.com/), grant permissions, and [set its hotkey](https://manual.raycast.com/settings) to `Cmd+Space`, which the `macos` step frees from Spotlight.
-8. Open [Rectangle](https://rectangleapp.com/), grant accessibility permissions, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato if you bought it.
-10. Open Stats and turn on the modules you want (optional).
-11. Open [AppCleaner](https://freemacsoft.net/appcleaner/) and turn on SmartDelete (optional).
-12. Install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge) (optional).
-13. Set up the [Stream Deck](#stream-deck) keys. In the Stream Deck app, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from the **Dotfiles** category onto keys. Press **Overview** and accept the prompt to install the **System** page. Press **Editor**, **Terminal**, and **Files** once each with Ghostty, Zed, and Finder in front, then press **New Tab** and **Gmail**, and click **Allow** on each prompt. Then turn on Elgato Stream Deck in **System Settings → Privacy & Security → Accessibility**, so the keys can read Zed's window title and T3 Code's thread, and paste into the new tab.
-14. Open [Hammerspoon](#hammerspoon) and turn it on in **System Settings → Privacy & Security → Accessibility**, so `Ctrl+Opt+Cmd+N` can paste into the new tab and `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` can read Zed's window title and T3 Code's thread. Press `Ctrl+Opt+Cmd+T` and `Ctrl+Opt+Cmd+E` once each with Ghostty, Zed, and Finder in front, then press `Ctrl+Opt+Cmd+N`, and click **Allow** on each prompt. The config sets Hammerspoon to open at login.
+5. Open Logi Options+, grant its permissions, and pair your devices.
+6. Open OrbStack once and finish its setup.
+7. Open Raycast, grant permissions, and set its hotkey to `Cmd+Space`.
+8. Open Rectangle, grant accessibility, and set your shortcuts.
+9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato.
+10. Optional: turn on Stats modules, AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
+11. In Stream Deck, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from **Dotfiles** onto keys. Press **Overview** and install the **System** page. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
+12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
 
 **Shell**
 
-15. Run `atuin import auto` once to bring your zsh history into Atuin.
-16. Run `:GoInstallBinaries` in vim once for vim-go's tools.
+13. Run `atuin import auto`, and `:GoInstallBinaries` in vim.
 
 **Accounts and keys**
 
-17. Sign in to the Tailscale app with the account the Ubuntu machine and your phone use, and approve the VPN configuration it asks for.
-18. Add your Google account to Calendar and Contacts.
-19. In Google Chrome, sign in to the sites you want the agents to use.
-20. If you skipped the GitHub login during setup, run `gh auth login`, then `gh auth setup-git`.
-21. Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
+14. Sign in to Tailscale with the account your Ubuntu machine and phone use.
+15. Add your Google account to Calendar and Contacts.
+16. In Chrome, sign in to the sites you want agents to use.
+17. If you skipped the GitHub login, run `gh auth login`, then `gh auth setup-git`.
+18. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
 
-22. Turn on [Touch ID for sudo](#touch-id-for-sudo) with `just touch-id` (optional).
-23. Turn on FileVault in **System Settings → Privacy & Security → FileVault**, and the firewall in **System Settings → Network → Firewall**. `bash setup.sh --status macos` reports both.
-24. Back up to a destination off the Mac, such as Time Machine to a network disk, and restore a file once to check it.
+19. Optional: `just touch-id`.
+20. Turn on FileVault and the firewall. `bash setup.sh --status macos` reports both.
+21. Back up off the Mac, and restore a file once to check it.
 
 ### Ubuntu
 
-Once, before or right after setup:
+Once:
 
-1. **BIOS/UEFI.** Set the power-loss setting (**Restore on AC Power Loss**, **After Power Failure**, or similar) to **Power On**. For Wake-on-LAN, turn on its setting and turn **ErP**/**EuP** off. Wake-on-LAN works only from the same LAN.
-2. **Network.** Use Ethernet, or make Wi-Fi connect at boot with the `nmcli` commands the `ubuntu` step prints. Without them, Wi-Fi whose password is in your login keyring connects only after you log in.
-3. **Disk encryption.** Store the installer's recovery key off the machine. Step 1 of [First run](#ubuntu) covers the choice in the installer.
-4. **Login shell.** Run `chsh -s /usr/bin/zsh`, if you skipped it during setup.
-5. **Shell history and vim-go.** Run `atuin import auto` once, and `:GoInstallBinaries` in vim once.
-6. **Tailscale.** Run `sudo tailscale up`. In the admin console, **Disable key expiry** for the machine, and review the access policy so only the devices you need reach it. Anything running as you can turn on Tailscale SSH with `tailscale set --ssh`, which skips sshd's settings, so remove `root` from `users` in the policy's `ssh` rules (the default policy lets Tailscale SSH log in as root).
-7. **SSH key.** On the Mac, run these, where `<alias>` is the name you pick for the machine:
+1. **BIOS/UEFI.** Set the power-loss setting to **Power On**. For Wake-on-LAN, turn it on and turn **ErP**/**EuP** off.
+2. **Network.** Use Ethernet, or run the `nmcli` commands the `ubuntu` step prints so Wi-Fi connects at boot.
+3. **Disk encryption.** Store the recovery key off the machine.
+4. **Login shell.** `chsh -s /usr/bin/zsh`, if you skipped it.
+5. **Shell.** Run `atuin import auto`, and `:GoInstallBinaries` in vim.
+6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, and remove `root` from `users` in its `ssh` rules.
+7. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <tailnet-name>`.
    3. `ssh-copy-id <alias>`.
-   4. `ssh -O exit <alias>`, which closes the password connection ssh keeps open.
+   4. `ssh -O exit <alias>`.
 
-   Then SSH in with the key and re-run `bash setup.sh ubuntu` in that session. It turns off password logins and, now that Tailscale is logged in, turns on its auto-update and makes you its operator. Before closing that session, check a fresh login from the Mac with `ssh -S none <alias> true`, which skips the shared connection. Don't run `ssh -O exit` now: it would close that session too.
-8. **GitHub.** If you skipped it during setup, run `gh auth login --insecure-storage --git-protocol https`, `gh auth setup-git`, then `bash setup.sh git`.
-9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints. [Commit signing](#commit-signing) has more.
+   Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
+8. **GitHub.** If you skipped it, run `gh auth login --insecure-storage --git-protocol https`, `gh auth setup-git`, then `bash setup.sh git`.
+9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
-11. **Logitech.** At the Ubuntu desktop, open Solaar and pair your devices.
-12. **Desktop session after a reboot.** Solaar and Claude in Chrome need a desktop session, and a reboot ends it. Turn on GNOME's Remote Login in **Settings → System → Remote Desktop**, set its username and password, and connect over Tailscale with the Mac's Windows App. Or turn on automatic login in GDM, which starts a session at boot but leaves the login keyring locked.
-13. **Phone alerts.** Install the ntfy app on your phone, subscribe to a topic with a long random name, and run `just alerts`. Paste the topic name at its prompt, which hides it, or a full `https://` URL for a topic on another ntfy server. Then run `just alerts test`. Disk warnings, UPS events, the daily health alert, and the boot notice then push there. `just alerts test` also tests the UPS notifier once a UPS is set up, so run it again after **Power cuts**.
-14. **Power cuts.** Plug the machine into a UPS with its USB cable, and re-run `bash setup.sh ubuntu`. Then test it:
-    1. Unplug the UPS from the wall, and wait for the low-battery push, the shutdown, and the UPS cutting its output. `sudo upsmon -c fsd` starts the shutdown at once. If the UPS doesn't cut its output, look in its settings for one that turns the output off on shutdown. Otherwise, while mains is still out, the fallback below starts the machine on battery, and it shuts down and starts again until the battery runs out.
-    2. Plug the UPS back in, and check that the machine starts and `just status` reports the UPS on mains.
-    3. At the machine, check the fallback for a UPS that keeps its power on: `sudo rtcwake -m off -s 120` should start the machine 2 minutes later. If it doesn't, the fallback won't work on this board, and only the BIOS power-loss setting brings the machine back, when the UPS cuts its power.
-15. **Backups.** Back up `~`, including `~/.t3` and `~/.worktrees`, and `/var/lib/docker/volumes` off the machine, with restic or Borg on a schedule. Restore a few files once to check it.
-16. **Livepatch (optional).** With a free Ubuntu Pro token, run `sudo pro attach <token>` and `sudo pro enable livepatch` for kernel fixes without a reboot.
+11. **Logitech.** At the desktop, open Solaar and pair your devices.
+12. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
+13. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
+14. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
+    1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
+    2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
+    3. At the machine, `sudo rtcwake -m off -s 120` should start it 2 minutes later. If not, only the BIOS setting brings it back.
+    4. Run `just alerts test` again.
+15. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
+16. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 
-Later, when needed:
+When needed:
 
-- Reboot when `just status` says one is pending, at a time no agent is running.
-- Install firmware updates when `just status` lists them: `fwupdmgr refresh && fwupdmgr update`.
-- After a release upgrade, re-run `bash setup.sh` and `bash ai_tools/setup.sh`, which turn the third-party apt sources back on.
+- Reboot when `just status` says one is pending.
+- Install firmware updates it lists: `fwupdmgr refresh && fwupdmgr update`.
+- After a release upgrade, re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
 
 ## Check it works
 
-Run these once setup and the manual steps are done. The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
+The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 
 ### macOS
 
-- In the repo, `just status` prints no **Needs attention** line.
-- In a new Ghostty window, `command -v brew mise node` prints a path for each.
-- In a scratch repo, `git commit --allow-empty -m test`, then `git log --show-signature -1`, shows `Good "git" signature`.
-- After a reboot, before any `ssh` command, a commit still signs without asking for the passphrase.
-- If you ran `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, both in a new terminal and inside tmux.
-- With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder. **Overview** opens the **System** page, where every key shows a number within a few seconds.
-- With a URL copied, `Ctrl+Opt+Cmd+N` opens a new Chrome tab with the URL selected in the address bar.
+- `just status` prints no **Needs attention** line.
+- In a new Ghostty window, `command -v brew mise node` prints three paths.
+- In a scratch repo, `git commit --allow-empty -m test && git log --show-signature -1` shows `Good "git" signature`, also after a reboot without a passphrase prompt.
+- After `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, in tmux too.
+- With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
 
 ### Ubuntu
 
-Run these over SSH from the Mac.
+Over SSH from the Mac:
 
-- In the repo, run `sudo -v`, then `just status`. It prints no **Needs attention** line.
-- In a new SSH session, `command -v brew mise node` prints a path for each.
-- A test commit shows `Good "git" signature`, as on macOS.
-- After a reboot, `ssh <alias>` connects over the tailnet, `docker ps` works without `sudo`, `tmux ls` lists the sessions from before, and the phone gets the boot notice.
+- `sudo -v && just status` prints no **Needs attention** line.
+- `command -v brew mise node` prints three paths, and a test commit is signed.
+- After a reboot, `ssh <alias>` connects, `docker ps` works without `sudo`, `tmux ls` lists the old sessions, and the phone gets the boot notice.
 
 ## Updating
 
-The `upgrade` shell function runs `scripts/upgrade.sh` from this repo, which updates everything installed. A stage that fails doesn't stop the rest, and `upgrade` lists the failed stages and returns 1:
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
 
-- Ubuntu's apt packages: `sudo apt upgrade`.
-- Homebrew: `brew upgrade`, then the formulae added to the Brewfile and the casks added to the homebrew step. On Ubuntu it then refreshes the font cache.
-- Casks that update themselves, or whose updater the repo turns off (Zed, AppCleaner, The Unarchiver, Logi Options+), when one is outdated and not running. Logi Options+ upgrades even while it runs.
-- App Store apps (macOS): `mas upgrade`.
-- vim and tmux plugins, each to the commit the repo pins.
-- mise tools (Node, Go): `mise upgrade`. mise later removes old Node versions, with any CLI installed with `npm install -g`, so install global CLIs with `mise use -g npm:<package>`.
-- Global npm packages: `npm update -g`, run with the Node `mise upgrade` installed. When `upgrade` can't switch to that Node, it skips this.
-- Python tools installed with uv: `uv tool upgrade --all`
-- Rust: `rustup update`
-- AI tools: `upgrade-ai-tools`, described in [ai_tools/README.md](./ai_tools/README.md#updating)
-- Old Homebrew versions: `brew cleanup`. It runs last, so it also removes the old versions of the casks upgraded above.
-
-Plugins never move past the commits the repo pins. `just bump-plugins` moves the pins (see [Maintenance](#maintenance)).
-
-macOS itself updates from **System Settings → General → Software Update**, and snapd updates the Ghostty snap.
-
-Don't run `brew bundle cleanup`. The Brewfile lists no casks, so it would uninstall every cask.
-
-Configs come from this repo, so to update them, pull, then re-run `bash setup.sh` for configs and `bash ai_tools/setup.sh` for the AI tools' configs, skills, and instructions, or just the steps you need.
+- Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
+- Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.
+- To update configs, pull and re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
 
 ## Maintenance
 
-`just copy-back` copies each installed config that differs from the repo's back into the repo, and prints its diff. Run it before a setup run, which overwrites the installed configs, to keep changes made in an app or by hand, such as Zed's settings. Review the result with `git diff`, and commit what you keep. `just copy-back dry-run` only lists the files that differ. When you edited both installed copies of one file, such as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, differently, it takes the first and names the second for you to merge by hand. It skips a repo file with uncommitted changes, and names it, so commit or discard those first.
-
-The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
-
-Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, and App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, each with a comment saying what it is. A cask Ubuntu gets too also goes in `UBUNTU_CASKS`.
-
-Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the installed plugins to them.
-
-**Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+N`, `Ctrl+Opt+Cmd+T`, and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
-
-CI runs `just check` and `just test` on macOS and Ubuntu for every push to main and pull request. Live Homebrew package and AI compatibility checks run weekly, manually, and when their inputs change.
-
-[AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to check and test one with `just check`, `just test`, and `just test-ubuntu`.
+- `just copy-back [dry-run]` copies installed configs that differ back into the repo for review with `git diff`. It skips repo files with uncommitted changes.
+- Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
+- `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
+- After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. To load the change, delete the **System** profile in Stream Deck and press **Overview**.
+- [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.
 
 ## License
 
-Licensed under the MIT license ([LICENSE](LICENSE) or [opensource.org/licenses/MIT](https://opensource.org/licenses/MIT)).
+[MIT](LICENSE).

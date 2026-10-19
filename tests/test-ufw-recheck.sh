@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# The ubuntu step's firewall: when it checks the ufw rules without asking for sudo, the rules it
-# adds, and the SSH sessions that keep it from turning ufw on.
+# The ubuntu step's ufw firewall: sudo-free checks, its rules, and SSH sessions that keep it off.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,22 +12,17 @@ setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 as_os ubuntu
-# test-diagnostics-ubuntu.sh covers SMART health and firmware updates
+# Other tests cover these
 replace_fn status_smart :
 replace_fn status_firmware :
-# ufw is on when its sandbox config says ENABLED=yes and ufw.service is enabled and active, which
-# it is unless $SANDBOX/ufw-unit-inactive exists (the systemctl stub below). Linger comes from a
-# file under /var, so its check is replaced: it's on when $SANDBOX/linger exists, and loginctl
-# turns it on.
 mkdir -p "$(dirname "$UFW_CONF")"
 ufw_on() { echo ENABLED=yes > "$UFW_CONF"; }
 ufw_off() { echo ENABLED=no > "$UFW_CONF"; }
 ufw_defaults() { printf '%s\n' 'DEFAULT_INPUT_POLICY="DROP"' "IPV6=$1" > "$UFW_DEFAULTS"; }
 ufw_on
 ufw_defaults yes
+# Linger state lives under /var
 replace_fn lingering '[ -e "$SANDBOX/linger" ]'
-# test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
-# conffile options, the packages apt holds back, and the health alerts' worktree check and reload
 replace_fn smartd_enabled true
 replace_fn smartd_hook_installed true
 echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
@@ -36,22 +30,17 @@ replace_fn keep_conffiles_written true
 replace_fn status_held_back :
 replace_fn in_git_worktree false
 replace_fn health_units_loaded true
-# test-ubuntu-ups.sh covers the UPS
 replace_fn ups_todo :
 replace_fn status_ups :
 replace_fn warn_no_ups :
-# The kernel has the sysctl settings, which test-ubuntu-system.sh covers
 replace_fn sysctl_in_effect true
 replace_fn locale_installed true
 replace_fn unattended_upgrades_running true
-# test-ubuntu-step.sh covers apt's timers, sshd at boot, and a pending reboot
 replace_fn apt_timers_enabled true
 replace_fn sshd_enabled true
 touch "$SANDBOX/linger"
 
-# sudo without -n runs the command, as if you typed your password, and refuses a path outside the
-# sandbox. sudo -n works only while $SANDBOX/cached exists. sudo install makes $SSHD_RUN_DIR, the
-# only install this test reaches, instead of touching the real /run.
+# sudo -n succeeds only while $SANDBOX/cached exists; sudo install makes $SSHD_RUN_DIR, not /run.
 stub_sudo_exec 'if [ "${1:-}" == -n ]; then
     [ -e "'"$SANDBOX"'/cached" ] || exit 1
     shift
@@ -60,10 +49,6 @@ fi
 cached() { touch "$SANDBOX/cached"; }
 not_cached() { rm -f "$SANDBOX/cached"; }
 
-# Everything else is set up
-# ssh.socket listens on the ports in $SANDBOX/socket-ports, one per line, as systemctl show lists
-# its addresses. ufw.service is enabled unless $SANDBOX/ufw-unit-disabled exists, and active
-# unless $SANDBOX/ufw-unit-inactive does. enable --now removes both.
 stub systemctl 'case "$1" in
     is-enabled) if [ "$*" == "is-enabled -q ufw.service" ]; then [ ! -e "'"$SANDBOX"'/ufw-unit-disabled" ]; else echo masked; fi ;;
     is-active) [ "$*" != "is-active -q ufw.service" ] || [ ! -e "'"$SANDBOX"'/ufw-unit-inactive" ] ;;
@@ -72,36 +57,24 @@ stub systemctl 'case "$1" in
 esac'
 echo 22 > "$SANDBOX/socket-ports"
 stub dpkg-query 'echo "install ok installed"'
-# Tailscale's apt source is the one the step writes
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
-# sshd -T prints the port, and the drop-in's settings as sshd takes them
 stub sshd '[ "$1" != -T ] || { echo "port 22"; awk "{ print tolower(\$1), \$2 }" "'"$SANDBOX"'/10-dotfiles.conf"; }'
-# No SSH sessions, as at the console; the end of the test covers them
 stub ss
 stub loginctl 'touch "'"$SANDBOX"'/linger"'
 stub nmcli
 stub lsblk
-# Not a VM
 stub systemd-detect-virt 'exit 1'
 SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
-# Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
-# The rest is set up too, through sandbox paths
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 
-# A small ufw over $SANDBOX/ufw-rules, which holds the rules as `ufw status` lists them. status
-# lists them, or says it's inactive while its config says ENABLED=no or $SANDBOX/ufw-stopped exists,
-# as after ufw-init stop. allow from <range> to any port
-# <port> proto tcp, allow in on tailscale0, and allow <port>/<proto> add their rule once.
-# prepend deny in on <bridge> to any port <port> proto tcp adds its IPv4 and IPv6 rules under the
-# header unless it has them, and delete with the same arguments removes them. --force enable turns
-# ufw on. As in ufw, an IPv6 rule fails while the defaults say IPV6=no.
+# Fake ufw over $SANDBOX/ufw-rules, in `ufw status` format; as in ufw, IPv6 rules fail with IPV6=no
 stub ufw 'rules="'"$SANDBOX"'/ufw-rules"
 case "$1" in
     status) if grep -qx ENABLED=no "'"$UFW_CONF"'" || [ -e "'"$SANDBOX"'/ufw-stopped" ]; then
@@ -140,7 +113,6 @@ rules_missing() {
     { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-rules"
 }
 
-# Only sudo -n ran, so nothing asked for a password
 no_prompting_sudo() {
     if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
         fail "the step ran sudo without -n:"
@@ -148,7 +120,7 @@ no_prompting_sudo() {
     fi
 }
 
-# Nothing else pending, credentials not cached: no confirm, no prompt, and a hint to check them
+# Nothing else pending, credentials not cached: no prompt, only a hint
 rules_present
 not_cached
 : > "$STUB_LOG"
@@ -158,7 +130,7 @@ assert_not_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
 no_prompting_sudo
 
-# Credentials cached: checked up front, so present rules are set up and missing ones are pending
+# Credentials cached: rules checked up front
 cached
 rules_present
 : > "$STUB_LOG"
@@ -171,14 +143,12 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules, so ufw denies incoming connections but SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp, and denies SSH on Docker's bridges"
 assert_not_contains "$RUN_OUTPUT" "install and turn on ufw"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
-# With ufw off, the step turns it on too
 ufw_off
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw, so ufw denies incoming connections"
 ufw_on
 
-# Something else pending and approved, credentials not cached: the rules are checked with sudo
-# after the confirm, and set only when they're missing
+# Something else pending and approved, credentials not cached: rules checked after the confirm
 not_cached
 export DOTFILES_ASSUME_YES=1
 rm -f "$SANDBOX/linger"
@@ -195,8 +165,7 @@ rules_missing
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 
-# Without $SSHD_RUN_DIR, which only the install path creates, the rules can't be read even with
-# cached credentials. With nothing else pending, the step says why and asks for nothing.
+# Without $SSHD_RUN_DIR the rules can't be read even with cached credentials
 unset DOTFILES_ASSUME_YES
 cached
 rmdir "$SSHD_RUN_DIR"
@@ -207,8 +176,7 @@ assert_contains "$RUN_OUTPUT" "first SSH connection"
 [ ! -e "$SSHD_RUN_DIR" ] || fail "main created $SSHD_RUN_DIR without asking"
 no_prompting_sudo
 
-# Rules you added by hand, even ones that let SSH in from anywhere, don't fail the check, and the
-# step deletes nothing. Status reports each one that lets SSH in from elsewhere.
+# Hand-added rules don't fail the check and aren't deleted
 mkdir -p "$SSHD_RUN_DIR"
 cached
 rules_present
@@ -217,9 +185,7 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
-# With IPV6=no, ufw leaves sshd open on the global IPv6 address and rejects the step's IPv6 rules,
-# so they're missing. Status says why, whether ufw is on or off, and the step fails before it runs
-# any ufw command, leaving the file to you.
+# IPV6=no leaves sshd open over global IPv6: the step fails before changing ufw
 ufw_defaults no
 rules_missing
 export DOTFILES_ASSUME_YES=1
@@ -239,10 +205,7 @@ done
 ufw_on
 ufw_defaults yes
 
-# Containers on a network with IPv6, or with a subnet in the private ranges, would reach sshd
-# through the allow rules, so SSH is denied on Docker's bridges ahead of them. Without those
-# rules, or with them after the allow rules, where ufw never reaches them, they're missing, and
-# the step puts them first.
+# Docker bridge deny rules must precede the allow rules, or containers reach sshd
 for misplaced in false true; do
     { ufw_header; ufw_range_rules; ! "$misplaced" || ufw_deny_rules; } > "$SANDBOX/ufw-rules"
     ufw_tailscale_rules >> "$SANDBOX/ufw-rules"
@@ -262,13 +225,11 @@ for misplaced in false true; do
     assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
     assert_exit 0 ufw_configured -n
 done
-# The IPv6 deny rules come after the IPv4 allow rules, as `ufw status` lists them, which is their
-# place
+# `ufw status` lists IPv6 rules after all IPv4 ones
 { ufw_header; ufw_deny_rules | grep -v v6; ufw_range_rules | grep -v :; ufw_deny_rules | grep v6; ufw_range_rules | grep :; } > "$SANDBOX/ufw-rules"
 ufw_tailscale_rules >> "$SANDBOX/ufw-rules"
 assert_exit 0 ufw_configured -n
-# With the deny rules in place, a run that adds a missing allow rule leaves them alone, so SSH on
-# the bridges is denied throughout
+# Adding a missing allow rule leaves the deny rules alone
 rules_present
 grep -v "41641/udp" "$SANDBOX/ufw-rules" > "$SANDBOX/ufw-rules.new"
 mv "$SANDBOX/ufw-rules.new" "$SANDBOX/ufw-rules"
@@ -278,9 +239,7 @@ assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
 assert_file_not_contains "$STUB_LOG" "ufw delete"
 assert_file_not_contains "$STUB_LOG" "ufw prepend"
 assert_exit 0 ufw_configured -n
-# Any rule above the deny rules that lets the SSH port in counts against them, whatever its form:
-# a port without a protocol, a range or list, OpenSSH, an address alone, or an IPv6 rule with a
-# comment. One on another interface doesn't.
+# Any form of rule above the deny rules that lets the SSH port in counts against them
 for rule in "22 ALLOW 192.168.0.0/16" "20:30/tcp ALLOW 10.0.0.0/8" "80,22/tcp ALLOW 10.0.0.0/8" \
     "OpenSSH ALLOW 10.0.0.0/8" "192.168.1.5 ALLOW 10.0.0.0/8" "22/tcp ALLOW fd00::/8 # lan" \
     "Anywhere on br-1a2b3c ALLOW 10.0.0.0/8"; do
@@ -302,7 +261,6 @@ assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the privat
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
-# The rule for 172.16.0.0/12 an earlier version added, which lets Docker's containers reach sshd
 printf '%s\n' "22/tcp                     ALLOW       172.16.0.0/12" >> "$SANDBOX/ufw-rules"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 172.16.0.0/12, outside the private ranges: 22/tcp ALLOW 172.16.0.0/12;"
@@ -313,11 +271,8 @@ assert_not_contains "$RUN_OUTPUT" "ufw delete"
 assert_file_not_contains "$STUB_LOG" "ufw delete"
 rules_present
 
-# --- the SSH sessions, from ss and logind, not the pane's SSH_CONNECTION ---
-# ss lists the established connections to a port from $SANDBOX/ss-<port>, and fails while
-# $SANDBOX/ss-fails exists. ip route get shows a gateway for an address outside the local
-# network, tailscale0 for the tailnet, and eth0 for the rest, IPv6 too, but for a link-local
-# address, which it routes on wg0, a VPN's interface.
+# --- SSH sessions, from ss and logind, not SSH_CONNECTION ---
+# ip route get: a gateway for outside, tailscale0 for the tailnet, wg0 (a VPN) for link-local
 stub ss 'port="${4##*:}"
 [ ! -e "'"$SANDBOX"'/ss-fails" ] || exit 1
 cat "'"$SANDBOX"'/ss-${port% )}" 2> /dev/null || true'
@@ -329,8 +284,7 @@ stub ip 'case "$1 $2" in
         *) echo "$3 dev eth0 src 192.168.1.5" ;;
     esac ;;
 esac'
-# logind lists a session for each address in $SANDBOX/logins, its RemoteHost, as pam_systemd
-# registers one once an SSH login succeeds, and fails while $SANDBOX/logind-fails exists
+# One logind session per address in $SANDBOX/logins
 stub loginctl 'case "$1" in
     list-sessions)
         [ ! -e "'"$SANDBOX"'/logind-fails" ] || exit 1
@@ -338,22 +292,18 @@ stub loginctl 'case "$1" in
     show-session) sed -n "$2p" "'"$SANDBOX"'/logins" ;;
     *) touch "'"$SANDBOX"'/linger" ;;
 esac'
-# Set the established connections to a port: "<local> <peer>" pairs, as ss prints them
 sessions() {
     local port="$1"
     shift
     printf '0 0 %s %s\n' "$@" > "$SANDBOX/ss-$port"
 }
-# Set the addresses SSH logins came from
 logins() { printf '%s\n' "$@" > "$SANDBOX/logins"; }
 no_sessions() { rm -f "$SANDBOX"/ss-[0-9]* "$SANDBOX/logins"; }
-# Turn ufw off and run the step, which then sets the firewall up
 firewall_run() {
     ufw_off
     : > "$STUB_LOG"
     run main
 }
-# The firewall was left as it was
 firewall_unchanged() {
     assert_file_not_contains "$STUB_LOG" "ufw --force enable"
     assert_file_not_contains "$STUB_LOG" "ufw default deny"
@@ -363,7 +313,7 @@ export DOTFILES_ASSUME_YES=1
 cached
 rules_present
 
-# A console run, with no SSH session at all: ufw goes on. ss lists the connections without sudo.
+# Console run: ufw goes on, and ss runs without sudo
 no_sessions
 firewall_run
 assert_eq 0 "$RUN_STATUS" "the step from the console"
@@ -371,8 +321,7 @@ assert_file_contains "$STUB_LOG" "ss -Htn state established ( sport = :22 )"
 assert_file_not_contains "$STUB_LOG" "sudo ss "
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
-# The files say ufw is on while ufw.service is stopped, as after systemctl stop ufw, which unloads
-# the rules: status says it's off, and the step turns it on again and starts the unit
+# Config says on but ufw.service is stopped
 touch "$SANDBOX/ufw-unit-inactive"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
@@ -382,7 +331,7 @@ assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/ufw-unit-inactive" ] || fail "the step left ufw.service stopped"
 assert_exit 0 status
-# ufw.service running but disabled, so the rules aren't loaded after a reboot: the same
+# ufw.service running but disabled
 touch "$SANDBOX/ufw-unit-disabled"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
@@ -391,9 +340,7 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/ufw-unit-disabled" ] || fail "the step left ufw.service disabled"
 assert_exit 0 status
-# Stopped by /usr/lib/ufw/ufw-init stop, ufw has its rules unloaded while its files and
-# ufw.service say it's on, and `ufw status` says inactive: status says it's off, and the step turns
-# it on again rather than only adding rules
+# Stopped by ufw-init stop: files and unit say on, `ufw status` says inactive
 touch "$SANDBOX/ufw-stopped"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections: ufw status says it's inactive"
@@ -404,22 +351,18 @@ assert_file_contains "$STUB_LOG" "sudo ufw default deny incoming"
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 [ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
 assert_exit 0 status
-# Without cached credentials, status can't tell, so the rules are unverified
 touch "$SANDBOX/ufw-stopped"
 not_cached
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
 cached
 rm "$SANDBOX/ufw-stopped"
-# On, a run that has nothing to add never turns ufw on again
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "ufw --force enable"
 assert_file_not_contains "$STUB_LOG" "ufw default deny"
 
-# Sessions from the private ranges or the tailnet, over IPv4, IPv6, and IPv4-mapped IPv6, keep
-# working, so ufw goes on. A link-local one does whatever interface it came in on, such as a VPN's,
-# since ufw lets in fe80::/10 on any.
+# Private-range, tailnet, and link-local (any interface) sessions survive, so ufw goes on
 sessions 22 192.168.1.5:22 192.168.1.20:51000 100.64.0.1:22 100.64.0.2:51000 \
     '[::ffff:192.168.1.5]:22' '[::ffff:192.168.1.21]:51001' \
     '[fe80::5%eth0]:22' '[fe80::20%eth0]:51002' \
@@ -429,16 +372,14 @@ firewall_run
 assert_eq 0 "$RUN_STATUS" "the step over the LAN and the tailnet"
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
-# A connection from outside with no login, such as a scanner's or one still logging in, doesn't
-# count, so ufw goes on, as it would with port 22 open to the internet
+# An outside connection without a logind login (a scanner) doesn't count
 sessions 22 192.168.1.5:22 192.168.1.20:51000 203.0.113.9:51000
 logins 192.168.1.20
 firewall_run
 assert_eq 0 "$RUN_STATUS" "the step with a connection from outside that hasn't logged in"
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
-# A session from outside leaves the firewall unchanged: the step says why, does the rest, and
-# fails. The pane's SSH_CONNECTION, a stale tmux one, doesn't count.
+# An outside session leaves the firewall unchanged; a stale tmux SSH_CONNECTION doesn't count
 logins 192.168.1.20 203.0.113.9
 rm -f "$SANDBOX/linger"
 export TMUX=/tmp/tmux-1000/default,1,0 SSH_CONNECTION="192.168.1.20 51000 192.168.1.5 22"
@@ -453,8 +394,7 @@ assert_file_contains "$STUB_LOG" "loginctl enable-linger"
 firewall_unchanged
 assert_not_contains "$RUN_OUTPUT" "  Applied."
 
-# sshd -T reports port 22 while ssh.socket listens on 2222 too: both get rules, and a session from
-# outside on 2222, over IPv4-mapped IPv6 or IPv6, keeps the firewall as it is
+# ssh.socket also on 2222, which sshd -T doesn't report
 printf '%s\n' 22 2222 > "$SANDBOX/socket-ports"
 no_sessions
 rules_missing
@@ -481,8 +421,7 @@ echo 22 > "$SANDBOX/socket-ports"
 rm "$SANDBOX/ss-2222"
 rules_present
 
-# When logind can't say which connections logged in, or names a host it can't match, as with
-# sshd's UseDNS yes, every connection from outside counts
+# logind failing or naming a host (UseDNS yes): every outside connection counts
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 192.168.1.20
 touch "$SANDBOX/logind-fails"
@@ -497,8 +436,7 @@ assert_eq 1 "$RUN_STATUS" "the step with a session named by host"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
 firewall_unchanged
 
-# With ufw on, a session from outside doesn't stop the missing rules: allow rules can't cut anyone
-# off. ufw isn't turned on again, nor its policy set.
+# With ufw on, an outside session doesn't block adding allow rules, which can't cut anyone off
 ufw_on
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 203.0.113.9
@@ -513,7 +451,7 @@ assert_not_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_exit 0 ufw_configured -n
 no_sessions
 
-# The connections can't be listed: ufw stays as it is, and the rest of the step still runs
+# ss failing: ufw unchanged, the rest still runs
 touch "$SANDBOX/ss-fails"
 rm -f "$SANDBOX/linger"
 firewall_run
@@ -523,7 +461,6 @@ firewall_unchanged
 assert_file_contains "$STUB_LOG" "loginctl enable-linger"
 rm "$SANDBOX/ss-fails"
 
-# Once the connections can be listed, the step succeeds
 firewall_run
 assert_eq 0 "$RUN_STATUS" "the step once the connections can be listed"
 assert_exit 0 status

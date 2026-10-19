@@ -1,42 +1,26 @@
-# The machine the test-ubuntu-*.sh tests of the ubuntu step's main and status share, set up through
-# sandbox paths (tests/ubuntu-sandbox.sh), with sudo, systemctl, sysctl, sshd, ss, ufw, nmcli,
-# tailscale, apt-config, apt-get, locale, locale-gen, and git's worktree check as stubs. Source it
-# after tests/lib.sh and tests/ubuntu-sandbox.sh, then call setup_sandbox and ubuntu_step_setup.
-# ubuntu_step_set_up then runs the step with every change approved, for a test that starts from a
-# machine already set up. Bash 3.2.
+# A stubbed Ubuntu machine for tests of the ubuntu step. Source after tests/lib.sh and
+# tests/ubuntu-sandbox.sh, then call setup_sandbox and ubuntu_step_setup.
 # shellcheck shell=bash
-# The step's functions call the ones this file replaces
-# shellcheck disable=SC2329
+# shellcheck disable=SC2329 # the step calls the replaced functions
 
-# Load the step, point it into the sandbox, and replace the checks the tests leave to others. Run
-# it again to bring back a function a test replaced.
+# Run it again to bring back a function a test replaced
 ubuntu_step_load() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
     as_os ubuntu
     replace_fn ufw_enabled '[ -e "$SANDBOX/ufw-on" ]'
     replace_fn lingering true
-    # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
     replace_fn status_smart :
     replace_fn status_firmware :
-    # test-ubuntu-ups.sh covers the UPS
     replace_fn ups_todo :
     replace_fn status_ups :
     replace_fn warn_no_ups :
-    # This checkout may be a worktree, so the check is replaced, and test-ubuntu-step.sh tests the
-    # real one
+    # This checkout may be a worktree
     declare -F real_in_git_worktree > /dev/null || eval "real_$(declare -f in_git_worktree)"
     replace_fn in_git_worktree false
 }
 
-# systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
-# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled. A
-# unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables
-# and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl
-# enable --now ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is
-# enabled once systemctl --user enable ran, and active once enable --now did. A user unit needs a
-# daemon-reload while $SANDBOX/reload-needed exists, which daemon-reload removes, unless
-# $SANDBOX/reload-fails exists. A test's own lines go first.
+# Defaults match 26.04; files under $SANDBOX change unit state. $1 runs first.
 stub_systemctl() {
     stub systemctl "${1:-}"'
 case "$1" in
@@ -77,23 +61,18 @@ case "$1" in
 esac'
 }
 
-# Load the step, and write the stubs and files of a machine where nothing is set up yet
+# A machine where nothing is set up yet
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without
-    # cached credentials.
     not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
     not_cached_sudo
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'
-    # Ubuntu's default smartd.conf, which runs smartd-runner, and so the hook, on a warning
+    # Ubuntu's default smartd.conf
     echo "DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
-    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails,
-    # setting none, when $SANDBOX/sysctl-fails exists, and after setting them when
-    # $SANDBOX/sysctl-key-fails does, as for a key another file sets that the kernel lacks. sysctl
-    # -n prints one setting.
+    # sysctl-key-fails: fails after applying, as for a key the kernel lacks
     stub sysctl 'live="'"$SANDBOX"'/sysctl-live"
     case "$1" in
         --system) [ ! -e "'"$SANDBOX"'/sysctl-fails" ] || exit 1
@@ -101,35 +80,25 @@ ubuntu_step_setup() {
             [ ! -e "'"$SANDBOX"'/sysctl-key-fails" ] ;;
         -n) grep "^$2=" "$live" 2> /dev/null | tail -n 1 | cut -d= -f2 ;;
     esac'
-    # The en_US.UTF-8 locale is there once locale-gen ran
     stub locale 'echo C.utf8; [ ! -e "'"$SANDBOX"'/locale" ] || echo en_US.utf8'
     stub locale-gen 'touch "'"$SANDBOX"'/locale"'
-    # apt-get -s upgrade prints $SANDBOX/apt-upgrade
     stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
-    # No package is on hold with apt-mark
     stub apt-mark
-    # unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last
-    # file that sets it wins.
+    # As in apt, the last file that sets a key wins
     stub_apt_config 'cat "'"$SANDBOX"'/apt.conf.d/"* 2> /dev/null | awk '"'"'{ values[$1] = $0 } END { for (key in values) print values[key] }'"'"''
     stub loginctl
     stub lsblk
-    # Tailscale auto-updates, with you as its operator, until $SANDBOX/tailscale-reset exists, as
-    # after its first login, and its state is in $SANDBOX/tailscale-state
+    # tailscale-reset: as after Tailscale's first login
     stub tailscale 'case "$1" in
         debug) if [ -e "'"$SANDBOX"'/tailscale-reset" ]; then echo "{}"
             else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}"; fi ;;
         status) echo "{\"BackendState\": \"$(cat "'"$SANDBOX"'/tailscale-state")\"}" ;;
     esac'
     echo Running > "$SANDBOX/tailscale-state"
-    # sshd -t fails on any drop-in with a "Bogus" line, naming the file the way sshd does. sshd -T
-    # prints the port, and the settings the drop-in sets as sshd reads them: the first value in the
-    # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
-    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" block, or a "Match
-    # Address" block whose list has the address, a pattern with * or ? that matches it, or a /24
-    # it's in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
-    # test-ubuntu-sshd-real.sh checks the step against the real sshd -T.
+    # sshd -T takes the first value per key, Match blocks winning; test-ubuntu-sshd-real.sh checks
+    # the step against the real sshd
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
-    # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
+    # No SSH sessions, as at the console
     stub ss
     stub sshd 'case "$1" in
         -T) [ ! -e "'"$SANDBOX"'/sshd-T-fails" ] || exit 255
@@ -174,14 +143,11 @@ ubuntu_step_setup() {
                 if grep -q "^Bogus" "$f"; then echo "$f: line 1: Bad configuration option: Bogus" >&2; exit 255; fi
             done ;;
     esac'
-    # ufw status lists every rule the step adds, once it has run ufw --force enable
     ufw_status_listing > "$SANDBOX/ufw-status"
     stub ufw 'case "$1" in
         --force) touch "'"$SANDBOX"'/ufw-on" ;;
         status) [ -e "'"$SANDBOX"'/ufw-on" ] && cat "'"$SANDBOX"'/ufw-status" ;;
     esac'
-    # One wired connection, "Wired connection 1", whose Wake-on-LAN setting is in $SANDBOX/wol, and
-    # a Wi-Fi one. The step names connections by UUID, since two can share a name.
     stub nmcli 'case "$*" in
         "-t -e no -f UUID,TYPE,NAME connection show") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired connection 1" "2222-bbbb:802-11-wireless:Home:5G" ;;
         *"-g 802-3-ethernet.wake-on-lan connection show uuid 1111-aaaa") cat "'"$SANDBOX"'/wol" ;;
@@ -191,14 +157,12 @@ ubuntu_step_setup() {
     mkdir "$SANDBOX/units" "$SANDBOX/user-units"
     # shellcheck disable=SC2034 # test-ubuntu-step.sh reads it
     KEEP_CONFFILES="Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)"
-    # Tailscale's apt source, as its install script writes it
+    # As Tailscale's install script writes it
     TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/stable/ubuntu resolute main"
     echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 }
 
-# Run the step with every change approved, as test-ubuntu-step.sh's first approved run does, so a
-# test starts from a machine that's set up. With no SSH key login to go by, the VM opt-in turns
-# password logins off.
+# Set the machine up with every change approved
 ubuntu_step_set_up() {
     export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
     assert_exit 0 main

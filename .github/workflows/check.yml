@@ -1,8 +1,6 @@
 name: Check
 
-# main is the default branch (gh repo view). A pull request's pushes run once, as pull_request,
-# instead of also as push. Run it by hand on another branch with workflow_dispatch. The weekly run
-# checks upstream packages and AI tools, which release without a change to this repo.
+# Weekly: upstream packages and AI tools release without a repo change.
 on:
   push:
     branches: [main]
@@ -14,29 +12,15 @@ on:
 permissions:
   contents: read
 
-# Actions are pinned to the commit their release tag pointed to, with the tag in a comment. To
-# move to a new release, look its commit up with
-# git ls-remote https://github.com/actions/checkout 'refs/tags/<tag>*' and replace both. An
-# annotated tag prints two lines: take the one ending in ^{}, since the other is the tag object's.
+# Actions are pinned to their tag's commit. For an annotated tag, git ls-remote's ^{} line is the commit.
 
-# A new push to a pull request or branch cancels its runs still in progress. The event is in the
-# group so the weekly run and a push to main don't cancel each other.
+# The event is in the group so the weekly run and a push to main don't cancel each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# OS targets: macOS 27 (Apple Silicon) and Ubuntu 26.04 (x64). GitHub provides macOS 27 through
-# the xcode-27 public-preview runner: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
-# Ubuntu takes apt's packages and these pinned releases. macOS takes current Homebrew packages
-# except for shellcheck and yq, so it checks compatibility with newer tools.
-# scripts/check-tool-versions.sh fails a leg whose tools are older than the declared minimums. One
-# shellcheck for every leg, from its release: versions report different warnings, and Ubuntu's
-# package is older. Ubuntu's yq package is a different tool, so mikefarah's comes from its release.
-# Pin it on macOS too, where brew can lag behind our minimum.
-#
-# Each downloaded release is checked against a pinned SHA-256 before it's installed: from the
-# release's checksum file where it has one (mise's SHASUMS256.txt, yq's checksums), else hashed from
-# a download (shellcheck). A version bump needs new hashes.
+# shellcheck is pinned since versions report different warnings. Ubuntu's yq is a different tool,
+# and brew's can lag the minimum. A version bump needs new hashes.
 env:
   SHELLCHECK_VERSION: v0.11.0
   SHELLCHECK_SHA256_DARWIN_AARCH64: 56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79
@@ -45,14 +29,12 @@ env:
   YQ_SHA256_DARWIN_ARM64: fee511a181bd8b3e6b7da98842b41973bfac8cd3bcd341ed29a584620b5b2844
   YQ_SHA256_LINUX_AMD64: 8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
 
-# bash runs every step as bash --noprofile --norc -eo pipefail, so a failed download in a pipe
-# fails its step
+# Explicit bash adds -eo pipefail, so a failed download in a pipe fails its step
 defaults:
   run:
     shell: bash
 
 jobs:
-  # Only live upstream checks need path selection. Local checks and tests run on every change.
   changes:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -74,7 +56,6 @@ jobs:
           brew=false ai=false
           range="$BASE_SHA..$HEAD_SHA"
           [ "$EVENT" != pull_request ] || range="$BASE_SHA...$HEAD_SHA"
-          # A new branch or unavailable history runs everything, as do weekly and manual runs.
           if [[ "$EVENT" == schedule || "$EVENT" == workflow_dispatch || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] ||
               ! git diff --name-only --no-renames "$range" -- > "$RUNNER_TEMP/changed-files"; then
             brew=true ai=true
@@ -102,7 +83,6 @@ jobs:
         os: [xcode-27, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
-      # No token left in .git/config for later steps to read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -118,9 +98,7 @@ jobs:
 
       - name: Install tools (Ubuntu)
         if: runner.os == 'Linux'
-        # Ubuntu has no mise package, and its fd package names the command fdfind, while brew's,
-        # which setup installs, is fd. test-ubuntu-sshd-real.sh runs the real sshd -T, which needs
-        # /run/sshd, and ssh.socket creates it only on the first connection.
+        # sshd -T needs /run/sshd, which ssh.socket creates only on the first connection.
         env:
           MISE_VERSION: v2026.10.5
           MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
@@ -153,8 +131,7 @@ jobs:
           echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ci-bin/yq" --version
 
-      # The 26.04 runner has classic sudo and Rust coreutils, where a 26.04 install has sudo-rs. The
-      # tests stub sudo; an `ubuntu:26.04` container run (AGENTS.md) covers sudo-rs. The log shows which ran.
+      # The runner has classic sudo, unlike a 26.04 install's sudo-rs.
       - name: Show the sudo and coreutils versions (Ubuntu)
         if: runner.os == 'Linux'
         run: |
@@ -166,18 +143,14 @@ jobs:
           shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
           bash scripts/check-tool-versions.sh
 
-      # The tests stub sudo, and the steps expect a normal user. GitHub's runners run jobs as one.
       - name: Check the job isn't root
         run: test "$(id -u)" -ne 0
 
       - run: just check
-      # A test skips when a tool it needs is missing. The steps above install them all, so a skip
-      # here means a runner lost one.
       - run: just test
         env:
           TEST_FAIL_ON_SKIP: 1
 
-  # Homebrew can drop packages or Linux bottles independently of repo changes.
   brew-packages:
     needs: changes
     if: needs.changes.outputs.brew == 'true'
@@ -190,11 +163,7 @@ jobs:
       - run: brew install jq
       - run: bash scripts/check-brew-packages.sh
 
-  # The settings the claude-code and codex steps write, checked by the latest Claude Code and Codex
-  # (scripts/check-ai-settings.sh), and the t3-code step's keys against the latest T3 Code
-  # (scripts/check-t3-settings.sh). Unpinned on purpose, so a release that renames or rejects a
-  # setting fails here. A job of its own, so a CLI release can't block the shell checks. `just check`
-  # runs neither script.
+  # Unpinned on purpose, so a release that renames or rejects a setting fails here.
   ai-settings:
     needs: changes
     if: needs.changes.outputs.ai == 'true'
@@ -215,15 +184,12 @@ jobs:
 
       - name: Install tools (Ubuntu)
         if: runner.os == 'Linux'
-        # Codex's sandbox runs commands with bubblewrap on Linux
         run: |
           sudo apt-get update
           sudo apt-get install -y jq bubblewrap
 
       - *install-yq
 
-      # AppArmor can stop bwrap creating user namespaces. The codex step loads AppArmor's bwrap
-      # profile for that; a throwaway runner can turn the restriction off.
       - name: Let bwrap create user namespaces (Ubuntu)
         if: runner.os == 'Linux'
         run: |
@@ -233,8 +199,7 @@ jobs:
           fi
           bwrap --unshare-all --ro-bind / / true
 
-      # Claude Code from the native installer, as the claude-code step installs it. Downloaded
-      # first, so a truncated download fails here rather than running part of the script.
+      # Download first, so a truncated download can't run part of the script
       - name: Install the latest Claude Code and Codex
         run: |
           f="$RUNNER_TEMP/claude-install.sh"
@@ -245,7 +210,6 @@ jobs:
 
       - run: bash scripts/check-ai-settings.sh < /dev/null
 
-      # The keys the t3-code step writes, against the latest T3 Code release's settings schemas
       # The schema is platform-independent, so check it once, even if the CLI check fails.
       - if: runner.os == 'macOS' && (success() || failure())
         run: bash scripts/check-t3-settings.sh < /dev/null

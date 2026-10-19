@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# DOTFILES_ASSUME_YES=1 makes confirm say yes without a terminal, for throwaway test machines.
-# test-ai-manual-steps.sh covers manual-steps opening nothing with DOTFILES_ASSUME_YES=1.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -17,8 +14,8 @@ assert_eq "Proceed? yes (DOTFILES_ASSUME_YES)" "$RUN_OUTPUT" "confirm's output"
 DOTFILES_ASSUME_YES=0
 assert_exit 1 confirm "Proceed?"
 
-# confirm asks whenever stdin is a terminal, even with stdout piped, as in bash setup.sh | tee log.
-# script gives the command a terminal; is_interactive then runs with stdout sent to a file.
+# confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
+# script gives the command a terminal
 unset DOTFILES_ASSUME_YES
 answer="$SANDBOX/interactive"
 check='. "$0/lib/common.sh"; if is_interactive > "$1"; then echo yes > "$1"; else echo no > "$1"; fi'
@@ -32,7 +29,6 @@ if [ -f "$answer" ]; then
 else
     echo "Skipping the terminal check: no script command"
 fi
-# Without a terminal on stdin, stdout piped still means no
 run bash -c 'set -o pipefail; . "$0/lib/common.sh"; confirm "Proceed?" | cat' "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "confirm's status with stdin from /dev/null and stdout piped"
 test_done

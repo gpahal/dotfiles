@@ -1,18 +1,7 @@
-# Helpers for the tests in tests/. Source it from a test-*.sh file, call setup_sandbox, then run
-# steps or load_script their functions, and check the results with the assert_* functions, and
-# end with test_done. A failed assertion prints why and the test carries on; the test exits 1 at
-# the end. Bash 3.2.
-#
-# setup_sandbox gives the test a temp HOME and puts a failing sentinel first on PATH for each
-# command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
-# runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
-# test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
-# calls skip. tests/run.sh runs each test and says how skips, timeouts, and the "# serial" mark
-# work.
-#
-# To change a function a loaded script defines, use replace_fn, which fails the test when there's
-# no such function, rather than redefining it bare. as_os macos|ubuntu sets is_macos and is_ubuntu,
-# and answer yes|no sets confirm's answer.
+# Test helpers. A test sources this, calls setup_sandbox, runs steps or load_script, checks with
+# assert_*, and ends with test_done. Stub every SENTINELS command it reaches; hide makes one missing.
+# Change a loaded function only with replace_fn, as_os macos|ubuntu, or answer yes|no.
+# tests/run.sh covers skips, timeouts, and the serial and os marks.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,55 +10,35 @@ TEST_FAILURES=0
 TEST_SKIPPED=false
 TEST_DONE=false
 
-# SENTINELS: the commands a test must stub
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Point HOME, TMUX_TMPDIR, WORKTREES_DIR, and TMPDIR at a new temp dir, unset the variables that
-# would send a step elsewhere, limit git to local repos, put $STUB_DIR first on PATH, give each
-# SENTINELS command a sentinel, and read stdin from /dev/null, so confirm says no. sudo is stubbed
-# to fail, as when not cached, so no test runs it for real even on a CI runner with passwordless
-# sudo; a test may stub its own. Sets the EXIT trap, so a test mustn't set its own; on_exit adds
-# to it.
+# Sets the EXIT trap; a test adds to it with on_exit rather than setting its own.
 setup_sandbox() {
     local var
-    # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
-    # /tmp to /private/tmp there, so paths the steps print match $HOME. tests/run.sh sets
-    # TEST_SANDBOX_PARENT to the test's own dir under /tmp, which it removes even when its
-    # watchdog SIGKILLs the test before the EXIT trap can.
+    # /tmp keeps tmux's socket path under macOS's limit; -P makes printed paths match $HOME
     SANDBOX="$(cd -P "$(mktemp -d "${TEST_SANDBOX_PARENT:-/tmp}/dotfiles-test.XXXXXX")" && pwd)"
     trap _sandbox_exit EXIT
-    # GIT_* covers what a git hook, a worktree, or `git -c` exports: GIT_DIR and GIT_WORK_TREE
-    # would point the steps' git at the real repo, and GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT,
-    # and GIT_CONFIG_KEY_n/VALUE_n would add config, such as a url rewrite, to every git command
+    # GIT_* from a hook or worktree would point git at the real repo or add config
     for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_|GIT_)' || true); do
         unset "$var"
     done
-    # SSH_AUTH_SOCK would reach the real agent's keys, SSH_USER_AUTH the real session's login,
-    # BASH_ENV would run a file in every bash a step starts, and MISE_* the real mise state
     unset CDPATH BASH_ENV TMUX TMUX_PANE ZDOTDIR CODEX_HOME CLAUDE_CONFIG_DIR SSH_AUTH_SOCK \
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
-    # git reads no system config, and reaches only local repos, never the network. A test that
-    # clones sets its own GIT_CONFIG_COUNT url rewrite to a local repo, as fake_tmux_plugins does
-    # for the tmux plugins.
+    # A test that clones rewrites the url to a local repo, as fake_tmux_plugins does
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
-    # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps.
-    # macOS's mktemp ignores TMPDIR without a template, so a wrapper below gives it one.
+    # macOS's mktemp ignores TMPDIR without a template, so a wrapper below adds one
     export TMPDIR="$SANDBOX/tmp"
-    # Set, so zsh/path.zsh doesn't set the real Homebrew's environment, and pointing nowhere, so
-    # it puts no real Homebrew dir ahead of the stubs
+    # Stops zsh/path.zsh loading the real Homebrew ahead of the stubs
     export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
-    # The apt sources dir and the release ubuntu_codename reads, so no test sees the host's. A step
-    # that sets its own paths needs the test to override them.
     export APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d" OS_RELEASE="$SANDBOX/os-release"
     mkdir -p "$APT_SOURCES_DIR"
     printf '%s\n' ID=ubuntu VERSION_ID='"26.04"' VERSION_CODENAME=resolute UBUNTU_CODENAME=resolute > "$OS_RELEASE"
     export STUB_DIR="$SANDBOX/stubs" STUB_LOG="$SANDBOX/stub.log"
     mkdir -p "$HOME" "$TMUX_TMPDIR" "$WORKTREES_DIR" "$TMPDIR" "$STUB_DIR"
     : > "$STUB_LOG"
-    # Not a stub, so it logs nothing: a bare mktemp or mktemp -d gets a template under $TMPDIR
     printf '%s\n' '#!/bin/bash' \
         "case \"\$*\" in '' | -d) exec $(command -v mktemp) \"\$@\" \"\$TMPDIR/tmp.XXXXXXXXXX\" ;; esac" \
         "exec $(command -v mktemp) \"\$@\"" > "$STUB_DIR/mktemp"
@@ -78,11 +47,9 @@ setup_sandbox() {
     # shellcheck disable=SC2086 # a list of names
     _sentinels $SENTINELS
     stub sudo 'exit 1'
-    # The PAM config the macos step's status and the Touch ID script read, so none sees the host's
     export DOTFILES_PAM_DIR="$SANDBOX/pam.d" DOTFILES_PAM_MODULES_DIR="$SANDBOX/pam-modules" \
         DOTFILES_PAM_LOCAL_MODULES_DIR="$SANDBOX/pam-local-modules"
-    # The real free space would decide whether a status report needs attention, so df reports
-    # each path it's given on a filesystem with 900 of 1000 GiB free
+    # Real free space would sway status reports
     stub df 'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857600 943718400 10% $path" ;; esac; done'
     exec < /dev/null
@@ -90,17 +57,17 @@ for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857
 
 _sandbox_exit() {
     local status=$? hook
-    # Each in a subshell, so one that fails, even under set -u, can't stop the cleanup below
+    # Subshell, so a failing hook can't stop the cleanup
     for hook in ${_ON_EXIT[@]+"${_ON_EXIT[@]}"}; do
         (eval "$hook") || true
     done
-    # A sentinel that ran under `|| true` or in a command expected to fail still fails the test
+    # Catches sentinels run under `|| true`
     if [ -s "$SANDBOX/unstubbed.log" ]; then
         echo "Commands ran that the test didn't stub:" >&2
         _show "$(cat "$SANDBOX/unstubbed.log")"
         TEST_FAILURES=$((TEST_FAILURES + 1))
     fi
-    # A tmux server a test started lives on after its socket's directory is gone
+    # A tmux server outlives its socket's dir
     _stop_tmux_servers
     case "${SANDBOX:-}" in
         */dotfiles-test.*)
@@ -108,15 +75,13 @@ _sandbox_exit() {
             rm -rf "$SANDBOX"
             ;;
     esac
-    # When set -u stops a script, bash 3.2 gives the EXIT trap a $? of 0, so a test that exits 0
-    # without reaching test_done stopped early
+    # bash 3.2 gives the EXIT trap $? 0 when set -u stops a script
     if [ "$status" -eq 0 ] && ! "$TEST_DONE"; then
         echo "The test stopped before its test_done line" >&2
         status=1
     fi
     if [ "$TEST_FAILURES" -gt 0 ]; then
         echo "$TEST_FAILURES check(s) failed" >&2
-        # A test that failed, then skipped the rest, failed
         [ "$status" -ne 0 ] && [ "$status" -ne 77 ] || status=1
     elif [ "$status" -eq 0 ] && "$TEST_SKIPPED"; then
         status=77
@@ -124,25 +89,18 @@ _sandbox_exit() {
     exit "$status"
 }
 
-# Run a command when the test exits, however it exits (test_done, set -e, or tests/run.sh's
-# SIGTERM), before the sandbox goes. It's for what the test starts in another process group, which
-# those signals don't reach. The string is evaluated at exit; commands run in the order added, and
-# failures are ignored.
-# e.g. on_exit 'kill -- "-$SERVER_PID" 2> /dev/null'
+# Eval a command at exit, for what the test starts in another process group, which signals miss
 _ON_EXIT=()
 on_exit() {
     _ON_EXIT+=("$1")
 }
 
-# Stop every tmux server with a socket under $TMUX_TMPDIR, and wait up to 5 s for it and its
-# panes' processes to exit. kill-server returns first, and a pane's shell can still write to HOME
-# as it exits, as macOS's zsh writes ~/.zsh_history, which would race removing the sandbox.
+# Waits for the panes to exit: a pane's zsh writing ~/.zsh_history would race the sandbox removal
 _stop_tmux_servers() {
     local sock pids="" pid i=0 alive
     command -v tmux &>/dev/null || return 0
     for sock in "$TMUX_TMPDIR"/tmux-*/*; do
         [ -S "$sock" ] || continue
-        # A stale socket's server is gone, so list-panes fails, which mustn't end the EXIT trap
         pids="$pids $(tmux -S "$sock" list-panes -a -F '#{pid} #{pane_pid}' 2>/dev/null | tr '\n' ' ' || true)"
         tmux -S "$sock" kill-server &>/dev/null || true
     done
@@ -157,8 +115,7 @@ _stop_tmux_servers() {
     done
 }
 
-# Put $STUB_DIR back at the front of PATH. lib/common.sh prepends Homebrew's and mise's
-# directories, which would hide the stubs.
+# lib/common.sh prepends Homebrew's and mise's dirs, which would hide the stubs
 _stubs_first() {
     local path=":$PATH:"
     path="${path//:$STUB_DIR:/:}"
@@ -166,25 +123,15 @@ _stubs_first() {
     export PATH="$STUB_DIR:${path%:}"
 }
 
-# Write an executable stub for a command to $STUB_DIR. It appends "<cmd> <args>" to $STUB_LOG,
-# then runs the body, a Bash snippet that gets the stub's arguments as "$@". Without a body it
-# succeeds and prints nothing.
-# e.g. stub systemctl '[ "$2" != is-active ] || echo active'
+# The stub logs "<cmd> <args>" to $STUB_LOG, then runs the body with the args as "$@"
 stub() {
     local name="$1" body="${2:-}"
     printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
     chmod +x "$STUB_DIR/$name"
 }
 
-# Stub sudo to run its command as you, as sudo with cached credentials would, after dropping a
-# leading -n. It refuses an absolute path, alone or after an =, outside the sandbox other than
-# /dev/null and the repo's files, so a system path the test didn't point into the sandbox fails
-# rather than being written to as you. A repo file passes only where the command reads it: before
-# the last argument, as cp's source, or anywhere for a read-only command such as cat or bash;
-# never for a command that changes each file it's given, such as rm or tee. The optional body runs
-# first with sudo's arguments as "$@", and may change them with set --, as to drop options that
-# need root.
-# e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
+# Stub sudo to run its command as you. It refuses paths outside the sandbox and repo files the
+# command would change. The optional body runs first and may rewrite "$@" with set --.
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
@@ -229,10 +176,7 @@ done
 exec env "$@"'
 }
 
-# Stub apt-config shell, which takes <var> <key> pairs and prints <var>='<value>' for each key
-# that's set. The body prints the config as apt-config dump does, one 'Key "value";' line per
-# setting; the last line for a key wins.
-# e.g. stub_apt_config 'echo "APT::Periodic::Unattended-Upgrade \"1\";"'
+# Stub `apt-config shell`; the body prints the config as `apt-config dump` would
 stub_apt_config() {
     stub apt-config "config() {
 ${1:-:}
@@ -252,10 +196,6 @@ EOF
     )"
 }
 
-# Write a sentinel for each command to $STUB_DIR: it logs "<cmd> <args>" to $SANDBOX/unstubbed.log,
-# says so on stderr, and exits 127, as a missing command would. The log is outside $STUB_DIR, so a
-# step that changes HOME or the environment still logs it. Every test writes about 60, hence one
-# chmod for all.
 _sentinels() {
     local cmd body
     body="$(printf '#!/bin/bash\nlog=%q\n' "$SANDBOX/unstubbed.log")"'
@@ -268,16 +208,11 @@ exit 127'
     [ $# -eq 0 ] || (cd "$STUB_DIR" && chmod +x "$@")
 }
 
-# Make commands missing for the rest of the test, even where they're installed: PATH becomes
-# $STUB_DIR and a dir of links to every other command on PATH, and the commands' stubs and
-# sentinels go. lib/common.sh puts Homebrew's dirs on PATH when it finds no brew, so hide brew
-# exports DOTFILES_NO_LOAD_BREW, which stops that in sourced scripts and in steps run as their own
-# process. The first hide in each shell works on its own copy of $STUB_DIR and the links, so a
-# hide in a subshell can't delete the parent's sentinels and let it reach the real command.
-# e.g. hide fzf
+# Make commands missing even where installed. Each shell's first hide copies $STUB_DIR, so a
+# subshell's hide can't delete the parent's sentinels.
 hide() {
     local dir name dirs
-    # BASH_SUBSHELL tells a subshell from the shell that set _HIDE_SHELL; bash 3.2 has no BASHPID
+    # bash 3.2 has no BASHPID
     if [ "${_HIDE_SHELL-}" != "$BASH_SUBSHELL" ]; then
         _HIDE_SHELL="$BASH_SUBSHELL"
         dir="$(mktemp -d "$SANDBOX/hide.XXXXXX")"
@@ -285,26 +220,23 @@ hide() {
         _HIDE_LINKS="$dir/path"
         mkdir "$_HIDE_LINKS"
         IFS=: read -ra dirs <<< "$PATH"
-        # An earlier hide's links dir links on, so what it hid stays hidden
         for dir in ${dirs[@]+"${dirs[@]}"}; do
             [ "$dir" != "$STUB_DIR" ] && [ -d "$dir" ] || continue
-            # ln skips a name an earlier dir already linked, as PATH would, and carries on
+            # ln skips names already linked, as PATH lookup would
             ln -s "$dir"/* "$_HIDE_LINKS"/ 2> /dev/null || true
         done
         STUB_DIR="${_HIDE_LINKS%/path}/stubs"
     fi
-    # Also when a later hide in this shell finds a PATH a script changed
+    # Also resets a PATH a script changed since the last hide
     export PATH="$STUB_DIR:$_HIDE_LINKS"
     for name in "$@"; do
         rm -f "$_HIDE_LINKS/$name" "$STUB_DIR/$name"
+        # Else lib/common.sh adds Homebrew's dirs when it finds no brew
         [ "$name" != brew ] || export DOTFILES_NO_LOAD_BREW=1
     done
 }
 
-# Skip the test: print why, and exit 77, which tests/run.sh reports as SKIP. Use it when a tool
-# the test needs isn't installed. skip_rest prints why and carries on, and the test then exits 77
-# unless it failed.
-# e.g. command -v jq &> /dev/null || skip "jq isn't installed"
+# skip_rest carries on; the test then exits 77 unless a check failed
 skip() {
     echo "SKIP: $1"
     exit 77
@@ -315,10 +247,7 @@ skip_rest() {
     TEST_SKIPPED=true
 }
 
-# Run a command, usually a function the test defines, in a subshell, so what it changes, such as
-# the commands it hides or the functions it replaces, stays there. Its failed checks count as the
-# test's.
-# e.g. subtest firmware_without_jq
+# Run in a subshell, so its hides and replaced functions stay there
 # shellcheck disable=SC2030,SC2031 # the subshell counts its own failures
 subtest() {
     local failed=0
@@ -330,10 +259,7 @@ subtest() {
     TEST_FAILURES=$((TEST_FAILURES + failed))
 }
 
-# Replace function <name>, which a loaded script defines, with <body>. It fails the test when no
-# such function exists, as when a step renamed it, since the override would then change nothing
-# and the test could pass without testing what it meant to. It redefines the function anyway.
-# e.g. replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+# Fails when there's no such function, since the override would then test nothing
 replace_fn() {
     declare -F "$1" > /dev/null || fail "replace_fn: no function $1 to replace"
     eval "$1() {
@@ -341,9 +267,7 @@ ${2:-:}
 }"
 }
 
-# Make the loaded scripts' is_macos and is_ubuntu say the test runs on macOS or on Ubuntu. Only
-# this shell's functions change; a step run as its own process needs a uname stub instead.
-# e.g. as_os ubuntu
+# A step run as its own process needs a uname stub instead
 as_os() {
     case "$1" in
         macos)
@@ -358,9 +282,6 @@ as_os() {
     esac
 }
 
-# Make the loaded scripts' confirm print its question and answer yes or no, as a person at a
-# terminal would
-# e.g. answer yes
 answer() {
     case "$1" in
         yes) replace_fn confirm 'echo "$1"' ;;
@@ -369,32 +290,25 @@ answer() {
     esac
 }
 
-# Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
+# The test's last line; a test that exits 0 without it fails
 test_done() {
     TEST_DONE=true
 }
 
-# Commit in repo $1, as an identity of the test's own, since the sandbox has no git config to give
-# one. The other arguments go to git commit.
-# e.g. git_commit "$SANDBOX/repo" --allow-empty -m one
+# The sandbox has no git identity
 git_commit() {
     local repo="$1"
     shift
     git -C "$repo" -c user.name=test -c user.email=test@example.com commit -q "$@"
 }
 
-# Stub what the zsh step reads your login shell with, dscl on macOS and getent on Ubuntu, to say
-# it's zsh already, and chsh to fail, so the step neither asks to change it nor changes it
 stub_login_shell_zsh() {
     stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
     stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
     stub chsh 'exit 1'
 }
 
-# Stand in for GitHub for the tmux plugins in tmux/plugins.lock: give each a local repo with two
-# commits, under $SANDBOX/remotes, which a git url rewrite makes https://github.com/<repo>, and pin
-# each to its first commit, not HEAD, in a lock file the tmux step reads through
-# DOTFILES_TMUX_PLUGINS_LOCK. Sets FAKE_PLUGIN_REMOTES to the remotes' dir.
+# Local repos stand in for GitHub; each plugin is pinned to its first commit, not HEAD
 fake_tmux_plugins() {
     local repo sha remote n
     FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
@@ -415,11 +329,7 @@ fake_tmux_plugins() {
     export GIT_CONFIG_VALUE_0=https://github.com/
 }
 
-# Source lib/common.sh, lib/system.sh, or a step script, given relative to the repo, so the test
-# can call its functions. Remaining arguments become the script's "$@". A step's set -euo pipefail
-# carries over to the test. A syntax error ends the test with status 2 first: sourced, it would end
-# it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
-# e.g. load_script vim/install.sh
+# Check syntax first: a sourced syntax error would end the test with status 0 under bash 3.2
 load_script() {
     local script="$REPO_DIR/$1" f
     shift
@@ -429,25 +339,20 @@ load_script() {
             exit 2
         fi
     done
-    # lib/common.sh defines its default main only when none exists, so a step loaded earlier with
-    # its own main would hide a later step's default one. Loading lib/common.sh or lib/system.sh
-    # alone keeps main.
+    # lib/common.sh defines its default main only when none exists
     case "$script" in
         "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
         *) unset -f main ;;
     esac
-    # A step sets STEP_OS only when it's one-OS, so one loaded earlier would gate this one.
+    # Else an earlier step's values would gate this one
     unset STEP_OS STEP_NEEDS
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first
 }
 
-# Copy a root ntfy hook (ubuntu/smartd-notify.sh or ubuntu/ups-notify.sh) to <dest>, with its
-# NTFY_URL_FILE and NTFY_LIB constants pointed at <url-file> and <lib>, and its PATH set to the
-# test's, so the stubs come first. The hooks hard-code the installed paths and system PATH, since
-# root runs them, so no variable may redirect them.
-# e.g. ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/ntfy-url" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$SANDBOX/hook"
+# Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and
+# PATH, so the copy points them at the sandbox.
 ntfy_hook_copy() {
     sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
         -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
@@ -457,10 +362,7 @@ ntfy_hook_copy() {
     fi
 }
 
-# Run a command in a subshell with errexit on, as a step's own `set -e` would run it, and keep
-# its combined stdout and stderr in $RUN_OUTPUT and its exit status in $RUN_STATUS. It always
-# succeeds, so a test under set -e carries on.
-# e.g. run bash "$REPO_DIR/setup.sh" vim
+# Run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always succeeds
 run() {
     local errexit=false
     case "$-" in *e*) errexit=true ;; esac
@@ -476,8 +378,6 @@ run() {
     return 0
 }
 
-# Record a failed check, naming the test line that made it
-# e.g. [ -x "$HOME/.local/bin/git-wt" ] || fail "git-wt isn't executable"
 fail() {
     local i=1
     TEST_FAILURES=$((TEST_FAILURES + 1))
@@ -487,7 +387,7 @@ fail() {
     echo "FAIL ${BASH_SOURCE[$i]##*/}:${BASH_LINENO[$((i - 1))]}: $1" >&2
 }
 
-# Print text indented under a failure, if there is any. Only builtins, so it works after hide.
+# Builtins only, so it works after hide
 _show() {
     local line
     [ -n "$1" ] || return 0
@@ -496,15 +396,12 @@ _show() {
     done <<< "$1"
 }
 
-# e.g. assert_eq "ok" "$state" "vimrc status"
 assert_eq() {
     [ "$1" == "$2" ] && return 0
     fail "${3:-values differ}: expected '$1', got '$2'"
     return 0
 }
 
-# Check that a string contains, or doesn't contain, a fixed string
-# e.g. assert_contains "$RUN_OUTPUT" "Copied"
 assert_contains() {
     [[ "$1" == *"$2"* ]] && return 0
     fail "${3:-output} doesn't contain '$2'. It was:"
@@ -519,8 +416,6 @@ assert_not_contains() {
     return 0
 }
 
-# Check that a file has, or doesn't have, a line containing a fixed string
-# e.g. assert_file_contains "$STUB_LOG" "systemctl --user restart t3-code"
 assert_file_contains() {
     if [ ! -f "$1" ]; then
         fail "$1 doesn't exist"
@@ -538,8 +433,7 @@ assert_file_not_contains() {
     return 0
 }
 
-# Run a command with run and check its exit status. $RUN_OUTPUT is left for further checks.
-# e.g. assert_exit 3 bash "$REPO_DIR/vim/install.sh" --status
+# Leaves $RUN_OUTPUT for further checks
 assert_exit() {
     local expected="$1"
     shift

@@ -2,9 +2,7 @@
 set -euo pipefail
 
 # Install the Claude desktop app, open it at login, and set its preferences.
-#
-# A temp HOME doesn't isolate this step, which installs the claude cask into /Applications. Test it
-# in a macOS VM or on a spare Mac.
+# Installs into /Applications whatever HOME is; test in a macOS VM or on a spare Mac.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -18,28 +16,17 @@ STEP_OS=macos
 STEP_NEEDS="homebrew"
 
 CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-# A LaunchAgent that opens Claude at login, so its Option+Space quick entry works from the start.
-# Claude's own "open at login" setting registers it through SMAppService, which no command can turn
-# on for another app.
+# Opens Claude at login. Claude's own setting uses SMAppService, which no command can turn on.
 CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
 CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
 
-# The LaunchAgent isn't loaded now, since it would open Claude, which must be quit for the settings
-# below. launchd loads it at the next login.
+# Not loaded now: it would open Claude, which must be quit for the settings merge.
 claude_desktop_files() {
     "$1" "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"
 }
 
-# Settings → Claude Code:
-#   Draw attention on notifications → On
-#   Archive inactive sessions → 30 days
-#   Keep computer awake while Claude works → On
-#   Keep awake on battery power → On
-# Settings → General:
-#   Show in menu bar → Off (no menu bar icon, and no running in the background once the
-#   window is closed)
-# Also: Option+Space opens quick entry; scheduled tasks on in Code and Cowork; Cowork uses
-# browser tools in Chrome and web search.
+# dockBounceEnabled is "Draw attention on notifications". menuBarEnabled off also stops it
+# running in the background once the window closes.
 CLAUDE_DESKTOP_SETTINGS='
     .preferences.dockBounceEnabled = true
     | .preferences.ccAutoArchiveInactiveDays = 30

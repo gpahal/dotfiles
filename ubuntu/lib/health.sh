@@ -1,15 +1,11 @@
 # shellcheck shell=bash
-# Disk and machine health for the ubuntu step: smartd and SMART, fwupd, and the packages whose
-# updates need a reboot.
-# ubuntu/install.sh sets the constants it uses.
+# ubuntu/install.sh sets the constants.
 
-# smartmontools enables smartd when it installs, but it may have been turned off since
 smartd_enabled() {
     apt_installed smartmontools && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
 }
 
-# The unit's ConditionVirtualization=no skips smartd in a VM, where the host manages the disks.
-# status and apply work it out once (cache_checks).
+# smartd's unit has ConditionVirtualization=no. IN_VM_CACHE is set by cache_checks.
 in_vm() {
     if [ -n "${IN_VM_CACHE:-}" ]; then
         [ "$IN_VM_CACHE" == yes ]
@@ -22,24 +18,17 @@ smartd_active() {
     systemctl is-active -q "$SMARTD_UNIT" 2>/dev/null
 }
 
-# Enabled, and running outside a VM. An enabled smartd can still be stopped or have failed.
 smartd_ready() {
     smartd_enabled && { in_vm || smartd_active; }
 }
 
-# Print the path of a system command such as smartctl, ufw, or sysctl, found only in $SBIN_PATH.
-# A user's PATH may lack /usr/sbin, and searching it would find a command planted in a
-# user-writable dir such as ~/.cargo/bin, which sudo would then run as root: sudo runs an
-# absolute path as given, without its secure_path.
+# Never search the user's PATH: sudo would run a planted command from e.g. ~/.cargo/bin as root.
 sbin_cmd() {
     PATH="$SBIN_PATH" command -v "$1"
 }
 
-# Print an item for one disk's SMART health, from smartctl -H. Its exit status is a bit mask:
-# 1 the command line didn't parse (or sudo refused it), 2 the device didn't open or is asleep,
-# 4 a SMART command failed, 8 the disk reports itself failing, 16 a prefailure attribute is at
-# or below its threshold now, 32 one was before, 64 the error log has errors, 128 the self-test
-# log does. -n standby leaves a disk that's spun down asleep. -H prints no serial number.
+# smartctl's exit bits: 1 bad args or sudo refused, 2 open failed or asleep, 4 SMART command
+# failed, 8 failing, 16 prefail attribute at threshold, 32 was before, 64 error log, 128 self-test log.
 status_smart_disk() {
     local smartctl="$1" dev="$2" label out status=0 health note=""
     shift 2
@@ -76,9 +65,6 @@ status_smart_disk() {
     fi
 }
 
-# Print an item for each disk's SMART health. smartctl needs root, so it runs with sudo -n, only
-# when sudo credentials are cached. smartd also reports failures through the warning hook; a
-# failing disk here makes status need attention.
 status_smart() {
     local smartctl scan dev rest args
     local label="Disk health (SMART)"
@@ -94,8 +80,7 @@ status_smart() {
         status_item unverified "$label: reading it needs root; run sudo -v, then status, to check it"
         return 0
     fi
-    # --scan names each device and its type without opening it, e.g.
-    # /dev/sda -d sat # /dev/sda [SAT], ATA device
+    # e.g. /dev/sda -d sat # /dev/sda [SAT], ATA device
     if ! scan="$(run_bounded 30 sudo -n "$smartctl" --scan 2>/dev/null)"; then
         status_item unverified "$label: smartctl couldn't list the disks; check them with sudo smartctl --scan"
         return 0
@@ -106,13 +91,11 @@ status_smart() {
     fi
     while read -r dev rest; do
         [[ "$dev" == /* ]] || continue
-        # The type, "-d <type>", is two arguments
         read -ra args <<< "${rest%%#*}"
         status_smart_disk "$smartctl" "$dev" ${args[@]+"${args[@]}"}
     done <<< "$scan"
 }
 
-# Print how old fwupd's metadata is: from the last 30 days, over 30 days old, or of unknown age
 fwupd_metadata_age() {
     local dir found=false
     for dir in $FWUPD_METADATA_DIRS; do
@@ -130,9 +113,7 @@ fwupd_metadata_age() {
     fi
 }
 
-# Information, not something setup does: the firmware updates fwupd's existing metadata lists. It
-# refreshes nothing and installs nothing. fwupdmgr would start fwupd over D-Bus, so a stopped fwupd
-# is left stopped.
+# fwupdmgr would start fwupd over D-Bus, so a stopped fwupd is left alone
 status_firmware() {
     local label="Firmware updates" out status=0 age updates
     if ! command -v fwupdmgr &>/dev/null; then
@@ -151,7 +132,6 @@ status_firmware() {
     out="$(run_bounded 60 fwupdmgr get-updates --json --no-unreported-check --no-metadata-check \
         --no-reboot-check 2>&1)" || status=$?
     if [ "$status" -eq 0 ] && grep -q '^ *{' <<< "$out"; then
-        # Each device with a release, as "<name> (<version> to <new version>)"
         if command -v jq &>/dev/null; then
             updates="$(sed -n '/^ *{/,$p' <<< "$out" | jq -r '[.Devices[]? | select((.Releases // []) | length > 0)
                 | "\(.Name) (\(.Version) to \(.Releases[0].Version))"] | join(", ")' 2>/dev/null)" || updates="?"
@@ -174,9 +154,8 @@ status_firmware() {
     fi
 }
 
-# Recommends would pull in a mail server, such as postfix, which asks debconf questions. enable
-# --now leaves a failed unit failed when it's already enabled, so a restart follows. The step
-# doesn't edit /etc/smartd.conf.
+# Recommends pull in a mail server that asks debconf questions. enable --now leaves an enabled
+# but failed unit failed, so restart it.
 install_smartd() {
     if ! apt_installed smartmontools; then
         apt_get install -y --no-install-recommends smartmontools || return 1
@@ -185,30 +164,22 @@ install_smartd() {
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
 }
 
-# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources
 smartd_hook_installed() {
     root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && ntfy_lib_installed
 }
 
 install_smartd_hook() {
-    # The ntfy code first, since the hook sources it as soon as it runs
     install_ntfy_lib && install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755
 }
 
-# In a VM smartd doesn't run, so its hook doesn't matter there
 smartd_hook_ready() {
     in_vm || smartd_hook_installed
 }
 
-# Succeeds when smartd's config runs smartd-runner on a warning, which runs the hook: an
-# uncommented line names it. The step leaves the file to you.
 smartd_runs_hooks() {
     grep -qE '^[^#]*smartd-runner' "$SMARTD_CONF" 2>/dev/null
 }
 
-# The hook that pushes smartd's warnings, the ntfy code it sources, and the smartd-runner line that
-# runs it. In a VM smartd doesn't run, so it doesn't matter there. status_health_alerts reports
-# the ntfy URL.
 status_smartd_hook() {
     local label="smartd's warnings pushed to ntfy ($SMARTD_HOOK)"
     if in_vm; then
@@ -228,8 +199,7 @@ status_smartd_hook() {
     fi
 }
 
-# Print the packages whose updates need a reboot, comma-separated. A reboot asked for outside dpkg
-# has no list, and sort failing on it would end status under pipefail.
+# A reboot asked for outside dpkg has no .pkgs file, and sort failing would end status under pipefail
 reboot_packages() {
     [ -f "$REBOOT_REQUIRED.pkgs" ] || return 0
     sort -u "$REBOOT_REQUIRED.pkgs" 2>/dev/null | join_lines ', '

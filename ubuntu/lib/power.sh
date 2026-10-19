@@ -1,6 +1,5 @@
 # shellcheck shell=bash
-# Power and recovery for the ubuntu step: the sleep targets, sleep.conf, and the sysctl settings.
-# ubuntu/install.sh sets the constants it uses.
+# ubuntu/install.sh sets the constants.
 
 sleep_masked() {
     local target
@@ -25,9 +24,8 @@ sysctl_file_written() {
     file_is "$SYSCTL_CONF" "$SYSCTL_CONTENT"
 }
 
-# Print each setting in $SYSCTL_CONTENT the kernel doesn't have, as "<key> <value it has>", one
-# per line. Fails when sysctl can't be found. The inotify limits count when at least as high,
-# since another file, such as an IDE's, may raise them further; kernel.panic must match.
+# Prints "<key> <current value>" per unmet setting. inotify limits only need to be at least as
+# high, since another file may raise them.
 sysctl_differences() {
     local key value sysctl have
     sysctl="$(sbin_cmd sysctl)" || return 1
@@ -43,8 +41,6 @@ sysctl_differences() {
     done < <(grep -E '^[a-z]' <<< "$SYSCTL_CONTENT")
 }
 
-# Succeeds when the kernel has each setting in $SYSCTL_CONTENT, which a failed sysctl --system
-# leaves undone
 sysctl_in_effect() {
     local differences
     differences="$(sysctl_differences)" && [ -z "$differences" ]
@@ -54,9 +50,8 @@ sysctl_written() {
     sysctl_file_written && sysctl_in_effect
 }
 
-# Print the files sysctl --system reads after $SYSCTL_CONF, whose values win over it, one per line
-# in the order it reads them. It reads the *.conf files in the SYSCTL_SOURCES dirs sorted by name,
-# only the first of each name in the dirs' order, then a source that's a file, /etc/sysctl.conf.
+# Files sysctl --system reads after $SYSCTL_CONF, which override it: *.conf sorted by name, first
+# of each name in dir order, then /etc/sysctl.conf.
 sysctl_files_read_later() {
     local LC_ALL=C source file name ours seen=" "
     ours="${SYSCTL_CONF##*/}"
@@ -76,8 +71,6 @@ sysctl_files_read_later() {
     done
 }
 
-# Print each setting the kernel lacks that a file sysctl --system reads after $SYSCTL_CONF sets,
-# as "<key> is <value>, set by <files>", one per line
 sysctl_overrides() {
     local key have files file later=()
     while IFS= read -r file; do later+=("$file"); done < <(sysctl_files_read_later)
@@ -92,10 +85,8 @@ sysctl_overrides() {
     done < <(sysctl_differences || true)
 }
 
-# Write $SYSCTL_CONF and put it in effect. --system loads every file in boot order, so a later
-# file's value still wins, where -p on the step's file would override it until the next reboot.
-# It fails when any key in any file does, such as one a VM's kernel lacks, after setting the rest,
-# so the step judges it by sysctl_in_effect instead.
+# --system, not -p, so a later file still wins as at boot. It fails on any unknown key in any file
+# (as in a VM), so judge by sysctl_in_effect instead.
 apply_sysctl() {
     local overrides line
     sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT" || return 1

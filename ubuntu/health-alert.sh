@@ -1,24 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The health alerts the ubuntu step's user units run, pushed to the ntfy topic whose URL
-# bash ubuntu/setup-alerts.sh saves in /etc/dotfiles/ntfy-url. With no URL saved, they do
-# nothing.
-#   status  run bash setup.sh --status --quick and bash ai_tools/setup.sh --status --quick, and
-#           when one exits 1 (a step failed) or 3 (something needs attention), push its "Needs
-#           attention" and "Failed steps" lines and its missing and unknown items, and when one
-#           exits with any other status, as on a syntax error or a kill, push that it couldn't run
-#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the
-#           message changes (ignoring digits) or a week has passed, and pushes "All clear" once when
-#           nothing needs attention; $HEALTH_STATE_FILE records the last push. sudo's cached
-#           credentials don't reach a user service, so the checks only root can make come back
-#           unverified here, which needs no attention; a push that has them ends with
-#           $ROOT_ONLY_NOTE.
-#   boot    push "<host> started at <time>", so an unexpected reboot gets noticed
-#           (dotfiles-boot-notice.service), once per boot: the user manager also starts it when
-#           it restarts, as after the first login before linger is on, or a restart of
-#           user@<uid>, which the docker step suggests. $BOOT_STATE_FILE records the boot's ID.
-# Ubuntu only. It fails when a runner couldn't run or a push failed, so the unit shows failed.
+# Pushes health alerts to ntfy for the ubuntu step's user units; does nothing with no URL saved.
+# Fails when a runner couldn't run or a push failed, so the unit shows failed.
 
 HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/ntfy.sh
@@ -26,12 +10,9 @@ source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
 # shellcheck source=lib/paths.sh
 source "$HEALTH_REPO_DIR/ubuntu/lib/paths.sh"
 
-# Tests point this into their sandbox
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 
-# A syntax error in lib/common.sh, as after a pull, would stop this script when it sources the
-# file, before it could push that the check couldn't run, as it does for a runner that crashes on
-# one. So status checks it first, with only what ntfy.sh gives.
+# A syntax error in lib/common.sh would kill this script on source, before it could push.
 if [ "${1:-}" == status ] && ! syntax="$("$BASH" -n "$HEALTH_REPO_DIR/lib/common.sh" 2>&1)"; then
     echo "lib/common.sh has a syntax error:" >&2
     printf '%s\n' "$syntax" >&2
@@ -46,25 +27,19 @@ if [ "${1:-}" == status ] && ! syntax="$("$BASH" -n "$HEALTH_REPO_DIR/lib/common
     exit 1
 fi
 
-# For status_parse_line and status_summary_line, which read the runners' reports
 # shellcheck source=../lib/common.sh
 source "$HEALTH_REPO_DIR/lib/common.sh"
-# ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
+# ntfy turns a message over 4096 bytes into an attachment; leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
-# How a status item only root could check says so, and the line a push then ends with
 ROOT_ONLY_TEXT='run sudo -v, then status'
 ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
-# "<epoch seconds of the last push> <cksum of the message pushed, or clear>"
+# "<epoch of last push> <cksum of message, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
-# An unchanged message is pushed again after this many seconds (a week)
 REPUSH_SECONDS=604800
-# The network may come up after the user manager starts the boot notice. The tries, each up to
-# ntfy_push's 10s curl --max-time plus the wait, must fit the unit's TimeoutStartSec=10min (see
-# health_unit in lib/alerts.sh): 20 * (10 + 10) = 400s.
+# The network may come up late. 20 * (10s curl timeout + 10s wait) must fit the unit's
+# TimeoutStartSec=10min (health_unit in lib/alerts.sh).
 BOOT_ATTEMPTS=20
 BOOT_RETRY_SECONDS=10
-# The kernel's ID for this boot, and the last boot the notice was pushed for. Tests point the first
-# into their sandbox.
 BOOT_ID_FILE="${DOTFILES_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
@@ -74,7 +49,6 @@ usage() {
     echo "that this machine started. Both do nothing until just alerts saves a URL."
 }
 
-# Print the saved URL. Fails, saying why, when the file is there but unreadable.
 ntfy_url() {
     [ -e "$NTFY_URL_FILE" ] || return 0
     if [ ! -r "$NTFY_URL_FILE" ]; then
@@ -84,8 +58,6 @@ ntfy_url() {
     head -n 1 "$NTFY_URL_FILE"
 }
 
-# Print the lines of a runner's --status output that need attention: the summary lines, then each
-# missing or unknown item as "<step>: <item>", from run_steps' "<step>:" headers
 attention_lines() {
     local line step="" summary="" items=""
     while IFS= read -r line || [ -n "$line" ]; do
@@ -101,7 +73,6 @@ attention_lines() {
     printf '%s%s' "$summary" "$items"
 }
 
-# Succeeds when a runner's --status output on stdin has an item only root could check
 has_root_only_items() {
     local line
     while IFS= read -r line || [ -n "$line" ]; do
@@ -113,7 +84,6 @@ has_root_only_items() {
     return 1
 }
 
-# Print the first lines of stdin that fit in MESSAGE_MAX_BYTES, and a note when some didn't
 truncate_message() {
     LC_ALL=C awk -v max="$MESSAGE_MAX_BYTES" '
         !full && size + length($0) + 1 <= max { out = out $0 "\n"; size += length($0) + 1; next }
@@ -125,13 +95,12 @@ truncate_message() {
     '
 }
 
-# Print a date given in epoch seconds. GNU and Rust date take -d @<seconds>, BSD date -r.
+# GNU and Rust date take -d @<seconds>, BSD date -r
 format_epoch() {
     date -d "@$1" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || date -r "$1" '+%Y-%m-%d %H:%M %Z'
 }
 
-# Record a push as "<now> <hash>". A failed write only warns: the push went out, and the next run
-# pushes again.
+# A failed write only warns: the push went out
 save_push() {
     { mkdir -p "$(dirname "$HEALTH_STATE_FILE")" &&
         printf '%s %s\n' "$1" "$2" > "$HEALTH_STATE_FILE"; } 2>/dev/null ||
@@ -153,10 +122,7 @@ status_alert() {
             *)
                 echo "$runner --status --quick exited $status:" >&2
                 printf '%s\n' "$out" | tail -n 5 >&2
-                # A runner that crashes, such as on a syntax error after a pull, checks nothing,
-                # so it's pushed like a problem. Its last line goes in the push, not the hash,
-                # since it can name something that changes each run, such as a temp file. A
-                # runner killed with no output has none.
+                # The last line goes in details, not the hash, since it can change each run
                 message="${message}Health check couldn't run: $runner exited $status"$'\n'
                 last="$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" || last=""
                 [ -z "$last" ] || details="$details"$'\n'"$runner's last output: $last"
@@ -165,11 +131,9 @@ status_alert() {
         esac
     done
     now="$(date +%s)"
-    # A missing or unreadable state file counts as never pushed
     read -r last_time last_hash 2>/dev/null < "$HEALTH_STATE_FILE" || true
     case "$last_time" in '' | *[!0-9]*) last_time="" last_hash="" ;; esac
     if [ -z "$message" ]; then
-        # Never pushed, or the last push was the all-clear: nothing to clear
         if [ -z "$last_hash" ] || [ "$last_hash" == clear ]; then
             echo "Nothing needs attention."
             return 0
@@ -185,7 +149,7 @@ status_alert() {
     fi
     message="$(truncate_message <<< "$message")"
     ! "$root_only" || message="$message"$'\n'"$ROOT_ONLY_NOTE"
-    # Without the digits, so a measured value that moves, such as free disk space, isn't a change
+    # Digits dropped so a moving value, such as free disk space, isn't a change
     hash="$(printf '%s' "$message" | tr -d '0-9' | cksum | awk '{ print $1 }')"
     if [ "$hash" == "$last_hash" ] && [ $((now - last_time)) -lt "$REPUSH_SECONDS" ]; then
         echo "Unchanged since the last push on $(format_epoch "$last_time"); not pushing again until $(format_epoch $((last_time + REPUSH_SECONDS)))."
@@ -205,7 +169,7 @@ boot_notice() {
     local url attempt=1 host boot_id="" last=""
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
-    # Without a boot ID, every start pushes, as a boot might have gone unnoticed
+    # The user manager can restart within a boot; without a boot ID, every start pushes
     boot_id="$(cat "$BOOT_ID_FILE" 2>/dev/null)" || boot_id=""
     last="$(cat "$BOOT_STATE_FILE" 2>/dev/null)" || last=""
     if [ -n "$boot_id" ] && [ "$boot_id" == "$last" ]; then
@@ -222,7 +186,6 @@ boot_notice() {
         attempt=$((attempt + 1))
         sleep "$BOOT_RETRY_SECONDS"
     done
-    # A failed write only warns: the next start of the user manager pushes again
     [ -z "$boot_id" ] || { mkdir -p "$(dirname "$BOOT_STATE_FILE")" &&
         printf '%s\n' "$boot_id" > "$BOOT_STATE_FILE"; } 2>/dev/null ||
         echo "Couldn't save the boot's ID to $BOOT_STATE_FILE." >&2

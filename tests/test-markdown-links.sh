@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# broken_links, which scripts/check-docs.sh and scripts/check-skills.sh run on the docs, flags a
-# local link whose file or #anchor is missing, in an inline link or a reference definition. A link
-# with a "title" checks its target alone, and a link shown in a code block isn't checked. A # line
-# in a code block, its fence indented or not, makes no anchor.
+# broken_links, which scripts/check-docs.sh and scripts/check-skills.sh run.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

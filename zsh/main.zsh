@@ -1,16 +1,11 @@
 ZSH_DIR=${${(%):-%x}:A:h}
 
-# A shell started without ~/.zprofile, such as `zsh -i` from an app, still gets the full PATH, and
-# Homebrew's completions on fpath
+# For shells started without ~/.zprofile, such as `zsh -i` from an app
 source "$ZSH_DIR/path.zsh"
 
-# Source a tool's shell init script, cached in ~/.cache/zsh to save running the tool on every
-# start. Usage: _cached_init [-f <file>] <tool> <init args...>. Regenerates the cache when the
-# binary is newer, or when it resolves to a different path or gets other arguments, which the
-# cache's first line records: Homebrew keeps a bottle's build-time mtime, so after an upgrade only
-# the path (with its version) shows the change. With -f, the first line also records <file>'s path
-# and mtime, or that it's missing, so the cache follows a config the init script depends on even
-# when it's deleted or swapped for an older one. zstat reads the mtime without forking.
+# _cached_init [-f <config>] <tool> <args...>: source the tool's cached init script. The cache's
+# first line keys it on the binary's resolved path (Homebrew bottles keep build-time mtimes, so the
+# versioned path shows an upgrade), the args, and the config's mtime.
 _cached_init() {
     local file mtime
     if [[ $1 == -f ]]; then
@@ -30,7 +25,7 @@ _cached_init() {
     [[ -r $cache ]] && read -r first < $cache
     if [[ $first != $key || ${bin:A} -nt $cache ]]; then
         mkdir -p ${cache:h}
-        # Write to a temp file first, so shells starting at the same time never read half of it
+        # Temp file, so a concurrent shell never reads half of it
         if ! { print -r -- $key && "$bin" "${@:2}" } >| $cache.$$; then
             rm -f $cache.$$
             return 1
@@ -40,24 +35,21 @@ _cached_init() {
     source $cache
 }
 
-# functions.zsh, title.zsh, and hooks.zsh register their hooks with it
 autoload -U add-zsh-hook
 
-# command-not-found comes before plugins, whose mise activation wraps the handler it defines.
-# Defined after, it would replace mise's, which installs a missing tool from the mise config.
+# command-not-found before plugins, so mise's activation wraps its handler rather than losing to it
 for _f in basic-settings functions aliases options history key-bindings completions title hooks \
     reminders command-not-found plugins; do
     source "$ZSH_DIR/$_f.zsh"
 done
 unset _f _human_tty
 
-# zoxide and starship both ask to be initialized at the end of .zshrc; zoxide after compinit
+# Both ask to be initialized last
 _cached_init zoxide init zsh
-# starship prints an error on every prompt in a dumb terminal, such as an editor's shell
+# starship errors on every prompt in a dumb terminal
 [[ $TERM == dumb ]] || _cached_init starship init zsh
 
-# Per-machine settings, secrets and work-only aliases. Not part of the dotfiles repo.
 [[ -f $HOME/.zshrc.local ]] && source "$HOME/.zshrc.local"
 
-# Load last, so it wraps the widgets every plugin above defines
+# Last, so it wraps every other widget
 _source_plugin zsh-syntax-highlighting

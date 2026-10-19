@@ -2,19 +2,9 @@
 set -euo pipefail
 
 # Install T3 Code and set its settings, and on Ubuntu run its server as a service.
-#
-# On Ubuntu, the server runs as a systemd user service, which starts at boot (with linger, from the
-# ubuntu step) and which the Mac reaches over Tailscale HTTPS. When its browser needs root to run in
-# Chrome's sandbox, the step prints the command for you to run, since it never runs the
-# user-writable t3 under sudo.
-#
-# A temp HOME doesn't isolate this step. On macOS it installs its cask and runs launchctl. On
-# Ubuntu it installs libatomic1 and runs systemctl --user. Test the cask in a macOS VM or on a spare
-# Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such as an OrbStack machine.
-#
-# T3 has no read-only check for its browser's setup, so on Ubuntu --status runs `t3 browser setup`
-# without sudo, relying on it changing nothing then and saying "needs root" when there's something
-# to do (as of T3 Code 0.1.0). Recheck that when T3 updates. --status --quick skips it.
+# Installs a cask and runs launchctl (macOS), or apt and systemctl --user (Ubuntu), whatever HOME
+# is; test in a macOS VM or spare Mac, and an Ubuntu VM with systemd such as an OrbStack machine.
+# --status runs `t3 browser setup` without sudo, which changes nothing (T3 Code 0.1.0).
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -28,34 +18,20 @@ STEP_NEEDS="homebrew"
 
 T3_CODE_SETTINGS="$HOME/.t3/userdata/settings.json"
 T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
-# T3 Code reads T3CODE_TELEMETRY_ENABLED only from its environment, and an app opened from the Dock
-# or Finder gets launchd's, not the shell's. At each login this LaunchAgent sets the variable in
-# launchd's environment, then opens T3 Code: one agent does both, so it can't open T3 Code before
-# the variable is set. macOS's "Reopen windows when logging back in" can still start T3 Code
-# first, and open then only brings that copy forward, so the README says to quit and reopen it
-# then. It opens T3 Code because T3 Connect, which the phone app goes through, runs only while
-# the app is open. The app also reads the variable from the login shell, but gives that read 5 s,
-# so a slow shell would leave telemetry on without launchd's copy. The app's name carries its release stage, so the agent opens it by bundle ID.
+# T3 Code reads T3CODE_TELEMETRY_ENABLED only from its environment, which from the Dock is
+# launchd's. One agent sets it then opens the app (by bundle ID), so the order holds; T3 Connect,
+# which the phone app needs, runs only while the app is open.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 
-# The LaunchAgent isn't loaded now, since it would open T3 Code, which must be quit for the
-# settings below. launchd loads it at the next login.
+# Not loaded now: it would open T3 Code, which must be quit for the settings merge.
 t3_code_files() {
     "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
 }
-# Where `t3 service install` writes the unit, whatever XDG_CONFIG_HOME is. The systemd user manager
-# doesn't see an XDG_CONFIG_HOME set in the shell either, so the drop-in goes beside the unit.
+# Not XDG_CONFIG_HOME: neither `t3 service install` nor the systemd user manager reads the shell's.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
-# A drop-in, since `t3 service install` and `t3 update` rewrite the unit itself. It pins the port:
-# without one, `t3 serve` falls back to a free port when 3773 is taken, while `tailscale serve` and
-# pairing links point at 3773. Pinned, the server fails its bind instead when something other than
-# a T3 Code server on the same data holds the port, and T3's unit (StartLimitIntervalSec=300,
-# StartLimitBurst=5, RestartSec=5) stops retrying soon after. A second server on the same data
-# never gets that far, since T3 (as of 0.1.0) locks ~/.t3/userdata; t3_code_service_serving_nothing
-# says what the service does then. It binds the server to loopback, since `t3 serve` otherwise
-# listens on every interface and ufw lets the tailnet reach every port: `tailscale serve` is the
-# way in, over HTTPS. It leaves systemd-oomd's preference to T3, since sparing the server would
-# spare a runaway agent in its cgroup too, while Restart= brings the server back.
+# A drop-in, since `t3 service install` and `t3 update` rewrite the unit. The port is pinned because
+# `t3 serve` otherwise picks a free one while `tailscale serve` points at 3773. Loopback only, since
+# ufw lets the tailnet reach every port; `tailscale serve` is the way in.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
 T3_CODE_PORT=3773
 T3_CODE_HOST=127.0.0.1
@@ -64,9 +40,6 @@ Environment=T3CODE_TELEMETRY_ENABLED=false
 Environment=T3CODE_PORT=$T3_CODE_PORT
 Environment=T3CODE_HOST=$T3_CODE_HOST"
 
-# The default model and its effort, values you can change (replace_custom_value).
-# t3_code_choose_custom_values sets T3_CODE_REPLACE_MODEL and T3_CODE_REPLACE_EFFORT to whether to
-# write each over yours, which t3_code_server_filter reads.
 T3_CODE_MODEL="claude-opus-5-5"
 T3_CODE_MODEL_NAME="T3 Code's default model (defaultModelSelection.model)"
 T3_CODE_REPLACE_MODEL=false
@@ -74,27 +47,14 @@ T3_CODE_EFFORT="medium"
 T3_CODE_EFFORT_NAME="T3 Code's default effort (defaultModelSelection.options effort)"
 T3_CODE_REPLACE_EFFORT=false
 
-# What the server settings cover, for the step's messages
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
 
-# Server settings, used by T3 Code on the Mac and by the server it starts on Ubuntu. Existing
-# worktree setup actions wait for completion: T3 has no global async default, so each action list
-# gets it.
-# A model of your own keeps its instance and options, a custom Claude instance's included, and its
-# effort is left to you too. Replacing it switches to Claude's instance, which drops another
-# provider's options. Model options are set in place, so any others and their order survive a
-# re-run. The global worktreeCleanup holds the worktree rules. Objects are set key by key, never
-# replaced whole, so keys a newer T3 Code adds to them survive and a re-run settles. Project
-# overrides are left alone, but for their setup actions.
-# T3 Code writes only values that differ from a key's default, so a value equal to it never
-# settles. Checked against T3 Code 0.1.0; scripts/check-t3-settings.sh checks every key, and warns
-# about such values, against the latest release in CI.
-# Print the server filter, keeping a model and effort of your own unless T3_CODE_REPLACE_MODEL and
-# T3_CODE_REPLACE_EFFORT say to replace them
+# Objects are set key by key so keys a newer T3 Code adds survive. T3 Code drops values equal to a
+# key's default, so setting one never settles (scripts/check-t3-settings.sh warns). Setup actions
+# get async=false per list, as T3 has no global default.
 t3_code_server_filter() {
     # shellcheck disable=SC2016 # jq variables, not shell ones
     printf '%s\n' '
-    # Set an option in the list of a model selection, in place
     def set_option($id; $value):
         if any(.[]; .id == $id)
         then map(if .id == $id then .value = $value else . end)
@@ -115,8 +75,7 @@ t3_code_server_filter() {
         | .defaultModelSelection.model = "'"$T3_CODE_MODEL"'"
       else .
       end
-    # The 1M context window goes with the effort set here, so an effort of your own keeps your
-    # context window too. A window of your own stays unless this run replaced your model or effort.
+    # The 1m context window goes with our effort; a custom window stays unless model or effort changed
     | if .defaultModelSelection.model == "'"$T3_CODE_MODEL"'"
       then .defaultModelSelection.instanceId //= "claudeAgent"
         | .defaultModelSelection.options |= ((. // [])
@@ -159,22 +118,18 @@ t3_code_server_filter() {
 '
 }
 
-# Print the default model in the server settings, or nothing when it's unset or the file can't be
-# read
 t3_code_model() {
     jq -r '.defaultModelSelection.model // empty' "$T3_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Print the default model's effort, the same way. It counts only on the repo's model, whichever
-# instance runs it: the server filter drops another provider's options when it replaces a model.
+# Only on the repo's model, whichever instance runs it
 t3_code_effort() {
     jq -r --arg model "$T3_CODE_MODEL" '.defaultModelSelection | select(.model == $model)
         | [.options[]? | select(.id == "effort") | .value][0] // empty' \
         "$T3_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Decide whether to replace a model or effort of your own, asking with a terminal, for
-# t3_code_server_filter. A model of your own that stays leaves its effort alone.
+# A model of your own that stays leaves its effort alone
 t3_code_choose_custom_values() {
     T3_CODE_REPLACE_MODEL=false
     T3_CODE_REPLACE_EFFORT=false
@@ -186,7 +141,6 @@ t3_code_choose_custom_values() {
     fi
 }
 
-# Status items naming a model or effort of your own. The effort counts only with the repo's model.
 t3_code_status_custom_values() {
     local model effort
     model="$(t3_code_model)"
@@ -197,13 +151,11 @@ t3_code_status_custom_values() {
     [ -z "$effort" ] || status_custom_value "$T3_CODE_EFFORT_NAME" "$effort" "$T3_CODE_EFFORT"
 }
 
-# Status items for the server settings, and a model or effort of your own
 t3_code_status_server_settings() {
     status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
     t3_code_status_custom_values
 }
 
-# Desktop app settings
 T3_CODE_CLIENT_FILTER='
     .notificationMode = "notifications-and-sound"
     | .inAppNotificationsEnabled = true
@@ -213,10 +165,8 @@ T3_CODE_CLIENT_FILTER='
     | .wordWrap = false
 '
 
-# The app's name can change between releases. Ask brew which app the t3-code cask installs, and
-# otherwise take any T3 Code*.app beside where brew puts it, or in /Applications, except the separate nightly build. A caller that already asked brew passes its
-# answer, cask_app_path's output, so brew isn't asked again.
-# Usage: t3_code_app_path [cask app path]
+# The app's name changes between releases, so fall back to any non-nightly T3 Code*.app.
+# Usage: t3_code_app_path [cask_app_path output, to skip asking brew again]
 t3_code_app_path() {
     local app dir=/Applications
     if [ $# -gt 0 ]; then
@@ -238,11 +188,8 @@ t3_code_app_path() {
     return 1
 }
 
-# Print how the t3-code cask is installed, a tab, and its app's path, as cask_state does, asking
-# brew once. "renamed" is a cask brew lists whose app has a name other than the one the cask now
-# gives: T3 Code can rename itself in an update, which can get there before the cask does. The app
-# is then installed, not gone, and brew's record catches up at the next upgrade-ai-tools once the
-# cask does. A renamed app brew doesn't list is "other".
+# As cask_state, plus "renamed": brew lists the cask but the app renamed itself in an update before
+# the cask caught up. A renamed app brew doesn't list is "other".
 t3_code_cask_state() {
     local state app found
     IFS=$'\t' read -r state app <<< "$(cask_state t3-code)"
@@ -261,13 +208,10 @@ t3_code_macos_items() {
         "Turn off T3 Code's telemetry in launchd's environment" t3_code_telemetry_off turn_off_t3_code_telemetry
 }
 
-# Succeeds when launchd's environment has the variable now
 t3_code_telemetry_off() {
     [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
 }
 
-# Set the variable in launchd's environment now. When that fails, the LaunchAgent still sets it at
-# the next login.
 turn_off_t3_code_telemetry() {
     if ! launchctl setenv T3CODE_TELEMETRY_ENABLED false; then
         echo "  Couldn't set T3CODE_TELEMETRY_ENABLED in launchd's environment, so telemetry stays on" >&2
@@ -277,14 +221,13 @@ turn_off_t3_code_telemetry() {
     echo "  Turned off telemetry (restart T3 Code if it's running)"
 }
 
-# Usage: configure_t3_code [cask app path], as t3_code_app_path takes it
+# Usage: configure_t3_code [cask app path]
 configure_t3_code() {
     echo "Configuring T3 Code..."
     local app_name
     app_name="$(t3_code_app_path "$@" || true)"
     app_name="${app_name##*/}"
     app_name="${app_name%.app}"
-    # The settings below apply even when this fails
     local result=0
     echo "  LaunchAgent that opens T3 Code at login with telemetry off:"
     t3_code_files copy_file || result=1
@@ -304,23 +247,16 @@ configure_t3_code() {
     return "$result"
 }
 
-# A T3 Code server started by hand or over SSH. The Mac's SSH connection (as of T3 Code 0.1.0)
-# runs ~/.t3/ssh-launch/<key>/run-t3.sh serve, which downloads t3 to ~/.t3/runtime and execs it.
-# HOME is escaped, since pgrep and =~ read the patterns as extended regexes.
+# A server started by hand, or over SSH from the Mac via ~/.t3/ssh-launch and ~/.t3/runtime (0.1.0)
 T3_CODE_HOME_RE="$(regex_escape "$HOME")"
 T3_CODE_CLI_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/.* serve( |\$)|(^|/)t3 (serve|start)( |\$)"
 T3_CODE_SSH_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/"
 
-# Succeeds when a process is the service's own, in its cgroup. The service's launcher and the
-# server it starts share it.
 t3_code_in_service_cgroup() {
     grep -q '/t3code\.service$' "/proc/$1/cgroup" 2>/dev/null
 }
 
-# Print each T3 Code server running outside the service, one "<pid> <kind> <command line>" per
-# line. Any of them shares ~/.t3/userdata's database with the service's server.
-# - ssh: one the Mac started over SSH, from a t3 under ~/.t3
-# - manual: `t3 serve` or `t3 start` run by hand
+# Print "<pid> ssh|manual <command line>" per T3 Code server outside the service
 t3_code_other_servers() {
     local line pid cmd kind
     while IFS= read -r line; do
@@ -335,7 +271,6 @@ t3_code_other_servers() {
     done < <(pgrep -a -u "$(id -u)" -f "$T3_CODE_CLI_SERVER_PATTERN" || true)
 }
 
-# Print what a server from t3_code_other_servers is, from its line there, and how to stop it
 t3_code_describe_server() {
     local pid kind cmd name fix
     pid="${1%% *}"
@@ -355,7 +290,6 @@ t3_code_describe_server() {
     echo "PID $pid, $name ($cmd); to fix it, $fix"
 }
 
-# Linger starts user services at boot, without a login. The ubuntu step turns it on.
 t3_code_lingering() {
     [ -e "/var/lib/systemd/linger/$(id -un)" ]
 }
@@ -368,20 +302,15 @@ t3_code_service_active() {
     systemctl --user is-active --quiet t3code.service 2>/dev/null
 }
 
-# Succeeds when <pid>, the service's launcher, has a child process: the server it runs
 t3_code_launcher_has_server() {
     pgrep -P "$1" > /dev/null 2>&1
 }
 
-# Succeeds when the service is active but its launcher runs no server. As of T3 Code 0.1.0, a
-# server that finds another server holding ~/.t3/userdata exits, and the launcher then stays up
-# serving nothing until the service restarts, even once the other server stops. The launcher also
-# runs no server for a moment while it swaps one for another, as in an update, so this checks 3
-# times, 1 s apart, or once under --quick.
+# Active with no server: in 0.1.0 a server that finds ~/.t3/userdata locked exits, and the
+# launcher idles until restarted. Checks 3 times since a swap (update) briefly has none too.
 t3_code_service_serving_nothing() {
     local pid check
     for check in 1 2 3; do
-        # MainPID is 0 while the service is inactive, failed, or between restarts
         pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null || true)"
         case "$pid" in '' | 0 | *[!0-9]*) return 1 ;; esac
         ! t3_code_launcher_has_server "$pid" || return 1
@@ -393,14 +322,11 @@ t3_code_service_serving_nothing() {
     done
 }
 
-# The service's log, which T3's unit writes
 # shellcheck disable=SC2088 # shown, not expanded
 T3_CODE_SERVICE_LOG="~/.t3/userdata/logs/boot-service.log"
 
-# Start the service. wait_for_t3_code_service reports a start that fails. A failed unit is reset
-# first, since one that hit its start limit, as when another program held the port, refuses a start
-# for 5 minutes otherwise. systemd 259 leaves Result at exit-code then, not start-limit-hit, so
-# the check is for any failed unit.
+# Reset any failed unit: one at its start limit refuses starts for 5 min, and systemd 259 reports
+# it as exit-code, not start-limit-hit.
 start_t3_code_service() {
     if systemctl --user is-failed --quiet t3code.service 2>/dev/null; then
         systemctl --user reset-failed t3code.service || true
@@ -408,8 +334,7 @@ start_t3_code_service() {
     systemctl --user start t3code.service || true
 }
 
-# Wait up to 10 s for the service to be running. Fails, saying where to look, when it isn't. A
-# server that crashes on start shows as active between restarts, so it must keep one PID for 2 s.
+# A crash-looping server shows active between restarts, so require one PID for 2 s (10 s max).
 wait_for_t3_code_service() {
     local _ pid last="" polls=0
     for _ in $(seq 1 20); do
@@ -427,10 +352,7 @@ wait_for_t3_code_service() {
     return 1
 }
 
-# Print the local address of each TCP listener on the server's port that isn't on loopback, one per
-# line, from ss -Hltn, whose fourth column is <address>:<port>, such as 127.0.0.1:3773, [::1]:3773,
-# or *:3773. The drop-in sets the host, but T3 could take one from elsewhere, such as its settings
-# or a --host flag, so the step checks what actually listens. Fails when ss does.
+# Print each non-loopback listener on the port. T3 may take a host from elsewhere than the drop-in.
 t3_code_exposed_listeners() {
     local listeners
     listeners="$(ss -Hltn 2>/dev/null)" || return 1
@@ -438,14 +360,12 @@ t3_code_exposed_listeners() {
         { addr = $4 }
         length(addr) > length(port) && substr(addr, length(addr) - length(port) + 1) == port {
             host = substr(addr, 1, length(addr) - length(port))
-            # An interface scope, as in 127.0.0.1%lo
+            # Strip an interface scope, as in 127.0.0.1%lo
             sub(/%[^]]*$/, "", host)
             if (host !~ /^127\./ && host != "[::1]" && host !~ /^\[::ffff:127\./) print addr
         }' <<< "$listeners"
 }
 
-# Fail, saying what to do, when the server listens anywhere but loopback, where ufw would let the
-# tailnet reach it without tailscale serve's HTTPS
 t3_code_check_listeners() {
     local exposed
     if ! exposed="$(t3_code_exposed_listeners)"; then
@@ -459,18 +379,15 @@ t3_code_check_listeners() {
     return 1
 }
 
-# Returns 1 when installing t3 failed, whatever the installer exited with, and 2 only when you
-# declined the sudo it needs
+# Returns 1 on failure, 2 when sudo was declined
 install_t3_cli() {
     if [ -x "$HOME/.local/bin/t3" ]; then
         echo "  t3 already installed."
         return 0
     fi
-    # t3 links against libatomic, which build-essential (from the homebrew step) brings in
     if ! apt_installed libatomic1; then
         confirm_sudo_changes "Install libatomic1, which the t3 CLI needs" || return 2
-        # Stale package lists would point at versions the mirror no longer has
-        # shellcheck disable=SC2119 # it passes options on to apt-get update, and needs none here
+        # shellcheck disable=SC2119 # needs no options
         apt_get_update || return 1
         apt_get install -y libatomic1 || return 1
     fi
@@ -486,8 +403,7 @@ t3_code_drop_in_current() {
     file_is "$T3_CODE_SERVICE_DROP_IN" "$T3_CODE_SERVICE_DROP_IN_CONTENT"
 }
 
-# Check systemd's loaded unit separately from the running process: daemon-reload changes the
-# unit properties, but the process keeps its original environment until restarted.
+# The loaded unit, not the running process, which keeps its environment until restarted
 t3_code_drop_in_loaded() {
     local environment
     [ "$(systemctl --user show -p NeedDaemonReload --value t3code.service 2>/dev/null)" == no ] || return 1
@@ -497,8 +413,6 @@ t3_code_drop_in_loaded() {
         [[ "$environment" == *" T3CODE_HOST=$T3_CODE_HOST "* ]]
 }
 
-# Have systemd load the drop-in when the unit exists and hasn't: a new drop-in, or a reload that
-# failed last run
 t3_code_load_drop_in() {
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ] || t3_code_drop_in_loaded; then
         return 0
@@ -514,7 +428,6 @@ t3_code_process_environ() {
     tr '\0' '\n' < "/proc/$1/environ"
 }
 
-# Succeeds when the service's running process has the drop-in's environment
 t3_code_running_env_current() {
     local pid environment
     pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" || return 1
@@ -526,16 +439,13 @@ t3_code_running_env_current() {
         [ "$pid" == "$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" ]
 }
 
-# A running service that hasn't loaded the drop-in, or started before it did, as after a failed
-# restart. Unreadable process state can't show that the drop-in took effect, so it counts too.
+# Unreadable process state counts as pending
 t3_code_restart_pending() {
     [ -f "$T3_CODE_SERVICE_DROP_IN" ] || return 1
     t3_code_service_active || return 1
     ! { t3_code_drop_in_loaded && t3_code_running_env_current; }
 }
 
-# Say which server outside the service, from its t3_code_other_servers line, keeps the step from
-# changing the server's settings and the service, and how to stop it
 t3_code_print_other_server() {
     echo "  Another T3 Code server is running, so skipping the server settings and the service, which"
     echo "  would run a second one:"
@@ -548,25 +458,17 @@ configure_t3_code_ubuntu() {
     install_t3_cli || cli_status=$?
     [ "$cli_status" -eq 0 ] || have_cli=false
 
-    # Two servers on one database conflict, and a running server writes settings.json too. So
-    # while another server runs, change neither the settings nor the service, which
-    # `t3 service install` or a start would run beside it.
+    # Another server shares the database and writes settings.json, so leave both alone
     local other
     other="$(t3_code_other_servers | head -1)"
     if [ -n "$other" ]; then
         t3_code_print_other_server "$other"
     else
-        # Settings that fail to apply don't stop the service or the browser setup below. A drop-in
-        # that isn't written and loaded does stop the service, which would serve on every
-        # interface without it.
         update_t3_code_server || update_status=$?
         [ "$update_status" -eq 0 ] || step_failed=true
-        # The service runs the server from boot, so the phone app (through T3 Connect) and the
-        # Mac can reach it without a login
         if ! "$have_cli"; then
             echo "  Without the t3 CLI there's no service to install; skipping it."
         elif [ "$update_status" -eq 2 ]; then
-            # A running service whose restart was declined is left running, as it was
             echo "  Without its drop-in, the service would serve on every interface, so setup doesn't" >&2
             echo "  install, enable, or start it." >&2
         else
@@ -577,18 +479,13 @@ configure_t3_code_ubuntu() {
     if "$have_cli"; then
         setup_t3_code_browser || step_failed=true
     fi
-    # A failed install, setting, service, or browser setup fails the step, after the rest above; a
-    # declined install doesn't
     [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
-# Write the service's drop-in when it isn't current, then have systemd load it. Neither touches the
-# running server, which keeps its environment until it restarts. Fails when either fails.
 t3_code_write_drop_in() {
     local tmp=""
     if ! t3_code_drop_in_current; then
-        # Through write_back, since a drop-in cut short without its host line would have the
-        # enabled unit serve on every interface at the next boot
+        # write_back: a truncated drop-in without its host line would serve on every interface
         if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
             ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
             rm -f "$tmp"
@@ -599,19 +496,12 @@ t3_code_write_drop_in() {
     t3_code_load_drop_in
 }
 
-# Set the server settings and write the service's drop-in (telemetry, port, and host). The
-# running server writes settings.json too, and keeps its environment until it restarts, so when
-# either needs changing a running service is stopped around the change, after asking once. A
-# declined restart still writes and loads the drop-in, which applies at the next restart, such as
-# a reboot, and leaves the settings for a later run. Fails with 2 when the drop-in isn't written
-# and loaded, and then doesn't start a service it stopped. Fails with 1 when only something else
-# failed.
+# Stops a running service around the change, since it writes settings.json too. Returns 2 when the
+# drop-in isn't written and loaded (and leaves a stopped service stopped), 1 for other failures.
 update_t3_code_server() {
     local settings_set=false stopped=false result=0 drop_in_ok=true drop_in_was_current=false
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
-    # Loading a current drop-in, as after a failed reload, needs no restart unless the running
-    # server lacks its environment
     if t3_code_drop_in_current; then
         drop_in_was_current=true
         t3_code_load_drop_in || return 2
@@ -648,7 +538,6 @@ update_t3_code_server() {
     if ! "$settings_set"; then
         json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
     fi
-    # A drop-in that was current is loaded above
     "$drop_in_was_current" || t3_code_write_drop_in || drop_in_ok=false
     if "$stopped" && "$drop_in_ok"; then
         start_t3_code_service
@@ -667,9 +556,6 @@ update_t3_code_server() {
     fi
 }
 
-# Install the service, or repair an installed one. Enabling or starting it stops no thread, so it
-# happens without asking. Fails when the service doesn't stay up, or when there's none to repair
-# and linger is off.
 ensure_t3_code_service() {
     local changed=false
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
@@ -699,8 +585,7 @@ ensure_t3_code_service() {
             changed=true
         fi
         wait_for_t3_code_service || return 1
-        # A launcher left serving nothing by a server that has since stopped. Restarting it stops
-        # no thread, so it happens without asking.
+        # Restarting a launcher that serves nothing stops no thread, so don't ask
         if t3_code_service_serving_nothing; then
             systemctl --user restart t3code.service || true
             wait_for_t3_code_service || return 1
@@ -722,15 +607,11 @@ ensure_t3_code_service() {
     warn_t3_code_service_docker_group
 }
 
-# Print a process's supplementary group IDs, from the Groups line of /proc/<pid>/status. Fails
-# when it can't read them.
 t3_code_process_groups() {
     sed -n 's/^Groups:[[:space:]]*//p' "/proc/$1/status" 2>/dev/null
 }
 
-# The docker step adds you to the docker group while the systemd user manager runs, and the
-# service it starts keeps the manager's groups until the manager restarts. Warn, without failing,
-# when you're in the group and the service isn't.
+# The service keeps the user manager's groups from before the docker step added you
 warn_t3_code_service_docker_group() {
     local gid pid groups
     [[ " $(id -nG "$(id -un)" 2>/dev/null) " == *" docker "* ]] || return 0
@@ -744,10 +625,7 @@ warn_t3_code_service_docker_group() {
     echo "  \`sudo systemctl restart user@$(id -u)\`, which stops the service and tmux."
 }
 
-# Ubuntu blocks Chrome's sandbox, which T3 Code's browser runs in, until an AppArmor
-# profile allows it. `t3 browser setup` adds the profile and any libraries the browser is missing.
-# Without sudo it changes nothing and, when there's something to do, says it needs root. Returns 0
-# when there's nothing to do, 1 when it needs root, and 2 on failure.
+# Without sudo, `t3 browser setup` changes nothing. Returns 0 ready, 1 needs root, 2 failed.
 t3_code_browser_ready() {
     local report
     report="$("$HOME/.local/bin/t3" browser setup 2>&1)" || return 2
@@ -770,8 +648,6 @@ setup_t3_code_browser() {
     echo "  The step doesn't run it: t3 is writable by you and updates itself, so check it's the one you installed."
 }
 
-# Status's check that the service runs. --quick checks once that it's active, instead of
-# watching it for up to 10 s for a server that crashes on start.
 t3_code_service_running_now() {
     if status_quick; then
         t3_code_service_active
@@ -780,7 +656,6 @@ t3_code_service_running_now() {
     fi
 }
 
-# Status items for T3 Code servers outside the service, each of which shares its data
 t3_code_status_other_servers() {
     local servers line
     servers="$(t3_code_other_servers)"
@@ -793,7 +668,6 @@ t3_code_status_other_servers() {
     done <<< "$servers"
 }
 
-# Print an item for whether everything listening on the server's port is on loopback
 t3_code_status_listeners() {
     local exposed name="Port $T3_CODE_PORT open only on loopback"
     if ! exposed="$(t3_code_exposed_listeners)"; then
@@ -805,9 +679,7 @@ t3_code_status_listeners() {
     fi
 }
 
-# Print an item for whether the server is linked to T3 Connect and publishes agent activity, which
-# the phone app needs for push notifications. t3 connect status reads what's saved; the server
-# sets up an authorized link only when it starts.
+# The phone app needs this for push notifications. The server links only when it starts.
 t3_code_status_connect() {
     local name="T3 Connect linked and publishing agent activity" state
     state="$("$HOME/.local/bin/t3" connect status --json 2>/dev/null |
@@ -825,7 +697,6 @@ t3_code_status_connect() {
     esac
 }
 
-# Print an item for whether the service is installed and runs a server
 t3_code_status_service() {
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
         status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
@@ -841,7 +712,6 @@ t3_code_status_service() {
 }
 
 status() {
-    # jq reads the settings and t3 connect status; the rest doesn't need it
     local jq=true
     status_require_cmd jq "T3 Code's settings" || jq=false
     if is_macos; then
@@ -852,8 +722,7 @@ status() {
         if [ "$state" == renamed ]; then
             status_item ok "t3-code (cask), as ${app##*/}"
         else
-            # Whether brew lists the cask goes to status_cask as its listing, so brew isn't asked
-            # again
+            # Pass the listing so brew isn't asked again
             case "$state" in brew | gone) listing="t3-code"$'\t'"$app" ;; esac
             status_cask t3-code "$app" "$listing"
         fi
@@ -913,12 +782,9 @@ apply() {
     if is_macos; then
         require_cmd brew || return 1
     elif [ ! -x "$HOME/.local/bin/t3" ]; then
-        # To download the t3 installer
         require_cmd curl || return 1
     fi
     if is_macos; then
-        # Telemetry and the settings don't need the app. brew is asked about the cask once, for
-        # the install and the app's path.
         local cask_failed=0 state app
         IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
         if [ "$state" == renamed ]; then

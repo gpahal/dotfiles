@@ -2,13 +2,7 @@
 # shellcheck disable=SC2016 # $ in awk programs
 set -euo pipefail
 
-# Move the pinned vim and tmux plugins to their default branch's HEAD, and the vendored vim-plug
-# to its latest release, in this repo's vim/vimrc, tmux/plugins.lock, and vim/plug.vim. Prints a
-# link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps, which
-# move the installed plugins to the new pins, for that.
-# A repo whose HEAD can't be read keeps its pin and fails the script once the rest are done.
-# Needs git and the network.
-# Usage: bump-plugins.sh
+# Bump the repo's vim and tmux plugin pins to HEAD and vim-plug to its latest release; $HOME is untouched.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -24,7 +18,6 @@ usage() {
     echo "Move the pinned vim and tmux plugins, and the vendored vim-plug, to their latest versions."
 }
 
-# Print a repo's default branch HEAD, e.g. head_sha tpope/vim-sensible
 head_sha() {
     local sha
     sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "https://github.com/$1" HEAD | awk 'NR == 1 { print $1 }')" || return 1
@@ -32,8 +25,7 @@ head_sha() {
     echo "$sha"
 }
 
-# Replace a file with what a command prints from it, so a failed command leaves the file as it
-# was. write_back keeps its mode. e.g. rewrite "$file" awk '...'
+# Replace a file with a command's output from it; a failed command leaves it as it was.
 rewrite() {
     local file="$1" tmp
     shift
@@ -46,8 +38,7 @@ rewrite() {
     return 1
 }
 
-# Report a pin, and print its new sha when it moved. Fails when the HEAD can't be read.
-# e.g. new="$(check_pin tpope/vim-sensible "$old")"
+# Report on stderr; print the new sha on stdout only when it moved.
 check_pin() {
     local repo="$1" old="$2" new
     if ! new="$(head_sha "$repo")"; then
@@ -62,7 +53,6 @@ check_pin() {
     fi
 }
 
-# The Plug lines' repos and pins, as "<repo> <sha>"
 vim_pins() {
     sed -n "s/^ *Plug '\([^']*\)'.*'commit': '\([0-9a-f]\{40\}\)'.*/\1 \2/p" "$VIMRC"
 }
@@ -92,12 +82,11 @@ bump_tmux_plugins() {
     return "$status"
 }
 
-# Print the highest of the x.y.z versions on stdin, as BSD and GNU sort both order them
+# Portable across BSD and GNU sort
 highest_version() {
     sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
 }
 
-# Print the highest x.y.z tag
 latest_plug_tag() {
     GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "https://github.com/$PLUG_REPO" | sed -n 's|.*refs/tags/||p' |
         grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | highest_version
@@ -111,14 +100,14 @@ bump_plug_vim() {
         echo "  Couldn't read vim-plug's release tags, so it stays at $old." >&2
         return 1
     fi
-    # Only a newer release: the highest of the two isn't the vendored one
+    # Never downgrade
     if [ "$new" == "$old" ] ||
         [ "$(printf '%s\n' "$old" "$new" | highest_version)" == "$old" ]; then
         echo "  vim-plug: unchanged"
         return 0
     fi
     tmp="$(mktemp)" || return 1
-    # A file that isn't vim-plug, such as an error page, mustn't replace it
+    # Reject an error page
     if ! fetch "https://raw.githubusercontent.com/$PLUG_REPO/$new/plug.vim" "$tmp" "vim-plug $new" ||
         [ "$(head -n 1 "$tmp")" != '" vim-plug: Vim plugin manager' ] ||
         ! write_back "$tmp" "$PLUG_VIM"; then

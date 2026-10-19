@@ -1,18 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Push the alerts to a phone through ntfy: smartd's disk warnings, the UPS's events, the daily
-# health alert, and the boot notice. Ask for a topic name, which goes to ntfy.sh, or a topic's full
-# https URL, without showing what you type, save the URL in /etc/dotfiles/ntfy-url, which the hooks
-# the ubuntu step installs (ubuntu/smartd-notify.sh and ubuntu/ups-notify.sh) and
-# ubuntu/health-alert.sh read, and send a test push. The topic is the URL's only secret, so it's
-# read from the terminal, or stdin, never taken as an argument, and no message shows it. That keeps
-# it out of ps listings, shell history, and diagnostics; the saved file is readable by every local
-# user (save_url).
-# --test runs the installed smartd hook with a made-up warning, and the UPS notifier, when a UPS is
-# set up, with a test event, which they push to ntfy. The topic is yours to pick, so setup.sh
-# doesn't run this.
-# Ubuntu only.
+# Saves a ntfy topic URL for the alerts and sends a test push; --test fires the hooks.
+# The topic is the URL's only secret, so it's read from the terminal, never an argument.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -20,7 +10,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 # shellcheck source=lib/ntfy.sh
 source "$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
-# SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE, as the ubuntu step installs them
 # shellcheck source=lib/paths.sh
 source "$DOTFILES_DIR/ubuntu/lib/paths.sh"
 
@@ -33,7 +22,6 @@ usage() {
     echo "test events. Ubuntu only."
 }
 
-# Read the topic or URL: hidden from a terminal, else a line from stdin. Prints it trimmed.
 read_topic() {
     local input=""
     if [ -t 0 ]; then
@@ -46,8 +34,6 @@ read_topic() {
     printf '%s' "${input%"${input##*[![:space:]]}"}"
 }
 
-# Print the topic URL for a topic name, as ntfy.sh's, or a full https URL, as given. Fails for
-# anything else. A topic name follows ntfy's rule.
 topic_url() {
     if [[ "$1" =~ ^https://[^[:space:]/]+/[^[:space:]]+$ ]]; then
         printf '%s' "$1"
@@ -58,15 +44,11 @@ topic_url() {
     fi
 }
 
-# Prints nothing when the file is missing or unreadable
 current_url() {
     head -n 1 "$NTFY_URL_FILE" 2> /dev/null || true
 }
 
-# Root owns the file, and every user may read it, so the health alerts, which run as you, and the
-# UPS notifier, which runs as nut, can. So can any other local account or service, such as a
-# compromised daemon, which could then read or send alerts. The machine has one login user, and
-# the topic's secrecy matters most off the machine.
+# World-readable so the health alerts (run as you) and the UPS notifier (run as nut) can read it
 save_url() {
     write_root_file "$NTFY_URL_FILE" "$1" 0644
 }
@@ -91,8 +73,7 @@ run_test_warning() {
     echo "  When one doesn't arrive, journalctl -t dotfiles-smartd says why."
 }
 
-# Run the UPS notifier as upsmon does, as the nut user. It always exits 0, so its status says
-# nothing about the push.
+# The notifier always exits 0, so its status says nothing about the push
 run_test_ups() {
     if [ ! -x "$UPS_NOTIFY" ] || ! id nut &>/dev/null; then
         echo "The UPS notifier isn't installed (no UPS set up yet); skipping its test."

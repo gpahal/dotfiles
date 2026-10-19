@@ -1,15 +1,11 @@
 # shellcheck shell=bash
-# Health alerts for the ubuntu step: the user units that run ubuntu/health-alert.sh, a daily
-# status check and a boot notice, which push to the ntfy URL in NTFY_URL_FILE.
-# ubuntu/install.sh sets the constants it uses.
+# Health alert user units for the ubuntu step. ubuntu/install.sh sets the constants.
 
-# Print a path quoted for an ExecStart line, where systemd expands % specifiers and $ variables
+# systemd expands % and $ in ExecStart
 systemd_quote() {
     printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
 }
 
-# health_unit <unit>: print the content the step writes for one of HEALTH_UNITS. The services run
-# the script from this repo, by the absolute path it has when the step runs.
 health_unit() {
     local script
     script="$(systemd_quote "$DOTFILES_DIR/ubuntu/health-alert.sh")"
@@ -48,8 +44,7 @@ health_units_written() {
     done
 }
 
-# Succeeds when a dir is in a linked git worktree rather than the main checkout. The units run the
-# script by its path, so they'd stop when the worktree is removed.
+# The units run the script by path, so a removed worktree would break them
 in_git_worktree() {
     local git_dir common_dir
     command -v git &>/dev/null || return 1
@@ -58,14 +53,11 @@ in_git_worktree() {
     [ "$git_dir" != "$common_dir" ]
 }
 
-# Succeeds when the units shouldn't run this checkout: it's a git worktree, and
-# DOTFILES_ALLOW_WORKTREE=1, for a throwaway machine such as just test-ubuntu's, isn't set
 health_units_worktree() {
     [ "${DOTFILES_ALLOW_WORKTREE:-}" != 1 ] && in_git_worktree "$DOTFILES_DIR"
 }
 
-# Succeeds when each unit has been loaded since its file last changed. A failed daemon-reload
-# leaves systemd running the old ExecStart, though the files match.
+# A failed daemon-reload leaves the old ExecStart running though the files match
 health_units_loaded() {
     local unit
     for unit in "${HEALTH_UNITS[@]}"; do
@@ -82,9 +74,7 @@ boot_notice_on() {
     systemctl --user is-enabled --quiet dotfiles-boot-notice.service 2>/dev/null
 }
 
-# Write the units, and turn on the timer and the boot notice. That needs no sudo. Enabling the
-# boot notice doesn't start it, so it first pushes at the next boot. Without a user manager to
-# reach, as in a container or before linger, the rest waits for the next run.
+# The boot notice is enabled, not started, so it first pushes at the next boot
 configure_health_alerts() {
     local unit changed=false
     if health_units_worktree; then
@@ -120,9 +110,7 @@ configure_health_alerts() {
     echo "  ntfy once just alerts saves a URL."
 }
 
-# status_last_run <label> <unit>: report a failed last run of an installed alert service, such as
-# a push that couldn't reach ntfy. systemd keeps the Result until the next run; it's empty or
-# success when the unit hasn't failed.
+# status_last_run <label> <unit>
 status_last_run() {
     local result
     [ -e "$HEALTH_UNIT_DIR/$2" ] || return 0
@@ -141,7 +129,6 @@ status_health_alerts() {
     elif health_units_worktree && ! health_units_exist; then
         status_item missing "$label: not installed; run the ubuntu step from the main checkout"
     elif health_units_worktree; then
-        # The units run the main checkout's path, which this worktree's can't match
         status_item info "$label: checked only from the main checkout, which setup installs them from"
     elif ! health_units_written; then
         status_item missing "$label: differ from what setup writes; re-run the ubuntu step"

@@ -1,20 +1,14 @@
 # shellcheck shell=bash
-# The Markdown reading that scripts/check-docs.sh, scripts/check-skills.sh, and the manual-steps
-# steps share: sections, links, and anchors. It defines functions and MD_FENCE, and runs nothing.
 
-# The line that opens or closes a code block, as an awk regex: optional indentation, then three or
-# more backticks or tildes. Each function here skips code blocks by it, so a # line in one, such as
-# a shell comment, is never a heading, and a link shown in one isn't a link.
+# Code fence; every reader skips code blocks so a # line or link in one doesn't count.
 MD_FENCE='^[[:space:]]*(```|~~~)'
 
-# Print the lines of a Markdown file under the last of the given headings, each found inside the
-# one before, down to the next heading at the same level or above, without blank lines at either
-# end. Fails when a heading is missing or the section is empty.
+# Print the section under nested headings, trimmed. Fails when a heading is missing or the section is empty.
 # e.g. md_section README.md "## Manual steps" "### Ubuntu"
 md_section() {
     local file="$1"
     shift
-    # The headings go through the environment, since awk -v would expand backslashes in them
+    # Via the environment, since awk -v expands backslashes
     HEADINGS="$(printf '%s\t' "$@")" awk -v fence="$MD_FENCE" '
         BEGIN { n = split(ENVIRON["HEADINGS"], want, "\t") - 1 }
         $0 ~ fence { in_code = !in_code }
@@ -33,11 +27,7 @@ md_section() {
     ' "$file"
 }
 
-# Print a section of a Markdown doc for the terminal, indented, as md_section finds it. Links
-# shrink to their text, plus where they point: the URL for a web link, and for a link into the
-# repo, the doc's path, as text (see <doc>) (doc_links). The manual-steps steps print their lists
-# from the READMEs this way, so the docs are the only copy. Fails when a heading is missing.
-# e.g. print_doc_section README.md "## Manual steps" "### Ubuntu"
+# Print md_section indented for the terminal, with links as plain text.
 print_doc_section() {
     local file="$1" text
     shift
@@ -50,15 +40,11 @@ print_doc_section() {
         -e 's/\*\*//g'
 }
 
-# Rewrite the links in Markdown text read from stdin that point into the repo, for the terminal:
-# [text](<path>#<anchor>) becomes text (see <doc>), with <doc> the path, relative to the repo, of
-# the doc it points to, which is the doc the text comes from when the link has only an anchor.
-# Web links stay. The repo is DOTFILES_DIR, which lib/common.sh sets.
+# Rewrite repo links on stdin as "text (see <repo-relative path>)"; web links stay.
 # Usage: doc_links <doc the text comes from>
 doc_links() {
-    # Paths go through the environment, since awk -v would expand backslashes in them
+    # Via the environment, since awk -v expands backslashes
     DOC="$1" ROOT="${DOTFILES_DIR:?}" awk '
-        # A path with its . and .. parts resolved
         function clean(path, parts, n, i, out, k) {
             n = split(path, parts, "/")
             k = 0
@@ -101,9 +87,7 @@ doc_links() {
     '
 }
 
-# Print the local link targets in a Markdown file: inline links' and reference definitions', less
-# any "title" after the target, and none from a code block, which shows a link without making one.
-# A target with no ., /, or # is a template's placeholder, such as [PR #123](url).
+# Print local link targets. A target with no ., /, or # is a placeholder, such as [PR #123](url).
 local_links() {
     awk -v fence="$MD_FENCE" '$0 ~ fence { in_code = !in_code; next }
         in_code { next }
@@ -116,8 +100,7 @@ local_links() {
         awk '{ print $1 }' | grep -vE '^(https?|mailto):|^<' | grep -E '[./#]' || true
 }
 
-# Print the anchors of a Markdown file's headings, as GitHub makes them: lowercased, punctuation
-# dropped, spaces turned into hyphens, and -1, -2, ... added to repeats
+# Heading anchors as GitHub makes them
 anchors() {
     awk -v fence="$MD_FENCE" '$0 ~ fence { in_code = !in_code; next }
         !in_code && /^#+ / {
@@ -127,7 +110,6 @@ anchors() {
         }' "$1"
 }
 
-# Print a line for each local link in a Markdown file that doesn't resolve, down to its #anchor
 broken_links() {
     local md="$1" target file anchor
     while IFS= read -r target; do

@@ -1,18 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# The docker step writes Docker's own source, rolling it back when apt can't use it, and lets
-# unattended-upgrades install Docker's updates. With Docker installed, it rewrites a source for an
-# older release. Until Docker publishes packages for this release, it waits without failing.
-# test-apt-sources.sh covers the other states apt_source_state reports, and a failed key download.
+# test-apt-sources.sh covers apt_source_state's other states and a failed key download.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-# apt-config stays a sentinel: only the ubuntu step checks the daily upgrade schedule
+# apt-config stays a sentinel: only the ubuntu step checks the upgrade schedule
 load_script docker/install.sh
-# No containerd shim runs, so a stopped daemon runs no containers
 stub pgrep 'exit 1'
 as_os ubuntu
 
@@ -21,13 +17,9 @@ DOCKER_UNATTENDED_CONF="$SANDBOX/apt/52dotfiles-docker"
 DOCKER_DAEMON_CONFIG="$SANDBOX/daemon.json"
 OS_RELEASE="$SANDBOX/os-release"
 
-# Packages listed in $SANDBOX/installed are installed. Installing Docker's adds them.
 stub dpkg-query 'grep -qxF "${!#}" "'"$SANDBOX"'/installed" && echo "install ok installed"'
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
-# An update from Docker's source alone fails when $SANDBOX/docker-update-fails exists, and a full
-# update when $SANDBOX/update-fails does. With $SANDBOX/lists-locked, the first fails the way
-# apt-get update does while another one runs. With $SANDBOX/docker-locked-once or
-# $SANDBOX/full-locked-once, the next update of that kind fails that way, and the lock is then free.
+# Flag files in $SANDBOX make updates fail; lists-locked fails as a concurrent apt-get update does
 stub apt-get 'S="'"$SANDBOX"'"
 locked() {
     echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 6 (apt-get)" >&2
@@ -49,12 +41,10 @@ stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.service" | try-restart*) exit 0 ;; *) exit 1 ;; esac'
 stub dockerd
 stub_sudo_exec
-# fetch downloads Docker's key, which has the fingerprint the step pins
+# fetch gives the key the step pins
 replace_fn fetch 'echo key > "$2"'
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $DOCKER_KEY_FPR"
-# The key goes under /etc/apt/keyrings
 DOCKER_KEYRING="$SANDBOX/keyrings/docker.asc"
-# curl answers the HEAD request for Docker's Release file with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 
 reset() {
@@ -66,8 +56,7 @@ reset() {
     unset DOTFILES_ASSUME_YES
 }
 
-# Declined: nothing written. The list names the install, the daemon config, and the update
-# origins, but not the units, which the packages enable.
+# Declined: the units aren't listed, since the packages enable them
 reset
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
@@ -76,13 +65,11 @@ assert_contains "$RUN_OUTPUT" "set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
 assert_contains "$RUN_OUTPUT" "Let unattended-upgrades install Docker updates"
 assert_not_contains "$RUN_OUTPUT" "Enable docker.socket"
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written without a yes"
-# Status reports Docker missing, and doesn't check its apt source
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Docker Engine from Docker's apt repo"
 assert_contains "$RUN_OUTPUT" "missing    $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
 assert_not_contains "$RUN_OUTPUT" "apt source"
 
-# On a yes, Docker's own source is written, with unattended-upgrades set up
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_file_contains "$DOCKER_SOURCES" "Signed-By: $DOCKER_KEYRING"
@@ -90,14 +77,12 @@ assert_file_contains "$DOCKER_UNATTENDED_CONF" '"origin=Docker,label=Docker CE";
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Docker origins allowed in unattended-upgrades"
 
-# Re-run: nothing to do
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already installed and set up"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
-# Docker's source alone fails to update right after the step writes it: it's removed, and the
-# step fails
+# Docker's source fails its first update: it's removed
 reset
 touch "$SANDBOX/docker-update-fails"
 export DOTFILES_ASSUME_YES=1
@@ -106,8 +91,7 @@ assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 update --er
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was kept after its update failed"
 assert_file_not_contains "$STUB_LOG" "apt-get install"
 
-# Previous source/key restoration is covered directly in test-apt-sources.sh.
-# Without a key from before, the new one goes too
+# Without an old key, the new one goes too
 reset
 rm -f "$DOCKER_KEYRING"
 touch "$SANDBOX/docker-update-fails"
@@ -115,8 +99,6 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
 [ ! -e "$DOCKER_KEYRING" ] || fail "Docker's new key was kept after its source's update failed"
 mkdir -p "$(dirname "$DOCKER_KEYRING")"
-# Writing the key fails partway: the old key stays whole, with no temp file beside it, and no
-# source is written
 reset
 echo "old key" > "$DOCKER_KEYRING"
 stub install 'dest="${!#}"
@@ -132,8 +114,6 @@ rm "$SANDBOX/install-key-fails" "$STUB_DIR/install"
 assert_eq "old key" "$(cat "$DOCKER_KEYRING")" "Docker's key after writing it failed partway"
 assert_eq docker.asc "$(/bin/ls -A "$(dirname "$DOCKER_KEYRING")")" "files beside Docker's key after writing it failed"
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written after the key failed"
-# Writing the source fails: the old key comes back, the old source stays, or none is left when
-# there was none, and the step fails
 stub mv 'if [ "${!#}" = "'"$DOCKER_SOURCES"'" ] && rm "'"$SANDBOX"'/mv-fails-once" 2> /dev/null; then
     exit 1
 fi
@@ -157,7 +137,6 @@ for before in source none; do
     assert_file_not_contains "$STUB_LOG" "apt-get"
 done
 
-# Writing the source fails every time, so putting the old one back fails too: the step says so
 stub mv '[ "${!#}" != "'"$DOCKER_SOURCES"'" ] || exit 1
 exec /bin/mv "$@"'
 reset
@@ -169,7 +148,6 @@ assert_contains "$RUN_OUTPUT" "Writing $DOCKER_SOURCES failed, and putting the o
 assert_not_contains "$RUN_OUTPUT" "so the old one is back"
 rm "$STUB_DIR/mv"
 
-# A docker.sources that can't be read fails the step before it touches the key
 reset
 echo "old key" > "$DOCKER_KEYRING"
 echo "old source" > "$DOCKER_SOURCES"
@@ -181,8 +159,7 @@ assert_eq "old key" "$(cat "$DOCKER_KEYRING")" "Docker's key when docker.sources
 assert_eq "old source" "$(cat "$DOCKER_SOURCES")" "an unreadable docker.sources"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 
-# Another apt-get update holds the lists lock: docker.sources stays, since Docker's source isn't
-# at fault, and the step fails
+# A lists lock isn't Docker's fault, so docker.sources stays
 reset
 touch "$SANDBOX/lists-locked"
 export DOTFILES_ASSUME_YES=1
@@ -192,7 +169,6 @@ assert_contains "$RUN_OUTPUT" "Another apt-get update holds apt's lock"
 assert_file_not_contains "$STUB_LOG" "apt-get install"
 rm "$SANDBOX/lists-locked"
 
-# Another update holds the lock for a moment, during either update: the step waits it out
 for update in docker full; do
     reset
     touch "$SANDBOX/$update-locked-once"
@@ -202,8 +178,7 @@ for update in docker full; do
     assert_file_contains "$STUB_LOG" "install -y docker-ce"
 done
 
-# Docker's source updates, but the full update fails: another source may be at fault, so
-# docker.sources stays, and the step fails
+# A failed full update may be another source's fault, so docker.sources stays
 reset
 touch "$SANDBOX/update-fails"
 export DOTFILES_ASSUME_YES=1
@@ -212,9 +187,7 @@ assert_contains "$RUN_OUTPUT" "it may not be Docker's source"
 [ -e "$DOCKER_SOURCES" ] || fail "docker.sources was removed after the full update failed"
 assert_file_not_contains "$STUB_LOG" "apt-get install"
 
-# Both updates succeed, and the install waits for dpkg's lock. Then, in this run only, the step
-# asks about the docker group on its own, since it's root-equivalent; you're in it once
-# $SANDBOX/in-group exists, which usermod makes.
+# The docker group is root-equivalent, so it gets its own question
 reset
 stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
 stub usermod 'touch "'"$SANDBOX"'/in-group"'
@@ -224,7 +197,6 @@ assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive a
 assert_contains "$RUN_OUTPUT" "root-equivalent"
 assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
 assert_contains "$RUN_OUTPUT" "Added you to the docker group."
-# Declined in that run: you stay out
 reset
 rm "$SANDBOX/in-group"
 eval "real_$(declare -f confirm)"
@@ -240,8 +212,7 @@ assert_file_not_contains "$STUB_LOG" "usermod"
 eval "$(declare -f real_confirm | sed 1s/real_confirm/confirm/)"
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 
-# Docker has no packages for this release yet: a fresh install says so, and waits without failing
-# or changing anything
+# Docker has no packages for this release yet: wait without failing
 reset
 echo 404 > "$SANDBOX/http-status"
 export DOTFILES_ASSUME_YES=1
@@ -251,8 +222,7 @@ assert_contains "$RUN_OUTPUT" "Docker hasn't published packages for Ubuntu resol
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_file_not_contains "$STUB_LOG" "usermod"
 
-# --- Docker installed, and its source for an older release, as a release upgrade leaves it. The
-# step rewrites the source, unless Docker has no repo for this release yet. ---
+# --- Docker installed, with a source for an older release, as a release upgrade leaves it ---
 set_up_docker() {
     reset
     printf '%s\n' docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > "$SANDBOX/installed"
@@ -270,12 +240,10 @@ docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
 cp "$DOCKER_SOURCES" "$SANDBOX/before"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; re-run the docker step"
-# Declined: nothing written
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Rewrite Docker's apt source for resolute"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_exit 0 cmp -s "$SANDBOX/before" "$DOCKER_SOURCES"
-# Approved: rewritten, checked with an update from it alone, and then ok
 export DOTFILES_ASSUME_YES=1
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -285,9 +253,7 @@ assert_file_not_contains "$STUB_LOG" "install -y docker-ce"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
 
-# Docker has no repo for this release yet: the source stays as it is, and the step says so without
-# listing the rewrite it can't do. Nothing here can fix that, so the step doesn't fail, and status
-# says what it waits for.
+# No repo for this release yet: nothing can fix it, so the step doesn't fail
 set_up_docker
 docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
 cp "$DOCKER_SOURCES" "$SANDBOX/before"
@@ -301,7 +267,6 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; Docker hasn't published packages for Ubuntu resolute yet"
 
-# Missing curl fails the step before it runs anything
 reset
 export DOTFILES_ASSUME_YES=1
 hide curl

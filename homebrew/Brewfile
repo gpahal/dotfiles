@@ -1,53 +1,40 @@
-# Formulae for the homebrew step, each with what it is. Ubuntu gets them all but the ones in the
-# `if OS.mac?` block. Casks and App Store apps stay in homebrew/install.sh's CASKS and
-# MAS_APPS, since it skips apps installed outside Homebrew, where brew bundle would fail. So brew
-# bundle cleanup with this file would uninstall every cask: don't run it.
+# Casks live in homebrew/install.sh, so `brew bundle cleanup` with this file would remove them all.
 
-# Core
 brew "git"  # Git, newer than the system's
 brew "vim"  # Vim, with the config the vim step copies
 brew "starship"  # The zsh prompt
 
-# Terminal multiplexer
 brew "tmux"  # Terminal multiplexer, with the config the tmux step copies
 
-# Search and navigation
 brew "fzf"  # Fuzzy finder
 brew "ripgrep"  # Regex search (rg)
 brew "fd"  # A simpler find
 brew "broot"  # Interactive directory navigator
 brew "zoxide"  # A cd that learns your habits
 
-# Git tools
 brew "gh"  # GitHub from the terminal
 brew "git-delta"  # Syntax-highlighting pager for git (delta)
 brew "lazygit"  # Terminal UI for git
 brew "difftastic"  # Structural diff, git's diff tool
 brew "git-absorb"  # Fixup commits for staged changes, aimed at the commits they belong to
 
-# File viewing
 brew "bat"  # cat with syntax highlighting
 brew "bat-extras"  # bat-powered scripts
 brew "glow"  # Markdown in the terminal
 
-# Disk and process tools
 brew "dust"  # du alternative
 brew "duf"  # df alternative
 brew "procs"  # ps alternative
 
-# Modern replacements
 brew "eza"  # ls alternative
 brew "sd"  # sed alternative
 brew "doggo"  # DNS client
 
-# Data processing
 brew "jq"  # JSON processor
 brew "yq"  # YAML, TOML, and XML processor
 
-# Networking
 brew "httpie"  # HTTP client
 
-# Development utilities
 brew "shellcheck"  # Shell script linter
 brew "tokei"  # Code statistics
 brew "hyperfine"  # CLI benchmarking
@@ -58,21 +45,17 @@ brew "atuin"  # Shell history with fuzzy search
 brew "tlrc"  # tldr client
 brew "lazydocker"  # Terminal UI for Docker
 
-# Encryption
 brew "age"  # File encryption
 
-# Version management and package managers
 brew "mise"  # Version manager for dev tools
 brew "uv"  # Python packages, environments, and tools
 brew "pnpm"  # JavaScript packages
 brew "bun"  # JavaScript runtime and packages
 
-# Zsh plugins
 brew "zsh-syntax-highlighting"  # Highlights commands as you type
 brew "zsh-autosuggestions"  # Suggests commands from history as you type
 
-# Formulae with no Linux build. zsh isn't here: the login shell is the system's, macOS's /bin/zsh
-# or apt's on Ubuntu, so it stays usable if Homebrew breaks.
+# No Linux build. zsh comes from the system so the login shell survives a broken Homebrew.
 if OS.mac?
   brew "terminal-notifier"  # macOS notifications from scripts
   brew "pam-reattach"  # The PAM module Touch ID for sudo needs inside tmux (macos/setup-touch-id-sudo.sh)

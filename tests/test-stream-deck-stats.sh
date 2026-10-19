@@ -2,18 +2,6 @@
 set -euo pipefail
 # serial
 
-# The Stream Deck plugin's stats.js reads vm_stat, vm.swapusage, ps, and netstat output as
-# Activity Monitor counts them, and draws each stat key as an SVG, with a placeholder when a stat
-# is missing. Its sampler survives macmon failing to start, ignores a stopped macmon that exits
-# late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
-# installed, and starts the sparklines afresh after a reset, and a kind's rate and sparkline once
-# it's needed again. Fixed command output stands in for the real machine's, and a fake spawn for
-# macmon, apart from one real spawn of a file that isn't executable.
-# plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
-# hotkey does, and runs it again once that one exits. A key whose render throws shows a
-# placeholder, logged once, while the others update. A fake Stream Deck socket and open-in stand
-# in for the real ones.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -21,12 +9,11 @@ setup_sandbox
 command -v node &> /dev/null || skip "node isn't installed"
 STATS="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js"
 
-# Run JavaScript with stats.js as `s`, and print what it prints
 js() {
     node -e "const s = require(process.argv[1]); $1" "$STATS"
 }
 
-# Memory used: anonymous less purgeable, plus wired and compressed, in 16 KB pages
+# anonymous - purgeable + wired + compressed, in 16 KB pages
 vm_stat='Mach Virtual Memory Statistics: (page size of 16384 bytes)
 Pages free:                                   194180.
 Pages wired down:                             286445.
@@ -40,8 +27,7 @@ assert_eq '{"used":571211776,"total":2147483648}' \
     "$(js 'console.log(JSON.stringify(s.parseSwap("total = 2048.00M  used = 544.75M  free = 1503.25M  (encrypted)")))')" \
     "swap"
 
-# Only en interfaces' link rows count, including one without an address, and one that's down (en5*),
-# whose counters would otherwise come back as one burst when it's up again
+# Only en link rows count, down ones (en5*) too, so their counters don't come back as one burst
 netstat='Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
 lo0        16384 <Link#1>                      100     0       5000      100     0       5000     0
 en0        1500  <Link#11>   36:53:3e:4a:e9:c0     10     0       1000       20     0        200     0
@@ -60,7 +46,6 @@ assert_eq "0 B 999 B 1.5 KB 120 MB 1.0 GB" \
     "$(js 'console.log([0, 999, 1500, 120e6].map((b) => s.formatBytes(b)).join(" "), s.formatBytes(1024 ** 3, 1024))')" \
     "byte formatting"
 
-# Each key draws its stat, or a dash when it's missing
 render() {
     SAMPLE="$2" js "console.log(s.render('$1', { cpuHistory: [10, 20], gpuHistory: [], ...JSON.parse(process.env.SAMPLE) }))"
 }
@@ -82,14 +67,12 @@ for kind in overview cpu memory swap top gpu temperature power disk network; do
 done
 assert_contains "$(render gpu '{"macmonMissing": true}')" "needs macmon"
 assert_contains "$(render power '{"power": {"system": 7.75, "cpu": 0.42, "gpu": 0.03}}')" ">7.8 W</text>"
-# A field macmon no longer gives, as after an update renames it, shows a dash
+# A field macmon dropped, as after a rename, shows a dash
 assert_contains "$(render power '{"power": {"system": 7.75, "gpu": 0.03}}')" ">CPU — · GPU 0.0</text>"
 assert_contains "$(js 'console.log(s.placeholder("top"))')" ">TOP CPU</text>"
 assert_contains "$(render temperature '{"temperature": {"cpu": 95, "gpu": 44}}')" "#f87171"
 
-# Run JavaScript inside an async function with stats.js as `s`, a fake spawn as `spawnProcess`,
-# whose processes are in `children`, and `logs`, which `log` adds to. An unhandled error event
-# would end node with a non-zero status.
+# An unhandled error event would end node with a non-zero status.
 sampler_js() {
     node -e "(async () => {
 const s = require(process.argv[1]);
@@ -109,8 +92,7 @@ $1
 })().catch((e) => { console.error(e); process.exit(1); });" "$STATS" "${@:2}"
 }
 
-# A macmon that can't start, here a real spawn of a file that isn't executable, emits an error
-# event after spawn returns. The sampler logs it rather than crashing the plugin.
+# A real spawn of a non-executable file emits an error event after spawn returns
 touch "$SANDBOX/macmon-not-executable"
 out="$(sampler_js 'const sampler = s.createSampler({ log, macmonPath: process.argv[2] });
 await sampler.sample(["gpu"]);
@@ -118,8 +100,7 @@ await new Promise((r) => setTimeout(r, 300));
 console.log(logs.join("\n"));' "$SANDBOX/macmon-not-executable")" || fail "a macmon that can't start ended node: $out"
 assert_contains "$out" "couldn't run macmon:"
 
-# A stopped macmon that exits, or prints, after its replacement started changes nothing: the
-# replacement keeps running, a third doesn't start, and stopping kills the replacement
+# A stopped macmon's late exit or output changes nothing
 assert_eq '{"spawned":2,"killed":[true,true],"gpu":null}' "$(sampler_js 'const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess });
 await sampler.sample(["gpu"]);
 sampler.stop();
@@ -131,8 +112,7 @@ sampler.stop();
 console.log(JSON.stringify({ spawned: children.length, killed: children.map((c) => c.killed), gpu }));')" \
     "a stopped macmon's late exit"
 
-# A macmon that keeps exiting, with a status, by a signal, or even with 0, is restarted at once
-# twice, then only after a wait, and each exit is logged
+# A macmon that keeps exiting, even with 0, is restarted twice, then after a wait
 crashing_macmon() {
     local code="$1" signal="$2" shown="$3"
     out="$(sampler_js "const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess });
@@ -151,8 +131,7 @@ crashing_macmon 1 null 1
 crashing_macmon null "'SIGSEGV'" SIGSEGV
 crashing_macmon 0 null 0
 
-# A macmon that prints a sample, then exits, still backs off: a sample doesn't end the row of
-# failures. A run that lasted a minute does, so one that exits now and then never waits.
+# A sample doesn't reset the backoff; a run that lasted a minute does
 out="$(sampler_js 'const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess });
 for (let i = 0; i < 6; i++) {
   await sampler.sample(["gpu"]);
@@ -175,8 +154,7 @@ console.log(logs.join("\n"));')"
 assert_eq 6 "$(printf '%s\n' "$out" | head -n 1)" "macmon starts when each run lasts two minutes"
 assert_not_contains "$out" "trying again"
 
-# A macmon spawn throws for, such as ENOEXEC from a file that isn't a program, is a failed start
-# like any other: logged, backed off from, and the other stats still update
+# A spawn that throws (ENOEXEC) is a failed start like any other
 out="$(sampler_js 'let spawns = 0;
 const throwingSpawn = () => {
   spawns++;
@@ -191,8 +169,7 @@ console.log(logs.join("\n"));')" || fail "a spawn that throws ended node: $out"
 assert_eq "3 true" "$(printf '%s\n' "$out" | head -n 1)" "macmon starts, and CPU samples, while spawn throws"
 assert_contains "$out" "couldn't run macmon: spawn ENOEXEC; trying again in 4 s"
 
-# macmon installed while the keys show: they stop saying "needs macmon" without a plugin restart,
-# and the missing binary is logged once
+# macmon installed later is picked up without a plugin restart
 out="$(sampler_js 'const fs = require("node:fs");
 const sampler = s.createSampler({ log, macmonPath: process.argv[2], spawnProcess });
 const before = (await sampler.sample(["gpu"])).macmonMissing;
@@ -202,7 +179,6 @@ const after = (await sampler.sample(["gpu"])).macmonMissing;
 console.log(JSON.stringify({ before, after, spawned: children.length, logged: logs.length }));' "$SANDBOX/macmon-later")"
 assert_eq '{"before":true,"after":false,"spawned":1,"logged":1}' "$out" "macmon installed later"
 
-# A reset, when the keys reappear, clears the sparklines' history
 assert_eq "1 0" "$(sampler_js 'const sampler = s.createSampler({ log });
 await new Promise((r) => setTimeout(r, 100));
 const sample = await sampler.sample(["cpu"]);
@@ -210,9 +186,7 @@ const before = sample.cpuHistory.length;
 sampler.reset();
 console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
 
-# The network rate is over the clock's time between samples. A kind no key needs, as when its key
-# is hidden while others show, starts afresh when it's needed again: no rate over the gap, and an
-# empty sparkline.
+# A kind no key needs starts afresh when needed again: no rate over the gap, empty sparkline
 assert_eq '[{"rx":500,"tx":50},null,{"rx":1000,"tx":100},0,null]' "$(sampler_js 'let t = 0;
 let bytes = 0;
 const runCommand = async () => {
@@ -235,8 +209,7 @@ await sampler.sample(["disk"]);
 rates.push(cpu.cpuHistory.length);
 rates.push((await sampler.sample(["cpu"])).cpu ?? null);
 console.log(JSON.stringify(rates));')" "rates after a kind is hidden"
-# A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
-# chrome-tab waits until $SANDBOX/release exists, for up to 10 s.
+# bin/open-in logs each target; chrome-tab waits for $SANDBOX/release, up to 10 s
 PLUGIN="$SANDBOX/plugin"
 mkdir -p "$PLUGIN/bin"
 cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
@@ -247,7 +220,7 @@ if [ "\$1" == chrome-tab ]; then
 fi
 echo "done \$1"
 EOF
-# Press New Tab twice and Files twice, let New Tab's open-in exit, then press New Tab again
+# A New Tab press is dropped while the last one's open-in runs
 out="$(node -e 'const sent = [];
 let socket;
 globalThis.WebSocket = class {
@@ -282,8 +255,7 @@ const until = async (what, test) => {
 assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
     "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
 
-# A key whose render throws shows its placeholder, and the error is logged once, while the other
-# keys still update. A stats.js whose Disk render throws stands in for the real one.
+# A key whose render throws shows its placeholder, logs once, and the others still update
 cat > "$PLUGIN/stats.js" << EOF
 const real = require("$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js");
 module.exports = { ...real, render: (kind, s) => { if (kind === "disk") throw new Error("broken"); return real.render(kind, s); } };
@@ -311,8 +283,7 @@ appear("swap"); appear("disk");
 assert_eq "true true
 ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
 
-# Overview opens the System page on the 15-key Stream Deck (device type 0), and shows a warning on
-# any other, which has no page to open
+# Overview opens the System page only on the 15-key Stream Deck (device type 0)
 out="$(node -e 'const sent = [];
 let socket;
 globalThis.WebSocket = class {

@@ -1,9 +1,6 @@
 # shellcheck shell=bash
-# OpenSSH for the ubuntu step: the sshd drop-in, the proof that a key logs in, the check that sshd
-# takes the drop-in's settings, and the unit that starts sshd.
-# ubuntu/install.sh sets the constants it uses.
+# OpenSSH for the ubuntu step. ubuntu/install.sh sets the constants.
 
-# Print the SHA256 fingerprint of the public key line on stdin, or nothing when it isn't one
 key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
@@ -16,8 +13,7 @@ install_openssh() {
     apt_get install -y openssh-server
 }
 
-# Either unit starts sshd at boot: a machine switched back to ssh.service, as Ubuntu's docs
-# describe, has ssh.socket off, and enabling it then couldn't bind sshd's port
+# Either unit counts: with ssh.service enabled, ssh.socket couldn't bind sshd's port
 sshd_enabled() {
     [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ] ||
         [ "$(systemctl is-enabled ssh.service 2>/dev/null)" == enabled ]
@@ -27,24 +23,18 @@ enable_sshd() {
     sudo systemctl enable --now "$SSH_UNIT"
 }
 
-# Print the SHA256 fingerprint of each public key in ~/.ssh/authorized_keys, one per line
 authorized_key_fingerprints() {
     local line
     [ -r "$HOME/.ssh/authorized_keys" ] || return 0
-    # Check public-key lines individually: -lf on a whole file also accepts private keys.
+    # Line by line: -lf on a whole file also accepts private keys
     while IFS= read -r line || [ -n "$line" ]; do
         printf '%s\n' "$line" | key_fingerprint
     done < "$HOME/.ssh/authorized_keys"
 }
 
-# Print the fingerprint of the key this run's SSH session logged in with, when it proves that key
-# logs in: sshd's ExposeAuthInfo writes a "<method>[/<submethod>] [<key type> <key> ...]" line for
-# each method the session logged in with to the file $SSH_USER_AUTH names, and removes the file
-# when the session ends. Every method must be publickey, since sshd can require a password too
-# (AuthenticationMethods), and every key one ~/.ssh/authorized_keys lists, since sshd can require
-# several (publickey,publickey), and a fresh login then needs each of them. With several, it prints
-# the first. Otherwise prints why not, and fails. status and apply work it out once
-# (cache_checks), since it runs ssh-keygen per key.
+# Prints the fingerprint of the key this SSH session logged in with, or why not and fails. Reads
+# ExposeAuthInfo's $SSH_USER_AUTH; every method must be an authorized publickey, since
+# AuthenticationMethods can require several.
 key_login() {
     if [ -n "${KEY_LOGIN_STATUS:-}" ]; then
         printf '%s\n' "$KEY_LOGIN_CACHE"
@@ -84,18 +74,14 @@ read_key_login() {
     echo "$found"
 }
 
-# Print the drop-in as it is, with sudo -n when only root can read it (read_root_file)
 current_sshd_drop_in() {
     read_root_file "$SSHD_DROP_IN" -n
 }
 
-# Succeeds when the drop-in already turns password logins off, given its content
 key_only_in() {
     grep -qx 'PasswordAuthentication no' <<< "$1"
 }
 
-# Print why the drop-in should newly turn password logins off, or fail: this run's SSH session
-# logged in with a key sshd takes, or DOTFILES_SSH_KEY_ONLY=1 opts a disposable VM in
 key_only_reason() {
     local fp
     if [ "${DOTFILES_SSH_KEY_ONLY:-}" == 1 ]; then
@@ -107,14 +93,8 @@ key_only_reason() {
     fi
 }
 
-# AcceptEnv takes the terminal's name and color support that Ghostty's ssh-env sends. zsh/hooks.zsh
-# passes the name into tmux panes. ClientAliveInterval drops a dead client's session after 3
-# minutes. ExposeAuthInfo records how each session logged in, for key_login. AllowUsers stops
-# every other user's OpenSSH login, though not Tailscale SSH, which doesn't read this file.
-# Password logins go off only once a session proves a key logs in (key_only_reason), and once
-# off, they stay off. Run as root, the step leaves out AllowUsers, since with PermitRootLogin no,
-# AllowUsers root refuses everyone, and turns password logins off only when they already are,
-# since root's key logs no one in. Takes the current drop-in, which it otherwise reads.
+# Password logins go off only once a key login is proven, and then stay off. As root: no
+# AllowUsers (with PermitRootLogin no it'd refuse everyone), and root's key proves nothing.
 sshd_drop_in() {
     local current root=false
     if [ $# -gt 0 ]; then
@@ -135,8 +115,7 @@ sshd_drop_in() {
     fi
 }
 
-# What turns password logins off, for status and apply: an empty string once they're off or the
-# step runs as root, which leaves them alone. Fails when the drop-in can't be read.
+# Prints what's needed to turn password logins off; empty once off or as root
 key_only_todo() {
     local current problem hint=""
     current="$(current_sshd_drop_in)" || return 1
@@ -146,8 +125,7 @@ key_only_todo() {
         echo "re-run the ubuntu step to turn them off"
     else
         problem="$(key_login)" || true
-        # ssh -O exit closes the connection ssh/add-host.sh's ControlMaster keeps open, which
-        # a new ssh would reuse, along with the password login it made
+        # ssh/add-host.sh's ControlMaster reuses the earlier password login
         [ "$problem" != "this SSH session logged in with a password" ] ||
             hint="If you logged in with your key, ssh reused an earlier connection: on the Mac, run ssh -O exit <alias>, then SSH in again."
         echo "$problem.${hint:+ $hint} Copy your key over (ssh-copy-id <alias> from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale is up), SSH in with it, and re-run the ubuntu step"
@@ -160,11 +138,8 @@ sshd_configured() {
     [ "$(sshd_drop_in "$current")" == "$current" ]
 }
 
-# Print an address in a range given as an address, a CIDR range, or a pattern with * or ?: the
-# first host for IPv4 (10.0.0.0/8 gives 10.0.0.1), ::1 after an IPv6 prefix (fd00::/8 gives
-# fd00::1), and 1 for each wildcard. 10.* gives 10.1, which sshd reads as 10.0.0.1, as inet_aton
-# does, and matches against the pattern as a string. An IPv6 address needs all 8 groups or a ::, so
-# the first * in a pattern short of both gives 1::1 (fd00:* gives fd00:1::1).
+# Prints one address inside a CIDR range or * ? pattern: 10.0.0.0/8 -> 10.0.0.1, fd00::/8 ->
+# fd00::1, 10.* -> 10.1 (inet_aton reads it as 10.0.0.1), fd00:* -> fd00:1::1.
 range_sample() {
     local addr="${1%/*}" first=1
     case "$addr" in
@@ -181,9 +156,7 @@ range_sample() {
     esac
 }
 
-# Print each entry of the Address criteria in the Match lines of sshd's config and drop-ins, one
-# per line, such as 192.168.5.0/24 or !10.1.2.3. Takes sudo's flags, e.g. -n, for files only root
-# can read; one it can't read is left out.
+# Prints Match Address entries, e.g. 192.168.5.0/24 or !10.1.2.3. Takes sudo's flags.
 sshd_match_addresses() {
     local file
     for file in "$SSHD_CONFIG" "$(dirname "$SSHD_DROP_IN")"/*.conf; do
@@ -200,10 +173,7 @@ sshd_match_addresses() {
         }'
 }
 
-# The addresses sshd_settings_problems checks a login by you from, one per line: this machine, one
-# in each of $SSH_RANGES and the tailnet's range, this SSH session's client, and one in each
-# address or range a Match Address line names, so a Match block for any of them shows. Takes
-# sudo's flags, as sshd_match_addresses does.
+# One address per range a login may come from, so any Match block shows. Takes sudo's flags.
 sshd_login_addresses() {
     local range
     {
@@ -218,21 +188,14 @@ sshd_login_addresses() {
     } | awk '!seen[$0]++'
 }
 
-# sshd -T's -C argument for a login by you from an address. sshd's UseDNS defaults to no, which
-# makes the host the address.
+# UseDNS defaults to no, so host is the address
 sshd_login_spec() {
     echo "user=$(id -un),host=$1,addr=$1"
 }
 
-# Set SSHD_PROBLEMS to each setting of the drop-in $1 that sshd doesn't take, as sshd -T shows it
-# for a login by you from each address sshd_login_addresses lists, so a Match block for you or one
-# of them applies, one "<Keyword> is <value>" line each, ending in " for <addresses>" unless every
-# address gets it: PermitRootLogin, AllowUsers, PasswordAuthentication, and
-# KbdInteractiveAuthentication. sshd keeps the first value it reads for most of them, and adds
-# every AllowUsers line's users, so another file can undo the drop-in. It's empty when sshd takes
-# them all. sshd -T needs root and $SSHD_RUN_DIR, so pass sudo's flags, e.g. -n. Fails when sshd
-# -T does, as it does for a Match on a criterion -C doesn't give, such as LocalPort, and then sets
-# SSHD_FAILED_SPEC to the -C argument it failed with.
+# sshd_settings_problems <drop-in> <sudo flags>: sets SSHD_PROBLEMS to the drop-in settings
+# another file or Match block overrides. On sshd -T failure (e.g. a Match on LocalPort, which -C
+# can't give) sets SSHD_FAILED_SPEC and fails.
 sshd_settings_problems() {
     local drop_in="$1" addr config key want have problems="" n=0
     shift
@@ -255,7 +218,6 @@ sshd_settings_problems() {
             [ "$have" == "$want" ] || problems+="$key is ${have:-unset}"$'\t'"$addr"$'\n'
         done <<< "$drop_in"
     done < <(sshd_login_addresses "$@")
-    # One line per problem, in the order found
     SSHD_PROBLEMS="$(printf '%s' "$problems" | awk -F '\t' -v n="$n" '
         !($1 in count) { order[++k] = $1 }
         { count[$1]++; where[$1] = where[$1] (where[$1] == "" ? "" : ", ") $2 }
@@ -266,14 +228,12 @@ ensure_sshd_run_dir() {
     [ -d "$SSHD_RUN_DIR" ] || sudo install -d -m 0755 "$SSHD_RUN_DIR"
 }
 
-# Print the first file sshd -t's errors name, given its output. It writes "<file>: line <n>:" or
-# "<file> line <n>:".
+# sshd -t writes "<file>: line <n>:" or "<file> line <n>:"
 sshd_error_file() {
     sed -nE 's#^(/[^: ]+):? line [0-9]+.*#\1#p' <<< "$1" | head -n 1
 }
 
-# restore_sshd_drop_in <existed> <old content>: put back the drop-in configure_sshd replaced, or
-# remove the new one when there was none before
+# restore_sshd_drop_in <existed> <old content>
 restore_sshd_drop_in() {
     if "$1"; then
         write_root_file "$SSHD_DROP_IN" "$2"
@@ -282,10 +242,8 @@ restore_sshd_drop_in() {
     fi
 }
 
-# Swap the new drop-in in and check the whole config with sshd -t, putting the old one back when
-# it fails. The config is checked first as it is, so a broken file elsewhere fails the step without
-# touching a working drop-in. apply runs this as `configure_sshd || ...`, where set -e is off, so
-# each command checks its own failure.
+# Checks the config before and after the swap, so a broken file elsewhere fails without touching
+# a working drop-in. Runs where set -e is off, so each command checks its own failure.
 configure_sshd() {
     local output bad existed=false old="" new problems="" line checked=true
     # sshd -t also fails without sshd, and that's no config error
@@ -308,7 +266,6 @@ configure_sshd() {
         old="$(sudo cat "$SSHD_DROP_IN")" || return 1
     fi
     new="$(sshd_drop_in "$old")"
-    # A failed write leaves the old drop-in whole, so there is nothing to put back
     write_root_file "$SSHD_DROP_IN" "$new" || return 1
     if ! output="$(sudo "$SSHD_BIN" -t 2>&1)"; then
         printf '%s\n' "$output" >&2
@@ -324,19 +281,16 @@ configure_sshd() {
         echo "  Fix the error above and re-run." >&2
         return 1
     fi
-    # Ubuntu starts sshd on the first connection (ssh.socket), so it may not be running yet
+    # sshd may not be running yet: ssh.socket starts it on the first connection
     if ! sudo systemctl try-reload-or-restart ssh.service; then
         restore_sshd_drop_in "$existed" "$old" || return 1
         echo "  Couldn't activate the SSH settings; restored the previous drop-in. Fix the error and re-run." >&2
         return 1
     fi
-    # Checked only now, since the step leaves other files to you
     sshd_settings_problems "$new" || checked=false
     problems="$SSHD_PROBLEMS"
-    # sshd has reloaded, so the warning holds unless another file keeps password logins on
     if key_only_in "$new" && ! key_only_in "$old" && ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
-        # -S none skips the shared connection, which logged in before password logins went off.
-        # ssh -O exit would close this session too, since it may run through that connection.
+        # Not ssh -O exit: this session may run through the shared connection
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
     if ! "$checked"; then
@@ -352,13 +306,9 @@ configure_sshd() {
     fi
 }
 
-# The lines of sshd_settings_problems' output about password logins, which status_sshd reports
-# under its own item
 PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 
-# Print the status items for OpenSSH: the package, the unit that starts sshd, the drop-in, whether
-# sshd takes its settings, and password logins, each problem once. Reads what only root can with
-# sudo -n. status declares the items first (ubuntu_items).
+# status declares the items first (ubuntu_items)
 status_sshd() {
     local installed=false item problems="" others todo
     openssh_installed && installed=true
@@ -369,7 +319,6 @@ status_sshd() {
     else
         status_check "$SSHD_DROP_IN" sshd_configured
     fi
-    # Checked once the drop-in is in place, which a missing item above already reports
     if "$installed" && sshd_configured 2>/dev/null; then
         item="sshd's effective settings match $SSHD_DROP_IN"
         if [ ! -d "$SSHD_RUN_DIR" ]; then
@@ -380,7 +329,7 @@ status_sshd() {
             status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"
         else
             problems="$SSHD_PROBLEMS"
-            # Password logins get their own item below, except as root, where it's skipped
+            # Password logins get their own item below, except as root
             others="$problems"
             [ "$(id -u)" == 0 ] || others="$(grep -vE "$PASSWORD_PROBLEMS" <<< "$problems" || true)"
             if [ -z "$others" ]; then

@@ -1,22 +1,15 @@
 #!/bin/bash
 set -u
 
-# Update everything that's installed, or with ai-tools, only the AI tools that the package manager
-# upgrades miss. Each stage runs even when one before it fails, and the ones that failed are named
-# at the end. zsh's `upgrade` and `upgrade-ai-tools` functions (zsh/aliases.zsh) run this script.
-# No set -e, since a failed stage mustn't stop the ones after it.
-# Usage: bash scripts/upgrade.sh [ai-tools]
+# Update everything installed, or with ai-tools, only the AI tools.
+# No set -e: a failed stage mustn't stop the ones after it.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 
-# Print which of the casks given are outdated, one per line, counting those that update themselves.
-# Fails when `brew outdated` does. Given casks, brew outdated exits 1 when it lists one, so only an
-# exit above 1, or an exit 1 that lists nothing, is a failure. An interrupted brew returns its
-# status.
-# Usage: _brew_casks_outdated <cask>...
+# Given casks, brew outdated exits 1 when it lists one, so only exit >1 or 1 with no output fails.
 _brew_casks_outdated() {
     local output rc=0
     output="$(brew outdated --cask --greedy --quiet "$@" 2>/dev/null)" || rc=$?
@@ -28,20 +21,12 @@ _brew_casks_outdated() {
     return 1
 }
 
-# Succeeds when the list on stdin, one cask per line, names cask $1, alone or after its tap
 _cask_listed() {
     awk -F / -v cask="$1" '$NF == cask { found = 1 } END { exit !found }'
 }
 
-# Upgrade the outdated casks given, skipping running apps, which replacing would break. Most are
-# apps that update themselves only while they run, so this catches up the rest; `brew upgrade`
-# would quit and replace them, so `upgrade` sets HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave
-# them to this. A cask given as <cask>:<process> counts as running when a process has that exact
-# name. For the others, an app's name can gain or lose a suffix in parentheses between releases,
-# so any running app whose name starts with the cask's app name up to " (" counts. A cask whose
-# brew outdated or brew info fails is left alone, and the function fails. An interrupted brew
-# returns its status, so the caller stops. An app that renamed itself as it updated, as T3 Code
-# can, would fail brew upgrade, so its cask is re-recorded instead (_readopt_renamed_cask).
+# Upgrade outdated casks, skipping running apps, which replacing would break.
+# An app's name can gain or lose a " (...)" suffix between releases, so match up to " (".
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
     local rerun="$1" entry cask process info path app running installed outdated one status rc
@@ -50,7 +35,6 @@ _upgrade_self_updating_casks() {
     rc=0
     installed="$(brew list --cask -1 2>/dev/null)" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
-    # An empty list would pass for no casks installed, skipping them all without a word
     if [ "$rc" -ne 0 ]; then
         echo "Couldn't list the installed casks: brew list --cask failed." >&2
         return 1
@@ -66,8 +50,7 @@ _upgrade_self_updating_casks() {
     outdated="$(_brew_casks_outdated "${names[@]}")" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
     if [ "$rc" -ne 0 ]; then
-        # One cask brew can't find, such as one removed upstream, fails the whole query, so each is
-        # asked alone, and only that one is left out
+        # One unknown cask fails the whole query, so ask each alone
         outdated=""
         for cask in "${names[@]}"; do
             rc=0
@@ -91,8 +74,7 @@ _upgrade_self_updating_casks() {
             app="$cask"
             ! pgrep -x "$process" &>/dev/null || running=true
         else
-            # A failed brew info, or output jq can't parse, mustn't pass for a cask with no app,
-            # whose path is empty. -e also fails on empty output.
+            # A failed brew info mustn't pass for a cask with no app (empty path)
             rc=0
             info="$(brew info --json=v2 --cask "$cask")" || rc=$?
             ! interrupted_status "$rc" || return "$rc"
@@ -111,9 +93,6 @@ _upgrade_self_updating_casks() {
                 continue
             fi
             app="${app%% (*}"
-            # A cask with no app artifact has no name to check. Logi Options+, which keeps an
-            # agent running, quits the app and agents in its uninstall steps before the upgrade,
-            # and a CLI such as codex keeps running from the old binary.
             # -a: macOS pgrep otherwise skips its own ancestors, such as the app this shell runs in
             if [ -n "$app" ] && pgrep -af "^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/" &>/dev/null; then
                 running=true
@@ -131,9 +110,8 @@ _upgrade_self_updating_casks() {
     return "$exit_status"
 }
 
-# Succeeds when the app brew recorded for cask $1 is gone but the app at $2, which the cask now
-# gives, is there: the app renamed itself as it updated. Only for a cask whose uninstall does no
-# more than remove its app, which _readopt_renamed_cask's uninstall would otherwise run.
+# The app renamed itself as it updated (T3 Code can). Only for casks whose uninstall just removes the app,
+# since _readopt_renamed_cask runs that uninstall.
 _cask_app_renamed() {
     local recorded
     jq -e '.uninstall_artifacts | all(.[]; type == "object" and (keys - ["app", "zap", "target"] | length == 0))' \
@@ -142,9 +120,7 @@ _cask_app_renamed() {
     [ "$recorded" != "$2" ] && [ ! -e "$recorded" ] && [ -d "$2" ]
 }
 
-# Re-record cask $1, whose app renamed itself to $2 as it updated: uninstall the stale record,
-# which has no app left to remove, then install the cask adopting the app in place, so a running
-# app is left alone. A self-updating cask's adopt takes the app whatever its version.
+# Adopting in place leaves a running app alone.
 _readopt_renamed_cask() {
     local status=0
     echo "${2##*/} renamed itself as it updated, so Homebrew's record of $1 is stale; re-recording it."
@@ -156,17 +132,13 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Run the homebrew step's function $1, such as install_bundle, which installs the formulae added
-# to the Brewfile since setup last ran. Sourcing the step only defines its functions, but it also
-# sets -euo pipefail, so this runs in a subshell.
+# Subshell, since the step sets -euo pipefail
 _homebrew_step() (
-    # Not followed: shellcheck would flag the lib/common.sh variables it sets again as lost
+    # Not followed: shellcheck would flag lib/common.sh's variables as lost
     # shellcheck source=/dev/null
     source "$DOTFILES_DIR/homebrew/install.sh" && "$1"
 )
 
-# Add stage $1, which exited $2, to the caller's failed array, or stop the script when it was
-# interrupted
 _stage_failed() {
     if interrupted_status "$2"; then
         echo "Interrupted; stopping." >&2
@@ -175,16 +147,12 @@ _stage_failed() {
     failed+=("$1")
 }
 
-# Print the stages of upgrade or upgrade-ai-tools that failed, and fail, as setup.sh does for its
-# steps, so a failure early on doesn't scroll away behind the stages after it
 _upgrade_report() {
     [ "$#" -gt 0 ] || return 0
     echo "Failed: $(printf '%s\n' "$@" | join_lines ', ')" >&2
     return 1
 }
 
-# Print each Claude Code marketplace, a tab, and the commit its checkout is at, or - when it isn't
-# a git checkout. Prints nothing when the list fails, since the versions are only shown.
 _claude_marketplace_versions() {
     local name dir
     claude plugin marketplace list --json 2>/dev/null |
@@ -199,21 +167,15 @@ _claude_marketplace_versions() {
         done
 }
 
-# jq that defines updated, which keeps the Claude Code plugins upgrade_ai_tools updates: not project
-# and local plugins, which would update against the current directory, nor managed ones, which
-# your organization's settings control. The versions before and after both use it, since a plugin
-# can be listed once per scope, and _print_versions takes the first row for each.
+# Project and local plugins would update against the cwd; managed ones belong to the org.
 _CLAUDE_UPDATED_PLUGINS_JQ='def updated: select(.scope != "project" and .scope != "local" and .scope != "managed");'
 
-# Print each Claude Code plugin upgrade_ai_tools updates, a tab, and its version, or nothing when
-# the list fails
 _claude_plugin_versions() {
     claude plugin list --json 2>/dev/null |
         jq -r "$_CLAUDE_UPDATED_PLUGINS_JQ"' .[]? | updated | [.id, (.version // "-" | tostring)] | @tsv' 2>/dev/null
 }
 
-# Print heading $1, then each "<name><tab><version>" line of $2 with its version in the same kind
-# of list $3, after an update: one version when it didn't change, or the old one -> the new one
+# _print_versions <heading> <before> <after>
 _print_versions() {
     local name old new
     [ -n "$2" ] || return 0
@@ -229,32 +191,22 @@ _print_versions() {
     done <<< "$2"
 }
 
-# Update AI tools that the package manager upgrades miss, adding each stage that fails to the
-# caller's failed array, so upgrade names them in its own summary
 _upgrade_ai_tools_stages() {
-    # Claude Code's native install (~/.local/share/claude) updates through `claude update`. HOME
-    # is resolved too, since the path claude resolves to has no symlinks in it.
+    # Only the native install. HOME is resolved too, since realpath's result has no symlinks.
     if command -v claude &>/dev/null && [[ "$(realpath "$(command -v claude)")" == "$(realpath "$HOME")/.local/share/claude/"* ]]; then
         claude update || _stage_failed "claude update" "$?"
     fi
 
-    # The desktop apps installed with brew on macOS, and the Codex CLI cask the codex step
-    # installs. `upgrade` covers codex with `brew upgrade`, but upgrade-ai-tools also runs on its
-    # own. It has no app, so it's upgraded even while a codex process runs, as the ChatGPT app's
-    # app-server nearly always does. Replacing a CLI's binary doesn't break a running copy.
+    # codex has no app, so it upgrades even while running; replacing a CLI binary is safe.
     _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code codex || _stage_failed "AI casks" "$?"
 
-    # Plugins are separate from the CLIs above. Claude Code has no update-all, so update
-    # each installed plugin in the scope it was installed in. Updates apply on next start.
-    # Plugins can add hooks that run as you, so each marketplace's and plugin's version is shown
-    # before and after, for review.
+    # Plugins can add hooks that run as you, so show versions before and after for review.
     if command -v claude &>/dev/null; then
         local id scope version plugins rows before=""
         before="$(_claude_marketplace_versions)"
         claude plugin marketplace update || _stage_failed "claude marketplaces" "$?"
         _print_versions "Claude Code marketplaces:" "$before" "$(_claude_marketplace_versions)"
-        # Read the list on fd 3 so `claude plugin update` keeps the terminal as stdin for its
-        # prompts
+        # fd 3 keeps the terminal as stdin for claude plugin update's prompts
         if plugins="$(claude plugin list --json)" && rows="$(jq -er "$_CLAUDE_UPDATED_PLUGINS_JQ"'
             if type != "array" then error("expected a plugin list") else . end |
             map(if (.id | type) != "string" or (.scope | type) != "string" then error("invalid plugin") else . end) |
@@ -272,15 +224,11 @@ _upgrade_ai_tools_stages() {
         fi
     fi
 
-    # The t3 CLI the t3-code step installs, and the T3 Code service when one runs it. Not any t3 on
-    # PATH: the macOS app writes ~/.t3/bin/t3, which runs the app's own server, and the app updates
-    # itself.
+    # Not any t3 on PATH: the macOS app's ~/.t3/bin/t3 runs its own server and self-updates.
     if [ -x "$HOME/.local/bin/t3" ]; then
         "$HOME/.local/bin/t3" update || _stage_failed "t3 update" "$?"
     fi
 
-    # Codex's bundled marketplaces ship with the CLI and update with it. With no name,
-    # this refreshes any Git marketplace added on top of them.
     if command -v codex &>/dev/null; then
         codex plugin marketplace upgrade || _stage_failed "codex marketplaces" "$?"
     fi
@@ -292,61 +240,46 @@ upgrade_ai_tools() {
     _upgrade_report ${failed[@]+"${failed[@]}"}
 }
 
-# Update everything that's installed
 upgrade() {
     local failed=()
-    # Ubuntu's packages. unattended-upgrades installs only security, Chrome, and Docker updates.
-    # apt upgrade, unlike apt-get upgrade, installs new dependencies, so upgrades that need them
-    # (such as the kernel meta-packages) aren't held back. Both wait for the locks that apt-daily
-    # and unattended-upgrades hold after boot.
+    # apt upgrade, unlike apt-get upgrade, installs new dependencies, so kernel meta-packages aren't held back.
     if [[ "$OSTYPE" == linux* ]]; then
-        # shellcheck disable=SC2119 # it passes options on to apt-get update, and needs none here
+        # shellcheck disable=SC2119 # needs no options here
         { apt_get_update && sudo apt -o DPkg::Lock::Timeout="$APT_LOCK_TIMEOUT" upgrade; } || _stage_failed apt "$?"
     fi
 
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
-    # The formulae added to the Brewfile, and the casks added to the step, since setup last ran
     _homebrew_step install_bundle || _stage_failed "brew bundle" "$?"
     _homebrew_step install_casks || _stage_failed casks "$?"
     if [[ "$OSTYPE" == linux* ]]; then
-        # Homebrew doesn't refresh fontconfig's cache for the fonts it upgrades on Linux, which go
-        # where it put them: under XDG_DATA_HOME when that's set
+        # Homebrew doesn't refresh fontconfig's cache for fonts it upgrades on Linux
         if command -v fc-cache &>/dev/null; then
             fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts" || _stage_failed fc-cache "$?"
         fi
-        # brew upgrade skips Zed's cask here too, and its own updater is off
+        # brew upgrade skips Zed, and its own updater is off
         _upgrade_self_updating_casks upgrade zed:zed-editor || _stage_failed "self-updating casks" "$?"
     else
-        # Casks marked as updating themselves that brew upgrade skips. Zed's settings.json turns
-        # its updater off, and the others rarely run, so their own updaters rarely catch up.
+        # brew upgrade skips these; Zed's updater is off and the others rarely run.
         _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ || _stage_failed "self-updating casks" "$?"
-        # Every App Store app, not just the homebrew step's. mas asks for your password to update one.
         if command -v mas &>/dev/null; then
             mas upgrade || _stage_failed mas "$?"
         fi
     fi
 
-    # The plugins the vim and tmux steps install, each moved to the commit the repo pins and never
-    # past it; just bump-plugins moves the pins. vim-plug itself stays the version the vim step
-    # installs. vim -es skips the vimrc unless -u names it, and -u alone turns on 'compatible',
-    # which breaks the vimrc's line continuations, hence -N. Keep stdin on the terminal: vim -es
-    # exits mid-update when stdin hits end-of-file.
+    # -u alone turns on 'compatible', breaking line continuations, hence -N. vim -es exits
+    # mid-update on stdin EOF, so keep stdin on the terminal.
     if [ -f ~/.vimrc ] && [ -f ~/.vim/autoload/plug.vim ]; then
         vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa || _stage_failed "vim plugins" "$?"
     fi
-    # In its own bash, since the step's script sets its own shell options and sources lib/common.sh
-    # again
+    # Own bash, since the step sets shell options and re-sources lib/common.sh
     if [ -d ~/.tmux/plugins/tpm ]; then
         # shellcheck disable=SC2016 # expanded by the inner bash
         "$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$DOTFILES_DIR" ||
             _stage_failed "tmux plugins" "$?"
     fi
 
-    # mise prunes the Node versions upgrade moves away from, and with them any CLI installed by
-    # `npm install -g`, so install global npm CLIs with `mise use -g npm:<pkg>`. From ~, so a
-    # project's mise.toml in the current dir neither stops it nor gets its tools upgraded.
-    # This script's PATH has the old Node, so apply mise's hook (--force, since it skips its work
-    # when no config changed) for npm below; when the hook fails or prints nothing, skip npm.
+    # From ~, so a project's mise.toml isn't used. PATH still has the old Node, so apply the hook
+    # (--force, else it skips when no config changed) before npm.
     local node_stale=false hook rc
     if command -v mise &>/dev/null; then
         (cd ~ && mise upgrade) || _stage_failed mise "$?"
@@ -371,16 +304,14 @@ upgrade() {
         uv tool upgrade --all || _stage_failed uv "$?"
     fi
 
-    # The runtimes step installs rustup in ~/.cargo/bin, which isn't on this script's PATH when the
-    # shell that ran it didn't add it
+    # ~/.cargo/bin may not be on PATH
     if [ -x ~/.cargo/bin/rustup ]; then
         ~/.cargo/bin/rustup update || _stage_failed rustup "$?"
     fi
 
     _upgrade_ai_tools_stages
 
-    # Last, so the old versions of every cask upgraded above, the AI tools' included, go now, not
-    # on the next run
+    # Last, so every old version upgraded above goes now
     brew cleanup || _stage_failed "brew cleanup" "$?"
 
     _upgrade_report ${failed[@]+"${failed[@]}"}

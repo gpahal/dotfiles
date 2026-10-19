@@ -1,10 +1,6 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
+# shellcheck disable=SC2329 # the step calls the replaced functions
 set -euo pipefail
-
-# The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale, smartd, sysctl,
-# the disk encryption warning, packages installed before they're used, and unattended-upgrades.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -17,8 +13,7 @@ setup_sandbox
 ubuntu_step_setup
 ubuntu_step_set_up
 
-# Before its first login, Tailscale's auto-update and operator wait, since tailscale up resets them:
-# status reports them missing, and the step leaves them until it runs after the login
+# tailscale up resets auto-update and operator, so the step waits for the first login
 touch "$SANDBOX/tailscale-reset"
 echo NeedsLogin > "$SANDBOX/tailscale-state"
 assert_exit 3 status
@@ -34,15 +29,11 @@ assert_contains "$RUN_OUTPUT" "Turn on Tailscale's auto-update and make $(id -un
 assert_file_contains "$STUB_LOG" "sudo tailscale set --auto-update --operator=$(id -un)"
 rm "$SANDBOX/tailscale-reset"
 
-# Tailscale's apt source for an older release, as a release upgrade leaves it: status says so, and
-# a yes writes the key and the one-line tailscale.list for this release, and updates from it alone.
-# test-apt-sources.sh covers the other states apt_source_state reports.
+# A release upgrade leaves Tailscale's source on the old release; test-apt-sources.sh covers other states
 mkdir -p "$SANDBOX/keyrings"
 replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
 echo key > "$2"'
-# The key has the fingerprint the step pins
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $TAILSCALE_KEY_FPR"
-# curl answers the HEAD request for Tailscale's Release file with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 echo 200 > "$SANDBOX/http-status"
 TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/stable/ubuntu resolute main"
@@ -63,8 +54,7 @@ assert_eq "$TAILSCALE_ENTRY" "$(cat "$TAILSCALE_LIST")" "Tailscale's source afte
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
 
-# Tailscale has no packages for this release yet: the step says so, and waits without failing,
-# changing the source, or listing the rewrite. Status says what it waits for.
+# No Tailscale packages for this release yet: wait without failing or changing the source
 echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST"
 echo 404 > "$SANDBOX/http-status"
 : > "$STUB_LOG"
@@ -79,8 +69,7 @@ assert_file_not_contains "$STUB_LOG" "update --error-on=any"
 echo 200 > "$SANDBOX/http-status"
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 
-# Tailscale not installed: a yes adds its repo, then installs it from there. In a subshell, since
-# hide changes PATH for the rest of the test.
+# Subshell: hide changes PATH for the rest of the test
 failures="$TEST_FAILURES"
 rm "$TAILSCALE_LIST"
 (
@@ -106,8 +95,7 @@ install -y tailscale" "$(grep -oE '^apt-get -o DPkg::Lock::Timeout=300 (update -
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
 
-# smartd enabled but failed: status says so, and a yes restarts it, since enable --now doesn't
-# start a failed one
+# enable --now doesn't start a failed smartd, so it restarts it
 rm "$SANDBOX/smartd-active"
 touch "$SANDBOX/smartd-failed"
 assert_exit 3 status
@@ -121,8 +109,7 @@ assert_file_contains "$STUB_LOG" "sudo systemctl restart smartmontools.service"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         smartd running"
 
-# A failed sysctl --system leaves the file written but not in effect: status says so, and a re-run
-# applies it without rewriting the file
+# A failed sysctl --system leaves the file written but not in effect
 rm -f "$SYSCTL_CONF" "$SANDBOX/sysctl-live"
 touch "$SANDBOX/sysctl-fails"
 assert_exit 1 main
@@ -137,8 +124,7 @@ assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_not_contains "$STUB_LOG" "tee $SYSCTL_CONF"
 assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
-# sysctl --system fails on a bad key in any file, such as one a VM's kernel lacks, after setting the
-# rest: the step's own settings took, so it succeeds
+# sysctl --system fails on a key the kernel lacks after setting the rest, so the step succeeds
 rm -f "$SYSCTL_CONF" "$SANDBOX/sysctl-live"
 touch "$SANDBOX/sysctl-key-fails"
 assert_exit 0 main
@@ -146,8 +132,7 @@ assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 rm "$SANDBOX/sysctl-key-fails"
 assert_exit 0 status
 
-# Another file raising an inotify limit further, as an IDE's does, leaves it in effect: status is
-# ok, and a run has nothing to apply
+# Another file raising an inotify limit further is fine
 SYSCTL_ITEM="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
 echo "fs.inotify.max_user_watches = 2097152" > "$SANDBOX/sysctl.d/99-idea.conf"
 echo "fs.inotify.max_user_watches=2097152" >> "$SANDBOX/sysctl-live"
@@ -157,7 +142,6 @@ assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "sysctl --system"
 rm "$SANDBOX/sysctl.d/99-idea.conf"
-# One that lowers it wins: the step names the file and fails, and so does status
 echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.d/99-low.conf"
 echo "fs.inotify.max_user_watches=8192" >> "$SANDBOX/sysctl-live"
 assert_exit 3 status
@@ -165,8 +149,7 @@ assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effec
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:
     fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf"
-# Only the files sysctl --system reads after the step's are named: those named after it, sorted by
-# name across the dirs, each the first of its name in their order, then sysctl.conf, read last
+# Only files read after the step's count: later names across the dirs, first of each name, then sysctl.conf
 mkdir -p "$SANDBOX/lib-sysctl.d"
 SYSCTL_SOURCES=("$SANDBOX/sysctl.d" "$SANDBOX/lib-sysctl.d" "$SANDBOX/sysctl.conf")
 echo "fs.inotify.max_user_watches = 4096" > "$SANDBOX/sysctl.d/10-early.conf"
@@ -183,7 +166,7 @@ assert_exit 0 main
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
 
-# sysctl is in /usr/sbin, which a user's PATH may lack: the check looks there too
+# sysctl is in /usr/sbin, which a user's PATH may lack
 mkdir -p "$SANDBOX/sbin"
 mv "$STUB_DIR/sysctl" "$SANDBOX/sbin/"
 # shellcheck disable=SC2034 # sbin_cmd reads it
@@ -195,48 +178,41 @@ mv "$SANDBOX/sbin/sysctl" "$STUB_DIR/"
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$STUB_DIR"
 
-# --- disk encryption ---
-# lsblk -rno TYPE lists the open mappings, and -rno FSTYPE,LABEL the partitions, from
-# $SANDBOX/lsblk-types and $SANDBOX/lsblk-labels
 stub lsblk 'case "$2" in
     TYPE) cat "'"$SANDBOX"'/lsblk-types" ;;
     FSTYPE,LABEL) cat "'"$SANDBOX"'/lsblk-labels" ;;
 esac'
 disk() { printf '%s\n' disk part "$@" > "$SANDBOX/lsblk-types"; }
 labels() { printf '%s\n' "vfat " "$@" > "$SANDBOX/lsblk-labels"; }
-# Not encrypted: nothing to say
 disk
 labels "ext4 "
 run warn_disk_encryption
 assert_eq "" "$RUN_OUTPUT" "warn_disk_encryption without encryption"
-# A LUKS passphrase, as the installer sets up without TPM: waits at the console, and says what
-# avoids it
+# A LUKS passphrase without TPM waits at the console on boot
 disk crypt lvm
 labels "crypto_LUKS " "LVM2_member "
 run warn_disk_encryption
 assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase. Every boot waits for it at the console"
 assert_contains "$RUN_OUTPUT" "binding the disk to the TPM (systemd-cryptenroll)"
 assert_not_contains "$RUN_OUTPUT" "Only a reinstall"
-# Bound to the TPM with systemd-cryptenroll, which keeps the label: nothing to say
+# systemd-cryptenroll keeps the label, so crypttab shows the TPM binding
 echo "dm_crypt-0 UUID=1234 none luks,tpm2-device=auto" > "$CRYPTTAB"
 run warn_disk_encryption
 assert_eq "" "$RUN_OUTPUT" "warn_disk_encryption with a disk bound to the TPM"
 echo "dm_crypt-0 UUID=1234 none luks" > "$CRYPTTAB"
 run warn_disk_encryption
 assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase"
-# TPM-backed encryption, which snapd labels ubuntu-<role>-enc: nothing to say
+# snapd labels TPM-backed partitions ubuntu-<role>-enc
 disk crypt crypt
 labels "crypto_LUKS ubuntu-save-enc" "crypto_LUKS ubuntu-data-enc"
 run warn_disk_encryption
 assert_eq "" "$RUN_OUTPUT" "warn_disk_encryption with TPM-backed encryption"
-# TPM-backed encryption for the system, and a passphrase for another disk: waits at the console
 disk crypt crypt crypt
 labels "crypto_LUKS ubuntu-save-enc" "crypto_LUKS ubuntu-data-enc" "crypto_LUKS "
 run warn_disk_encryption
 assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase"
 
-# --- packages missing: smartmontools without its recommends, which pull in a mail server, and
-# unattended-upgrades and locales before they're used ---
+# --- packages missing ---
 stub dpkg-query 'case "$*" in *smartmontools* | *unattended-upgrades* | *locales*) ;; *) echo "install ok installed" ;; esac'
 stub apt-get
 stub_systemctl
@@ -248,19 +224,16 @@ assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y 
 assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y locales"
 assert_file_contains "$STUB_LOG" "sudo locale-gen en_US.UTF-8"
 assert_file_contains "$AUTO_UPGRADES_CONF" 'APT::Periodic::Unattended-Upgrade "1";'
-# Only the pending items run: sysctl is already set up
+# Only pending items run
 assert_file_not_contains "$STUB_LOG" "sysctl --system"
 
-# Another file in apt.conf.d that turns unattended-upgrades off wins over the step's: it says so
-# and fails
 stub dpkg-query 'echo "install ok installed"'
 echo 'APT::Periodic::Unattended-Upgrade "0";' > "$SANDBOX/apt.conf.d/99off"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "effective periodic settings still disable daily updates"
 rm "$SANDBOX/apt.conf.d/99off"
 
-# Software & Updates writes other APT::Periodic keys into 20auto-upgrades: turning
-# unattended-upgrades on sets only the step's keys, keeps the rest, and a re-run writes nothing
+# Software & Updates writes other APT::Periodic keys into 20auto-upgrades; keep them
 printf '%s\n' 'APT::Periodic::Update-Package-Lists "1";' 'APT::Periodic::Download-Upgradeable-Packages "1";' \
     'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended-Upgrade "0";' > "$AUTO_UPGRADES_CONF"
 run main
@@ -273,10 +246,7 @@ APT::Periodic::Enable "1";' "$(cat "$AUTO_UPGRADES_CONF")" "20auto-upgrades afte
 run main
 assert_file_not_contains "$STUB_LOG" "tee $AUTO_UPGRADES_CONF"
 
-# Only root can read 20auto-upgrades, so apt-config skips it as you. Status leaves it unverified
-# without cached credentials. The step reads it with sudo, merges its keys into what's there, and
-# keeps the rest. sudo's stub runs the command as you, with the file readable for its length, as
-# root reads it, and sudo -n works while $SANDBOX/cached exists.
+# Only root can read 20auto-upgrades, so apt-config skips it. The sudo stub makes it readable while it runs.
 stub sudo '[ "${1:-}" != -n ] || { [ -e "'"$SANDBOX"'/cached" ] || exit 1; shift; }
 f="'"$AUTO_UPGRADES_CONF"'"
 [ ! -e "'"$SANDBOX"'/sudo-cat-fails" ] || [ "$*" != "cat $f" ] || exit 1
@@ -290,14 +260,13 @@ printf '%s\n' 'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended
 chmod 200 "$AUTO_UPGRADES_CONF"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
-# With nothing else to change, a re-run doesn't ask for sudo only to read it, and says how to check
+# A re-run with nothing else to change doesn't ask for sudo only to read it
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_contains "$RUN_OUTPUT" "Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
 assert_file_not_contains "$STUB_LOG" "sudo cat"
-# With another change pending, checking it joins the list. sudo can't read it either: the step
-# fails and writes nothing.
+# With another change pending, reading it joins the sudo list; a failed read writes nothing
 rm "$SANDBOX/locale"
 touch "$SANDBOX/sudo-cat-fails"
 assert_exit 1 main
@@ -316,7 +285,6 @@ APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::Enable "1";
 APT::Periodic::Update-Package-Lists "1";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after the merge"
 chmod 200 "$AUTO_UPGRADES_CONF"
-# With cached credentials, status checks it through sudo
 touch "$SANDBOX/cached"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         unattended-upgrades runs daily"

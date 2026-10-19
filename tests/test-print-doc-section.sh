@@ -1,11 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# print_doc_section prints a Markdown section for the terminal, as the manual-steps steps do. A
-# link into the repo, to a heading in the same doc or another or to a file, becomes its text plus
-# the doc's path in the repo, and a web link its text plus the URL. A # line in a code block, its
-# fence indented or not, isn't a heading.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 

@@ -1,15 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# The patterns scripts/test-ubuntu.sh matches against a step's output in the VM match what the
-# step prints, so `just test-ubuntu` doesn't fail on correct behavior: t3-code's status lines for a
-# t3 serve started by hand and for a service that runs no server, from the step's own functions.
+# scripts/test-ubuntu.sh's patterns match t3-code's real status lines, so `just test-ubuntu`
+# doesn't fail on correct behavior.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-# Print the pattern scripts/test-ubuntu.sh sets <name> to
 smoke_pattern() {
     sed -n "s/^$1='\(.*\)'\$/\1/p" "$REPO_DIR/scripts/test-ubuntu.sh"
 }

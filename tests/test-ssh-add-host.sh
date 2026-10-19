@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# ssh/add-host.sh adds a Host block for an alias, once. It rejects an alias or hostname ssh would
-# read as several patterns or a comment, and puts the block above a Host * block, so the
-# catch-all's settings don't win over it. It finds a block however ssh would read its Host line,
-# and fails without saying it added one when it can't write the config.
+# ssh/add-host.sh: one Host block per alias, above any catch-all so its settings don't win.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,7 +13,6 @@ add_host() {
 }
 config="$HOME/.ssh/config"
 
-# A new config gets the block, and a second run leaves it alone
 assert_exit 0 add_host box box.example.ts.net
 assert_contains "$RUN_OUTPUT" "ssh -O exit box closes it"
 assert_file_contains "$config" "Host box"
@@ -26,8 +22,6 @@ assert_exit 0 add_host box box.example.ts.net
 assert_contains "$RUN_OUTPUT" "already has a block for box"
 cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config"
 
-# An alias or hostname with a space, a wildcard, a comment, or a newline is rejected, and the
-# config is left alone
 for bad in "my box" "*" "box#1" "$(printf 'a\nb')"; do
     assert_exit 2 add_host "$bad"
     assert_contains "$RUN_OUTPUT" "can't contain"
@@ -35,13 +29,11 @@ for bad in "my box" "*" "box#1" "$(printf 'a\nb')"; do
 done
 cmp -s "$SANDBOX/config-before" "$config" || fail "a rejected alias changed the config"
 
-# ssh matches Host patterns case-sensitively, so a block for box doesn't cover Box: Box gets its
-# own block
+# ssh matches Host patterns case-sensitively
 assert_exit 0 add_host Box
 assert_file_contains "$config" "Host Box"
 assert_file_contains "$config" "Host box"
 
-# A Host * block, with its comment, stays below the new block
 cat > "$config" << 'EOF'
 Host github.com
   HostName github.com
@@ -70,8 +62,6 @@ assert_eq "$expected" "$(cat "$config")" "the config with a Host * block"
 assert_exit 0 ssh -G -F "$config" box2
 assert_contains "$RUN_OUTPUT" "serveraliveinterval 30"
 
-# Any Host line listing the pattern *, however it's written, counts as the catch-all: the block goes
-# above the first one
 for star in 'Host * !bastion' 'Host foo *' 'Host "*"' "$(printf 'Host *\r')" 'host=*'; do
     printf 'Host github.com\n  HostName github.com\n\n%s\n  ServerAliveInterval 60\n' "$star" > "$config"
     assert_exit 0 add_host box3
@@ -80,10 +70,9 @@ for star in 'Host * !bastion' 'Host foo *' 'Host "*"' "$(printf 'Host *\r')" 'ho
     assert_eq "$star" "$(sed -n 11p "$config")" "the catch-all after the block"
 done
 
-# A Match all is a catch-all too, as is a Host * whose defaults come from an included file. ssh -G
-# shows the block's values, other hosts resolve as before, and a second run changes nothing.
+# Match all, and Host * with an included file, are catch-alls too
 printf 'Host *\n  ServerAliveInterval 6\n' > "$SANDBOX/star.conf"
-# ssh refuses an included file others can write, which a umask of 0 would make
+# ssh refuses an included file others can write
 chmod 644 "$SANDBOX/star.conf"
 for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf" \
     "Host other\n  User other\n\nMatch all\n  ServerAliveInterval 5"; do
@@ -100,8 +89,6 @@ for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf
     cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config with: $fixture"
 done
 
-# A block for the alias counts however its Host line is written, with = or quotes, or in
-# lowercase, as ssh reads it: no second block goes above Host *
 for existing in 'Host=box7' 'Host = box7' 'Host "box7"' 'host box7'; do
     printf '%s\n  User me\n\nHost *\n  ServerAliveInterval 60\n' "$existing" > "$config"
     cp "$config" "$SANDBOX/config-before"
@@ -112,7 +99,6 @@ for existing in 'Host=box7' 'Host = box7' 'Host "box7"' 'host box7'; do
     assert_contains "$RUN_OUTPUT" "user me"
 done
 
-# A config it can't write fails, without saying it added the block
 if [ "$(id -u)" -ne 0 ]; then
     : > "$config"
     chmod 444 "$config"
@@ -121,7 +107,6 @@ if [ "$(id -u)" -ne 0 ]; then
     chmod 600 "$config"
 fi
 
-# A symlinked config stays a symlink, with the block written to the file it points to
 printf 'Host *\n  ServerAliveInterval 60\n' > "$SANDBOX/real-config"
 rm "$config"
 ln -s "$SANDBOX/real-config" "$config"

@@ -2,12 +2,7 @@
 set -euo pipefail
 
 # Sign git commits and tags on this machine with an SSH key, offering to generate it if it's
-# missing. tag.gpgsign signs every tag, so a plain git tag makes a signed annotated tag and asks for
-# a message. Make a lightweight tag with git tag --no-sign.
-# macOS signs with ~/.ssh/id_ed25519 and offers to load it into the agent from the keychain.
-# Ubuntu signs with a separate key without a passphrase, ~/.ssh/id_ed25519_signing, since the
-# T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets only the signing
-# settings (user.signingkey, gpg.*, commit/tag.gpgsign) in ~/.gitconfig, and leaves the rest.
+# missing. Ubuntu uses a passphrase-less key, since the T3 Code service has no ssh-agent.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -17,20 +12,16 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh
 LOGIN_KEY="$HOME/.ssh/id_ed25519"
 SIGNING_KEY="$HOME/.ssh/id_ed25519_signing"
 ALLOWED_SIGNERS="${XDG_CONFIG_HOME:-$HOME/.config}/git/allowed_signers"
-# The email commits are made as, set by main. GitHub shows a signed commit as Verified only when
-# it matches a verified email on the account.
+# Set by main
 EMAIL=""
-# The key to sign with, set by main, and its public half
 KEY=""
 PUB=""
 
-# Print a key's value as git reads it outside a repo, following includes (see git_user_config)
 global_get() {
     { git_user_config --get "$1" || true; } 2>/dev/null | tail -n 1
 }
 
-# Print the email commits are made as: user.email as git reads it, so ~/.gitconfig.local's wins
-# over the repo config's, or the repo config's before the git step has installed it
+# Falls back to the repo config before the git step has installed it
 commit_email() {
     local email
     email="$(global_get user.email)"
@@ -40,7 +31,6 @@ commit_email() {
     printf '%s\n' "$email"
 }
 
-# Set a key in ~/.gitconfig, saying whether it changed
 set_local() {
     if [ "$(git_file "$USER_GITCONFIG" --get "$1" || true)" == "$2" ]; then
         echo "  $1 is already $2"
@@ -50,13 +40,10 @@ set_local() {
     fi
 }
 
-# Succeeds when a private key opens without a passphrase
 no_passphrase() {
     ssh-keygen -y -P '' -f "$1" &>/dev/null
 }
 
-# Add "<email> namespaces="git" <type> <key>" to allowed_signers, saying whether it was there.
-# Fails when it can't be written.
 allow_signer() {
     local line="$EMAIL namespaces=\"git\" $1"
     if has_line "$line" "$ALLOWED_SIGNERS"; then
@@ -69,7 +56,6 @@ allow_signer() {
     fi
 }
 
-# Offer to generate KEY. The Ubuntu signing key gets no passphrase, so say why first.
 generate_key() {
     local how="ssh-keygen -t ed25519 -C $EMAIL -f $KEY"
     if [ "$KEY" == "$SIGNING_KEY" ]; then
@@ -95,9 +81,8 @@ generate_key() {
     fi
 }
 
-# macOS: git signs through the agent when it holds the key, and otherwise asks for the
-# passphrase, which agents such as T3 Code's can't answer. Offer to store the passphrase in the
-# keychain and load the key. The ssh step's LaunchAgent reloads it from the keychain at login.
+# Without the key in the agent, git asks for the passphrase, which agents can't answer. The ssh
+# step's LaunchAgent reloads it from the keychain at login.
 load_into_agent() {
     local fingerprint
     fingerprint="$(ssh-keygen -lf "$PUB" | awk '{print $2}')" || true
@@ -141,7 +126,6 @@ main() {
     fi
     PUB="$KEY.pub"
     if [ -f "$KEY" ]; then
-        # The Ubuntu signing key must open without a passphrase
         if [ "$KEY" == "$SIGNING_KEY" ] && ! no_passphrase "$KEY"; then
             echo "  $KEY has a passphrase, or can't be read here, so agents in the T3 Code service," >&2
             echo "  which have no ssh-agent or terminal to unlock it, couldn't sign. Nothing changed." >&2
@@ -162,7 +146,6 @@ main() {
     fi
 
     echo "Allowed signers (lets git verify your own signatures):"
-    # Dropping the public key's comment
     allow_signer "$(awk '{print $1, $2}' "$PUB")" "this key" || incomplete=true
 
     echo "git config ($USER_GITCONFIG):"
@@ -173,8 +156,7 @@ main() {
     set_local commit.gpgsign true
     set_local tag.gpgsign true
 
-    # On Ubuntu, gh auth refresh without --insecure-storage can move the token from hosts.yml into
-    # the keyring, which SSH sessions and the T3 Code service can't unlock
+    # Without --insecure-storage, Ubuntu's token can move into a keyring SSH sessions can't unlock
     refresh="gh auth refresh -h github.com -s admin:ssh_signing_key"
     if is_ubuntu; then
         refresh+=" --insecure-storage"

@@ -1,9 +1,6 @@
 if [[ $OSTYPE == linux* ]]; then
-    # Ubuntu: brew's suggestion when it has one, and otherwise apt's command-not-found's, which
-    # names the apt package. Homebrew's own handler prints "command not found" when it has none.
-    # brew's suggestion goes to stderr, as apt's does, so it stays out of a pipe's data. brew is
-    # asked only when stdout is a terminal: its lookup can wait on `brew update --auto-update`,
-    # which would stall a pipe or an agent's shell.
+    # Not Homebrew's handler, which never falls back to apt's. brew only on a terminal: its
+    # lookup can wait on `brew update --auto-update`, stalling a pipe or an agent's shell.
     _apt_command_not_found=/usr/lib/command-not-found
     command_not_found_handler() {
         local txt
@@ -19,8 +16,6 @@ if [[ $OSTYPE == linux* ]]; then
         fi
         return 127
     }
-# Homebrew's handler suggests the formula that provides an unknown command. path.zsh sets
-# HOMEBREW_REPOSITORY, as brew shellenv does; skip the handler without it.
 elif [[ -n ${HOMEBREW_REPOSITORY:-} ]]; then
     HOMEBREW_COMMAND_NOT_FOUND_HANDLER="$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
     if [ -f "$HOMEBREW_COMMAND_NOT_FOUND_HANDLER" ]; then

@@ -1,11 +1,9 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
+# The steps' functions call the replaced ones
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# A failed install or settings write fails the claude-code, claude-desktop, t3-code, or codex step
-# after it sets up the rest. Without brew, install_cask and the Codex CLI fail with
-# missing_cmd_hint's message.
+# A failed install or settings write fails the AI tool steps after they set up the rest.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
@@ -24,7 +22,6 @@ assert_file_contains "$HOME/.claude/settings.json" '"autoMemoryEnabled": false'
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after installation failed"
 rm -rf "$HOME/.claude"
 
-# An installer that succeeds without leaving claude fails the install
 installer_without_claude() {
     load_script ai_tools/claude-code/install.sh
     hide claude
@@ -44,7 +41,6 @@ desktop_failure() {
 assert_exit 1 desktop_failure
 assert_file_contains "$HOME/Library/Application Support/Claude/claude_desktop_config.json" '"menuBarEnabled": false'
 
-# A failed t3-code cask on macOS still turns off T3 Code's telemetry and writes its settings
 stub launchctl
 t3_failure() {
     load_script ai_tools/t3-code/install.sh
@@ -56,8 +52,7 @@ assert_exit 1 t3_failure
 assert_file_contains "$HOME/.t3/userdata/client-settings.json" '"followUpBehavior": "steer"'
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 
-# Aggregating main's failures disables errexit inside its callees. A failed merge must still
-# fail and leave no success message, while independent instruction copying carries on.
+# Aggregating main's failures disables errexit in its callees, so a failed merge must still fail
 claude_write_failure() {
     load_script ai_tools/claude-code/install.sh
     replace_fn install_claude_code 'return 0'
@@ -70,8 +65,7 @@ assert_exit 1 claude_write_failure
 assert_not_contains "$RUN_OUTPUT" "Turned on push notifications"
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after a failed merge"
 
-# Without brew, install_cask fails with missing_cmd_hint's message, and codex_cask_path prints
-# nothing rather than /bin/codex
+# codex_cask_path mustn't print /bin/codex without brew
 load_script ai_tools/codex/install.sh
 hide brew
 replace_fn cask_state 'echo "cask_state $*" >> "$STUB_LOG"'
@@ -82,8 +76,7 @@ assert_eq "  $(missing_cmd_hint brew)" "$RUN_OUTPUT" "Codex without brew"
 assert_eq "" "$(codex_cask_path)" "codex_cask_path without brew"
 assert_file_not_contains "$STUB_LOG" "cask_state"
 
-# The codex step edits config.toml with mikefarah's yq, so these run last. They need a brew, since
-# the step fails before changing anything without one, and its casks then fail to install.
+# These need mikefarah's yq, and a brew, since the step fails early without one
 stub brew 'exit 1'
 if yq --version 2>/dev/null | grep -q mikefarah; then
     codex_failure() {

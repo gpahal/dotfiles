@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# ubuntu_sandbox_paths fails a test when a constant of the ubuntu step still names a system path,
-# but not one in the repo, so the tests pass from a checkout under /var, as a mktemp copy is on
-# macOS. The repo's test helpers and ubuntu step are copied under /var/tmp, which exists on both
-# OSes, and a test there loads the step.
+# ubuntu_sandbox_paths ignores system paths inside the repo, so tests pass from a /var checkout.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

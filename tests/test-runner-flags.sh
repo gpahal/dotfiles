@@ -12,7 +12,6 @@ setup_sandbox
 setup_sh="$REPO_DIR/setup.sh"
 ai_setup_sh="$REPO_DIR/ai_tools/setup.sh"
 
-# A status run, wherever its flags are: the vim step's report, and nothing installed
 first=""
 for args in "vim --status" "--backup --status vim --quick"; do
     # shellcheck disable=SC2086 # split into arguments
@@ -27,21 +26,17 @@ done
 assert_exit 0 "$BASH" "$ai_setup_sh" manual-steps --status --no-backup
 assert_contains "$RUN_OUTPUT" "=== AI tools status ==="
 assert_not_contains "$RUN_OUTPUT" "Unknown"
-# A step that needs attention makes ai_tools/setup.sh --status exit 3, naming it
 assert_exit 3 "$BASH" "$ai_setup_sh" --status skills
 assert_contains "$RUN_OUTPUT" "Needs attention: skills."
 
-# Help, wherever it is, prints the usage and runs nothing
 assert_exit 0 "$BASH" "$setup_sh" vim --help
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-# It lists each step with its header line
 assert_contains "$RUN_OUTPUT" "  vim             $(sed -n '4s/^# //p' "$REPO_DIR/vim/install.sh")"
 assert_exit 0 "$BASH" "$ai_setup_sh" --backup -h skills
 assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"
 
-# An unknown flag fails with the usage, and runs nothing
 assert_exit 2 "$BASH" "$setup_sh" --status vim -x
 assert_contains "$RUN_OUTPUT" "Unknown option: -x"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
@@ -51,16 +46,13 @@ assert_contains "$RUN_OUTPUT" "Unknown option: --foo"
 assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "an unknown flag installed ~/.vimrc"
 
-# A step name with a space or a slash is unknown, even where it matches adjacent steps in the list,
-# and runs nothing
+# A name with a space or slash is unknown, even when it matches adjacent steps
 for name in "git lazygit" "git/" "../setup"; do
     assert_exit 1 "$BASH" "$setup_sh" --status "$name"
     assert_contains "$RUN_OUTPUT" "Unknown step: $name." "setup.sh --status '$name'"
     assert_not_contains "$RUN_OUTPUT" "git config" "setup.sh --status '$name'"
 done
 
-# --quick only shortens a status report, so without --status it fails with the usage, and runs
-# nothing
 assert_exit 2 "$BASH" "$setup_sh" --quick --backup vim
 assert_contains "$RUN_OUTPUT" "--quick only works with --status"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
@@ -70,13 +62,10 @@ assert_contains "$RUN_OUTPUT" "--quick only works with --status"
 assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "--quick without --status installed ~/.vimrc"
 
-# A setup run with a flag after the step names installs them
 assert_exit 0 "$BASH" "$setup_sh" vim --no-backup
 assert_contains "$RUN_OUTPUT" "=== dotfiles setup ==="
 assert_file_contains "$HOME/.vimrc" "$(head -1 "$REPO_DIR/vim/vimrc")"
 
-# check_args: --status anywhere stops Homebrew's auto-update, and --quick sets
-# DOTFILES_STATUS_QUICK, for the runner and the steps it starts
 read_flags() {
     env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
         . "$0/lib/common.sh"
@@ -90,21 +79,18 @@ assert_eq "1 1" "$RUN_OUTPUT" "variables after --backup --status --quick"
 run read_flags vim
 assert_eq "unset unset" "$RUN_OUTPUT" "variables after vim"
 
-# A step run directly takes --status anywhere among its flags, and then only reports
 stub gh
 assert_exit 3 "$BASH" "$REPO_DIR/git/install.sh" --no-backup --status --quick
 assert_contains "$RUN_OUTPUT" "missing    ~/.config/git/config"
 [ ! -e "$HOME/.config/git/config" ] || fail "git/install.sh --status installed the git config"
 assert_exit 0 "$BASH" "$REPO_DIR/manual-steps.sh" --status --no-backup
 assert_eq "" "$RUN_OUTPUT" "manual-steps.sh --status"
-# The manual-steps scripts, which aren't named install.sh, name themselves in their usage too
+# The manual-steps scripts aren't named install.sh
 for step in manual-steps.sh ai_tools/manual-steps.sh; do
     assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
     assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
 done
 
-# A step run directly prints its usage for -h or --help and fails on an unknown flag or any word,
-# changing nothing either way
 export HOME="$SANDBOX/home-help"
 mkdir -p "$HOME"
 step=git/install.sh
@@ -113,17 +99,14 @@ assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RU
 assert_exit 2 "$BASH" "$REPO_DIR/$step" --status --stauts
 assert_contains "$RUN_OUTPUT" "Unknown option: --stauts"
 assert_contains "$RUN_OUTPUT" "Usage: bash $step"
-# --quick needs --status
 assert_exit 2 "$BASH" "$REPO_DIR/$step" --quick
 assert_contains "$RUN_OUTPUT" "--quick only works with --status"
-# A word without a dash, such as status for --status, doesn't run the step either
 assert_exit 2 "$BASH" "$REPO_DIR/$step" status
 assert_contains "$RUN_OUTPUT" "Unknown argument: status"
 assert_contains "$RUN_OUTPUT" "Usage: bash $step"
 assert_eq "" "$(find "$HOME" -mindepth 1)" "files a step wrote for -h, --stauts, or status"
 
-# A step with lib/common.sh's default main names itself too, run directly or loaded by a test that
-# has since cd'd elsewhere, and its main runs its status or apply
+# The default main names its step even after a test cd's elsewhere
 step=editorconfig/install.sh
 assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
 assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
@@ -144,16 +127,14 @@ default_main() {
 }
 subtest default_main
 
-# The runners start each step with the bash running them, not whichever bash is first on PATH,
-# such as Homebrew's
+# The runners use their own bash, not the first on PATH, such as Homebrew's
 stub bash 'exit 99'
 assert_exit 0 "$BASH" "$setup_sh" vim
 assert_exit 3 "$BASH" "$setup_sh" --status zed
 assert_file_not_contains "$STUB_LOG" "bash "
 rm -f "$STUB_DIR/bash"
 
-# An exported CDPATH with dirs named like the scripts' relative dirs doesn't change the paths
-# they source: cd would go to those, and print the path, doubling it
+# cd prints the path when CDPATH matches, which would double a sourced path
 export HOME="$SANDBOX/home-cdpath"
 mkdir -p "$HOME" "$SANDBOX/cdpath/vim"
 cd "$REPO_DIR"

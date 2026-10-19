@@ -1,9 +1,5 @@
-" The vim step installs vim-plug, and vim installs any missing plugins, at
-" their pinned commits, when it starts. Without vim-plug, vim starts without
-" plugins.
 let s:plug = expand('~/.vim/autoload/plug.vim')
 if filereadable(s:plug)
-    " In a group cleared first, so sourcing the vimrc again doesn't add it twice
     augroup dotfiles_plug_install
         autocmd!
         autocmd VimEnter * if len(filter(values(g:plugs), '!isdirectory(v:val.dir)'))
@@ -11,17 +7,14 @@ if filereadable(s:plug)
         \| endif
     augroup END
 
-    " Plugins are pinned to commits; just bump-plugins moves the pins
+    " just bump-plugins moves the pins
     call plug#begin('~/.vim/plugged')
-    " Sensible defaults
     Plug 'tpope/vim-sensible', { 'commit': '0ce2d843d6f588bb0c8c7eec6449171615dc56d9' }
 
-    " File navigation
     Plug 'preservim/nerdtree', { 'on': 'NERDTreeToggle', 'commit': '690d061b591525890f1471c6675bcb5bdc8cdff9' }
     Plug 'Xuyuanp/nerdtree-git-plugin', { 'on': 'NERDTreeToggle', 'commit': 'e1fe727127a813095854a5b063c15e955a77eafb' }
 
-    " Fuzzy finder (use brew-installed fzf). $HOMEBREW_PREFIX is unset when vim
-    " doesn't start from a shell that loaded brew, so try each prefix after it.
+    " $HOMEBREW_PREFIX is unset when vim doesn't start from a shell that loaded brew
     for s:prefix in [$HOMEBREW_PREFIX, '/opt/homebrew', '/home/linuxbrew/.linuxbrew']
         if s:prefix != '' && isdirectory(s:prefix . '/opt/fzf')
             let &runtimepath .= ',' . s:prefix . '/opt/fzf'
@@ -30,55 +23,42 @@ if filereadable(s:plug)
     endfor
     Plug 'junegunn/fzf.vim', { 'commit': '023de3c0e158ff9c2b0992175af10be97c2f2158' }
 
-    " Git
     Plug 'airblade/vim-gitgutter', { 'commit': '90b75207bd9b55d8ac4af15f72b4e935462014d0' }
     Plug 'tpope/vim-fugitive', { 'commit': '3b753cf8c6a4dcde6edee8827d464ba9b8c4a6f0' }
 
-    " Tmux integration (seamless Ctrl+hjkl navigation between vim and tmux)
     Plug 'christoomey/vim-tmux-navigator', { 'commit': 'e41c431a0c7b7388ae7ba341f01a0d217eb3a432' }
 
-    " Editing essentials
     Plug 'tpope/vim-commentary', { 'commit': '64a654ef4a20db1727938338310209b6a63f60c9' }
     Plug 'tpope/vim-surround', { 'commit': '3d188ed2113431cf8dac77be61b842acb64433d9' }
     Plug 'tpope/vim-repeat', { 'commit': '65846025c15494983dafe5e3b46c8f88ab2e9635' }
     Plug 'jiangmiao/auto-pairs', { 'commit': '39f06b873a8449af8ff6a3eee716d3da14d63a76' }
     Plug 'andymass/vim-matchup', { 'commit': '0106b1afd4a2f7e1098037b5ceb161bab7471088' }
 
-    " Status line
     Plug 'vim-airline/vim-airline', { 'commit': '8dc1bd0a116de527f6bc58c1d04386ba357c624f' }
     Plug 'vim-airline/vim-airline-themes', { 'commit': '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab' }
 
-    " Language support
-    " Its Go tools (gopls and others) take minutes to install, so run :GoInstallBinaries
-    " once by hand
+    " Run :GoInstallBinaries by hand; it takes minutes
     Plug 'fatih/vim-go', { 'commit': '47694979496d4bf2e90ce75d95f1dec3f41cbefb' }
     Plug 'rust-lang/rust.vim', { 'commit': '889b9a7515db477f4cb6808bef1769e53493c578' }
     call plug#end()
 endif
 
-" EditorConfig support ships with Vim 9.1
 silent! packadd! editorconfig
 
-" ── Leader key ──
 let mapleader = " "
 
-" ── General ──
 set encoding=utf-8
 set hidden
 set updatetime=250
 set timeoutlen=500
 set mouse=a
-" Vim 9.2 keeps ttymouse=xterm under tmux's and screen's TERM, which reports no drags and no
-" clicks past column 223. tmux takes SGR mouse codes.
+" Vim keeps ttymouse=xterm under tmux, which reports no drags or clicks past column 223
 if has('mouse_sgr') && &term =~# '^\%(tmux\|screen\)'
     set ttymouse=sgr
 endif
 set clipboard=unnamed
-" Ubuntu over SSH has no system clipboard, so yank through the terminal with OSC 52, which tmux and
-" Ghostty pass on to the Mac. It's only tried after X11 and Wayland. The + register (unnamedplus)
-" maps to the regular clipboard; * would set the primary selection. tmux answers the terminal
-" query that detection relies on, so force it. Paste with Cmd+V: Ghostty asks before programs read
-" the clipboard.
+" Ubuntu over SSH has no system clipboard, so yank through OSC 52. tmux answers the detection
+" query, so force it. Paste with Cmd+V: Ghostty asks before programs read the clipboard.
 if has('unix') && !has('mac') && exists('+clipmethod')
     set clipboard=unnamedplus
     let g:osc52_force_avail = 1
@@ -87,7 +67,6 @@ if has('unix') && !has('mac') && exists('+clipmethod')
     set clipmethod+=osc52
 endif
 
-" ── UI ──
 set number
 set relativenumber
 set signcolumn=yes
@@ -102,12 +81,10 @@ set laststatus=2
 set wildmenu
 set wildmode=longest:full,full
 
-" ── Search ──
 set hlsearch
 set ignorecase
 set smartcase
 
-" ── Indentation ──
 set expandtab
 set shiftwidth=4
 set tabstop=4
@@ -115,73 +92,53 @@ set softtabstop=4
 set smartindent
 set autoindent
 filetype plugin indent on
-" vim-sensible turns this on too, but vim starts without it when vim-plug is missing
+" For when vim-plug (and vim-sensible) is missing
 syntax on
 
-" ── Performance ──
 set lazyredraw
 
-" ── File handling ──
 set noswapfile
 set nobackup
 set undofile
 set undodir=~/.vim/undodir
-" Vim doesn't create undodir, and without it saves no undo history. 0o700, since undo files hold
-" what you typed.
+" Vim doesn't create undodir. 0o700: undo files hold what you typed.
 silent! call mkdir(expand('~/.vim/undodir'), 'p', 0o700)
-" EditorConfig sets per-file settings, and modelines, which let a file set options, have a history
-" of CVEs
+" Modelines have a history of CVEs; EditorConfig covers per-file settings
 set nomodeline
 
-" ── Splits ──
 set splitbelow
 set splitright
 
-" ── Sound ──
 set noerrorbells visualbell t_vb=
 
-" ── Plugin config ──
 let g:airline_theme='papercolor'
 
-" ── Key mappings ──
-
-" Quick save and quit
 nnoremap <leader>w :w<CR>
 nnoremap <leader>q :q<CR>
 
-" Clear search highlighting. Not <Esc><Esc>: a map starting with <Esc> makes vim wait
-" timeoutlen after every Esc.
+" Not <Esc><Esc>: a map starting with <Esc> makes vim wait timeoutlen after every Esc
 nnoremap <silent> <leader><space> :nohlsearch<CR>
 
-" Window navigation (handled by vim-tmux-navigator via Ctrl+hjkl)
-
-" Move lines in visual mode
 vnoremap J :m '>+1<CR>gv=gv
 vnoremap K :m '<-2<CR>gv=gv
 
-" Keep cursor centered when scrolling
 nnoremap <C-d> <C-d>zz
 nnoremap <C-u> <C-u>zz
 
-" Keep cursor centered when searching
 nnoremap n nzzzv
 nnoremap N Nzzzv
 
-" Don't lose selection when indenting
 vnoremap < <gv
 vnoremap > >gv
 
-" NERDTree
 nnoremap <leader>e :NERDTreeToggle<CR>
 
-" fzf
 nnoremap <leader>f :Files<CR>
 " Not <leader>g: it prefixes the fugitive maps below, so vim would wait timeoutlen to run it
 nnoremap <leader>/ :Rg<CR>
 nnoremap <leader>b :Buffers<CR>
 nnoremap <C-f> :FZF<CR>
 
-" Fugitive
 nnoremap <leader>gs :Git<CR>
 nnoremap <leader>gd :Gdiffsplit<CR>
 nnoremap <leader>gb :Git blame<CR>

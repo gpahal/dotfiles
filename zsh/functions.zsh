@@ -2,7 +2,7 @@ echotime() {
     date +"%R $*"
 }
 
-# Print each path made absolute, with symlinks resolved. Not dir, which would hide coreutils' dir
+# Not named dir, which would hide coreutils' dir
 abspath() {
     local var
     for var in "$@"
@@ -15,18 +15,13 @@ mcd() {
     [[ "$1" ]] && mkdir -p "$1" && cd "$1"
 }
 
-# Run the line typed before this one as root, showing it first. A zshaddhistory hook keeps the
-# lines as typed, since history can't give them: share_history puts other shells' commands there,
-# hist_ignore_space leaves a line out, and fc -n prints a newline as \n, which zsh -c reads as n.
-# The hook sees every line, also one zsh doesn't run, such as a parse error or a comment, so please
-# never reaches past it to an older command. A line that starts with please doesn't count, so a
-# second please runs the same command, and please after another command on its line runs the line
-# before. The function keyword, since please was once an alias: a shell that still has it would
-# expand `please()` into a parse error on re-sourcing, and stop loading this file.
+# please reruns the previous line as root. A zshaddhistory hook records lines as typed, since
+# history can't: share_history mixes in other shells, hist_ignore_space drops lines, fc -n mangles \n.
+# `function` keyword: a shell still holding the old please alias would mangle `please()`.
 function _please_addhistory {
     local line=${1%$'\n'}
     local -a words=(${(z)line})
-    # 0 keeps the line in history, as without the hook
+    # 0 keeps the line in history
     (( $#words )) || return 0
     if [[ $words[1] == please ]]; then
         typeset -g _please_skipped=1
@@ -52,7 +47,6 @@ function please {
     sudo zsh -c "$c"
 }
 
-# git with no arguments shows a short status
 g() {
     if (( $# )); then
         git "$@"
@@ -62,7 +56,6 @@ g() {
 }
 compdef g=git
 
-# Show what's listening on a TCP port
 port() {
     if [[ -z "$1" ]]; then
         echo "usage: port <number>" >&2
@@ -71,7 +64,6 @@ port() {
     lsof -nP -iTCP:"$1" -sTCP:LISTEN
 }
 
-# Kill whatever is listening on a TCP port
 killport() {
     if [[ -z "$1" ]]; then
         echo "usage: killport <number>" >&2
@@ -86,8 +78,6 @@ killport() {
     kill "${pids[@]}" && echo "killed ${pids[*]} (listening on :$1)"
 }
 
-# Open a path (default: the current directory) in its default app, e.g. Finder. Linux's xdg-open
-# needs a desktop session, so it fails over SSH.
 o() {
     if [[ $OSTYPE == darwin* ]]; then
         open "${@:-.}"
@@ -99,8 +89,7 @@ o() {
     fi
 }
 
-# cd to the folder of the frontmost Finder window. Asks for the front window's target, not
-# Finder's insertion location, which falls back to the Desktop when no window is open.
+# Not Finder's insertion location, which falls back to the Desktop with no window open
 if [[ $OSTYPE == darwin* ]]; then
     cdf() {
         local target
@@ -113,8 +102,6 @@ if [[ $OSTYPE == darwin* ]]; then
     }
 fi
 
-# Start a shell in a new temp directory, and delete the directory when that shell exits.
-# Based on wincent's scratch.
 scratch() {
     local dir
     dir="$(mktemp -d)" || return

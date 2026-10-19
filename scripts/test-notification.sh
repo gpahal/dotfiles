@@ -1,14 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Send a desktop notification through the terminal (OSC 9) in terminals that support it
-# (Ghostty, iTerm2, kitty, WezTerm, Warp). Works inside tmux too.
+# Send a desktop notification through the terminal (OSC 9).
 
 MESSAGE="${1:-Hello from ${TERM_PROGRAM:-your terminal}}"
 
 if [ -n "${TMUX:-}" ]; then
-    # tmux only forwards the sequence when wrapped in DCS passthrough. This pane is visible, so
-    # on works here, but drops notifications from panes you can't see.
+    # tmux forwards it only in DCS passthrough; "on" drops it from hidden panes.
     case "$(tmux show-options -gv allow-passthrough 2>/dev/null)" in
         off)
             echo "tmux allow-passthrough is off. Add 'set -g allow-passthrough all' to tmux.conf." >&2

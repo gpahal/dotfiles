@@ -2,13 +2,11 @@
 set -euo pipefail
 
 # Copy the lazygit config.
-#
-# On macOS, lazygit reads ~/Library/Application Support/lazygit, not ~/.config/lazygit, unless
-# XDG_CONFIG_HOME is set (`lazygit --print-config-dir` shows which). Ubuntu uses ~/.config/lazygit.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+# On macOS without XDG_CONFIG_HOME, lazygit reads Application Support
 config_path() {
     local config_home="$HOME/.config"
     is_macos && config_home="$HOME/Library/Application Support"

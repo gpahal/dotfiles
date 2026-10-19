@@ -2,16 +2,9 @@
 set -euo pipefail
 
 # Install Homebrew and the formulae, casks, and App Store apps the step lists.
-#
-# Also the Xcode Command Line Tools on macOS, and on Ubuntu the apt packages Homebrew needs.
-#
-# A temp HOME doesn't isolate this step, which installs into the real Homebrew prefix and
-# /Applications, and on Ubuntu installs apt packages with sudo. Test it in a macOS VM or on a
-# spare Mac, and in an Ubuntu VM.
-#
-# The step makes two exceptions to how steps fail. A new Mac isn't signed in to the App Store yet,
-# so when only App Store apps failed, the step warns and passes. Declining the apt packages fails
-# the step, unlike other declined confirms, since every later step needs them.
+# Installs into the real Homebrew prefix whatever HOME is: test it in a VM or on a spare machine.
+# Rule breaks: failed App Store apps only warn (a new Mac isn't signed in), and declining the apt
+# packages fails the step, since every later step needs them.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -20,17 +13,14 @@ source "$DOTFILES_DIR/lib/casks.sh"
 
 BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
-# The App Store apps macOS gets, as "<id> <name>", and "optional" after a paid app you may not
-# buy. An optional app that isn't installed is information in status and the step's output, not
-# something to fix.
+# "<id> <name> [optional]": a missing optional app is only reported.
 MAS_APPS=(
     "937984704 Amphetamine"       # Keeps the Mac awake
     "1470584107 Dato optional"    # Menu bar calendar
     "1295203466 Windows App"      # Microsoft's RDP client, for the Ubuntu desktop's GNOME Remote Login
 )
 
-# Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
-# them all. The path is empty for a cask with no app, and for every cask off macOS or without jq.
+# Prints "<cask>\t<app path>"; the path is empty off macOS, without jq, or for a cask with no app.
 installed_cask_apps() {
     if is_macos && command -v jq &>/dev/null; then
         brew info --json=v2 --installed --cask 2>/dev/null | jq -r ".casks[] | [.token, $CASK_APP_JQ] | @tsv"
@@ -39,12 +29,10 @@ installed_cask_apps() {
     fi
 }
 
-# The apt packages that provide UBUNTU_COMMANDS (lib/common.sh), which Ubuntu needs before
-# Homebrew, locales for locale-gen, which the ubuntu step runs to add the en_US.UTF-8 locale, and
-# fontconfig for fc-cache, which lets apps find the Monaspace cask's fonts. Minimal images lack them.
+# UBUNTU_COMMANDS (lib/common.sh), plus locale-gen and fc-cache, which minimal images lack
 UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
 
-# The casks macOS gets, one per line, which scripts/check-brew-packages.sh reads
+# One per line: scripts/check-brew-packages.sh parses it
 CASKS=(
     font-monaspace      # Monaspace, the terminal and editor font
     ghostty             # Terminal; Ubuntu gets its snap from the ghostty step
@@ -62,8 +50,6 @@ CASKS=(
     hammerspoon         # The hotkeys the hammerspoon step sets
 )
 
-# Casks with Linux builds that Ubuntu gets too. Fonts install into $XDG_DATA_HOME/fonts, or
-# ~/.local/share/fonts when it isn't set.
 UBUNTU_CASKS=(
     font-monaspace
     zed
@@ -84,9 +70,7 @@ install_command_line_tools() {
     exit 1
 }
 
-# Print the UBUNTU_COMMANDS, locale-gen, and fc-cache that are missing, each after a space. Looks
-# only outside Homebrew, which lib/common.sh puts on PATH, so its copies (jq, git, zsh) don't
-# count: these must keep working if Homebrew breaks.
+# Ignores Homebrew's copies: these must keep working if Homebrew breaks.
 missing_ubuntu_commands() {
     (
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -102,7 +86,7 @@ install_ubuntu_packages() {
     if [ -z "$missing" ]; then
         echo "apt packages already installed."
     else
-        # Printed before asking, since confirm prints nothing without a terminal
+        # confirm prints nothing without a terminal
         echo "Missing commands:$missing"
         if ! confirm "Install them with: $install?"; then
             echo "Install them with: $install"
@@ -120,7 +104,6 @@ install_ubuntu_packages() {
     fi
 }
 
-# Print the directory the Homebrew installer creates, with sudo
 homebrew_prefix() {
     if is_ubuntu; then
         echo /home/linuxbrew/.linuxbrew
@@ -134,9 +117,7 @@ install_homebrew() {
         echo "Homebrew already installed."
         return 0
     fi
-    # The installer needs sudo to create the prefix. Without a terminal it uses sudo -n, which
-    # works only when sudo is cached, and otherwise fails late, with "Insufficient permissions"
-    # on Ubuntu or "Need sudo access" on macOS.
+    # Without a terminal the installer uses sudo -n, which fails late unless sudo is cached
     if ! is_interactive && [ ! -d "$(homebrew_prefix)" ] && ! sudo_cached; then
         echo "Installing Homebrew needs sudo. Run this step from a terminal: bash setup.sh homebrew" >&2
         return 1
@@ -161,8 +142,7 @@ install_bundle() {
     brew bundle install --file="$BREWFILE" --no-upgrade
 }
 
-# Print "<required|optional> <id> <name>" for each of MAS_APPS that isn't installed, one per line,
-# with one mas list for them all. Without mas, that's all of them.
+# Prints "<required|optional> <id> <name>" per missing app
 missing_mas_apps() {
     local installed entry id name kind
     installed="$(mas list 2>/dev/null | awk '{ print $1 }')" || installed=""
@@ -175,11 +155,7 @@ missing_mas_apps() {
     done
 }
 
-# Install the App Store apps that aren't, as brew bundle would: mas install for an app the Apple
-# Account has, then, for a required one, mas get for a free one it doesn't. A required app that
-# fails only warns (see the header), and an optional one is only a note. An optional app gets one
-# mas install every run, so it installs once an Apple Account that owns it signs in. Returns the
-# status of an interrupted mas, so apply stops.
+# A failed required app only warns. Returns an interrupted mas's status, so apply stops.
 install_mas_apps() {
     local missing kind id name status failed=() optional=()
     missing="$(missing_mas_apps)"
@@ -192,7 +168,7 @@ install_mas_apps() {
         return 1
     fi
     echo "Installing App Store apps..."
-    # fd 3, so mas keeps the terminal as stdin for sudo's password prompt
+    # fd 3 keeps stdin free for sudo's password prompt
     while read -r -u 3 kind id name; do
         status=0
         mas install "$id" || status=$?
@@ -226,9 +202,7 @@ os_casks() {
     fi
 }
 
-# Install the casks this OS gets that brew doesn't list, and reinstall those whose app was deleted.
-# An app installed outside Homebrew counts as installed; status says so. scripts/upgrade.sh runs it
-# too, for casks added since setup ran.
+# Also run by scripts/upgrade.sh. An app installed outside Homebrew counts as installed.
 install_casks() {
     local cask state app apps installing=false failed=()
     apps="$(installed_cask_apps || true)"
@@ -237,13 +211,12 @@ install_casks() {
         case "$state" in brew | other) continue ;; esac
         "$installing" || echo "Installing brew casks..."
         installing=true
-        # The state spares install_cask asking brew again
         install_cask "$cask" "$app" "$state" || failed+=("$cask")
     done
     if ! "$installing"; then
         echo "Brew casks already installed."
     elif ! is_macos && command -v fc-cache &>/dev/null; then
-        # Homebrew copies fonts in but doesn't refresh fontconfig's cache, so apps wouldn't see them
+        # Homebrew doesn't refresh fontconfig's cache
         fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
     fi
     [ ${#failed[@]} -eq 0 ] && return 0
@@ -273,14 +246,11 @@ status() {
     fi
     status_item ok "Homebrew"
     bundle="Brewfile brew formulae"
-    # brew bundle check is the slowest check of any step
     if status_quick; then
         status_item unverified "$bundle (skipped by --quick; run status without it to check)"
     else
         status_check "$bundle" bundle_installed
     fi
-    # Without mas, which the Brewfile installs, every app would read as missing for want of an App
-    # Store sign-in
     if is_macos && status_require_cmd mas "App Store apps"; then
         mas_missing="$(missing_mas_apps)"
         if grep -q '^required ' <<< "$mas_missing"; then
@@ -311,8 +281,7 @@ apply() {
         install_ubuntu_packages
     fi
     install_homebrew
-    # Install the App Store apps and casks even when the bundle fails, but stop at Ctrl-C, which
-    # brew and mas catch, exiting above 128. The step fails with the first failure's status.
+    # Keep going past failures, but stop at Ctrl-C (brew and mas exit above 128)
     local parts=(install_bundle) part result status=0
     if is_macos; then
         parts+=(install_mas_apps)

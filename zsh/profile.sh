@@ -1,14 +1,7 @@
-# PATH for sh login shells and the desktop session on Ubuntu, whose ~/.profile sources this file.
-# T3 Code's SSH connections check for claude and codex with `sh -lc`, and apps opened from the
-# dock, such as Zed's language servers, start from the desktop session. Add Homebrew, where codex
-# lives, Go's and Cargo's dirs, and mise's shims, once mise has made them, for its Node and Go.
-# Ubuntu's ~/.profile adds ~/.local/bin before sourcing this, which would leave it behind
-# Homebrew, so add it again last: the same order as zsh/path.zsh. Each dir goes in front even when
-# PATH has it, as the PATH systemd gives the desktop session does. A login sh started from another
-# one adds them again, which leaves their order as it was.
+# Ubuntu's ~/.profile sources this for sh login shells (T3 Code's `sh -lc`) and the desktop session.
+# Same order as zsh/path.zsh; ~/.local/bin is re-added last to get ahead of Homebrew.
 # shellcheck shell=sh
-# Homebrew's environment, as `brew shellenv sh` prints it, set without running brew, which would
-# slow every login. A leading colon on MANPATH has man search its default path too.
+# `brew shellenv` without running brew. A leading colon has man search its default path too.
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
     export HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew
     export HOMEBREW_CELLAR="$HOMEBREW_PREFIX/Cellar" HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"

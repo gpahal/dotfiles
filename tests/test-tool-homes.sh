@@ -1,15 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Setup assumes Codex's and Claude Code's default homes. A CODEX_HOME or CLAUDE_CONFIG_DIR
-# elsewhere fails the step before it changes anything, and status reports it as unknown.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-# status calls these; failing stubs stand in for tools that aren't set up, instead of tripping the
-# sentinels
 for cmd in brew curl claude codex bwrap; do
     stub "$cmd" 'exit 1'
 done
@@ -26,7 +21,6 @@ run main --status
 assert_contains "$RUN_OUTPUT" "unknown    Codex settings and instructions: setup assumes Codex's default home"
 assert_eq 3 "$RUN_STATUS" "codex status exit"
 
-# The default home, however it's spelled, is fine
 CODEX_HOME="$HOME/.codex/"
 assert_exit 0 tool_home_is "$CODEX_HOME" "$HOME/.codex"
 mkdir -p "$HOME/.codex"

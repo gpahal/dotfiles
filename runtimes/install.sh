@@ -9,23 +9,19 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
-# The global config file, which mise use --global writes to
 mise_global_config() {
     echo "${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}/config.toml}"
 }
 
-# Print a tool's version from the global mise config, or nothing when the file or the key is
-# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on
-# stderr, when mise can't read the file. The file is named, since --global could read another one.
-# Every mise command here runs from $HOME: mise refuses to run in a project with an untrusted
-# mise.toml, and would add a trusted one's tools.
+# Prints nothing when the file or key is missing; fails when mise can't read the file.
+# mise runs from $HOME throughout: a project's mise.toml would block it or add its tools.
 global_tool_version() {
     local file errors value
     file="$(mise_global_config)"
     [ -f "$file" ] || return 0
     errors="$(mktemp)" || return 1
     if value="$(cd "$HOME" && mise config get -f "$file" "tools.$1" 2> "$errors")"; then
-        # A table, such as { version = "22", postinstall = "..." }, comes out as key = value lines
+        # A table comes out as key = value lines
         if [[ "$value" == *" = "* ]]; then
             value="$(printf '%s\n' "$value" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1)"
             [ -n "$value" ] || value="(a table)"
@@ -39,16 +35,9 @@ global_tool_version() {
     rm -f "$errors"
 }
 
-# The global versions setup sets, as tool@version. Each is a value you can change
-# (replace_custom_value): one you set yourself is kept unless you agree to replace it.
 MISE_GLOBALS=(node@lts go@latest)
 
-# Succeeds when every tool the configs active in $HOME list is installed: the global config, plus
-# ~/mise.toml or ~/.tool-versions, which mise install below installs too, since it also runs from
-# $HOME. Offline, so mise reads its cached version lists instead of refreshing them. stdout lists
-# the missing tools. A version mise can't resolve offline (such as go@latest with no go installed)
-# is only a warning on stderr, and mise still exits 0, so that warning counts as missing too, but
-# other warnings don't.
+# Offline, mise exits 0 with only a stderr warning for a version it can't resolve, so count that.
 mise_tools_installed() {
     local output errors missing=false
     errors="$(mktemp)"
@@ -60,7 +49,7 @@ mise_tools_installed() {
     ! "$missing"
 }
 
-# rustup's installer puts it here, which may not be on PATH yet
+# Not on PATH yet on a first run
 rustup_installed() {
     [ -x "$HOME/.cargo/bin/rustup" ]
 }
@@ -69,7 +58,7 @@ run_rustup() {
     "$HOME/.cargo/bin/rustup" "$@"
 }
 
-# Query the default directly: a project's override must not conceal an incomplete global setup.
+# Not `rustup show`: a project's override could hide a broken default.
 rust_default() {
     run_rustup default 2>/dev/null | awk 'NR == 1 {print $1}'
 }
@@ -101,7 +90,6 @@ status() {
 apply() {
     echo "Installing language runtimes via mise..."
     require_cmd mise || return 1
-    # The rustup installer is downloaded with curl
     rustup_installed || require_cmd curl || return 1
     local status=0 tool current set=() already=() unread=false
     for tool in "${MISE_GLOBALS[@]}"; do
@@ -123,7 +111,6 @@ apply() {
     if [ ${#already[@]} -eq ${#MISE_GLOBALS[@]} ]; then
         echo "mise's global node and go are already set."
     else
-        # replace_custom_value named the kept ones
         for tool in ${already[@]+"${already[@]}"}; do
             echo "mise's global ${tool%@*} is already ${tool#*@}."
         done
@@ -137,14 +124,11 @@ apply() {
             status=1
         fi
     fi
-    # The config can be in place while a tool isn't installed, e.g. after a failed download or a
-    # config copied from another machine. --quiet hides the progress display, which mise shows
-    # even when there's nothing to install.
+    # --quiet: mise shows progress even with nothing to install
     (cd "$HOME" && mise install --quiet) || status=1
     [ "$status" -eq 0 ] || echo "  mise failed to set up Node and Go. Fix the errors above and re-run." >&2
 
-    # Rust is managed by rustup directly rather than mise, so projects' rust-toolchain.toml files
-    # are respected
+    # rustup, not mise, so projects' rust-toolchain.toml files apply
     if rustup_installed; then
         echo "rustup already installed."
         if ! rust_ready; then
@@ -160,8 +144,7 @@ apply() {
         fi
     else
         echo "Installing rustup..."
-        # --no-modify-path: the zsh step puts ~/.cargo/bin on PATH for every kind of shell, and the
-        # ubuntu step for user services
+        # The zsh and ubuntu steps put ~/.cargo/bin on PATH
         run_installer sh https://sh.rustup.rs "the rustup installer" -y --no-modify-path || status=1
     fi
     if ! rust_ready; then

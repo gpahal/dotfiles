@@ -2,14 +2,7 @@
 set -euo pipefail
 # os: macos
 
-# macos/setup-touch-id-sudo.sh rebuilds sudo_local each run: the template's header, a pam_reattach
-# line when pam-reattach is installed, then pam_tid. sudo loads a root-owned copy of pam-reattach's
-# module, which the script installs from Homebrew's, so a process running as you can't replace
-# what sudo runs as root. It replaces a sudo_local that differs, dropping any other line.
-# DOTFILES_PAM_DIR and DOTFILES_PAM_LOCAL_MODULES_DIR point it at sandbox copies of /etc/pam.d and
-# /usr/local/lib/pam, and HOMEBREW_PREFIX at a sandbox Homebrew. sudo is a stub, which drops
-# install's -o and -g, which need root, and refuses any path outside the sandbox, so a mistake
-# can't reach the real ones.
+# macos/setup-touch-id-sudo.sh: sudo_local and the root-owned pam-reattach copy sudo loads.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -18,8 +11,7 @@ setup_sandbox
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d" HOMEBREW_PREFIX="$SANDBOX/brew"
 load_script macos/setup-touch-id-sudo.sh
 as_os macos
-# The sandbox's files are yours, so "root-owned" means owned by you here, and the parent dirs the
-# check walks stop at the sandbox
+# In the sandbox "root-owned" means owned by you, and the parent walk stops at $SANDBOX
 # shellcheck disable=SC2034 # macos/pam.sh reads them
 PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 
@@ -37,10 +29,8 @@ while [ "$#" -gt 0 ]; do
         *) args+=("$1"); shift ;;
     esac
 done
-set -- "${args[@]}"'
+set -- "${args[@]}"' # drops install's -o and -g, which need root
 
-# reset: a pam.d whose sudo includes sudo_local, macOS's pam_tid, no sudo_local, no pam-reattach
-# and no copy of it, an empty log, and confirm answering no
 reset() {
     rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR" "$SANDBOX/brew"
     mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
@@ -51,13 +41,12 @@ reset() {
     answer no
 }
 
-# put_reattach [content]: Homebrew's pam-reattach module
 put_reattach() {
     mkdir -p "$(dirname "$SOURCE")"
     echo "${1:-reattach 1.0}" > "$SOURCE"
 }
 
-# Arguments are checked as a step's are: a typo, or an extra one after --status, changes nothing
+# Bad arguments change nothing
 reset
 put_reattach
 assert_exit 2 main --stauts
@@ -65,8 +54,7 @@ assert_exit 2 main --status extra
 assert_contains "$RUN_OUTPUT" "Usage: bash macos/setup-touch-id-sudo.sh"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for bad arguments"
 
-# Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
-# nothing, and doesn't fail.
+# Not set up, no terminal: main changes nothing and doesn't fail
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: off"
 assert_exit 0 main
@@ -77,8 +65,6 @@ assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to 
 [ ! -e "$MODULE" ] || fail "the module was copied without asking"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
-# Approved: the module is copied read-only into the root-owned dir, and sudo_local loads that copy
-# before pam_tid. brew installs nothing.
 answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo install -d -o root -g wheel -m 755 $DOTFILES_PAM_LOCAL_MODULES_DIR"
@@ -95,14 +81,12 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
 
-# Re-run: already set up, and no sudo
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already on"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
-# brew upgrade changed Homebrew's module: status says to re-run, and main copies the new one,
-# leaving sudo_local as it is
+# brew upgrade changed Homebrew's module
 chmod 644 "$SOURCE"
 put_reattach "reattach 1.1"
 assert_exit 3 main --status
@@ -114,8 +98,7 @@ assert_file_not_contains "$STUB_LOG" "$SUDO_LOCAL"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
-# A copy that root doesn't own, or that others can write, needs attention, and main installs it
-# again
+# A copy others can write is reinstalled
 chmod 664 "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE"
@@ -124,8 +107,7 @@ assert_exit 0 main
 assert_eq "-r--r--r--" "$(/bin/ls -l "$MODULE" | cut -c 1-10)" "the copy's mode after the fix"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
-# The copy's dir, or a parent, others can write: status gives the fix, and main refuses, since it
-# doesn't change them
+# A writable dir or parent: main refuses, since it doesn't change them
 chmod 775 "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: sudo can't safely load $MODULE: $DOTFILES_PAM_LOCAL_MODULES_DIR isn't root's alone to write; run sudo chown root $DOTFILES_PAM_LOCAL_MODULES_DIR && sudo chmod go-w $DOTFILES_PAM_LOCAL_MODULES_DIR"
@@ -148,7 +130,7 @@ assert_contains "$RUN_OUTPUT" "isn't root's alone to write; run sudo chown root"
 # shellcheck disable=SC2034 # macos/pam.sh reads it
 PAM_ROOT_UID="$(id -u)"
 
-# Homebrew's copy uninstalled: sudo still loads the root copy, so nothing changes, and status is ok
+# Homebrew's copy uninstalled: sudo still loads the root copy
 rm -rf "$SANDBOX/brew"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
@@ -158,17 +140,16 @@ assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already on"
 assert_file_not_contains "$STUB_LOG" "sudo"
-# Without Homebrew's copy, an unsafe copy can't be put right: main fails before changing anything
+# Without Homebrew's copy, an unsafe copy can't be fixed
 chmod 664 "$MODULE"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "brew install pam-reattach"
 assert_file_not_contains "$STUB_LOG" "sudo"
-# and status names the install first
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "isn't root's alone to write; run brew install pam-reattach, then just touch-id"
 chmod 444 "$MODULE"
 
-# Without pam-reattach: pam_tid alone, and the homebrew step is named as what installs it
+# Without pam-reattach: pam_tid alone
 reset
 answer yes
 assert_exit 0 main
@@ -180,7 +161,7 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID in tmux: pam-reattach isn't installed"
 
-# Installed later: status sees the file is stale, and main copies the module and adds the line
+# pam-reattach installed later
 put_reattach
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL differs"
@@ -190,20 +171,18 @@ $REATTACH_LINE
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after installing pam-reattach"
 [ -f "$MODULE" ] || fail "the module wasn't copied"
 
-# Both copies gone: the line names a module that doesn't exist, which status flags, leading with
-# the fix that needs no sudo, and main drops the line
+# Both copies gone: sudo_local names a missing module
 rm -rf "$SANDBOX/brew" "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $MODULE, which doesn't exist"
 assert_contains "$RUN_OUTPUT" "brew install pam-reattach, then just touch-id"
-# just touch-id needs sudo, which the missing module can break, so status gives a fix without it
+# The missing module can break sudo itself
 assert_contains "$RUN_OUTPUT" "If sudo fails, remove the file without it: osascript -e 'do shell script \"rm $SUDO_LOCAL\" with administrator privileges'"
 assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after uninstalling pam-reattach"
 
-# Any other file is rebuilt from scratch: other modules, comments, and a pam_reattach line after
-# pam_tid, with other options, or naming Homebrew's copy all go
+# Any other content is rebuilt from scratch
 reset
 put_reattach
 answer yes
@@ -216,8 +195,7 @@ assert_eq "$HEADER
 $REATTACH_LINE
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local rebuilt"
 
-# OpenPAM finds a bare module name in /usr/lib/pam or /usr/local/lib/pam, with or without .2, as
-# pam-watchid's install leaves pam_watchid.so.2 in the second
+# OpenPAM resolves bare names in /usr/lib/pam or /usr/local/lib/pam, with or without .2
 reset
 mkdir -p "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 touch "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so.2"
@@ -226,12 +204,10 @@ assert_eq "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so
 $DOTFILES_PAM_MODULES_DIR/pam_tid.so
 $DOTFILES_PAM_MODULES_DIR/pam_reattach.so" "$(sudo_local_modules)" "where the bare names resolve"
 pam_module_exists "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so" || fail "pam_watchid.so.2 wasn't found"
-# A bare pam_reattach.so that's in neither is missing
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "$DOTFILES_PAM_MODULES_DIR/pam_reattach.so, which doesn't exist"
 
 # --- what sudo can't safely load ---
-# set_up: pam-reattach installed, and just touch-id run, so sudo_local loads the copy
 set_up() {
     reset
     put_reattach
@@ -240,8 +216,7 @@ set_up() {
     : > "$STUB_LOG"
 }
 
-# The copy replaced with a link to a file you can write, as some guides suggest: status names it,
-# and main puts a real copy in its place
+# The copy replaced with a symlink to a user-writable file
 set_up
 rm -f "$MODULE"
 ln -s "$SOURCE" "$MODULE"
@@ -253,8 +228,7 @@ assert_file_contains "$STUB_LOG" "sudo mv -fh $MODULE.new $MODULE"
 assert_eq "reattach 1.0" "$(cat "$SOURCE")" "Homebrew's module, after the link was replaced"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
-# Without Homebrew's module, a link sudo_local loads can't be replaced: status and main both say
-# to install pam-reattach
+# Without Homebrew's module the link can't be replaced
 rm -f "$MODULE"
 echo "elsewhere" > "$SANDBOX/elsewhere.so"
 ln -s "$SANDBOX/elsewhere.so" "$MODULE"
@@ -265,7 +239,7 @@ assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo 
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "$MODULE, which sudo loads, is a symlink; run brew install pam-reattach"
 assert_file_not_contains "$STUB_LOG" "sudo"
-# A link that points nowhere isn't loaded, so it doesn't stand in the way of Touch ID alone
+# A dangling link isn't loaded, so it doesn't block Touch ID alone
 rm "$SANDBOX/elsewhere.so"
 assert_exit 0 main
 assert_eq "$HEADER
@@ -274,8 +248,7 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID in tmux: pam-reattach isn't installed"
 assert_not_contains "$RUN_OUTPUT" "missing"
 
-# The copy's dir a link, or a parent of it: refused, since whoever controls where it points can
-# swap it, and main changes nothing
+# A symlinked dir or parent is refused: whoever controls the target can swap the module
 link_dir() {
     local link="$1" target="$2"
     mkdir -p "$(dirname "$link")" "$target"
@@ -294,7 +267,6 @@ linked_dir() {
 }
 subtest linked_dir
 linked_parent() {
-    # The copy's dir two levels down, under a parent that's a link
     # shellcheck disable=SC2034 # macos/pam.sh reads it
     PAM_LOCAL_MODULES_DIR="$SANDBOX/lib/pam" REATTACH_MODULE="$SANDBOX/lib/pam/pam_reattach.so"
     MODULE="$REATTACH_MODULE"
@@ -310,8 +282,7 @@ linked_parent() {
 }
 subtest linked_parent
 
-# An ACL that lets others write the copy, its dir, or a parent: refused, not removed, since
-# someone set it on purpose
+# A writable ACL is refused, not removed, since someone set it on purpose
 acl_on() {
     local path="$1"
     set_up
@@ -330,7 +301,6 @@ acl_on() {
 acl_on "$MODULE"
 acl_on "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 acl_on "$SANDBOX"
-# An entry that only denies, or only reads, is fine
 set_up
 chmod +a "everyone deny write,delete" "$MODULE"
 chmod +a "everyone allow read,readattr" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
@@ -338,8 +308,7 @@ assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 chmod -N "$MODULE" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 
-# pam_reattach.so.2 beside the copy, which OpenPAM loads instead: status reports it, and main
-# refuses, and neither deletes it, since setup didn't install it
+# OpenPAM loads pam_reattach.so.2 instead of the copy; setup didn't install it, so it isn't deleted
 set_up
 echo "old reattach" > "$MODULE.2"
 assert_exit 3 main --status
@@ -348,13 +317,11 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "$MODULE.2 exists, and OpenPAM loads it instead of the copy"
 assert_file_not_contains "$STUB_LOG" "sudo"
 assert_eq "old reattach" "$(cat "$MODULE.2")" "pam_reattach.so.2"
-# with the copy gone too, which pam_module_exists accepts the .so.2 for
 rm "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE.2 exists"
 assert_exit 1 main
 assert_file_not_contains "$STUB_LOG" "sudo"
-# a link counts too, even one that points nowhere
 rm "$MODULE.2"
 ln -s "$SANDBOX/nowhere" "$MODULE.2"
 assert_exit 3 main --status
@@ -362,7 +329,6 @@ assert_contains "$RUN_OUTPUT" "$MODULE.2 exists"
 [ -L "$MODULE.2" ] || fail "the linked pam_reattach.so.2 was removed"
 rm "$MODULE.2"
 
-# A copy that's still unsafe after install isn't loaded: main fails before writing sudo_local
 unsafe_copy() {
     reset
     put_reattach
@@ -376,14 +342,13 @@ chmod 666 "$MODULE"'
 }
 subtest unsafe_copy
 
-# A failed write fails the run
 reset
 answer yes
 stub sudo 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't write $SUDO_LOCAL"
 
-# A failed copy fails the run before sudo_local is written, so it never names a missing module
+# A failed copy stops before sudo_local could name a missing module
 reset
 put_reattach
 answer yes

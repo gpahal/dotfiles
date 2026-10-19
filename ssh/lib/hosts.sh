@@ -1,11 +1,8 @@
 # shellcheck shell=bash
-# The Host blocks of ~/.ssh/config, $SSH_CONFIG: finding a host's block and adding one above the
-# first catch-all. ssh/add-host.sh sources this file for host_line and add_block, and the ssh step
-# for host_star_block and SSH_CONFIG_AWK.
 
 SSH_CONFIG="$HOME/.ssh/config"
 
-# Comments may mention hosts or settings. Keep hashes inside quotes or escaped with a backslash.
+# Keeps quoted or escaped hashes
 strip_ssh_comments() {
     awk '
         {
@@ -23,13 +20,8 @@ strip_ssh_comments() {
     ' "$1"
 }
 
-# Awk functions that read a config line as ssh does: the keyword in any case, after leading
-# whitespace, then whitespace or an = between it and the arguments, which are split on whitespace,
-# with quotes keeping one whole and a backslash escaping the next character. An unquoted # starting
-# an argument starts a comment. The programs below prepend them.
-# - ssh_keyword(line) returns the keyword in lowercase.
-# - host_patterns(line, patterns) fills patterns with a Host line's patterns and returns how many,
-#   or returns -1 for any other line.
+# Awk helpers that parse a line as ssh does. host_patterns returns the pattern count, or -1 for a
+# non-Host line.
 # shellcheck disable=SC2016 # awk code
 SSH_CONFIG_AWK='
 function ssh_keyword(line) {
@@ -63,8 +55,7 @@ function host_patterns(line, patterns,   n, i, c, word, inword, quote) {
 }
 '
 
-# Succeeds when a Host line in the config lists the pattern, e.g. host_line '*' for `Host *` or
-# `Host * !bastion`. ssh matches Host patterns case-sensitively.
+# Case-sensitive, as ssh matches
 host_line() {
     [ -f "$SSH_CONFIG" ] && awk -v host="$1" "$SSH_CONFIG_AWK"'
         { n = host_patterns($0, p); for (i = 1; i <= n; i++) if (p[i] == host) found = 1 }
@@ -72,8 +63,7 @@ host_line() {
     ' "$SSH_CONFIG"
 }
 
-# Succeeds when a Host line in the config lists * alone. `Host * !bastion` leaves a host out, so it
-# isn't one.
+# Only `Host *` alone: `Host * !bastion` leaves a host out
 host_star_block() {
     [ -f "$SSH_CONFIG" ] && awk "$SSH_CONFIG_AWK"'
         host_patterns($0, p) == 1 && p[1] == "*" { found = 1 }
@@ -81,13 +71,10 @@ host_star_block() {
     ' "$SSH_CONFIG"
 }
 
-# Print the line number of the main config's first catch-all: a Host line that lists the pattern
-# *, such as `Host *` or `Host * !bastion`, or a Match all, `Match canonical all`, or `Match final
-# all`. A comment right above it counts as part of it, so the comment stays with its block. Reads
-# lines without their comments (strip_ssh_comments). Prints nothing when there's no catch-all.
+# Prints the first Host-with-* or Match all line, or the comment right above it, so the comment
+# stays with its block
 catch_all_line() {
     [ -f "$SSH_CONFIG" ] || return 0
-    # The stripped copy has a line for each of the config's, so line numbers stay the config's
     awk "$SSH_CONFIG_AWK"'
         NR == FNR { stripped[FNR] = $0; next }
         /^[ \t]*#/ { if (!comment) comment = FNR; next }
@@ -108,9 +95,7 @@ catch_all_line() {
     ' <(strip_ssh_comments "$SSH_CONFIG") "$SSH_CONFIG"
 }
 
-# Add a block to the config above its first catch-all, else at the end. ssh uses the first value
-# it finds for each setting, so a catch-all above the block would win over it. Defaults in an
-# included file at the top level still win, as ssh reads them in place.
+# Above the first catch-all, since ssh uses the first value it finds. Top-level Includes still win.
 add_block() {
     local at new
     if [ ! -s "$SSH_CONFIG" ]; then
@@ -131,6 +116,5 @@ add_block() {
         rm -f "$new"
         return 1
     fi
-    # A failed write_back keeps the new contents, and says so
     write_back "$new" "$SSH_CONFIG"
 }

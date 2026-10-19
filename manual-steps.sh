@@ -2,15 +2,12 @@
 set -euo pipefail
 
 # Print the setup steps scripts can't do on this OS.
-#
-# The list is the README's Manual steps section, read at run time, so it has one copy.
 
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 # shellcheck source=scripts/lib/markdown.sh
 source "$DOTFILES_DIR/scripts/lib/markdown.sh"
 
-# Nothing to check: the list is what scripts can't do
 status() { return 0; }
 
 apply() {

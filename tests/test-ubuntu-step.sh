@@ -1,9 +1,7 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
+# shellcheck disable=SC2329 # the step calls the replaced functions
 set -euo pipefail
 
-# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh).
 # The other test-ubuntu-*.sh tests start from the machine this one sets up.
 
 # shellcheck source=lib.sh
@@ -15,7 +13,6 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 setup_sandbox
 ubuntu_step_setup
-# Not set up yet: status lists each new item as missing
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Suspend and hibernation off in systemd ($SLEEP_CONF)"
 assert_contains "$RUN_OUTPUT" "missing    Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
@@ -35,7 +32,7 @@ assert_not_contains "$RUN_OUTPUT" "Home"
 assert_contains "$RUN_OUTPUT" "missing    ufw on"
 assert_contains "$RUN_OUTPUT" "missing    ~/.config/environment.d/99-homebrew.conf"
 
-# Declined: lists them, and changes nothing that needs sudo
+# Declined: nothing that needs sudo changes
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
@@ -52,12 +49,10 @@ assert_contains "$RUN_OUTPUT" "Install security updates daily: turn on unattende
 if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
     fail "the declined step ran sudo without -n"
 fi
-# The environment.d file needs no sudo, so it's copied either way, and the user manager reloaded
+# No sudo needed, so copied even when declined
 ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 assert_eq "$(cat "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf")" "$(cat "$ENV_CONF")" "the environment.d file"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-# So are the health alert's user units, which name this repo, and they're turned on: the timer
-# runs, and the boot notice waits for the next boot
 USER_UNITS="$HOME/.config/systemd/user"
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "ExecStart=/bin/bash \"$REPO_DIR/ubuntu/health-alert.sh\" status"
 assert_file_contains "$USER_UNITS/dotfiles-health.timer" "Persistent=true"
@@ -68,8 +63,7 @@ assert_file_contains "$STUB_LOG" "systemctl --user enable --now dotfiles-health.
 assert_file_contains "$STUB_LOG" "systemctl --user enable dotfiles-boot-notice.service"
 assert_contains "$RUN_OUTPUT" "Turned on the daily health alert and the boot notice"
 
-# Approved: everything is written, applied, and reported ok. With no SSH key login to go by, the
-# VM opt-in turns password logins off.
+# With no SSH key login to go by, the VM opt-in turns password logins off
 export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -82,18 +76,14 @@ assert_file_not_contains "$SYSCTL_CONF" "panic_on_oops"
 assert_file_contains "$SYSCTL_CONF" "fs.inotify.max_user_instances = 1024"
 assert_file_contains "$SYSCTL_CONF" "fs.inotify.max_user_watches = 1048576"
 assert_file_contains "$STUB_LOG" "sudo sysctl --system"
-# Already installed, so only enabled
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
 assert_file_not_contains "$STUB_LOG" "apt-get"
-# smartd-runner runs the hook as root, so it's executable and a copy of the repo's
 cmp -s "$REPO_DIR/ubuntu/smartd-notify.sh" "$SMARTD_HOOK" || fail "smartd's hook isn't the repo's"
 [ -x "$SMARTD_HOOK" ] || fail "smartd's hook isn't executable"
-# with the ntfy code it sources, which the UPS notifier shares
 cmp -s "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NTFY_LIB" || fail "the hook's ntfy code isn't the repo's"
-# smartd's conffile stays as the package ships it, so its updates install unattended
+# smartd.conf stays as shipped, so its updates install unattended
 assert_file_not_contains "$STUB_LOG" "smartd.conf"
 assert_file_not_contains "$STUB_LOG" "systemctl restart smartmontools.service"
-# dpkg keeps a conffile you edited, such as NUT's, and takes a new one you didn't
 assert_file_contains "$KEEP_CONFFILES_CONF" '"--force-confdef";'
 assert_file_contains "$KEEP_CONFFILES_CONF" '"--force-confold";'
 assert_file_contains "$STUB_LOG" "sudo locale-gen en_US.UTF-8"
@@ -106,8 +96,7 @@ assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
 assert_contains "$RUN_OUTPUT" "ok         $KEEP_CONFFILES"
 
-# Packages apt holds back, which unattended-upgrades never installs: status names them. New
-# dependencies don't hold a package back, as they don't stop unattended-upgrades.
+# New dependencies don't hold a package back, as they don't stop unattended-upgrades
 printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
     "The following packages have been kept back:" "  nut-client nut-server" "  ubuntu-drivers-common" \
     "0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded." > "$SANDBOX/apt-upgrade"
@@ -115,7 +104,7 @@ printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
 run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client, nut-server, ubuntu-drivers-common; sudo apt full-upgrade shows what installing them takes"
 assert_file_contains "$STUB_LOG" "apt-get -s -o APT::Get::Upgrade-Allow-New=true -o APT::Get::Always-Include-Phased-Updates=true upgrade"
-# Packages on hold with apt-mark get unhold's advice instead, since full-upgrade keeps them back too
+# full-upgrade keeps held packages back too, so they get unhold's advice
 stub apt-mark '[ "$1" != showhold ] || printf "%s\n" nut-server ubuntu-drivers-common linux-generic'
 run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client; sudo apt full-upgrade shows what installing them takes"
@@ -127,25 +116,21 @@ run status_held_back
 assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 rm "$SANDBOX/apt-upgrade"
 
-# A reboot pending for updates: status names the packages, once each
 touch "$REBOOT_REQUIRED"
 printf '%s\n' linux-image-6.8.0-45-generic linux-base linux-image-6.8.0-45-generic > "$REBOOT_REQUIRED.pkgs"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates: linux-base, linux-image-6.8.0-45-generic; reboot when no agent runs"
 rm "$REBOOT_REQUIRED.pkgs"
-# Without a package list, as when something outside dpkg asks for the reboot, status reports it
-# and goes on to the items after it
+# Something outside dpkg may ask for the reboot without a package list
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Reboot pending for updates; reboot when no agent runs"
 assert_contains "$RUN_OUTPUT" "openssh-server"
 rm "$REBOOT_REQUIRED"
 
-# apt's daily timers off: status says so, and how to turn them on
 echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running; run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
 rm "$SANDBOX/units/apt-daily-upgrade.timer"
-# Enabled but stopped: a yes enables and starts both
 touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -153,7 +138,6 @@ assert_contains "$RUN_OUTPUT" "Turn on apt's daily timers: systemctl enable --no
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         apt's daily timers enabled and running"
-# A failed enable fails the step, and status still reports them
 echo disabled > "$SANDBOX/units/apt-daily.timer"
 touch "$SANDBOX/timers-fail"
 assert_exit 1 main
@@ -161,19 +145,17 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running"
 rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 
-# sshd starts at boot through ssh.socket, 26.04's default
+# 26.04 starts sshd through ssh.socket
 echo disabled > "$SANDBOX/units/ssh.socket"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot; run sudo systemctl enable --now ssh.socket"
-# The step enables it
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Start sshd at boot: systemctl enable --now ssh.socket"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
-# ssh.service enabled in its place, as Ubuntu's docs describe switching back to: sshd starts at
-# boot, so the step leaves ssh.socket off, since it couldn't bind sshd's port
+# ssh.service enabled instead: leave ssh.socket off, since it couldn't bind sshd's port
 echo disabled > "$SANDBOX/units/ssh.socket"
 echo enabled > "$SANDBOX/units/ssh.service"
 assert_exit 0 status
@@ -183,7 +165,7 @@ assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "enable --now ssh.socket"
 rm "$SANDBOX/units/"*
 
-# Re-run: nothing to do, and no sudo but sudo -n to read the ufw rules
+# Re-run: only sudo -n, to read the ufw rules
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
@@ -192,13 +174,12 @@ if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
 fi
 assert_file_not_contains "$STUB_LOG" "daemon-reload"
 
-# In a VM, smartd doesn't run, since the host manages the disks, so its hook isn't installed
+# In a VM the host manages the disks
 stub systemd-detect-virt
 mv "$SMARTD_HOOK" "$SMARTD_HOOK.gone"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    smartd running: this is a VM"
 assert_contains "$RUN_OUTPUT" "skipped    smartd's warning hook: this is a VM"
-# The health alerts use the URL in a VM too
 assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts not set"
 assert_contains "$RUN_OUTPUT" "ok         Daily health alert to ntfy (dotfiles-health.timer) enabled and active"
 assert_exit 0 main
@@ -206,21 +187,18 @@ assert_exit 0 main
 mv "$SMARTD_HOOK.gone" "$SMARTD_HOOK"
 stub systemd-detect-virt 'exit 1'
 
-# An outdated hook: status says so, and the step replaces it
 echo "# older" >> "$SMARTD_HOOK"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): out of date"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "install $SMARTD_HOOK"
 cmp -s "$REPO_DIR/ubuntu/smartd-notify.sh" "$SMARTD_HOOK" || fail "the old hook wasn't replaced"
-# setup-alerts.sh saves the ntfy URL, which status reports as set
 mkdir -p "$(dirname "$NTFY_URL_FILE")"
 echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
 assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts set ($NTFY_URL_FILE)"
-# smartd runs the hook only through smartd-runner, which smartd.conf names: with that line
-# commented out, status says so, and the step leaves the file to you
+# smartd runs the hook only through smartd-runner, which smartd.conf names
 cp "$SMARTD_CONF" "$SANDBOX/smartd.conf.orig"
 sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
 assert_exit 3 status
@@ -228,8 +206,7 @@ assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMA
 mv "$SANDBOX/smartd.conf.orig" "$SMARTD_CONF"
 rm "$SMARTD_CONF.bak"
 
-# The health alert's units after the repo moved: status says they differ, and a run from the repo's
-# new place points them there
+# The units after the repo moved
 sed -i.orig "s|$REPO_DIR|$SANDBOX/old-repo|" "$USER_UNITS/dotfiles-health.service"
 rm "$USER_UNITS/dotfiles-health.service.orig"
 assert_exit 3 status
@@ -238,8 +215,7 @@ assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.co
 assert_exit 0 main
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-# A failed daemon-reload after the units changed: the next run, whose files already match,
-# reloads again, since systemd still runs the old units
+# After a failed daemon-reload, the next run reloads even though the files match
 sed -i.orig "s|$REPO_DIR|$SANDBOX/old-repo|" "$USER_UNITS/dotfiles-health.service"
 rm "$USER_UNITS/dotfiles-health.service.orig"
 touch "$SANDBOX/reload-needed" "$SANDBOX/reload-fails"
@@ -253,7 +229,7 @@ assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
 assert_exit 0 status
 
-# Units that run another checkout: from a worktree, setup leaves them alone
+# From a worktree, setup leaves units that run another checkout alone
 OTHER_REPO="$SANDBOX/other-checkout"
 for unit in dotfiles-health.service dotfiles-boot-notice.service; do
     sed -i.orig "s|$REPO_DIR|$OTHER_REPO|" "$USER_UNITS/$unit"
@@ -266,13 +242,11 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "is a git worktree, so the daily health alert and the boot notice aren't"
 assert_eq "$OTHER_UNIT" "$(cat "$USER_UNITS/dotfiles-health.service")" "the units after a run from a worktree"
 assert_file_not_contains "$STUB_LOG" "systemctl --user"
-# A throwaway machine opts in
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
 replace_fn in_git_worktree false
 
-# in_git_worktree tells a linked worktree, and a dir inside one, from the main checkout
 eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
 GIT_REPO="$SANDBOX/git-main"
 git init -q "$GIT_REPO"
@@ -287,7 +261,6 @@ assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
 assert_exit 1 in_git_worktree "$SANDBOX"
 replace_fn in_git_worktree false
 
-# No wired connection: Wake-on-LAN is skipped
 stub nmcli '[ "$*" != "-t -e no -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    Wake-on-LAN: no wired connection"

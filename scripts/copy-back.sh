@@ -1,14 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the configs the steps installed back into the repo where they differ, so a change made in
-# an app or by hand, such as to Zed's settings, survives the next setup run, which overwrites it.
-# Each differing file gets its diff printed and is copied over the repo's, which keeps its mode. A
-# file not installed here is skipped. When two installed copies of one repo file differ from it and
-# from each other, such as ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, the first is copied back and
-# the second named, to merge by hand, which fails the script. So does a repo file with uncommitted
-# changes, which is named and left alone, so the copy doesn't overwrite them.
-# Usage: copy-back.sh [--dry-run]
+# Copy installed configs that differ back into the repo. Fails on a repo file with uncommitted
+# changes, or on two installed copies of one file that differ from each other.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -37,7 +31,6 @@ done
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Print a path with HOME as ~, and a repo path relative to the repo
 # shellcheck disable=SC2088 # shown, not expanded
 shown() {
     case "$1" in
@@ -47,9 +40,7 @@ shown() {
     esac
 }
 
-# Record each copy every step's *_files functions name, as <repo file> <tab> <destination>. Each
-# step is sourced in its own subshell, with stdin from /dev/null so nothing asks, and what sourcing
-# and the functions print is dropped.
+# <repo file> <tab> <destination> for every step's *_files functions
 common_fns="$(compgen -A function)"
 for install in "$DOTFILES_DIR"/*/install.sh "$DOTFILES_DIR"/ai_tools/*/install.sh; do
     (
@@ -66,9 +57,7 @@ done
 touch "$tmp/copies"
 awk '!seen[$0]++' "$tmp/copies" > "$tmp/unique"
 
-# Each repo file's content before any copy, as <repo file> <tab> <snapshot>. A repo file installed
-# twice is compared with what it was, not with the first copy taken over it, so a dry run and a
-# real run agree, and an unedited second copy isn't a conflict.
+# Snapshot repo files first, so a file installed twice is compared with its original and dry and real runs agree.
 mkdir "$tmp/orig"
 : > "$tmp/snapshots"
 n=0
@@ -80,8 +69,7 @@ while IFS=$'\t' read -r src dest; do
     printf '%s\t%s\n' "$src" "$tmp/orig/$n" >> "$tmp/snapshots"
 done < "$tmp/unique"
 
-# Succeeds when the repo file has changes git hasn't committed, or git doesn't track it. Outside
-# a git work tree there's nothing to compare with, so nothing counts.
+# True for untracked or modified files; false outside a work tree.
 uncommitted() {
     git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree &>/dev/null || return 1
     ! git -C "$DOTFILES_DIR" ls-files --error-unmatch -- "$1" &>/dev/null ||
@@ -96,7 +84,6 @@ while IFS=$'\t' read -r src dest; do
     [ -f "$dest" ] && [ -f "$src" ] || continue
     orig="$(awk -F '\t' -v s="$src" '$1 == s { print $2; exit }' "$tmp/snapshots")"
     cmp -s "$orig" "$dest" && continue
-    # A repo file installed twice, whose first edited copy was already taken
     first="$(awk -F '\t' -v s="$src" '$1 == s { print $2; exit }' "$tmp/taken")"
     if [ -n "$first" ]; then
         if ! cmp -s "$first" "$dest"; then

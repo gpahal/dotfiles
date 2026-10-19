@@ -2,9 +2,6 @@
 set -euo pipefail
 
 # Print the AI tool steps scripts can't do on this OS.
-#
-# The list comes from ai_tools/README.md's Manual steps section, so it has one copy. On macOS, also
-# offer to open the settings still to do.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -14,9 +11,7 @@ source "$DOTFILES_DIR/scripts/lib/markdown.sh"
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 NOTIFICATION_SETTINGS="$HOME/Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 
-# Print "<bundle id> <flags>" for each app in the notification settings, from one plutil run. The
-# apps list comes out as XML, which awk reads without jq, one element a line. Only keys of an app's
-# own dict count, not of one nested in it.
+# Print "<bundle id> <flags>" per app. Only keys of an app's own dict count, not nested ones.
 notification_flags() {
     local xml
     xml="$(plutil -extract apps xml1 -o - "$NOTIFICATION_SETTINGS" 2>/dev/null)" || return 1
@@ -35,10 +30,8 @@ notification_flags() {
         }'
 }
 
-# Print each of the given apps whose notifications aren't allowed with the Persistent alert style.
-# Fails when the settings can't be read: macOS only lets a terminal with Full Disk Access read them.
-# Flag bits as decoded by https://github.com/drewdiver/ncprefs.py: 1<<25 Allow notifications, 1<<3
-# Temporary (banners), 1<<4 Persistent (alerts).
+# Print each given app not set to Allow + Persistent. Fails without Full Disk Access.
+# Bits per https://github.com/drewdiver/ncprefs.py: 1<<25 allow, 1<<3 banners, 1<<4 alerts.
 notifications_pending() {
     local apps id flags wanted=" $* " persistent=" "
     apps="$(notification_flags)" || return 1
@@ -55,8 +48,7 @@ notifications_pending() {
 
 open_manual_steps() {
     local bundle_id pending_notifications="" readable=true extension_installed=false open_extension=false targets=""
-    # Unreadable settings would count all three apps as pending, so don't offer to open them.
-    # Ghostty's are the main README's manual step.
+    # Unreadable settings would count every app as pending, so don't offer to open them.
     if ! pending_notifications="$(notifications_pending com.anthropic.claudefordesktop \
         com.openai.codex com.t3tools.t3code)"; then
         pending_notifications=""
@@ -79,8 +71,7 @@ open_manual_steps() {
         echo "  Claude in Chrome extension already installed."
     fi
 
-    # Only offer to open what still needs doing. DOTFILES_ASSUME_YES runs on a test machine, where
-    # nobody is there to set anything.
+    # DOTFILES_ASSUME_YES means a test machine, where nobody is there to set anything.
     [ -n "$pending_notifications" ] && targets="the notification settings"
     "$open_extension" && targets="${targets:+$targets and }the Chrome extension page"
     [ -n "$targets" ] || return 0

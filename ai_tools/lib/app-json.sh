@@ -1,14 +1,7 @@
 # shellcheck shell=bash
-# Settings merged into JSON files a desktop app also writes, shared by the claude-desktop and
-# t3-code steps.
 
-# merge_app_json <app> <already message> <set message> <file> <jq filter> [<file> <jq filter>...]
-# Merge each filter into its file, as json_merge does, while the app is quit, since it would write
-# over the files as it ran or quit. Prints the already message, changing nothing, when every file
-# has its settings. Otherwise asks to quit the app (ensure_app_quit), leaves the files alone when it
-# keeps running, and prints the set message once every merge is done. Fails when a merge does. A
-# message may run to several lines, each of which is indented.
-# e.g. merge_app_json Claude "Its settings are already set" "Set its settings" "$config" "$filter"
+# merge_app_json <app> <already msg> <set msg> <file> <jq filter> [<file> <jq filter>...]
+# Merges only while the app is quit, since it rewrites the files as it runs or quits.
 merge_app_json() {
     local app="$1" already="$2" done="$3" i
     shift 3

@@ -19,12 +19,9 @@ CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
 CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
-# The worktree hook runs git wt, which the git step installs. Registered without it, every
-# `claude -w` and isolated subagent would fail.
+# Registered without git wt, every `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
 
-# Values you can change, such as with /model or /effort (ai_tools/lib/keepable.sh), each with a jq
-# path and the repo's value as JSON
 # Usage: claude_code_keepable <jq path> <JSON value> <name> [ubuntu]
 claude_code_keepable() {
     keepable claude_code "$1" "$2" "Claude Code's $3" "${4:-}"
@@ -39,13 +36,10 @@ claude_code_keepable .statusLine.type '"command"' "status line type (statusLine.
 claude_code_keepable .statusLine.command '"~/.claude/statusline.sh"' "status line command (statusLine.command)"
 claude_code_keepable .statusLine.refreshInterval 5 \
     "status line refresh interval (statusLine.refreshInterval)"
-# Ubuntu is used over SSH. The ubuntu step's AcceptEnv and zsh/hooks.zsh carry Ghostty's
-# TERM_PROGRAM into tmux panes, but a session that didn't come through them (an older tmux
-# server, or a client that sends no TERM_PROGRAM) leaves `auto` with no notification. Pin
-# Ghostty's channel, which sends OSC 777, wrapped for tmux, back to the Mac.
+# Over SSH, `auto` notifies nothing when TERM_PROGRAM didn't reach the tmux pane; ghostty's
+# OSC 777 reaches the Mac either way.
 claude_code_keepable .preferredNotifChannel '"ghostty"' "notification channel (preferredNotifChannel)" ubuntu
 
-# Print the settings' value at jq path $1, or nothing when it's unset or the file can't be read
 claude_code_keep_current() {
     jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
 }
@@ -54,13 +48,11 @@ claude_code_have_git_wt() {
     [ -x "$HOME/.local/bin/git-wt" ]
 }
 
-# The command settings.json runs the worktree hook with
 # shellcheck disable=SC2088 # Claude Code expands the ~
 CLAUDE_CODE_WORKTREE_HOOK_COMMAND="~/.claude/hooks/worktree-hook.sh"
 
-# Print "<event> already runs <command>" for each command other than ours in WorktreeCreate or
-# WorktreeRemove. Claude Code runs every hook an event lists, and each create hook would make its
-# own worktree, so while one prints anything the step takes ours out of both events.
+# Print "<event> already runs <command>" per foreign WorktreeCreate/WorktreeRemove hook. Claude
+# Code runs them all and each create hook makes its own worktree, so ours must then be removed.
 claude_code_other_worktree_hooks() {
     jq -r --arg ours "$CLAUDE_CODE_WORKTREE_HOOK_COMMAND" '
         (.hooks // {}) | objects | to_entries[]
@@ -71,8 +63,7 @@ claude_code_other_worktree_hooks() {
     ' "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
 }
 
-# Print the path of claude. The native installer puts it in ~/.local/bin, which may not be on this
-# shell's PATH yet.
+# ~/.local/bin may not be on PATH yet after the native installer.
 claude_code_path() {
     if command -v claude; then
         return 0
@@ -80,15 +71,14 @@ claude_code_path() {
     [ -x "$HOME/.local/bin/claude" ] && echo "$HOME/.local/bin/claude"
 }
 
-# Print true or false for whether claude is signed in, or nothing when it can't tell. claude auth
-# status prints loggedIn either way, and exits 1 when it's false.
+# Print true, false, or nothing when unknown. auth status exits 1 when logged out.
 claude_code_signed_in() {
     "$1" auth status --json 2>/dev/null |
         jq -r 'if .loggedIn == true or .loggedIn == false then .loggedIn else empty end' 2>/dev/null || true
 }
 
 install_claude_code() {
-    # The native installer auto-updates, so prefer it over the claude-code cask
+    # The native installer auto-updates; the cask doesn't
     local claude
     claude="$(claude_code_path)" || true
     if [ -n "$claude" ]; then
@@ -103,24 +93,13 @@ install_claude_code() {
     fi
 }
 
-# Print the jq filter that applies the settings. With false, it removes our worktree hook instead of
-# registering it: the copy isn't executable, so Claude Code would fail to create worktrees.
 # Usage: claude_code_settings [<register the worktree hook: true|false>]
 claude_code_settings() {
     local register_hook="${1:-true}"
-    # inputNeededNotifEnabled and agentPushNotifEnabled are /config's "Push when actions required"
-    #   and "Push when Claude decides". Remote Control at startup stays off, since a connected
-    #   session takes prompts from claude.ai and the phone app. Only user or managed settings can
-    #   make auto mode the default. Transcripts are kept 90 days, so /resume reaches further back.
-    # The worktree hook is added only once git wt is installed, and removed from all three events
-    #   while another command holds WorktreeCreate or WorktreeRemove. Its 120 s timeout stops a
-    #   stuck git wt from holding up claude -w for the default 10 minutes.
-    # Session quality surveys are off because they can attach the transcript. Telemetry stays on:
-    #   DO_NOT_TRACK and DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns
-    #   off /advisor, /skill-doctor, skill and plugin sync, and more. Leave
-    #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so mobile
-    #   pushes stop.
-    # Each value you can change, with = to write over yours or //= to set it only when unset
+    # remoteControlAtStartup off: a connected session takes prompts from claude.ai and the phone.
+    # Surveys off: they can attach the transcript. Telemetry stays on: DO_NOT_TRACK and
+    # DISABLE_TELEMETRY also stop feature flags (/advisor, skill sync), and
+    # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC stops Remote Control and so mobile pushes.
     local i op keepable=""
     for i in $(keepable_indexes claude_code); do
         op="//="
@@ -129,7 +108,7 @@ claude_code_settings() {
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
     local settings='
-        # A hand-edited short timeout would kill the hook mid-fetch
+        # Resets the timeout, since a hand-edited short one would kill the hook mid-fetch
         def add_hook($command; $timeout):
             (. // []) as $groups
             | if any($groups[].hooks[]?; .command == $command) then
@@ -137,7 +116,6 @@ claude_code_settings() {
                         .hooks |= map(if .command == $command then .type = "command" | .timeout = $timeout else . end)
                     else . end)
               else $groups + [{"hooks": [{"type": "command", "command": $command, "timeout": $timeout}]}] end;
-        # Remove $command from hooks.<$event>, then any group that leaves empty, then the event
         def remove_hook($event; $command):
             if (.hooks | type) == "object" and (.hooks[$event] | type) == "array" then
                 .hooks[$event] |= map(if (.hooks | type) == "array" then
@@ -164,14 +142,13 @@ claude_code_settings() {
     '
     local hook="$CLAUDE_CODE_WORKTREE_HOOK_COMMAND"
     if [ -n "$(claude_code_other_worktree_hooks)" ] || ! "$register_hook" || ! claude_code_have_git_wt; then
-        # An earlier run may have registered ours before the other command arrived, while the
-        # hook's copy was executable, or while git wt was installed
+        # An earlier run may have registered ours
         settings+='| remove_hook("WorktreeCreate"; "'"$hook"'")
             | remove_hook("WorktreeRemove"; "'"$hook"'")
             | remove_hook("SessionEnd"; "'"$hook"'")'
     else
-        # SessionEnd hooks get 1.5 s in all unless one sets a longer timeout, up to 60 s, and
-        # git wt prune checks each of the session's worktrees
+        # 120 s stops a stuck git wt holding claude -w for the default 10 min. SessionEnd hooks
+        # get 1.5 s unless one sets longer, and git wt prune checks each worktree.
         settings+='| .hooks.WorktreeCreate |= add_hook("'"$hook"'"; 120)
             | .hooks.WorktreeRemove |= add_hook("'"$hook"'"; 120)
             | .hooks.SessionEnd |= add_hook("'"$hook"'"; 30)'
@@ -246,19 +223,15 @@ status() {
 }
 
 apply() {
-    # Anthropic's installer prints "Setting up Claude Code..." itself
     echo "Claude Code:"
     tool_home_guard "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude" || return 1
     require_cmd jq || return 1
-    # Anthropic's installer downloads with curl
     if ! claude_code_path > /dev/null; then
         require_cmd curl || return 1
     fi
     local status=0
     install_claude_code || status=1
-    # The hook goes in place before settings.json registers it. When it isn't there, it isn't
-    # registered, and an earlier registration goes, since Claude Code would fail to run it and so
-    # fail to create the worktree.
+    # Register the hook only if its copy is executable; otherwise worktree creation would fail.
     install_scripts || status=1
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false

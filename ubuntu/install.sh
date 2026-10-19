@@ -2,21 +2,8 @@
 set -euo pipefail
 
 # Set Ubuntu up to run unattended around the clock.
-#
-# That means: never sleep, watch a UPS on USB with NUT once one is plugged in, which shuts down on a
-# dying battery and has the UPS cut and restore power, reboot after a kernel panic, raise the
-# inotify limits for agents' file watchers, add the en_US.UTF-8 locale, watch disk health and push
-# its warnings to ntfy, install security updates daily and keep edited conffiles through them, start
-# user services (the T3 Code server) at boot without a login, start sshd at boot and take SSH logins
-# only for you, and with keys only once a session shows your key logs in, install Tailscale, turn on
-# the firewall, letting SSH in only from the private ranges and anything in from the tailnet
-# (tailscale0), which Tailscale's ACLs limit, once no SSH session comes from elsewhere, and wake on
-# LAN. These need sudo, so the step lists what's missing and asks once. When one part fails, the
-# step still does the others, then fails. It also puts Homebrew on PATH for user services, and turns
-# on a daily health alert and a boot notice pushed to ntfy, which need no sudo.
-#
-# A temp HOME doesn't isolate this step, which changes the system with sudo, systemctl, and
-# loginctl. Test it in an Ubuntu VM that runs systemd, such as an OrbStack machine.
+# A temp HOME doesn't isolate this step (sudo, systemctl, loginctl). Test it in an Ubuntu VM with
+# systemd, such as an OrbStack machine.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -39,7 +26,6 @@ source "$UBUNTU_LIB_DIR/tailscale.sh"
 source "$UBUNTU_LIB_DIR/alerts.sh"
 # shellcheck source=lib/ups.sh
 source "$UBUNTU_LIB_DIR/ups.sh"
-# SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
 
@@ -47,24 +33,18 @@ STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
-# Masking these stops every suspend, whether GNOME's idle timer, the login screen's, or a command
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
-# Sorts before 50-cloud-init.conf: sshd keeps the first value it reads for most settings
+# Sorts before 50-cloud-init.conf: sshd keeps the first value it reads
 SSHD_DROP_IN=/etc/ssh/sshd_config.d/10-dotfiles.conf
-# sshd's own config, whose Match Address lines the step reads, to check sshd's settings for them
 SSHD_CONFIG=/etc/ssh/sshd_config
-# sshd -t and -T need this directory, which ssh.service creates, and Ubuntu only starts that
-# service on the first connection
+# sshd -t and -T need it; ssh.service creates it only on the first connection
 SSHD_RUN_DIR=/run/sshd
-# openssh-server's daemon, outside the PATH of a user who isn't root
 SSHD_BIN=/usr/sbin/sshd
-# The unit that starts sshd at boot, 26.04's default. ssh.service, which it starts on the first
-# connection, is the one that reloads sshd's config.
+# ssh.service, which this starts on the first connection, is the one that reloads sshd's config
 SSH_UNIT=ssh.socket
-# The only dirs sbin_cmd looks in for a command such as ufw or smartctl: system dirs, since the
-# result can run under sudo
+# System dirs only, since sbin_cmd's result can run under sudo
 SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
-# Stops what masking can't: GNOME then hides suspend, and stops trying it on UPS battery
+# Masking alone doesn't stop GNOME offering suspend or trying it on UPS battery
 SLEEP_CONF=/etc/systemd/sleep.conf.d/10-dotfiles.conf
 SLEEP_CONF_CONTENT='# From the dotfiles ubuntu step: never sleep, alongside the masked sleep targets
 [Sleep]
@@ -72,69 +52,47 @@ AllowSuspend=no
 AllowHibernation=no
 AllowHybridSleep=no
 AllowSuspendThenHibernate=no'
-# Packages write this, and their names to .pkgs, when an update needs a reboot
 REBOOT_REQUIRED=/var/run/reboot-required
-# systemd keeps a file here for each user who lingers, whose user services start at boot
 LINGER_DIR=/var/lib/systemd/linger
-# The timers that download and install updates, which unattended-upgrades relies on
 APT_TIMERS=(apt-daily.timer apt-daily-upgrade.timer)
 SYSCTL_CONF=/etc/sysctl.d/90-dotfiles.conf
-# Where sysctl --system reads settings from, to name the file that overrides one of the step's
 SYSCTL_SOURCES=(/etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf)
-# The file watchers agents run in many worktrees (dev servers, editors, test watchers) each open
-# inotify instances, so the default 128 instances run out before the watches do
+# Agents' file watchers in many worktrees run out of the default 128 inotify instances
 SYSCTL_CONTENT='# From the dotfiles ubuntu step: reboot 10 seconds after a kernel panic
 kernel.panic = 10
 # Room for the file watchers agents run in many worktrees
 fs.inotify.max_user_instances = 1024
 fs.inotify.max_user_watches = 1048576'
-# The unit smartmontools installs; smartd.service is its alias
+# smartd.service is an alias
 SMARTD_UNIT=smartmontools.service
-# smartd's warning hook, installed as $SMARTD_HOOK
 SMARTD_HOOK_SRC="$DOTFILES_DIR/ubuntu/smartd-notify.sh"
-# smartd's config, whose -M exec smartd-runner, in Ubuntu's default DEVICESCAN line, runs the hook
 SMARTD_CONF=/etc/smartd.conf
-# NUT, which watches a UPS on USB. nut-server ships the drivers, upsd, nut-scanner, the udev rules
-# that name the UPSes it knows, and the system-shutdown hook that has the UPS cut its power when
-# upsmon left POWERDOWNFLAG. nut-client ships upsmon and upsc.
+# nut-server also ships the udev rules and the system-shutdown hook that cuts UPS power
 NUT_PACKAGES=(nut-client nut-server)
 NUT_UNITS=(nut-server.service nut-monitor.service)
 NUT_DIR=/etc/nut
-# The files the step writes in $NUT_DIR, all readable only by root and the nut group
 NUT_FILES=(nut.conf ups.conf upsd.conf upsd.users upsmon.conf)
 NUT_OWNER=root
 NUT_GROUP=nut
-# upower's hwdb, whose UPOWER_BATTERY_TYPE=ups tag tells a UPS on USB (ups_plugged)
 UPOWER_HWDB=/usr/lib/udev/hwdb.d/95-upower-hid.hwdb
-# The UPS's name in ups.conf, as upsc ups@localhost reads it
 UPS_NAME=ups
 UPS_POWERDOWN_FLAG=/etc/killpower
-# systemd-shutdown runs each executable here just before it powers off, and kills any still
-# running after 90 s, so NUT's POWEROFF_WAIT can't wait long enough for a UPS that doesn't cut
-# its output. This hook sets an RTC alarm instead (ups_rtc_hook).
+# systemd-shutdown kills hooks after 90 s, too soon for NUT's POWEROFF_WAIT, so this sets an RTC
+# alarm instead
 UPS_RTC_HOOK=/usr/lib/systemd/system-shutdown/dotfiles-rtc-wake
-# Minutes after a UPS shutdown the alarm starts the machine, if the UPS didn't cut its output
 UPS_RTC_WAKE_MINUTES=15
-# upsmon's NOTIFYCMD, installed as $UPS_NOTIFY
 UPS_NOTIFY_SRC="$DOTFILES_DIR/ubuntu/ups-notify.sh"
-# The ntfy code the UPS notifier and smartd's hook source
 NTFY_LIB_SRC="$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
 NTFY_LIB=/usr/local/lib/dotfiles/ntfy.sh
-# The health alerts' user units, which run ubuntu/health-alert.sh. The user manager doesn't see an
-# XDG_CONFIG_HOME set in the shell, so they go in ~/.config.
+# Not XDG_CONFIG_HOME: the user manager doesn't see the shell's
 HEALTH_UNIT_DIR="$HOME/.config/systemd/user"
 HEALTH_UNITS=(dotfiles-health.service dotfiles-health.timer dotfiles-boot-notice.service)
-# Where fwupd keeps each remote's metadata, whose age says how current its update list is
 FWUPD_METADATA_DIRS="/var/lib/fwupd/metadata /var/cache/fwupd/metadata"
-# The file unattended-upgrades' package writes, and the lines dpkg-reconfigure writes when it's on,
-# which the step merges into it
 AUTO_UPGRADES_CONF=/etc/apt/apt.conf.d/20auto-upgrades
 AUTO_UPGRADES_CONTENT='APT::Periodic::Enable "1";
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";'
-# unattended-upgrades skips an update that ships a new version of a conffile you edited, such as
-# NUT's files in /etc/nut, since dpkg would ask which to keep. These options keep yours without
-# asking, so the update installs.
+# Without these, unattended-upgrades skips an update that ships a conffile you edited
 KEEP_CONFFILES_CONF=/etc/apt/apt.conf.d/50dotfiles-keep-conffiles
 KEEP_CONFFILES_CONTENT='// From the dotfiles ubuntu step: on an update that ships a new version of a conffile you
 // edited, keep yours without asking, so unattended-upgrades installs it
@@ -142,62 +100,47 @@ Dpkg::Options {
     "--force-confdef";
     "--force-confold";
 };'
-# The private address ranges ufw lets SSH in from: RFC 1918's, IPv6's unique local addresses, and
-# link-local ones. Fixed, so a new network or a rotated IPv6 prefix needs no new rules. RFC 1918's
-# 172.16.0.0/12 is left out: the docker step keeps Docker's address pools in 172.17.0.0/16 to
-# 172.31.0.0/16, so allowing it would let any container try logins on sshd.
+# 172.16.0.0/12 is left out: Docker's address pools live there, so containers could try SSH logins
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
-# The tailnet's addresses, Tailscale's CGNAT range
 TAILNET_RANGE=100.64.0.0/10
-# Docker's bridges: the default one, and each user-defined network's br-<ID>, which ufw's + matches.
-# A bridge given its own name, or Swarm's docker_gwbridge, isn't among them.
-# ufw denies SSH on them ahead of the allow rules, since a network created with an explicit
-# subnet, or with IPv6, gives containers addresses in $SSH_RANGES.
+# Denied SSH ahead of the allows: a network with an explicit subnet or IPv6 can use $SSH_RANGES.
+# Custom-named bridges and docker_gwbridge aren't covered.
 DOCKER_BRIDGES=(docker0 br-+)
-# ufw's settings, which anyone may read: whether it's on, and its default policy and IPv6 setting
+# World-readable, unlike the rules
 UFW_CONF=/etc/ufw/ufw.conf
 UFW_DEFAULTS=/etc/default/ufw
-# Tailscale's port for direct connections. Without it, devices relay through DERP servers.
+# Without it, devices relay through DERP
 TAILSCALE_PORT=41641
 TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
-# The keyring path and source file Tailscale's install script uses. Tailscale's updater rewrites
-# that file, so it has to stay a one-line .list rather than deb822.
+# Tailscale's updater rewrites the .list, so it can't be deb822
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
 TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
-# User services, such as tmux at boot and the T3 Code server, get the user manager's PATH, which
-# has neither Homebrew nor ~/.local/bin. The user manager doesn't see an XDG_CONFIG_HOME set in the
-# shell, so the file goes in ~/.config.
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
-# The disks unlocked at boot, whose tpm2-device option binds one to the TPM (warn_disk_encryption)
 CRYPTTAB=/etc/crypttab
 
 ubuntu_files() {
     "$1" "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF"
 }
 
-# The files the step installs as root. Only scripts/copy-back.sh calls it, to copy them back.
+# Only scripts/copy-back.sh calls it
 ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"
     "$1" "$NTFY_LIB_SRC" "$NTFY_LIB"
 }
 
-# root_copy_current <src> <dest> <mode>: succeeds when a file installed as root is a copy of the
-# repo's, and executable when the mode is 0755. The mode is fixed, not the repo file's, since a
-# checkout can lose its exec bits, and run-parts skips a hook that isn't executable.
+# root_copy_current <src> <dest> <mode>. The mode is fixed, not the repo file's, since a checkout
+# can lose exec bits and run-parts skips a non-executable hook.
 root_copy_current() {
     cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
 }
 
-# install_root_copy <src> <dest> <mode>: install a copy of the repo's file as root's, with the
-# mode, unless it's already current
 install_root_copy() {
     root_copy_current "$@" || install_root_file "$@"
 }
 
-# The ntfy code smartd's hook and the UPS notifier source. They run away from the repo, the
-# notifier as the nut user, who may not be able to read it, so it's installed with each of them.
+# Installed outside the repo, since the UPS notifier runs as nut, who may not be able to read it
 ntfy_lib_installed() {
     root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
@@ -213,7 +156,6 @@ ubuntu_items() {
         "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
     item --sudo "Linger, so user services start at boot" \
         "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
-    # status_smartd_hook reports it, skipped in a VM and out of date apart
     item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
         smartd_hook_ready install_smartd_hook
     item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
@@ -227,28 +169,23 @@ ubuntu_items() {
     item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
         "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
-    # Driven only once openssh-server is installed, which enables it
+    # Driven only once openssh-server is installed
     item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
         "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
 }
 
-# status and apply run in_vm, key_login, and sudo_ready many times, some in subshells, so they
-# declare IN_VM_CACHE, KEY_LOGIN_CACHE, KEY_LOGIN_STATUS, and SUDO_CACHED_CACHE local and call this
-# first to set them once
+# Callers declare the *_CACHE vars local first; the checks run many times, some in subshells
 cache_checks() {
     local vm=no status=0 cached=no
     ! in_vm || vm=yes
     KEY_LOGIN_CACHE="$(key_login)" || status=$?
     ! sudo_cached || cached=yes
-    # Set last, since in_vm, key_login, and sudo_ready read them once set
+    # Set last, since the checks above read them once set
     IN_VM_CACHE="$vm"
     KEY_LOGIN_STATUS="$status"
     SUDO_CACHED_CACHE="$cached"
 }
 
-# Copy the environment.d file. When it changes, reload the user manager, which reads environment.d
-# then, so services it starts from now on get the new PATH. Running ones keep theirs until they
-# restart, which the step leaves to you.
 configure_homebrew_env() {
     local changed=true
     ! cmp -s "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF" || changed=false
@@ -270,11 +207,8 @@ install_locale() {
     sudo locale-gen en_US.UTF-8 > /dev/null
 }
 
-# Print the UUID and name of each NetworkManager connection of a type, tab-separated, one per
-# line. Commands name a connection by UUID, since two can share a name. Extra arguments go to
-# nmcli connection show, e.g. --active. -e no leaves a colon or backslash in a name unescaped, and
-# the name is the rest of the line, since the UUID and type have neither.
-# e.g. nm_connections 802-11-wireless --active
+# nm_connections <type> [nmcli args]: prints "UUID\tname" per line. UUID, since names can repeat.
+# -e no leaves the name unescaped; it's the rest of the line, as UUID and type have no colons.
 nm_connections() {
     local type="$1"
     shift
@@ -287,7 +221,6 @@ wired_connections() {
     nm_connections 802-3-ethernet
 }
 
-# Succeeds when this connection enables waking on a Wake-on-LAN magic packet
 wake_on_lan_on() {
     [[ "$(nmcli -g 802-3-ethernet.wake-on-lan connection show uuid "$1" 2>/dev/null)" == *magic* ]]
 }
@@ -300,8 +233,7 @@ enable_linger() {
     sudo loginctl enable-linger "$(id -un)"
 }
 
-# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when
-# sudo credentials are cached, and is otherwise unverified.
+# Root-only state is checked with sudo -n when credentials are cached, else left unverified
 status() {
     local uuid name wired=false item packages overrides
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE=""
@@ -375,9 +307,7 @@ apply() {
     local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
-    # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
-    # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
-    # that file. Its apt key is downloaded to install it or re-add its apt repo.
+    # A release upgrade turns Tailscale's apt source off, and its updater reads only tailscale.list
     if command -v tailscale &>/dev/null && apt_installed tailscale; then
         tailscale_source="$(apt_source_state "$TAILSCALE_LIST" "$(tailscale_list_line)")"
     fi
@@ -409,8 +339,7 @@ apply() {
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    # Only root can read the settings, and apt-config skips them as you: checked with sudo only
-    # when other changes need it, as the ufw rules are
+    # Root-only: checked with sudo only when other changes need it
     local auto_upgrades_unchecked=false
     items_pending locale_installed
     if auto_upgrades_unreadable && ! sudo_ready; then
@@ -420,8 +349,6 @@ apply() {
     fi
     items_pending keep_conffiles_written apt_timers_enabled openssh_installed
     ! openssh_installed || items_pending sshd_enabled
-    # Unreadable, the drop-in may already turn them off, which configure_sshd keeps. Turning them
-    # off is a change to the drop-in, so the item for it names why.
     local key_only_todo="" key_only_why="" drop_in_lines
     if key_only_todo="$(key_only_todo)" && [ -n "$key_only_todo" ] &&
         key_only_why="$(key_only_reason)"; then
@@ -436,16 +363,14 @@ apply() {
     elif "$tailscale_repo"; then
         pending+=("Rewrite Tailscale's apt source for $(ubuntu_codename) ($tailscale_source), which Tailscale updates from: write $TAILSCALE_LIST and its key")
     fi
-    # A fresh install needs a login first, which a later run follows
+    # A fresh install needs a login first
     local tailscale_set=false
     if command -v tailscale &>/dev/null && ! tailscale_configured && ! tailscale_needs_login; then
         tailscale_set=true
         pending+=("Turn on Tailscale's auto-update and make $(id -un) its operator")
     fi
-    # Checked now only when sudo credentials are cached. Otherwise the rules are unverified (2),
-    # and asking for sudo only to read them isn't worth it.
+    # 2: unverified without cached sudo; not worth asking for sudo just to read
     ufw_configured -n || ufw=$?
-    # With ufw on, configure_ufw only adds the rules that are missing or out of place
     if [ "$ufw" -eq 1 ] && ufw_enabled && ! ufw_stopped -n; then
         ufw_todo="add the missing ufw rules"
     elif [ "$ufw" -eq 1 ]; then
@@ -482,7 +407,6 @@ apply() {
         [ -z "$ups_todo" ] || setup_ups || result=1
         items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
             apt_timers_enabled openssh_installed || result=1
-        # Installing the package enables sshd, so this catches one turned off since
         ! openssh_installed || items_apply sshd_enabled || result=1
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
@@ -495,7 +419,6 @@ apply() {
         if "$tailscale_set"; then
             sudo tailscale set --auto-update --operator="$(id -un)" || result=1
         fi
-        # sudo is in use now, so the rules can be read
         if [ "$ufw" -ne 0 ]; then
             ensure_sshd_run_dir && { ufw_configured || configure_ufw; } || result=1
         fi
@@ -517,25 +440,20 @@ apply() {
     fi
     [ -z "$key_only_todo" ] || echo "  Password logins stay on: $key_only_todo."
 
-    # Signing in to Tailscale opens a link, so it's yours to do. SSH goes through OpenSSH on the
-    # tailnet address: Tailscale SSH (--ssh) drops every session when tailscaled restarts, which
-    # auto-update does.
+    # Not Tailscale SSH (--ssh): it drops every session when auto-update restarts tailscaled
     if command -v tailscale &>/dev/null && ! tailscale_running; then
         echo "  Tailscale isn't connected. Run sudo tailscale up, then bash setup.sh ubuntu to persist"
         echo "  auto-update and operator settings after login. Turn off key expiry for this machine in"
         echo "  the Tailscale admin console, so it doesn't drop off the tailnet after 180 days."
     fi
-    # ups_todo is set only for a plugged-in UPS, which warn_no_ups doesn't report
     [ -n "$ups_todo" ] || UPS_STATE_CACHED=true warn_no_ups
     warn_wifi_needs_login
     warn_disk_encryption
     return "$result"
 }
 
-# NetworkManager only brings up a Wi-Fi connection limited to your user, or whose password is in
-# your login keyring, once you log in, so after a reboot the machine stays offline. nmcli prints
-# psk-flags as e.g. "3 (agent-owned, not-saved)"; flag 1 (agent-owned) or 2 (not-saved) means the
-# system doesn't keep the password.
+# A user-limited connection, or psk-flags 1 or 2 (password not kept by the system), waits for a
+# login, so the machine stays offline after a reboot
 warn_wifi_needs_login() {
     local uuid name permissions psk_flags n
     while IFS=$'\t' read -r uuid name; do
@@ -553,12 +471,8 @@ warn_wifi_needs_login() {
     done < <(nm_connections 802-11-wireless --active)
 }
 
-# A disk that asks for a passphrase at boot can't come back on its own after a power cut or reboot.
-# Warns when a disk is unlocked and a LUKS partition lacks the ubuntu-<role>-enc label snapd gives
-# TPM-backed encryption (as fwupd also relies on), as with the installer's encryption without TPM.
-# TPM-backed encryption that also asks for a PIN gets no warning: only snapd's API tells it apart.
-# Neither does a disk bound to the TPM with systemd-cryptenroll, which keeps its label, so a
-# tpm2-device option in crypttab counts as bound.
+# snapd labels TPM-backed LUKS ubuntu-<role>-enc; systemd-cryptenroll keeps the label, so a
+# crypttab tpm2-device option also counts. TPM+PIN can't be told apart and isn't warned about.
 warn_disk_encryption() {
     lsblk -rno TYPE 2>/dev/null | grep -qx crypt || return 0
     lsblk -rno FSTYPE,LABEL 2>/dev/null |

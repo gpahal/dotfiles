@@ -1,9 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# write_back moves a temp file from the same directory into place, so a failed write can't leave
-# a settings file cut short. Also json_merge's start from {}, append_line, and install_root_file
-# and write_root_file, which replace a root-owned file the same way, through sudo.
+# write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -25,7 +23,6 @@ assert_eq "-rw-r-----" "$(/bin/ls -l "$file" | cut -c1-10)" "mode after write_ba
 [ ! -e "$new" ] || fail "write_back left the temp file"
 assert_eq "settings.json" "$(/bin/ls -A "$HOME")" "files in the directory after write_back"
 
-# A partial copy fails without replacing the old file or discarding the new contents.
 new="$(mktemp)"
 printf 'replacement\n' > "$new"
 stub cp 'for last; do :; done; printf part > "$last"; exit 1'
@@ -36,7 +33,7 @@ assert_eq replacement "$(cat "$new")" "new contents after a partial copy"
 assert_eq settings.json "$(/bin/ls -A "$HOME")" "files after a partial copy"
 rm "$new"
 
-# Unlike copy_file's fixed default, write_back honors the caller's umask.
+# Unlike copy_file, write_back honors the umask
 umask 077
 new="$(mktemp)"
 printf 'fresh\n' > "$new"
@@ -44,8 +41,7 @@ assert_exit 0 write_back "$new" "$HOME/fresh.json"
 assert_eq 600 "$(file_mode "$HOME/fresh.json")" "mode of a new file"
 umask 022
 
-# A symlink stays a link, and its target is replaced whole in its own directory, keeping its mode.
-# The relative link goes through another link, to check readlink -f follows the chain.
+# relative-link.json chains through link.json, so readlink -f must follow both
 mkdir -p "$HOME/real"
 printf 'old\n' > "$HOME/real/target.json"
 chmod 640 "$HOME/real/target.json"
@@ -65,8 +61,6 @@ for link in link.json relative-link.json; do
     [ ! -e "$new" ] || fail "write_back through $link left the temp file"
 done
 
-# A dangling symlink fails on both OSes, as json_merge does: the link stays, no target is made,
-# and the new contents are kept
 ln -s "$HOME/real/nowhere.json" "$HOME/dangling.json"
 new="$(mktemp)"
 printf 'new\n' > "$new"
@@ -77,7 +71,6 @@ assert_contains "$RUN_OUTPUT" "Couldn't write $HOME/dangling.json. The new conte
 [ -e "$new" ] || fail "a failed write_back through a dangling symlink removed the new contents"
 rm -f "$new" "$HOME/dangling.json"
 
-# A write that fails leaves the file as it was and keeps the new contents
 if [ "$(id -u)" -ne 0 ]; then
     mkdir -p "$HOME/ro"
     printf 'old\n' > "$HOME/ro/settings.json"
@@ -89,8 +82,7 @@ if [ "$(id -u)" -ne 0 ]; then
     assert_contains "$RUN_OUTPUT" "The new contents are in $new"
     [ -e "$new" ] || fail "a failed write_back removed the new contents"
     chmod 755 "$HOME/ro"
-    # A file made read-only stays as it is, as cp would leave it, though its directory would let
-    # a rename replace it. So does one a symlink points to.
+    # A read-only file stays, as with cp, though its directory would let a rename replace it
     printf 'old\n' > "$HOME/locked.conf"
     chmod 444 "$HOME/locked.conf"
     ln -s locked.conf "$HOME/locked-link.conf"
@@ -106,7 +98,6 @@ if [ "$(id -u)" -ne 0 ]; then
     [ -L "$HOME/locked-link.conf" ] || fail "a write_back replaced the symlink to a read-only file"
 fi
 
-# json_merge starts a missing, empty, or whitespace-only file from {}
 if command -v jq &>/dev/null; then
     for start in missing empty blank; do
         json="$HOME/json/$start.json"
@@ -118,7 +109,6 @@ if command -v jq &>/dev/null; then
         assert_exit 0 json_merge "$json" '.added = 1'
         assert_eq '{"added":1}' "$(jq -c . "$json")" "json_merge on a $start file"
     done
-    # A file it can't read fails, and stays as it is, before any backup
     if [ "$(id -u)" -ne 0 ]; then
         json="$HOME/json/locked.json"
         printf '{"existing":"keep me"}\n' > "$json"
@@ -130,7 +120,6 @@ if command -v jq &>/dev/null; then
         assert_exit 0 cmp -s "$json" "$HOME/locked-before"
         [ ! -e "$json.bak" ] || fail "json_merge backed up a file it couldn't read"
     fi
-    # So does a dangling symlink, which stays a link
     ln -s "$HOME/json/nowhere.json" "$HOME/json/dangling.json"
     assert_exit 1 json_merge "$HOME/json/dangling.json" '.added = 1'
     [ -L "$HOME/json/dangling.json" ] || fail "json_merge replaced a dangling symlink"
@@ -139,7 +128,7 @@ else
     skip_rest "jq isn't installed, so json_merge isn't tested"
 fi
 
-# append_line adds a line once, even one grep would read as an option
+# Lines grep would read as options
 lines="$HOME/lines"
 for line in '-e x' '--' 'plain'; do
     assert_exit 0 append_line "$line" "$lines"
@@ -147,23 +136,18 @@ for line in '-e x' '--' 'plain'; do
     assert_exit 0 has_line "$line" "$lines"
 done
 assert_eq "$(printf '%s\n' '-e x' '--' plain)" "$(cat "$lines")" "file after appending each line twice"
-# It fails only when the file can't be written
 mkdir "$HOME/dir"
 assert_exit 1 append_line x "$HOME/dir"
 
-# A root-owned file: a failed write leaves the old file whole and no temp file behind. The file
-# keeps its mode, and a new one gets 644.
 stub_sudo_exec
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"
-# A new file, in a directory that doesn't exist yet
 printf 'one\n' > "$src"
 assert_exit 0 install_root_file "$src" "$dest"
 assert_eq one "$(cat "$dest")" "a new root file"
 assert_eq 644 "$(file_mode "$dest")" "mode of a new root file"
 assert_eq one "$(cat "$src")" "the source after install_root_file"
-# An existing file keeps its mode, and is replaced, not written through
 chmod 640 "$dest"
 inode="$(/bin/ls -i "$dest" | awk '{print $1}')"
 printf 'two\n' > "$src"
@@ -172,7 +156,6 @@ assert_eq two "$(cat "$dest")" "a replaced root file"
 assert_eq 640 "$(file_mode "$dest")" "mode of a replaced root file"
 [ "$inode" != "$(/bin/ls -i "$dest" | awk '{print $1}')" ] || fail "install_root_file wrote through the file"
 assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files beside a replaced root file"
-# A failed install or mv leaves the file as it was, and no temp file
 cp -p "$dest" "$SANDBOX/before"
 printf 'three\n' > "$src"
 for cmd in install mv; do
@@ -183,7 +166,6 @@ for cmd in install mv; do
     assert_eq 640 "$(file_mode "$dest")" "mode after a failed $cmd"
     assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files after a failed $cmd"
 done
-# write_root_file writes the content with a newline, through the same path
 assert_exit 0 write_root_file "$dest" "four"
 assert_eq "four" "$(cat "$dest")" "write_root_file's content"
 assert_eq 5 "$(wc -c < "$dest" | tr -d ' ')" "write_root_file's size"

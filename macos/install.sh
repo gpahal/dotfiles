@@ -2,57 +2,44 @@
 set -euo pipefail
 
 # Set macOS defaults, free Cmd+Space for Raycast, and set the hostname when needed.
-#
-# A temp HOME doesn't isolate this step. defaults writes the real preferences whatever HOME is, the
-# step restarts the real Finder, Dock, and SystemUIServer, and sudo scutil sets the real hostname.
-# Test it in a macOS VM or on a spare Mac.
+# Changes the real preferences and hostname whatever HOME is: test it in a macOS VM or spare Mac.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-# The Touch ID status check, which the Touch ID script shares
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
 STEP_OS=macos
 
-# socketfilterfw reads the application firewall's settings, and isn't on PATH
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 
-# activateSettings applies changed keyboard shortcuts without a logout, and isn't on PATH
+# activateSettings applies changed shortcuts without a logout
 SYSTEM_ADMIN_DIR=/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources
 
-# Print a symbolic hotkey's entry for the space bar (key code 49) with modifiers $1, turned off
+# Space bar is key code 49
 hotkey_off_plist() {
     echo "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>$1</integer></array><key>type</key><string>standard</string></dict></dict>"
 }
 
-# The shortcuts the step turns off, as symbolic hotkey, modifiers, description, and the app that
-# takes the shortcut. Spotlight's "Show Spotlight search" is Cmd+Space (Cmd is 1048576); Raycast's
-# own setting binds it once it's free.
+# <hotkey id> <modifiers> <description> <app taking it>; Cmd is 1048576
 symbolic_hotkeys() {
     "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Raycast"
 }
 
-# Each changed setting as " domain:key", and each one whose write failed as " domain key": in
-# SANDBOXED_KEYS for a sandboxed app, which needs Full Disk Access (a manual step), and in
-# FAILED_KEYS for anything else, which fails the step
+# " domain:key" per change; " domain key," per failure. Sandboxed failures need Full Disk Access.
 CHANGED_KEYS=""
 FAILED_KEYS=""
 SANDBOXED_KEYS=""
-# Each setting left unchanged because its app was running, as " domain key"
 RUNNING_KEYS=""
 
-# Print the app that owns a domain and overwrites it with its own value when it quits, so a write
-# while it runs is lost
+# Apps that overwrite their domain on quit, losing a write made while they run
 overwriting_app() {
     case "$1" in
         com.apple.ActivityMonitor) echo "Activity Monitor" ;;
     esac
 }
 
-# default_matches <domain> <key> <-bool|-int|-float|-string> <value>
-# Succeeds when a setting already has the value. Returns 2 when `defaults read` can't read it: it's
-# unset, or it belongs to a sandboxed app whose settings the terminal can't read.
+# Returns 2 when the key is unset or in an unreadable sandboxed app's container
 default_matches() {
     local domain="$1" key="$2" type="$3" value="$4" want="$4" current
     case "$type" in
@@ -62,7 +49,6 @@ default_matches() {
     [ "$current" == "$want" ]
 }
 
-# set_default <domain> <key> <-bool|-int|-float|-string> <value>
 set_default() {
     local domain="$1" key="$2" type="$3" value="$4"
     local app
@@ -73,8 +59,7 @@ set_default() {
         return 0
     fi
     if ! defaults write "$domain" "$key" "$type" "$value" 2>/dev/null; then
-        # Sandboxed apps (e.g. TextEdit) keep their defaults in ~/Library/Containers, which macOS
-        # only lets a terminal with Full Disk Access write
+        # ~/Library/Containers needs Full Disk Access
         if [ -d "$HOME/Library/Containers/$domain" ]; then
             SANDBOXED_KEYS+=" $domain $key,"
         else
@@ -87,16 +72,12 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Succeeds when symbolic hotkey $1 is turned off. An unset one is on, and so is one whose entry
-# has no enabled key. defaults prints AppleSymbolicHotKeys in the old-style plist format, where
-# each hotkey's entry starts at a four-space indent, so each entry header decides whether the
-# enabled keys after it are the hotkey's.
+# Unset or without an enabled key means on. Entries start at a four-space indent.
 hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
         awk -v id="$1" '/^    [0-9]+ = / { on_id = $1 == id } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
-# disable_hotkey <hotkey> <modifiers> <description> <app>
 disable_hotkey() {
     hotkey_off "$1" && return 0
     if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" "$(hotkey_off_plist "$2")" 2>/dev/null; then
@@ -108,7 +89,6 @@ disable_hotkey() {
     CHANGED_KEYS+=" com.apple.symbolichotkeys:$1"
 }
 
-# status_hotkey <hotkey> <modifiers> <description> <app>
 status_hotkey() {
     local item
     item="$(printf '%s' "${3:0:1}" | tr '[:lower:]' '[:upper:]')${3:1}"
@@ -125,83 +105,62 @@ status_default() {
     if [ "$result" -eq 0 ]; then
         status_item ok "$1 $2 = $4"
     elif [ "$result" -eq 2 ] && [ -d "$HOME/Library/Containers/$1" ]; then
-        # Sandboxed apps (e.g. TextEdit) keep their defaults in ~/Library/Containers
         status_item unverified "$1 $2 = $4: can't read it; give your terminal Full Disk Access to check it"
     else
         status_item missing "$1 $2 = $4"
     fi
 }
 
-# Pass each setting to a function: set_default to apply it, or status_default to report it
 each_default() {
     local apply="$1"
 
-    # Finder: show hidden files and all file extensions
     "$apply" com.apple.finder AppleShowAllFiles -bool true
     "$apply" NSGlobalDomain AppleShowAllExtensions -bool true
-    # Finder: show path bar and status bar
     "$apply" com.apple.finder ShowPathbar -bool true
     "$apply" com.apple.finder ShowStatusBar -bool true
-    # Finder: default to list view, with folders on top when sorting
+    # List view
     "$apply" com.apple.finder FXPreferredViewStyle -string Nlsv
     "$apply" com.apple.finder _FXSortFoldersFirst -bool true
-    # Finder: no warning when changing a file extension
     "$apply" com.apple.finder FXEnableExtensionChangeWarning -bool false
-    # Finder: search the current folder by default
+    # Search the current folder
     "$apply" com.apple.finder FXDefaultSearchScope -string SCcf
-    # Finder: show the full POSIX path in the window title
     "$apply" com.apple.finder _FXShowPosixPathInTitle -bool true
-    # No .DS_Store files on network and USB volumes
     "$apply" com.apple.desktopservices DSDontWriteNetworkStores -bool true
     "$apply" com.apple.desktopservices DSDontWriteUSBStores -bool true
 
-    # Fast key repeat (essential for vim), and repeat instead of press-and-hold accents
     "$apply" NSGlobalDomain KeyRepeat -int 2
     "$apply" NSGlobalDomain InitialKeyRepeat -int 15
     "$apply" NSGlobalDomain ApplePressAndHoldEnabled -bool false
 
-    # Dock: auto-hide with no delay, and minimize to the application icon
     "$apply" com.apple.dock autohide -bool true
     "$apply" com.apple.dock autohide-delay -float 0
     "$apply" com.apple.dock autohide-time-modifier -float 0.4
     "$apply" com.apple.dock minimize-to-application -bool true
-    # Dock: no recent apps section
     "$apply" com.apple.dock show-recents -bool false
-    # Spaces: keep their order instead of rearranging by most recent use
     "$apply" com.apple.dock mru-spaces -bool false
 
-    # Screenshots: save to ~/Screenshots (which apply creates) as PNG
     "$apply" com.apple.screencapture location -string "$HOME/Screenshots"
     "$apply" com.apple.screencapture type -string png
-    # Screenshots: no window shadow
     "$apply" com.apple.screencapture disable-shadow -bool true
 
-    # No smart quotes and dashes (they break code in terminals)
     "$apply" NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
     "$apply" NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
-    # No autocorrect, auto-capitalization, or double-space period
     "$apply" NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
     "$apply" NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false
     "$apply" NSGlobalDomain NSAutomaticPeriodSubstitutionEnabled -bool false
 
-    # Save and print dialogs: expanded by default
     "$apply" NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
     "$apply" NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
     "$apply" NSGlobalDomain PMPrintingExpandedStateForPrint -bool true
     "$apply" NSGlobalDomain PMPrintingExpandedStateForPrint2 -bool true
-    # Save new documents to disk, not iCloud
     "$apply" NSGlobalDomain NSDocumentSaveNewDocumentsToCloud -bool false
 
-    # TextEdit: plain text by default
     "$apply" com.apple.TextEdit RichText -int 0
 
-    # Activity Monitor: show all processes. ShowCategory holds the tag of the chosen View menu item:
-    # 100 is All Processes, and 101 to 111 are the other views (from the menu in its
-    # ActivityMonitor.nib, on macOS 27).
+    # All Processes (View menu tag, from ActivityMonitor.nib)
     "$apply" com.apple.ActivityMonitor ShowCategory -int 100
 }
 
-# Information, not a setting the step makes: whether FileVault encrypts the disk
 status_filevault() {
     local out
     if ! command -v fdesetup &>/dev/null; then
@@ -223,7 +182,6 @@ firewall_cmd() {
     PATH="$PATH:$APP_FIREWALL_DIR" command -v socketfilterfw
 }
 
-# Information, not a setting the step makes: whether the application firewall is on
 status_app_firewall() {
     local cmd out
     if ! cmd="$(firewall_cmd)"; then
@@ -240,10 +198,8 @@ status_app_firewall() {
     esac
 }
 
-# Ghostty's shell integration reports the shell's folder with OSC 7, a URL whose host is the
-# hostname. A Mac with no HostName takes one from the network, such as Unknown_d6:96:0e:05:c6:0a,
-# whose colons break the URL, so Ghostty, the Stream Deck keys, and Hammerspoon find no folder.
-# LocalHostName, the name in System Settings → General → Sharing, is always a valid HostName.
+# Without a HostName, macOS may use one with colons, which breaks OSC 7's URL. LocalHostName is
+# always valid.
 hostname_valid() {
     local name
     name="$(scutil --get HostName 2>/dev/null)" || return 1
@@ -263,7 +219,6 @@ set_hostname() {
     echo "  Set the hostname to $name. Shells started from now on use it."
 }
 
-# The screenshot location key points here
 screenshots_dir() {
     [ -d "$HOME/Screenshots" ]
 }
@@ -272,8 +227,6 @@ make_screenshots_dir() {
     mkdir -p "$HOME/Screenshots"
 }
 
-# What the step sets up besides the defaults and shortcuts, which each_default and
-# symbolic_hotkeys list
 macos_items() {
     local name
     name="$(scutil --get LocalHostName 2>/dev/null)" || name="the name in System Settings → General → Sharing"
@@ -289,7 +242,7 @@ status() {
     items_status screenshots_dir
     symbolic_hotkeys status_hotkey
     items_status hostname_valid
-    # Touch ID for sudo is optional (just touch-id), so off is skipped
+    # Optional (just touch-id)
     status_touch_id skipped
     status_filevault
     status_app_firewall
@@ -314,15 +267,13 @@ apply() {
         echo "  macOS defaults are already set."
         return "$status"
     fi
-    # Finder is what writes .DS_Store files, so it also picks up the desktopservices keys. It
-    # reads AppleShowAllExtensions from the global domain.
+    # Finder also reads the desktopservices keys and AppleShowAllExtensions
     [[ "$CHANGED_KEYS" == *com.apple.finder:* || "$CHANGED_KEYS" == *com.apple.desktopservices:* ||
         "$CHANGED_KEYS" == *NSGlobalDomain:AppleShowAllExtensions* ]] &&
         killall Finder 2>/dev/null || true
     [[ "$CHANGED_KEYS" == *com.apple.dock:* ]] && killall Dock 2>/dev/null || true
-    # SystemUIServer takes the screenshots, and reads their settings when it starts
     [[ "$CHANGED_KEYS" == *com.apple.screencapture:* ]] && killall SystemUIServer 2>/dev/null || true
-    # Apps read the global domain when they start, and key repeat needs a new login session
+    # Key repeat needs a new login session
     local logout=false cmd
     [[ "$CHANGED_KEYS" != *NSGlobalDomain:* ]] || logout=true
     if [[ "$CHANGED_KEYS" == *com.apple.symbolichotkeys:* ]]; then

@@ -1,24 +1,18 @@
-// Live system stats for the plugin's stat keys. createSampler reads what the visible keys need,
-// and render draws one key as an SVG. CPU, memory, swap, the top process, disk, and network come
-// from macOS's own commands, and GPU, temperature, and power from macmon, which reads Apple
-// Silicon's sensors without sudo. Stream Deck starts plugins with a minimal PATH, so commands
-// are run by full path.
+// Commands run by full path, since Stream Deck starts plugins with a minimal PATH.
 const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 
 const MACMON = "/opt/homebrew/bin/macmon";
-// Samples kept for the CPU and GPU sparklines
 const HISTORY = 30;
-// Failed macmon runs in a row before the next start waits, and the longest wait
+// Failed macmon runs in a row before backoff starts
 const MACMON_RETRIES = 3;
 const MACMON_MAX_WAIT_MS = 10 * 60 * 1000;
-// How long a macmon run must last before its exit starts the count of failures afresh
+// A run this long resets the failure count
 const MACMON_HEALTHY_MS = 60 * 1000;
 const GIB = 1024 ** 3;
 
-// Activity Monitor's Memory Used: app memory (anonymous pages less purgeable ones), wired, and
-// what the compressor occupies
+// Matches Activity Monitor's Memory Used
 function parseVmStat(text) {
   const pageSize = Number(/page size of (\d+) bytes/.exec(text)?.[1] ?? 16384);
   const pages = (name) => Number(new RegExp(`^${name}:\\s+(\\d+)`, "m").exec(text)?.[1] ?? 0);
@@ -32,10 +26,9 @@ function parseSwap(text) {
   return { used: mib("used"), total: mib("total") };
 }
 
-// netstat -ibn: the byte counts of each en interface's link row. Counted from the right, since a
-// row without an address has one column fewer. Other interfaces, such as utun for a VPN, carry
-// traffic en already counts. A down interface is named with a *, as en0*. It keeps its counters,
-// so leaving it out would count its lifetime total as one sample's traffic when it comes back up.
+// en link rows only: utun etc. carry traffic en already counts. Columns counted from the right,
+// since a row without an address has one fewer. Down interfaces (en0*) are kept, or their lifetime
+// total would count as one sample when they come back up.
 function parseNetstat(text) {
   let rx = 0;
   let tx = 0;
@@ -69,7 +62,6 @@ const run = (file, args) =>
     execFile(file, args, { timeout: 2000 }, (error, stdout) => resolve(error ? null : stdout)),
   );
 
-// Which stats each key needs
 const NEEDS = {
   overview: ["cpu", "memory"],
   cpu: ["cpu"],
@@ -83,8 +75,7 @@ const NEEDS = {
   network: ["network"],
 };
 
-// macmonPath, spawnProcess, runCommand, and clock stand in for macmon, child_process.spawn, the
-// other commands, and Date.now in tests
+// The options are test seams
 function createSampler({
   log = () => {},
   macmonPath = MACMON,
@@ -103,10 +94,7 @@ function createSampler({
   let failures = 0;
   let retryAt = 0;
 
-  // A macmon run that failed to start or exited. After MACMON_RETRIES in a row, each start waits
-  // twice as long as the one before, so a macmon that keeps crashing isn't restarted, and logged,
-  // every 2 seconds. A run that lasted MACMON_HEALTHY_MS ends the row, but one that printed a
-  // sample or two before exiting doesn't.
+  // Exponential backoff, so a crashing macmon isn't restarted and logged every 2 seconds
   function recordFailure(message) {
     macmon = null;
     macmonLatest = null;
@@ -121,17 +109,14 @@ function createSampler({
     log(`${message}${wait}`);
   }
 
-  // A failure of child, counted only while it's the current run
   function macmonFailed(child, message) {
     if (macmon === child) recordFailure(message);
   }
 
-  // Runs macmon only while a key needs it; it prints a JSON line every 2 seconds. Each callback
-  // changes state only while its process is still the current one: a process stopped and
-  // replaced can still exit, or print, after its replacement started.
+  // Callbacks check the child is current: a replaced process can still exit or print
   function startMacmon() {
     if (macmon || clock() < retryAt) return;
-    // Checked on each start, so installing macmon takes effect without restarting the plugin
+    // Checked each start, so installing macmon needs no plugin restart
     const missing = !fs.existsSync(macmonPath);
     if (missing && !macmonMissing) log("macmon isn't installed; GPU, temperature, and power keys show nothing");
     macmonMissing = missing;
@@ -141,13 +126,12 @@ function createSampler({
     try {
       child = spawnProcess(macmonPath, ["pipe", "-i", "2000"], { stdio: ["ignore", "pipe", "ignore"] });
     } catch (error) {
-      // spawn throws some errors, such as ENOEXEC and EPERM, rather than emitting them
+      // spawn throws some errors, such as ENOEXEC and EPERM
       recordFailure(`couldn't run macmon: ${error.message}`);
       return;
     }
     macmon = child;
-    // Without a listener, a spawn error, such as from a macmon that isn't executable or that an
-    // upgrade removed since the check above, would crash the whole plugin
+    // Without a listener, a spawn error would crash the plugin
     child.on("error", (error) => macmonFailed(child, `couldn't run macmon: ${error.message}`));
     let buffer = "";
     child.stdout?.on("data", (chunk) => {
@@ -163,9 +147,7 @@ function createSampler({
         }
       }
     });
-    // macmon runs until stopped, so any exit of the current run, even with 0 or by a signal,
-    // is a failure. The exit stopMacmon's kill causes comes later, once macmon no longer names
-    // child, so it isn't counted.
+    // macmon runs until stopped, so any exit of the current run is a failure
     child.on("exit", (code, signal) => macmonFailed(child, `macmon exited (${signal ?? code})`));
   }
 
@@ -175,8 +157,7 @@ function createSampler({
     macmonLatest = null;
   }
 
-  // Starts the rates and sparklines afresh, so the first sample after the keys reappear covers
-  // only the time since, and no line joins across the gap
+  // So rates and sparklines don't span the time keys were hidden
   function reset() {
     cpuPrev = cpuTimes();
     netPrev = null;
@@ -187,8 +168,7 @@ function createSampler({
   async function sample(kinds) {
     const needed = new Set(kinds.flatMap((kind) => NEEDS[kind] ?? []));
     const s = { cpuHistory, gpuHistory };
-    // A kind no key needs anymore starts afresh when one shows it again, as after reset, so its
-    // first rate doesn't average over the time it was hidden
+    // Reset unneeded kinds, so a first rate doesn't span the time they were hidden
     if (needed.has("macmon")) {
       startMacmon();
     } else {
@@ -215,7 +195,6 @@ function createSampler({
         }),
       );
     }
-    // Memory pressure and swap from one sysctl, which prints each value on its own line
     const keys = [];
     if (needed.has("memory")) keys.push("kern.memorystatus_vm_pressure_level");
     if (needed.has("swap")) keys.push("vm.swapusage");
@@ -246,7 +225,7 @@ function createSampler({
     }
     if (needed.has("network")) {
       jobs.push(
-        // -n skips looking up each address's name, which takes seconds
+        // -n: name lookups take seconds
         runCommand("/usr/sbin/netstat", ["-ibn"]).then((out) => {
           if (!out) return;
           const now = { ...parseNetstat(out), at: clock() };
@@ -283,7 +262,7 @@ function push(history, value) {
   if (history.length > HISTORY) history.shift();
 }
 
-// Drawing. Keys are 144 pixels square, which Stream Deck scales to the device.
+// Stream Deck scales the 144 px keys to the device
 const COLORS = {
   background: "#18181b",
   label: "#a1a1aa",
@@ -302,8 +281,7 @@ const level = (value, warn, bad) => (value >= bad ? COLORS.bad : value >= warn ?
 const escape = (text) =>
   String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// Memory and swap in binary units, as Activity Monitor shows them, and disk and network in
-// decimal ones, as Finder does
+// Memory and swap in binary units, as Activity Monitor; disk and network decimal, as Finder
 function formatBytes(bytes, base = 1000) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
@@ -326,7 +304,6 @@ function bar(ratio, color) {
   return `<rect x="16" y="120" width="112" height="8" rx="4" fill="${COLORS.track}"/><rect x="16" y="120" width="${width.toFixed(1)}" height="8" rx="4" fill="${color}"/>`;
 }
 
-// The newest sample at the right edge
 function sparkline(history, color) {
   if (history.length < 2) return "";
   const points = history
@@ -339,7 +316,6 @@ function sparkline(history, color) {
   return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
 }
 
-// A key's background and label, then the rest of its drawing
 function frame(label, ...parts) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
@@ -350,7 +326,6 @@ function frame(label, ...parts) {
   ].join("");
 }
 
-// A key with a label, a large value, and an optional line under it, then any extra drawing
 function card(label, value, valueColor, sub, extra = "") {
   return frame(
     label,
@@ -363,7 +338,6 @@ function card(label, value, valueColor, sub, extra = "") {
 
 const empty = (label, sub = "") => card(label, "—", COLORS.muted, sub);
 
-// Each key's label, which its placeholder shows too
 const LABELS = {
   overview: "SYSTEM",
   cpu: "CPU",
@@ -377,7 +351,7 @@ const LABELS = {
   network: "NETWORK",
 };
 
-// A reading in watts, or a dash when macmon doesn't give it, as after an update renames a field
+// A dash when macmon lacks the field, as after an update renames it
 const watts = (value) => (typeof value === "number" ? value.toFixed(1) : "—");
 
 const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
@@ -456,7 +430,6 @@ const RENDER = {
 
 const isStat = (kind) => Object.hasOwn(RENDER, kind);
 const render = (kind, s) => RENDER[kind](s);
-// What a key shows when its render throws
 const placeholder = (kind) => empty(LABELS[kind] ?? kind.toUpperCase());
 
 module.exports = {

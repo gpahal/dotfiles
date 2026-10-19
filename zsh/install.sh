@@ -2,8 +2,6 @@
 set -euo pipefail
 
 # Copy the zsh and starship config, source it at login, and offer zsh as the login shell.
-#
-# On Ubuntu, ~/.zshenv and ~/.profile get a source line too.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.
 
 # shellcheck source=../lib/common.sh
@@ -11,25 +9,22 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 
 # shellcheck disable=SC2016 # lines written to files, expanded when zsh reads them
 ZSHRC_LINE='source $HOME/.zsh/main.zsh'
-# zsh/path.zsh's header says which shells read it from which startup file, and why
 # shellcheck disable=SC2016
 PATH_ZSH_LINE='source $HOME/.zsh/path.zsh'
-# Ubuntu's ~/.profile sources zsh/profile.sh. The check keeps a missing copy from stopping sh, for
-# which a failed . is fatal.
+# A failed . is fatal in sh
 # shellcheck disable=SC2016
 PROFILE_LINE='[ ! -r "$HOME/.zsh/profile.sh" ] || . "$HOME/.zsh/profile.sh"'
 
 zsh_files() {
     local file status=0
-    # File by file: ~/.zsh also holds the completion cache, which a fresh copy would wipe
+    # File by file: ~/.zsh also holds the completion cache
     for file in "$DOTFILES_DIR"/zsh/*.zsh; do
         "$1" "$file" "$HOME/.zsh/${file##*/}" || status=1
     done
-    # Only Ubuntu's ~/.profile sources it
     if ! is_macos; then
         "$1" "$DOTFILES_DIR/zsh/profile.sh" "$HOME/.zsh/profile.sh" || status=1
     fi
-    # starship reads ~/.config/starship.toml (or $STARSHIP_CONFIG), even when XDG_CONFIG_HOME is set
+    # starship ignores XDG_CONFIG_HOME
     "$1" "$DOTFILES_DIR/zsh/config/starship.toml" "$HOME/.config/starship.toml" || status=1
     return "$status"
 }
@@ -63,16 +58,14 @@ zsh_items() {
         profile_sources_profile source_profile_in_profile
 }
 
-# Print the zsh to use as the login shell: apt's on Ubuntu and the system's on macOS, so the login
-# shell doesn't depend on Homebrew. Both are in /etc/shells, which chsh requires.
+# Not Homebrew's zsh, so the login shell doesn't depend on Homebrew
 login_zsh_path() {
     local zsh_path=/bin/zsh
     is_ubuntu && zsh_path=/usr/bin/zsh
     [ -x "$zsh_path" ] && echo "$zsh_path"
 }
 
-# Print the account's login shell. $SHELL only changes at the next login, so it's stale right
-# after chsh, and it's unset under cron or docker exec.
+# Not $SHELL: it's stale after chsh and unset under cron or docker exec
 current_login_shell() {
     if is_macos; then
         dscl . -read "/Users/$(id -un)" UserShell | awk '{print $2}'
@@ -81,16 +74,13 @@ current_login_shell() {
     fi
 }
 
-# Print the login shell, or $SHELL when the account can't be read
 login_shell() {
     local current
     current="$(current_login_shell 2>/dev/null)" || true
     echo "${current:-${SHELL:-unknown}}"
 }
 
-# Succeeds when the login shell is login_zsh_path's zsh, by path or as the same file (Ubuntu's
-# /bin/zsh is /usr/bin/zsh). Another zsh, such as Homebrew's, doesn't count: the login shell
-# shouldn't depend on Homebrew.
+# -ef: Ubuntu's /bin/zsh is /usr/bin/zsh
 login_shell_is_zsh() {
     local zsh_path current
     zsh_path="$(login_zsh_path)" || return 1
@@ -98,7 +88,6 @@ login_shell_is_zsh() {
     [ "$current" == "$zsh_path" ] || [ "$current" -ef "$zsh_path" ]
 }
 
-# Print a status item for the login shell, naming it when it isn't the zsh setup would pick
 login_shell_status() {
     local zsh_path current
     if ! zsh_path="$(login_zsh_path)"; then
@@ -123,7 +112,7 @@ set_login_shell() {
         echo "  Login shell left as $current. To switch later, run: chsh -s $zsh_path"
         return 0
     fi
-    # chsh asks for the account's password, which fails unattended. Root's chsh doesn't ask.
+    # Root's chsh doesn't ask for a password
     if sudo_cached; then
         sudo -n chsh -s "$zsh_path" "$(id -un)" && return 0
     elif chsh -s "$zsh_path"; then
@@ -147,7 +136,6 @@ status() {
 }
 
 apply() {
-    # Without the zsh to log in with, the startup files would be set up for a shell that never runs
     if ! login_zsh_path > /dev/null; then
         if is_ubuntu; then
             echo "  /usr/bin/zsh is missing. Run the homebrew step, which installs zsh with apt, then" >&2

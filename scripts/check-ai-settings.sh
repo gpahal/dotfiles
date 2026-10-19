@@ -1,17 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check the settings the claude-code and codex steps write with the installed claude and codex
-# CLIs, written in a temp HOME with the steps' own functions:
-# - claude doctor lists no invalid settings. It skips unknown keys and exits 0 either way, so the
-#   keys go through scripts/check-claude-keys.sh too, and the check reads its output.
-# - codex doctor loads config.toml with no warning. It skips unknown [desktop] keys, so check
-#   those by hand against the ChatGPT app's version.
-# - the interrogate skill's run-reviewer.sh passes only flags the CLIs' --help lists.
-# - codex sandbox runs true with the step's config. On Linux it needs a bwrap that can sandbox.
-# Each doctor first gets a broken file, which it must reject, so a change to its output can't turn
-# the check into a pass. Needs claude, codex, jq, and yq, and no login: auth failures are ignored.
-# CI runs it with the latest CLIs; `just check` doesn't.
+# Check the claude-code and codex steps' settings and the reviewer flags against the installed CLIs.
+# Each doctor must first reject a broken file, so a change in its output can't turn this into a pass.
+# claude doctor skips unknown keys; codex doctor skips unknown [desktop] keys (check those by hand).
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -39,12 +31,11 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print claude doctor's "Invalid settings" section, if any
 claude_invalid_settings() {
     claude doctor < /dev/null 2>&1 | sed -n '/^Invalid settings/,/^$/p'
 }
 
-# Print codex doctor's config.load check as JSON. codex doctor exits 1 without a login.
+# codex doctor exits 1 without a login
 codex_config_check() {
     local report
     report="$(codex doctor --json < /dev/null 2>/dev/null)" || true
@@ -86,8 +77,7 @@ else
     echo "  codex doctor loads it"
 fi
 
-# Flags read from run-reviewer.sh's claude) and codex) branches, so a renamed or dropped flag
-# shows up here rather than as a failed review. A made-up flag must be missing.
+# A made-up flag must be reported missing, so the check can fail.
 echo "Reviewer flags:"
 reviewer="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
 for family in claude codex; do

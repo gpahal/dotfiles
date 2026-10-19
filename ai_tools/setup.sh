@@ -1,10 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set up AI tools: run every step below in order, or only the steps named as arguments, e.g.
-# `bash ai_tools/setup.sh codex`. t3-code runs after codex, so its service starts with the Codex
-# CLI already installed. Apps whose config is edited (Claude, ChatGPT, T3 Code) must be quit
-# first: with a terminal the script offers to quit them, otherwise it skips their settings.
+# Set up AI tools: run every step in order, or only the steps named as arguments.
+# t3-code runs after codex so its service starts with the Codex CLI installed.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

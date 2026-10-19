@@ -2,16 +2,14 @@ alias zshrc="$EDITOR $HOME/.zshrc"
 alias reload='exec zsh'
 alias path='print -l $path'
 
-# ls stays the system ls, so its flags keep working (eza's -t takes an argument, which breaks
-# ls -lt). Its color flag differs: GNU ls takes -G as --no-group.
+# Not eza: its -t takes an argument, which breaks ls -lt. GNU ls reads -G as --no-group.
 if [[ $OSTYPE == darwin* ]]; then
     alias ls="ls -G"
 else
     alias ls="ls --color=auto"
 fi
-# tree stays the real command, whose flags differ from eza's (tree -d)
 if command -v eza &>/dev/null; then
-    # eza reads -F as --classify [WHEN], so a bare -F would take a path after it as the WHEN
+    # A bare -F would take the next path as --classify's WHEN
     alias l="eza --classify=auto"
     alias la="eza -a --classify=auto"
     alias ll="eza -l --classify=auto"
@@ -33,8 +31,6 @@ alias .....="cd ../../../.."
 alias lg="lazygit"
 alias ts='tmux-sessionizer'
 
-# Both run scripts/upgrade.sh from the repo, which AGENTS.md → Code layout puts at
-# ~/Dev/setup/dotfiles unless DOTFILES_DIR says otherwise. It reads the repo's Brewfile anyway.
 upgrade() {
     bash "${DOTFILES_DIR:-$HOME/Dev/setup/dotfiles}/scripts/upgrade.sh" "$@"
 }
@@ -65,8 +61,7 @@ alias public-ip4="curl -Ss4 https://icanhazip.com/v4"
 alias public-ip6="curl -Ss6 https://icanhazip.com/v6"
 
 if command -v bat &>/dev/null; then
-    # Highlighted, but plain like cat: no pager, header, or grid. cat stays the real command, so
-    # its flags (-v, -e, -t, -b) keep working.
+    # Not cat, so cat's flags (-v, -e, -t, -b) keep working
     alias c='bat -pp'
     alias findp="find . -exec bat {} +"
     alias fdp="fd -X bat"

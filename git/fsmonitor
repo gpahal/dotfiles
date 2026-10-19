@@ -1,5 +1,4 @@
-# Included from the git config for repos under ~/Dev/, and their linked worktrees, whose git dirs
-# are there too. Elsewhere, such as throwaway repos under /tmp, each repo would start a daemon
-# that lives until logout. Git has no fsmonitor daemon on Linux, so there this does nothing.
+# Only for repos under ~/Dev: elsewhere each repo would start a daemon that lives until logout.
+# No-op on Linux.
 [core]
     fsmonitor = true

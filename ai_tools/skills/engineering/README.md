@@ -1,28 +1,25 @@
 # Engineering
 
-Skills for code work. Documents they produce go under `.scratch/` in the repo; see
-[Scratch files](../README.md#scratch-files) for the layout.
-
-The review skills (code-review, code-review-stds-and-spec, and interrogate) and rewrite-docs share one way to say what to work on, in [`code-review/references/scope.md`](./code-review/references/scope.md): nothing for the current branch's work, `uncommitted`, `staged`, a PR, a commit, a range, a ref to review since, paths, `all` for the whole repo, or a diff form limited to paths. Given nothing, rewrite-docs works on `all` instead.
+Skills for code work. The review skills and rewrite-docs share one scope syntax: [`code-review/references/scope.md`](./code-review/references/scope.md).
 
 ## User-invoked
 
-Reachable only when you type them (Claude Code: `disable-model-invocation: true`; Codex: `policy.allow_implicit_invocation: false` in `agents/openai.yaml`). The first four form the feature workflow: spec, then (optionally) design, then tickets, then implementation.
+Only when you type them. The first four are the feature workflow.
 
-- **[to-spec](./to-spec/SKILL.md)**: Turn the current conversation into a spec, no interview, and save it at `.scratch/<feature-slug>/SPEC.md`.
-- **[architect](./architect/SKILL.md)**: Sketch types, signatures, and module boundaries before code: ground in the existing system, draw two structurally distinct candidates (in parallel sub-agents when the design spans modules), synthesize one into `.scratch/<feature-slug>/DESIGN.md`, then implement against it and scrap it if it fights back.
-- **[to-tickets](./to-tickets/SKILL.md)**: Break a plan, spec, or conversation into tracer-bullet tickets, each declaring what blocks it, saved one per file under `.scratch/<feature-slug>/tickets/`.
-- **[implement](./implement/SKILL.md)**: Build the work described by a spec or its tickets on an integration branch, in dependency order, one implementer sub-agent per ticket, using the tdd skill at pre-agreed seams. Independent, substantial tickets (3 or more acceptance criteria) run in parallel sub-agents, each in its own worktree. Closes with the code-review skill at a level sized to the work (`high` only for risky surfaces) and the code-review-stds-and-spec skill.
-- **[rewrite-docs](./rewrite-docs/SKILL.md)**: Audit every doc, agent instruction file (`AGENTS.md`, `CLAUDE.md`), and code comment in scope against the code, then fix what's stale, wrong, conflicting, missing, or bloated, to the technical-writing, writing-for-agents, and unslop rules. Small fixes are applied; big ones (deleting, adding, restructuring, or changing what agents are told) are asked about first. A doc that disagrees with code that may be wrong is reported as a possible bug.
-- **[interrogate](./interrogate/SKILL.md)**: Adversarial review by two model families: a Claude reviewer and a Codex reviewer (models set in one table in its `SKILL.md`) review the same change with the same prompts, each through its tool's CLI, read-only. The effort (`medium` by default) sets both the reviewers' reasoning effort and how finely the review's lenses are split across runs, and both models review every split. Then the lead judges their findings into Act on, Consider, Noted, and Dismissed, with a map of where the models agreed. Runs from either Claude Code or Codex.
+- **[to-spec](./to-spec/SKILL.md)**: Turn the conversation into `.scratch/<feature-slug>/SPEC.md`.
+- **[architect](./architect/SKILL.md)**: Design types and module boundaries from two candidates into `DESIGN.md`, then implement against it.
+- **[to-tickets](./to-tickets/SKILL.md)**: Break a plan or spec into tracer-bullet tickets with blockers.
+- **[implement](./implement/SKILL.md)**: Build a spec's tickets in dependency order with sub-agents, then review.
+- **[rewrite-docs](./rewrite-docs/SKILL.md)**: Make docs, agent files, and comments true to the code and terse.
+- **[interrogate](./interrogate/SKILL.md)**: Adversarial review by a Claude and a Codex reviewer, judged by the lead.
 
 ## Model-invoked
 
-Model- or user-reachable (rich trigger phrasing so the model can reach for them).
+When you type them, or when the model reaches for them.
 
-- **[research](./research/SKILL.md)**: When you ask for research, investigate a question against primary sources in a background agent and save the cited answer, findings, and open questions at `.scratch/research/<research-slug>.md`.
-- **[tdd](./tdd/SKILL.md)**: Test-driven development with a red-green loop. Builds features or fixes bugs one vertical slice at a time, and leaves refactoring to code review.
-- **[code-review](./code-review/SKILL.md)**: Bug review at a level from `low` to `max`, optionally narrowed with `--focus` (such as `security`, `docs`, or `tests`). Every level covers every angle, from correctness and security to design cost and stale rules, docs, and tests, but at `low` the finder reads only the diff, untracked files, and rule files, and skips tests. The level sets the sub-agents' reasoning effort and how finely the angles are split across finder sub-agents, a verifier sub-agent tries to disprove each candidate from `medium` up, and the survivors are reported as P0 to P3 findings with a verdict. Can apply fixes (`--fix`) or post PR comments (`--comment`). Replaces Claude Code's built-in `/code-review`.
-- **[code-review-stds-and-spec](./code-review-stds-and-spec/SKILL.md)**: Two-axis review of a change: **Standards** (does it follow the repo's coding standards, plus a Fowler smell baseline?) and **Spec** (does it faithfully implement the spec?), run as parallel sub-agents.
-- **[diagnosing-bugs](./diagnosing-bugs/SKILL.md)**: Disciplined diagnosis loop for hard bugs and performance regressions: build a feedback loop that goes red on this bug, minimise the repro, rank hypotheses, instrument to test them, then fix the bug and add a regression test.
-- **[wizard](./wizard/SKILL.md)**: Generate an interactive bash wizard that walks a human through steps only they can perform: provisioning infrastructure, setting up credentials or CI secrets, walking an unfamiliar third-party dashboard, or running a one-off migration or cutover.
+- **[research](./research/SKILL.md)**: Answer a question from primary sources into `.scratch/research/`.
+- **[tdd](./tdd/SKILL.md)**: Red-green test-driven development, one slice at a time.
+- **[code-review](./code-review/SKILL.md)**: Bug review from `low` to `max`, with verified, ranked findings. Replaces Claude Code's `/code-review`.
+- **[code-review-stds-and-spec](./code-review-stds-and-spec/SKILL.md)**: Review a change against the repo's standards and the spec.
+- **[diagnosing-bugs](./diagnosing-bugs/SKILL.md)**: Diagnosis loop for hard bugs and performance regressions.
+- **[wizard](./wizard/SKILL.md)**: Generate a bash wizard for steps only a human can do.

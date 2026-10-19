@@ -2,11 +2,7 @@
 set -euo pipefail
 
 # Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
-#
-# Each run rebuilds the file from scratch (desired_sudo_local in macos/pam.sh), dropping any other
-# line, which keeps status and setup in agreement. sudo loads a root-owned copy of pam-reattach's
-# module in /usr/local/lib/pam, which this script installs from Homebrew's and updates.
-# setup.sh doesn't run it, since it changes /etc with sudo. --status reports, changing nothing.
+# Not run by setup.sh, since it changes /etc with sudo. Rewrites the whole file, dropping other lines.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -17,11 +13,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
 STEP_OS=macos
 
-# Copy Homebrew's module to the root-owned dir, read-only like the modules macOS ships. It goes in
-# under a temp name that mv then renames over the copy, so between the sudo runs sudo_local never
-# names a missing module, which would keep the next sudo from starting PAM. The rename replaces a
-# link in the copy's place rather than writing through it, and -h keeps mv from following one to a
-# dir.
+# Temp name then rename, so sudo_local never names a missing module between sudo runs (which
+# would break sudo). mv -h replaces a link rather than following it.
 install_reattach_module() {
     sudo install -d -o root -g wheel -m 755 "$PAM_LOCAL_MODULES_DIR" &&
         sudo install -o root -g wheel -m 444 "$REATTACH_SOURCE" "$REATTACH_MODULE.new" &&
@@ -71,8 +64,7 @@ apply() {
             echo "  Couldn't install $REATTACH_MODULE." >&2
             return 1
         fi
-        # Checked again, so sudo_local never names a copy others can swap. The dir and its parents
-        # passed reattach_blocker.
+        # Recheck, so sudo_local never names a copy others can swap
         reason="$(pam_entry_unsafe "$REATTACH_MODULE")"
         if [ -n "$reason" ]; then
             echo "  sudo can't safely load $REATTACH_MODULE: $reason, then re-run just touch-id." >&2
@@ -81,7 +73,6 @@ apply() {
         echo "  Installed $REATTACH_MODULE."
     fi
     if "$write"; then
-        # Read-only and owned by root, like the rest of /etc/pam.d
         if ! write_root_file "$SUDO_LOCAL" "$desired" 444; then
             echo "  Couldn't write $SUDO_LOCAL." >&2
             return 1

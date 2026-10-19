@@ -27,7 +27,7 @@ rm "$PLUG"
 chmod 555 "$HOME/.vim/autoload"
 if [ ! -w "$HOME/.vim/autoload" ]; then
     assert_exit 1 bash "$REPO_DIR/vim/install.sh"
-    assert_contains "$RUN_OUTPUT" "Couldn't write $PLUG"
+    assert_contains "$RUN_OUTPUT" "Couldn't copy vim/plug.vim to $PLUG"
 fi
 chmod 755 "$HOME/.vim/autoload"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"

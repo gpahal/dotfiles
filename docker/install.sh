@@ -95,8 +95,7 @@ add_docker_repo() {
     add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own
-# failure
+# items_apply runs it where set -e is off, so each command checks its own failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -370,8 +369,8 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    # A failed write leaves the old file whole. apply runs this as `configure_daemon || ...`, where
-    # set -e is off, so each command checks its own failure.
+    # A failed write leaves the old file whole. items_apply runs this where set -e is off, so each
+    # command checks its own failure.
     if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
         rm -f "$tmp"
         return 1

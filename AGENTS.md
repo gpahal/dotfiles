@@ -19,7 +19,7 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
 - **Scripts** target `/bin/bash` 3.2, since `setup.sh` runs before Homebrew. Reuse the helpers in `lib/common.sh`. A step that breaks one of these rules says why in its header, as `homebrew` does.
   - Every step is idempotent: when already applied, it says so and changes nothing.
   - `confirm` says no without a terminal unless `DOTFILES_ASSUME_YES=1`. A declined `confirm` doesn't fail the step, which finishes sensibly.
-  - A step carries no migration code for files older versions of this repo left, but keeps user edits.
+  - A step carries no migration code for files older versions of this repo left, but keeps user edits to the files it merges settings into.
   - A state that could still break something is reported by `--status`, or fails the step before it changes anything.
   - A missing prerequisite fails the step before it changes anything (`require_cmd <cmd> || return 1`), and the step names the step that installs it on its `STEP_NEEDS="homebrew"` line, so `run_steps` skips it when that step failed. An optional integration is the exception: when only it lacks a command, such as Claude Code's worktree hook without `git wt`, the step sets up the rest, then fails, and status reports the integration missing.
   - A failed install fails the step after it does what else it can.

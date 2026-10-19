@@ -72,7 +72,7 @@ bash setup.sh
 | `logitech` | Installs Solaar, since Logi Options+ has no Linux version. Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps). Its script is `manual-steps.sh` |
 
-Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them, each with what it does. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, and the run ends by listing the failed steps and the command that re-runs them.
+Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them, each with what it does. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, apart from a step that needs it, which is skipped and listed. The run ends by listing the failed steps and the command that re-runs them.
 
 **Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 

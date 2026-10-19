@@ -19,13 +19,10 @@ plug_vim_pinned() {
     cmp -s "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM"
 }
 
-# Not a copy_file: plug.vim is vendored, not edited, so a copy that differs, such as one
-# PlugUpgrade wrote, is replaced without a backup
+# plug.vim stays out of vim_files, since just copy-back would copy one PlugUpgrade wrote back into
+# the repo, over the vendored version
 install_plug_vim() {
-    if ! { mkdir -p "$(dirname "$PLUG_VIM")" && replace_file "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM" 644; }; then
-        echo "  Couldn't write $PLUG_VIM" >&2
-        return 1
-    fi
+    copy_file "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM" || return 1
     echo "  Installed vim-plug $(cat "$DOTFILES_DIR/vim/plug.vim.version") at $PLUG_VIM"
 }
 

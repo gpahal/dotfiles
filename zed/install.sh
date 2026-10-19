@@ -20,10 +20,9 @@ fi
 # The files are JSONC, whose comments a jq merge would strip, so they're replaced whole, unlike
 # other apps' settings
 zed_files() {
-    local action="$1" file status=0
-    shift
+    local file status=0
     for file in settings.json keymap.json; do
-        "$action" "$DOTFILES_DIR/zed/$file" "$ZED_DIR/$file" "$@" || status=1
+        "$1" "$DOTFILES_DIR/zed/$file" "$ZED_DIR/$file" || status=1
     done
     return "$status"
 }

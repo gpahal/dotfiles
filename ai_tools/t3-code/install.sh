@@ -20,6 +20,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 T3_CODE_SETTINGS="$HOME/.t3/userdata/settings.json"
 T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # T3 Code reads T3CODE_TELEMETRY_ENABLED only from its environment, and an app opened from the Dock

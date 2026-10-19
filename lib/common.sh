@@ -3,6 +3,7 @@
 # - item and its drivers (items_reset, items_status, items_pending, items_apply): what a step sets
 #   up, listed once for its status, its confirm_sudo_changes list, and its fixes
 # - STEP_OS: the one OS a step supports; the default main and run_steps skip it on the other
+# - STEP_NEEDS: the steps a step needs; run_steps skips it when one of them failed earlier
 # - the status format: status_item prints an item, and status_parse_line and status_summary_line
 #   read a report back, for run_steps and ubuntu/health-alert.sh
 # shellcheck shell=bash
@@ -268,6 +269,31 @@ step_os_skip() {
     else
         echo "$step: skipped, $label"
     fi
+}
+
+# STEP_NEEDS: the steps whose commands a step needs, on a line of its own near its top, after any
+# STEP_OS line: the step that installs each command its require_cmd calls check for, which for
+# nearly every command is homebrew. When a step it needs failed earlier in the same run, run_steps
+# skips it without starting it, printing "<step>: skipped, <needed> failed", and counts it as
+# failed, so the re-run hint names it. A needed step that isn't part of the run doesn't gate, and
+# neither does a --status report. run_steps reads the line with sed, so it must be a literal list.
+# Without sourcing, shellcheck can't see the read, hence the directive.
+# e.g. # shellcheck disable=SC2034 # run_steps reads it
+#      STEP_NEEDS="homebrew runtimes"
+
+# _failed_need <script> [failed step...]: print the first step the script's STEP_NEEDS names that
+# is among the failed steps, and succeed; fail when there's none
+_failed_need() {
+    local script="$1" need
+    shift
+    [ $# -gt 0 ] || return 1
+    for need in $(step_header_value "$script" STEP_NEEDS); do
+        if has_arg "$need" "$@"; then
+            echo "$need"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # step_header_value <script> <var>: print the value a step's script gives <var> on a line of its
@@ -1198,7 +1224,7 @@ reraise_interrupt() {
 # exits 0 is listed too. A report that exits 3 without such an item failed. An empty mode runs the
 # steps.
 run_steps() {
-    local mode="$1" step script status codes skipped interrupted="" failed=() attention=()
+    local mode="$1" step script status codes skipped blocker interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
     # step_script takes either OS's steps, so the error lists both
@@ -1225,6 +1251,11 @@ run_steps() {
             printf '%s:\n%s\n' "$step" "$skipped"
             continue
         elif [ -z "$mode" ] && step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" 2>/dev/null; then
+            continue
+        fi
+        if [ -z "$mode" ] && blocker="$(_failed_need "$script" ${failed[@]+"${failed[@]}"})"; then
+            echo "$step: skipped, $blocker failed" >&2
+            failed+=("$step")
             continue
         fi
         if [ -n "$mode" ]; then

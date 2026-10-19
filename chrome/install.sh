@@ -15,6 +15,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
 STEP_OS=ubuntu
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 # unattended-upgrades only installs from Ubuntu's own repos unless told otherwise. The origin and
 # suite come from Google's Release file:

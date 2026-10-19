@@ -19,6 +19,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepab
 # shellcheck source=../lib/user-instructions.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"

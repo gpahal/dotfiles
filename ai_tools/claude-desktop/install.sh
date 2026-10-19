@@ -12,6 +12,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 # A LaunchAgent that opens Claude at login, so its Option+Space quick entry works from the start.
 # Claude's own "open at login" setting registers it through SMAppService, which no command can turn

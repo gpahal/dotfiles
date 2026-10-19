@@ -42,6 +42,9 @@ source "$UBUNTU_LIB_DIR/ups.sh"
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 # Masking these stops every suspend, whether GNOME's idle timer, the login screen's, or a command
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
 # Sorts before 50-cloud-init.conf: sshd keeps the first value it reads for most settings

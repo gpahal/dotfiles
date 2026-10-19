@@ -6,8 +6,7 @@ set -euo pipefail
 # deprecated or disabled. Each formula outside the Brewfile's `if OS.mac?` blocks must also have an
 # x86_64_linux bottle, or one for all platforms, so Ubuntu doesn't build it from source. brew info
 # lists only the bottles for the platform it runs on, so those come from formulae.brew.sh's API.
-# Needs brew, jq, curl, and the network. CI runs it on macOS (.github/workflows/check.yml); `just
-# check` doesn't.
+# Needs brew, jq, curl, and the network. CI runs it on macOS; `just check` doesn't.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/brew.sh

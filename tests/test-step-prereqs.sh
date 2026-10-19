@@ -3,12 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# A step missing a command it needs fails before it changes anything: claude-code and claude-desktop
-# without jq, claude-code without curl when Claude Code is missing, codex without yq, tmux without
-# tmux or git, git without gh, ubuntu and docker without jq, docker without gpg, ubuntu without
-# curl or gpg when Tailscale is missing, t3-code without brew on macOS and without curl on Ubuntu
-# when it would download the t3 CLI, runtimes without mise, and without curl when rustup is
-# missing, and zsh without its login zsh. chrome without curl is in test-chrome.sh.
+# A step missing a command it needs fails before it changes anything. chrome without curl is in
+# test-chrome.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

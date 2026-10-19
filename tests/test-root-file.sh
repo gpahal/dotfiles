@@ -2,10 +2,8 @@
 set -euo pipefail
 
 # install_root_file and write_root_file set the file's group in the same install that writes it,
-# when given one, so a file such as NUT's, which its daemons read through the group, can't be left
-# root:root by a write that succeeded and a chgrp that didn't. Without a group, install gets none.
-# A destination that is a directory fails.
-# confirm_sudo_changes says how to apply what it lists when it couldn't ask.
+# so a file such as NUT's, which its daemons read through the group, can't be left root:root by a
+# write that succeeded and a chgrp that didn't.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

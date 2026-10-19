@@ -3,11 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# item lists a step's simple item once, and its drivers build the pending list, apply the fixes,
-# print the status from it, and say whether all are set up: every item, or only the ones named,
-# in the order they were added. Only --sudo items are pending, and --no-sudo applies only the rest. Apply re-checks each item
-# first, runs each fix whether or not the one before it failed, and fails when any did. A --hint
-# goes on a missing status item.
+# item and its drivers: pending list, apply, status, and items_ok, for every item or the ones
+# named, in the order added.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

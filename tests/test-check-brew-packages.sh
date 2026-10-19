@@ -3,10 +3,8 @@ set -euo pipefail
 
 # scripts/check-brew-packages.sh, with brew and formulae.brew.sh stubbed, passes when brew knows
 # every formula in homebrew/Brewfile and cask in homebrew/install.sh, none is deprecated or
-# disabled, and every formula Ubuntu gets has a Linux bottle. It fails naming an unknown package,
-# which it finds by asking for each alone, a deprecated or disabled one, and a formula outside the
-# Brewfile's macOS block with no x86_64_linux or all bottle. A macOS-only formula's bottles aren't
-# read.
+# disabled, and every formula Ubuntu gets has an x86_64_linux or all bottle; otherwise it fails,
+# naming the package. A macOS-only formula's bottles aren't read.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

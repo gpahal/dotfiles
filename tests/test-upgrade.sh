@@ -2,15 +2,8 @@
 set -euo pipefail
 
 # scripts/upgrade.sh, which zsh's upgrade and upgrade-ai-tools functions run, runs each tool's
-# update, in order, on each OS, with every tool stubbed: apt on Ubuntu only, the Brewfile's new
-# formulae, casks added to the homebrew step, self-updating casks that aren't running, rustup from
-# ~/.cargo/bin only, the plugin managers, Claude Code's own updater only for its native install,
-# even with HOME reached through a symlink, Claude Code's plugins outside project, local, and
-# managed scopes, with each marketplace's and plugin's version shown before and after, the t3 CLI
-# only from ~/.local/bin, and brew cleanup last. A self-updating app that renamed itself is
-# re-recorded in Homebrew. A failed stage doesn't stop the ones after it, and upgrade names the failed ones at the end
-# and fails, but an interrupted one stops upgrade. A cask whose metadata brew can't give is left
-# alone. The plugin stages move the vim and tmux plugins only to the commits the repo pins.
+# update, in order, on each OS, with every tool stubbed. A failed stage doesn't stop the ones after
+# it, and upgrade names the failed ones at the end and fails; an interrupted one stops upgrade.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -85,9 +78,9 @@ printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || exec cat "'"$SANDBOX"'/uname-s"' 
 chmod +x "$STUB_DIR/uname"
 echo Darwin > "$SANDBOX/uname-s"
 
-# Run upgrade as if on the given OS, with only the stubs and the system's base commands
-# on PATH, printing what ran, with the repo shown as REPO. DOTFILES_DIR points elsewhere, since
-# upgrade finds the Brewfile from its own path.
+# Run upgrade as if on the given OS, with only the stubs and the system's base commands on PATH,
+# printing what ran, with the repo shown as REPO. DOTFILES_DIR points elsewhere, since upgrade
+# finds the Brewfile from its own path.
 upgrade_on() {
     : > "$STUB_LOG"
     case "$1" in
@@ -317,8 +310,8 @@ assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
 
 # brew outdated exits 1 without listing the cask: upgrade-ai-tools can't tell whether the casks are
-# up to date, so it asks for each alone, upgrades neither, and fails, naming them. A successful empty answer is up to
-# date.
+# up to date, so it asks for each alone, upgrades neither, and fails, naming them. A successful
+# empty answer is up to date.
 upgrade_ai_tools_mac() {
     : > "$STUB_LOG"
     assert_exit "$1" env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \

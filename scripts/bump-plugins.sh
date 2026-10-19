@@ -7,7 +7,7 @@ set -euo pipefail
 # link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps, which
 # move the installed plugins to the new pins, for that.
 # A repo whose HEAD can't be read keeps its pin and fails the script once the rest are done.
-# `just bump-plugins` runs it. Needs git and the network.
+# Needs git and the network.
 # Usage: bump-plugins.sh
 
 # shellcheck source=../lib/common.sh

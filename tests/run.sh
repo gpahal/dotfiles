@@ -2,19 +2,19 @@
 set -uo pipefail
 
 # Run every tests/test-*.sh, or the named ones (e.g. bash tests/run.sh vim copy-file), each in its
-# own process group under the bash running this script, with stdin from /dev/null. xargs -P runs
-# $TEST_JOBS at a time (one per CPU by default). A test with a "# serial" line, one whose timing
-# windows can flake under load, runs after the others, one at a time. Prints PASS, FAIL, or SKIP
-# per file, in name order with the serial tests last, with a failing or skipped test's output, and
-# exits 1 when any fails. A test skips by exiting 77, and with TEST_FAIL_ON_SKIP=1, as CI sets, a
-# skip fails. A test that runs longer than $TEST_TIMEOUT seconds (120 by default) is killed, by
-# lib/common.sh's run_bounded, and fails. A test that needs a command only macOS ships, such as
-# ls -e or sqlite3, has an "# os: macos" line in its first 20 lines, and a run of every test leaves
-# it out on Ubuntu; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR, with
-# XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It syntax-checks
-# each selected test before running it, and, on a run of every test, the repo's other shell
-# scripts, since a syntax error in a sourced script can let a test pass. Ctrl-C or SIGTERM stops
-# every test and exits 130.
+# own process group under the bash running this script (so /bin/bash tests/run.sh tests bash 3.2),
+# with stdin from /dev/null, $TEST_JOBS at a time (one per CPU by default).
+# Prints PASS, FAIL, or SKIP per test in name order, with a failing or skipped test's output, and
+# exits 1 when any fails.
+# - "# serial": a test whose timing can flake under load runs after the others, one at a time.
+# - "# os: macos" in a test's first 20 lines: it needs a command only macOS ships, such as ls -e,
+#   so a run of every test leaves it out on Ubuntu; a named test always runs.
+# - A test skips by exiting 77; with TEST_FAIL_ON_SKIP=1, as CI sets, a skip fails.
+# - A test that runs longer than $TEST_TIMEOUT seconds (120 by default) is killed and fails.
+# Each test is syntax-checked first (a syntax error exits 2), and gets its own HOME and
+# TMUX_TMPDIR, with XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox.
+# A run of every test also syntax-checks the repo's other scripts, since a syntax error in a
+# sourced script can let a test pass. Ctrl-C or SIGTERM stops every test and exits 130.
 
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
@@ -51,11 +51,9 @@ run_test() {
         status=2
     else
         # Job control gives the test its own process group, so a timeout reaches what it started,
-        # and keeps SIGINT deliverable: without it, a background job ignores SIGINT, and so would
-        # the test, which checks how steps handle an interrupt. On macOS, bash's child sometimes
-        # prints "child setpgid (N to N): Operation not permitted" when the parent's setpgid for
-        # it ran first. The job still gets its own group. The child prints it before its own
-        # redirections apply, so the braces discard it.
+        # and keeps SIGINT deliverable: a background job would ignore it, and tests check how steps
+        # handle an interrupt. The braces discard macOS bash's harmless "child setpgid ...
+        # Operation not permitted", printed before the job's own redirections apply.
         set -m
         { run_bounded "$TEST_TIMEOUT" "$BASH" "$t" < /dev/null > "$dir/output" 2>&1 & } 2>/dev/null
         pid=$!
@@ -110,9 +108,8 @@ else
     done
 fi
 
-# Print the repo's *.sh files and the files in */bin/, as paths from here. In a git checkout,
-# these are the ones git lists, as `just check` lints, so ignored dirs such as .scratch/ are left
-# out.
+# Print the repo's *.sh files and the files in */bin/, as paths from here. In a git checkout, only
+# those git lists, as `just check` lints, so ignored dirs such as .scratch/ are left out.
 repo_scripts() {
     if git -C .. rev-parse --is-inside-work-tree &>/dev/null; then
         git -C .. ls-files --cached --others --exclude-standard '*.sh' '*/bin/*' | sed 's|^|../|' | sort -u

@@ -1,7 +1,5 @@
 # Helpers for the steps and scripts that change the system with sudo: root-owned files and
-# third-party apt repos. The item list that drives a step's sudo changes is in lib/common.sh. The
-# ubuntu, docker, and chrome steps, macos/setup-touch-id-sudo.sh, and ubuntu/setup-alerts.sh
-# source it. Source it after lib/common.sh, whose helpers it uses; don't run it.
+# third-party apt repos. Source it after lib/common.sh, whose helpers it uses; don't run it.
 # shellcheck shell=bash
 
 # Replace a root-owned file with a copy of a local file, with sudo, creating its directory. The
@@ -211,7 +209,6 @@ add_apt_repo() {
         else
             echo "  $reason, and removing it failed too. Delete $file by hand, then re-run." >&2
         fi
-        # Put the old key back, or remove the new one when there was none to keep
         if [ -n "$old_key" ]; then
             install_root_file "$old_key" "$keyring" 0644
         else

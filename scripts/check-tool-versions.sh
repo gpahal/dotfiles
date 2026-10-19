@@ -7,7 +7,7 @@ set -euo pipefail
 # CI doesn't test git's floor; the version this prints for each tool is what the run tested. yq's is
 # a real requirement: the codex step rewrites config.toml with yq -o toml, whose encoder arrived in
 # 4.52.1 and was fixed up to 4.54.1. CI pins shellcheck instead, since each release reports
-# different warnings. The scripts themselves target /bin/bash 3.2. CI runs this first (.github/workflows/check.yml).
+# different warnings.
 
 # tool, minimum, and the command that prints its version
 TOOLS="jq 1.8.1 jq --version

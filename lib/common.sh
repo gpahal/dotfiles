@@ -63,9 +63,9 @@ apt_lists_locked() {
 }
 
 # apt_get update with the arguments given, tried again while another update, such as
-# apt-daily's after boot, holds the lists lock. Any other failure returns at once. The output
-# shows as it comes, and a copy is kept to check for the lock. The notice of each wait goes to
-# stderr, so a caller that captures apt-get's output, as add_apt_repo does, still shows it.
+# apt-daily's after boot, holds the lists lock. Any other failure returns at once. The notice of
+# each wait goes to stderr, so a caller that captures apt-get's output, as add_apt_repo does,
+# still shows it.
 # shellcheck disable=SC2120 # add_apt_repo, in lib/system.sh, passes arguments
 apt_get_update() {
     local try=1 dir status
@@ -221,10 +221,8 @@ check_args() {
     fi
 }
 
-# Check a step's arguments; a step's main calls it first. -h or --help prints the usage and exits
-# 0. Any other argument but --status, --quick, --backup, and --no-backup exits 2, so a typo such
-# as --stauts, or status without its dashes, can't run the step. So does --quick without --status,
-# which would otherwise run the step. Steps take no other arguments.
+# Check a step's arguments with check_args. Steps take no words, so a typo such as --stauts, or
+# status without its dashes, exits 2 instead of running the step.
 # e.g. step_args "$@"
 step_args() {
     local step_usage
@@ -325,11 +323,9 @@ step_name() {
     esac
 }
 
-# The default main of a step: step_args, then the STEP_OS skip, then with --status the step's
-# read-only status report, and otherwise its apply, which sets it up. A step defines status and
-# apply, or its own main, which replaces this one. Defined only while no main is, so a test that
-# loads a step, then lib/common.sh again to bring back a function it replaced, keeps the step's
-# own main.
+# The default main of a step: step_args, the STEP_OS skip, then status or apply. Defined only
+# while no main is, so a test that loads a step, then lib/common.sh again to bring back a function
+# it replaced, keeps the step's own main.
 if ! declare -F main > /dev/null; then
     main() {
         local skip=0 flag=""
@@ -348,16 +344,14 @@ if ! declare -F main > /dev/null; then
     }
 fi
 
-# copy_step <message> <files function>: the apply of a step that only copies configs. Prints the
-# message, then copies each file the files function passes to copy_file.
+# copy_step <message> <files function>: the apply of a step that only copies configs
 # e.g. apply() { copy_step "Copying EditorConfig..." editorconfig_files; }
 copy_step() {
     echo "$1"
     "$2" copy_file
 }
 
-# copy_status <files function>: the status of a step that only copies configs. Reports each file
-# the files function passes to status_file.
+# copy_status <files function>: the status of a step that only copies configs
 # e.g. status() { copy_status editorconfig_files; }
 copy_status() {
     "$1" status_file
@@ -764,11 +758,9 @@ json_merge() {
     local file="$1" filter="$2" tmp input="" values
     require_cmd jq || return 1
     ! json_applied "$file" "$filter" || return 0
-    # A missing, empty, or whitespace-only file starts as {}. One that can't be read, such as a
-    # dangling symlink, fails rather than start from {} and lose what it holds, and so does one
-    # that isn't one JSON value. Back up and write nothing until jq succeeds with one JSON value, so
-    # a filter that fails, or yields no value or several, leaves the file as it was and asks
-    # nothing.
+    # A missing or blank file starts as {}. One that can't be read, such as a dangling symlink,
+    # fails rather than start from {} and lose what it holds. Nothing is backed up or written until
+    # jq yields exactly one JSON value.
     if [ -e "$file" ] || [ -L "$file" ]; then
         if ! input="$(cat -- "$file")"; then
             echo "  Couldn't read $file, so it was left as it is." >&2
@@ -887,12 +879,10 @@ sudo_cached() {
     sudo -n true 2> /dev/null
 }
 
-# Run an external command, stopping it after <seconds> with exit status 124, as timeout(1) does.
-# For a status check that can hang, such as smartctl on a failing disk. With timeout(1), a command
-# that ignores SIGTERM gets SIGKILL 5 s later. macOS has no timeout(1), so there perl sets an alarm
-# and execs the command, which SIGALRM then stops. That stops only the command, not what it
-# started, which is enough for its macOS callers (fdesetup, socketfilterfw, and df), which start
-# nothing. Without perl either, the command runs unbounded.
+# Run an external command, stopping it after <seconds> with exit status 124, as timeout(1) does,
+# for a status check that can hang, such as smartctl on a failing disk. macOS has no timeout(1), so
+# there perl's alarm stops only the command, not what it started; its macOS callers (fdesetup,
+# socketfilterfw, df) start nothing. Without perl either, the command runs unbounded.
 # e.g. run_bounded 30 docker system df
 run_bounded() {
     local seconds="$1" status=0 start=$SECONDS
@@ -1239,15 +1229,12 @@ reraise_interrupt() {
 }
 
 # run_steps <mode> [step...]
-# Run named steps in order, each in its own process, with the script step_script prints. With no
-# names, run every step in $STEPS. A failing step doesn't stop the rest; the failures are listed
-# at the end with the command that re-runs them, and the run fails.
-#
-# With mode --status, run each step's read-only --status report instead, under a header with the
-# step's name. A step whose report has missing or unknown items exits 3; those are listed at the
-# end too, and the run returns 3 (or 1 when a step also failed). A report with such an item that
-# exits 0 is listed too. A report that exits 3 without such an item failed. An empty mode runs the
-# steps.
+# An empty mode runs the named steps, or every step in $STEPS, in order, each in its own process. A failing step
+# doesn't stop the rest; the failures are listed at the end with the command that re-runs them,
+# and the run fails. With mode --status, run each step's report instead, under a header with its
+# name. Steps with an item needing attention are listed too, and the run returns 3 (1 when a step
+# also failed); one with such an item that exits 0 is listed too. A report that exits 3 without
+# such an item failed.
 run_steps() {
     local mode="$1" step script status codes skipped blocker interrupted="" failed=() attention=()
     shift

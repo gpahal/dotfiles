@@ -7,8 +7,6 @@ set -u
 # No set -e, since a failed stage mustn't stop the ones after it.
 # Usage: bash scripts/upgrade.sh [ai-tools]
 
-# The shared helpers. Sourcing it only defines them and sets variables, PATH among them, and it
-# sets DOTFILES_DIR to this script's repo.
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/casks.sh
@@ -35,19 +33,15 @@ _cask_listed() {
     awk -F / -v cask="$1" '$NF == cask { found = 1 } END { exit !found }'
 }
 
-# Upgrade the outdated casks given, skipping running apps, which replacing would break. One brew
-# list and one brew outdated cover all of them, rather than two brew queries per cask. Most are
-# apps that update themselves, but only while they run, so this catches up the rest. `brew upgrade`
-# would quit and replace them when the app bundle is behind, so `upgrade` sets
-# HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave them to this. A cask given as <cask>:<process>
-# counts as running when a process has that exact name. For the others, an app's name can gain or
-# lose a suffix in parentheses between releases, so match any running app whose name starts with the
-# cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
-# `brew info` for a cask leaves it alone and fails, since its output can't say the cask is up to
-# date or what app it has, and a failed `brew list` fails before upgrading any. An interrupted brew command returns its status, so the caller stops. An
-# app that renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
-# under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
-# keeping the app on disk (_readopt_renamed_cask).
+# Upgrade the outdated casks given, skipping running apps, which replacing would break. Most are
+# apps that update themselves only while they run, so this catches up the rest; `brew upgrade`
+# would quit and replace them, so `upgrade` sets HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS to leave
+# them to this. A cask given as <cask>:<process> counts as running when a process has that exact
+# name. For the others, an app's name can gain or lose a suffix in parentheses between releases,
+# so any running app whose name starts with the cask's app name up to " (" counts. A cask whose
+# brew outdated or brew info fails is left alone, and the function fails. An interrupted brew
+# returns its status, so the caller stops. An app that renamed itself as it updated, as T3 Code
+# can, would fail brew upgrade, so its cask is re-recorded instead (_readopt_renamed_cask).
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
     local rerun="$1" entry cask process info path app running installed outdated one status rc
@@ -120,6 +114,7 @@ _upgrade_self_updating_casks() {
             # A cask with no app artifact has no name to check. Logi Options+, which keeps an
             # agent running, quits the app and agents in its uninstall steps before the upgrade,
             # and a CLI such as codex keeps running from the old binary.
+            # -a: macOS pgrep otherwise skips its own ancestors, such as the app this shell runs in
             if [ -n "$app" ] && pgrep -af "^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/" &>/dev/null; then
                 running=true
             fi
@@ -347,14 +342,11 @@ upgrade() {
             _stage_failed "tmux plugins" "$?"
     fi
 
-    # mise removes the Node versions upgrade moves away from once upgrade.prune_after passes (24h by
-    # default), and with them any CLI installed by `npm install -g`. Install global npm CLIs with
-    # mise's npm: backend instead (e.g. `mise use -g npm:<pkg>`). From ~, so a project's mise.toml
-    # in the current dir neither stops it nor gets its tools upgraded.
-    # This script's PATH has the Node from before the upgrade, so apply mise's hook, as from ~, and
-    # npm below runs the Node mise just installed. --force, since the hook skips its work when no
-    # config file changed.
-    # When the hook fails, or prints nothing, npm would run the old Node, so it's skipped.
+    # mise prunes the Node versions upgrade moves away from, and with them any CLI installed by
+    # `npm install -g`, so install global npm CLIs with `mise use -g npm:<pkg>`. From ~, so a
+    # project's mise.toml in the current dir neither stops it nor gets its tools upgraded.
+    # This script's PATH has the old Node, so apply mise's hook (--force, since it skips its work
+    # when no config changed) for npm below; when the hook fails or prints nothing, skip npm.
     local node_stale=false hook rc
     if command -v mise &>/dev/null; then
         (cd ~ && mise upgrade) || _stage_failed mise "$?"

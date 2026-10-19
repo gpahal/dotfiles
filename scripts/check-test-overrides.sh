@@ -4,10 +4,8 @@ set -euo pipefail
 # Fail on a bare override in tests/test-*.sh: a line that redefines, as name() { or function name,
 # a function that a repo step or lib defines. Such an override changes nothing once the step
 # renames the function, and the test may still pass, so tests use replace_fn, as_os, or answer
-# from tests/lib.sh instead. The functions come from lib/, every */lib/, every step's install.sh
-# and manual-steps.sh, and the other scripts the tests load with load_script or source. Heredoc
-# bodies, such as a fake step a test writes, aren't checked. Prints each override as
-# file:line: name and exits 1 when there are any. Bash 3.2.
+# from tests/lib.sh instead. Heredoc bodies, such as a fake step a test writes, aren't checked.
+# Prints each override as file:line: name and exits 1 when there are any.
 
 cd "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

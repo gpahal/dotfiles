@@ -4,8 +4,7 @@ set -euo pipefail
 # scripts/check-ai-settings.sh, with the claude and codex CLIs stubbed, writes the claude-code and
 # codex steps' settings in a temp HOME, never the sandbox's own, and passes when each doctor
 # accepts them, rejects a broken file, every reviewer flag is in the CLIs' help, and codex sandbox
-# runs. A doctor that doesn't reject the broken file, one that rejects the step's settings, a flag
-# missing from the help, or a failed sandbox each fails it, naming what failed.
+# runs. Otherwise it fails, naming what failed.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

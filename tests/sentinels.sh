@@ -4,24 +4,11 @@
 # shellcheck disable=SC2034 # the files that source this one read SENTINELS
 
 # Commands a test must stub, since a test that runs one without stubbing it fails, even under
-# `|| true`. Add a command here when a test would otherwise reach one that changes the real machine,
-# uses the network, or reads real hardware or system state:
-# - commands that change the machine or use the network
-# - orb, which would reach OrbStack's real machines
-# - ss, whose real connections would decide what the ubuntu step's firewall allows
-# - read-only commands whose output depends on the real machine: the status diagnostics'
-#   smartctl, fwupdmgr, fdesetup, socketfilterfw, nmcli, apt-config, apt-mark, and journalctl,
-#   which read the real disks, firmware, security settings, network, apt config, holds, and logs,
-#   the ubuntu step's nut-scanner and upsc, which read a real UPS, udevadm, which reads the real
-#   devices, lsblk, which reads the real disks' encryption, lsappinfo and pgrep, which read the
-#   running apps and processes, scutil, which reads and sets the real hostname, pbpaste, which
-#   reads the real clipboard, dpkg and dpkg-query, which read the real architecture and packages,
-#   ip, which reads the real routes, bwrap, whose sandbox depends on the real kernel and AppArmor,
-#   systemd-detect-virt, which reads whether the real machine is a VM, as CI runners are, and
-#   mdls, which reads the real Spotlight metadata
-# Other read-only commands the tests rely on, such as dscl, uname, and id, stay real. A test
-# that needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs
-# that.
+# `|| true`. Add a command here when a test would otherwise reach one that changes the real machine
+# (orb reaches OrbStack's real machines), uses the network, or whose output depends on the real
+# machine, such as smartctl, ss, pgrep, dpkg, ip, or systemd-detect-virt (CI runners are VMs).
+# Other read-only commands the tests rely on, such as dscl, uname, and id, stay real. A test that
+# needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs that.
 SENTINELS="brew apt apt-get add-apt-repository snap systemctl launchctl defaults softwareupdate mas
 osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill open xdg-open
 locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss

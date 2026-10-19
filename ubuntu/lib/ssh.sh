@@ -228,7 +228,7 @@ sshd_settings_problems() {
     [ -d "$SSHD_RUN_DIR" ] || return 1
     while IFS= read -r addr; do
         n=$((n + 1))
-        if ! config="$(sudo "$@" sshd -T -C "$(sshd_login_spec "$addr")" 2>/dev/null < /dev/null)"; then
+        if ! config="$(sudo "$@" "$SSHD_BIN" -T -C "$(sshd_login_spec "$addr")" 2>/dev/null < /dev/null)"; then
             SSHD_FAILED_SPEC="$(sshd_login_spec "$addr")"
             return 1
         fi
@@ -282,7 +282,7 @@ configure_sshd() {
         return 1
     fi
     ensure_sshd_run_dir || return 1
-    if ! output="$(sudo sshd -t 2>&1)"; then
+    if ! output="$(sudo "$SSHD_BIN" -t 2>&1)"; then
         bad="$(sshd_error_file "$output")"
         if [ "$bad" != "$SSHD_DROP_IN" ]; then
             printf '%s\n' "$output" >&2
@@ -298,7 +298,7 @@ configure_sshd() {
     new="$(sshd_drop_in "$old")"
     # A failed write leaves the old drop-in whole, so there is nothing to put back
     write_root_file "$SSHD_DROP_IN" "$new" || return 1
-    if ! output="$(sudo sshd -t 2>&1)"; then
+    if ! output="$(sudo "$SSHD_BIN" -t 2>&1)"; then
         printf '%s\n' "$output" >&2
         bad="$(sshd_error_file "$output")"
         if ! restore_sshd_drop_in "$existed" "$old"; then

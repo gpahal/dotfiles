@@ -248,8 +248,9 @@ nut_target_enabled() {
 }
 
 # Succeeds when NUT watches a plugged-in UPS: it's set up for it, upsd answers for it, the services
-# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
-# against it, so a run without cached credentials doesn't ask for sudo only to read them.
+# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without
+# sudo don't count against it, so a run without cached credentials doesn't ask for sudo only to read
+# them.
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?

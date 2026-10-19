@@ -11,7 +11,8 @@
 # diagnostics: any local user can read the URL file itself (see save_url in setup-alerts.sh).
 # e.g. ntfy_push "$url" "Alerts from box" "A test." "Tags: white_check_mark"
 # --data-raw, since --data-binary would read a message starting with @, which smartd and upsmon
-# pass on, as a file name, and push that file's contents.
+# pass on, as a file name, and push that file's contents. -q, which must come first, skips
+# ~/.curlrc, root's for smartd's hook, which could log the URL or send it through a proxy.
 ntfy_push() {
     local url="$1" title="$2" message="$3" header headers=()
     shift 3
@@ -19,6 +20,6 @@ ntfy_push() {
         headers+=(-H "$header")
     done
     printf 'url = "%s"\n' "$(printf '%s' "$url" | sed 's/[\\"]/\\&/g')" |
-        curl -fsS --max-time 10 -H "Title: $title" ${headers[@]+"${headers[@]}"} \
+        curl -q -fsS --max-time 10 -H "Title: $title" ${headers[@]+"${headers[@]}"} \
             --data-raw "$message" -K - > /dev/null
 }

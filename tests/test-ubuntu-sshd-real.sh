@@ -48,7 +48,7 @@ problems_are() {
 
 # The drop-in alone: sshd takes every setting
 problems_are "" "with the drop-in alone"
-assert_file_contains "$STUB_LOG" "sudo -n sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
+assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
 
 # sshd matches an address pattern as a string, so fd00:* takes in the sample of fd00::/8 too, and
 # that of the pattern itself

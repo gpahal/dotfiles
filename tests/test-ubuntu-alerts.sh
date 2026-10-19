@@ -40,7 +40,7 @@ assert_file_not_contains "$STUB_LOG" "logger"
 # a process's arguments, and the topic is its secret.
 echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
@@ -120,7 +120,7 @@ assert_not_contains "$RUN_OUTPUT" "my-topic"
 assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-raw Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 assert_eq 644 "$(file_mode "$NTFY_URL_FILE")" "the URL file's mode"
-assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
 if grep '^curl -' "$STUB_LOG" | grep -q my-topic; then
     fail "the test push's curl arguments name the ntfy topic"
@@ -149,7 +149,7 @@ chmod 755 "$SMARTD_HOOK"
 : > "$STUB_LOG"
 assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo env SMARTD_SUBJECT=Test: SMART warning on"
-assert_file_contains "$STUB_LOG" "curl -fsS"
+assert_file_contains "$STUB_LOG" "curl -q -fsS"
 
 # The UPS notifier: skipped without it or the nut user, else run as nut with a test event.
 # id nut succeeds once $SANDBOX/nut-user exists. The notifier logs its environment and argument.

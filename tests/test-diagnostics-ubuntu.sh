@@ -6,8 +6,9 @@ set -euo pipefail
 # The read-only diagnostics in the ubuntu and docker steps' status reports: free space, SMART
 # health, firmware updates, and Docker's disk usage, and run_bounded with timeout(1). Failing SMART
 # health, low free space, and unknown results need attention; firmware and Docker's usage are
-# information. df, sudo, smartctl, fwupdmgr, systemctl, docker, and dpkg are stubs, and the checks below
-# prove status asks for no password, starts no service, and refreshes, prunes, or wakes nothing.
+# information. df, sudo, smartctl, fwupdmgr, systemctl, docker, and dpkg are stubs, and the checks
+# below prove status asks for no password, starts no service, and refreshes, prunes, or wakes
+# nothing.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

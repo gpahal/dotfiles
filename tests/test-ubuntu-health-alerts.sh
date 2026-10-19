@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
-# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy when one exits
-# 1 or 3, and that one couldn't run when it exits otherwise, and again only when the message
-# changed or a week passed, with one all-clear when nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
-# saved, neither pushes.
-# The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
-# and the two runners are stubs.
+# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy when one exits 1
+# or 3, and that one couldn't run when it exits otherwise, and again only when the message changed
+# or a week passed, with one all-clear when nothing needs attention any more; boot pushes that the
+# machine started, once per boot. With no URL saved, neither pushes. The ubuntu step's status
+# reports a failed last run of either service. curl, sleep, systemctl, and the two runners are
+# stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

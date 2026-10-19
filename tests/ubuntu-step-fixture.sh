@@ -30,11 +30,11 @@ ubuntu_step_load() {
 }
 
 # systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,
-# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled.
-# A unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers
-# enables and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl enable --now
-# ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is enabled
-# once systemctl --user enable ran, and active once enable --now did. A user unit needs a
+# unless $SANDBOX/units/<unit> holds another state, which enable of ssh.socket sets to enabled. A
+# unit is active unless $SANDBOX/units/<unit>.inactive exists. enable --now of apt's timers enables
+# and starts them, unless $SANDBOX/timers-fail exists. smartd is enabled and running once systemctl
+# enable --now ran, unless $SANDBOX/smartd-failed exists, which only restart clears. A user unit is
+# enabled once systemctl --user enable ran, and active once enable --now did. A user unit needs a
 # daemon-reload while $SANDBOX/reload-needed exists, which daemon-reload removes, unless
 # $SANDBOX/reload-fails exists. A test's own lines go first.
 stub_systemctl() {
@@ -81,8 +81,8 @@ esac'
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without cached
-    # credentials.
+    # sudo runs the command, and refuses a path outside the sandbox. sudo -n fails, as without
+    # cached credentials.
     not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
     not_cached_sudo
     stub dpkg-query 'echo "install ok installed"'
@@ -90,9 +90,10 @@ ubuntu_step_setup() {
     stub systemd-detect-virt 'exit 1'
     # Ubuntu's default smartd.conf, which runs smartd-runner, and so the hook, on a warning
     echo "DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
-    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails, setting
-    # none, when $SANDBOX/sysctl-fails exists, and after setting them when $SANDBOX/sysctl-key-fails
-    # does, as for a key another file sets that the kernel lacks. sysctl -n prints one setting.
+    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails,
+    # setting none, when $SANDBOX/sysctl-fails exists, and after setting them when
+    # $SANDBOX/sysctl-key-fails does, as for a key another file sets that the kernel lacks. sysctl
+    # -n prints one setting.
     stub sysctl 'live="'"$SANDBOX"'/sysctl-live"
     case "$1" in
         --system) [ ! -e "'"$SANDBOX"'/sysctl-fails" ] || exit 1
@@ -107,13 +108,13 @@ ubuntu_step_setup() {
     stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
     # No package is on hold with apt-mark
     stub apt-mark
-    # unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last file
-    # that sets it wins.
+    # unattended-upgrades runs daily once a file in $SANDBOX/apt.conf.d says so. As in apt, the last
+    # file that sets it wins.
     stub_apt_config 'cat "'"$SANDBOX"'/apt.conf.d/"* 2> /dev/null | awk '"'"'{ values[$1] = $0 } END { for (key in values) print values[key] }'"'"''
     stub loginctl
     stub lsblk
-    # Tailscale auto-updates, with you as its operator, until $SANDBOX/tailscale-reset exists, as after
-    # its first login, and its state is in $SANDBOX/tailscale-state
+    # Tailscale auto-updates, with you as its operator, until $SANDBOX/tailscale-reset exists, as
+    # after its first login, and its state is in $SANDBOX/tailscale-state
     stub tailscale 'case "$1" in
         debug) if [ -e "'"$SANDBOX"'/tailscale-reset" ]; then echo "{}"
             else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}"; fi ;;

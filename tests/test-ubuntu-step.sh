@@ -19,8 +19,8 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 setup_sandbox
 ubuntu_step_setup
-# ubuntu_sandbox_paths fails the test when a constant still names a system path, as REBOOT_REQUIRED did once a test
-# loaded the step again
+# ubuntu_sandbox_paths fails the test when a constant still names a system path, as REBOOT_REQUIRED
+# did once a test loaded the step again
 leak_reboot_required() {
     TEST_FAILURES=0
     REBOOT_REQUIRED=/var/run/reboot-required

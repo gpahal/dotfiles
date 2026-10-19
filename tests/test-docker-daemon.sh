@@ -3,12 +3,12 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind
-# to, and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
-# keeping the file's other keys and mode, restarts a running daemon only when the file changed,
-# and leaves invalid JSON alone. A file of several JSON values isn't configured. A failed write leaves the old
-# file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
-# the new file.
+# The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind to,
+# and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
+# keeping the file's other keys and mode, restarts a running daemon only when the file changed, and
+# leaves invalid JSON alone. A file of several JSON values isn't configured. A failed write leaves
+# the old file whole, and a failed restart puts it back and keeps a backup, which goes once Docker
+# takes the new file.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -27,7 +27,8 @@ SETTINGS='"log-driver": "local", "live-restore": true, "ip": "127.0.0.1",
     "default-address-pools": [
         {"base": "172.17.0.0/16", "size": 24}, {"base": "172.18.0.0/15", "size": 24},
         {"base": "172.20.0.0/14", "size": 24}, {"base": "172.24.0.0/13", "size": 24}]'
-# Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file given.
+# Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file
+# given.
 sorted() {
     jq -S -c . "${1:-$DOCKER_DAEMON_CONFIG}"
 }

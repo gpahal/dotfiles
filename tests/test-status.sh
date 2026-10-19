@@ -38,7 +38,7 @@ sudo_not_cached() {
 sudo_cached_stub() {
     stub sudo '[ "$1" != -n ] || shift
 case "$1 ${2:-}" in
-    "true "* | "cat "* | "test "* | "sshd -T" | "ufw status" | "ufw show") ;;
+    "true "* | "cat "* | "test "* | *"/sshd -T" | "ufw status" | "ufw show") ;;
     *) echo "$*" >> "'"$SANDBOX"'/mutations"; exit 1 ;;
 esac
 [ "$1" != cat ] || [ -r "$2" ] || exec cat "$2.root"

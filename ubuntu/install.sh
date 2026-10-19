@@ -167,6 +167,8 @@ TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 # shell, so the file goes in ~/.config.
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
+# The disks unlocked at boot, whose tpm2-device option binds one to the TPM (warn_disk_encryption)
+CRYPTTAB=/etc/crypttab
 
 # Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
 # or status_file to report it
@@ -567,7 +569,6 @@ warn_wifi_needs_login() {
 # TPM-backed encryption that also asks for a PIN gets no warning: only snapd's API tells it apart.
 # Neither does a disk bound to the TPM with systemd-cryptenroll, which keeps its label, so a
 # tpm2-device option in crypttab counts as bound.
-CRYPTTAB=/etc/crypttab
 warn_disk_encryption() {
     lsblk -rno TYPE 2>/dev/null | grep -qx crypt || return 0
     lsblk -rno FSTYPE,LABEL 2>/dev/null |

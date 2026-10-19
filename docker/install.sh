@@ -5,9 +5,10 @@ set -euo pipefail
 # Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
 # rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
 # networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. The run that installs Docker
-# then asks on its own whether to add you to the docker group, which lets `docker` run without sudo
-# but is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides Docker.
+# These need sudo, so the step lists what's missing and asks once. The run that installs Docker then
+# asks on its own whether to add you to the docker group, which lets `docker` run without sudo but
+# is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS,
+# OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -43,9 +44,9 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
 # 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
 # of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
-# Compose project per worktree. docker0 keeps the subnet Docker's network store has for it, through
-# a reboot or a deleted docker0: 172.17.0.0/16 where Docker ran before the change, and
-# 172.17.0.0/24 on a fresh install.
+# Compose project per worktree. docker0 keeps the subnet Docker's network store gave it when the
+# daemon first started, through a reboot or a deleted docker0: 172.17.0.0/16, since the packages
+# start Docker before the step writes this file.
 # ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
 # 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
 # a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
@@ -98,7 +99,8 @@ add_docker_repo() {
     add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
+# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own
+# failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -447,8 +449,8 @@ apply() {
             echo "  Applied."
         fi
     fi
-    # Asked only once, in the run that installs Docker, whose packages add the group. A no then lasts,
-    # and status's info item says how to join later.
+    # Asked only once, in the run that installs Docker, whose packages add the group. A no then
+    # lasts, and status's info item says how to join later.
     if "$fresh" && ! in_docker_group; then
         add_to_docker_group || result=1
     fi

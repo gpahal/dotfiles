@@ -126,7 +126,7 @@ item="sshd's effective settings match $SSHD_DROP_IN"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
-assert_file_contains "$STUB_LOG" "sudo -n sshd -T"
+assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
 printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd_config.d/00-local.conf"
 # A later file loses to the drop-in, so it isn't named
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
@@ -141,7 +141,7 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:
     AllowUsers is someone $me
     PasswordAuthentication is yes"
-assert_file_contains "$STUB_LOG" "sudo sshd -T"
+assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
 assert_eq "PasswordAuthentication yes
 AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 # Password logins stay on, so the step doesn't say they're off

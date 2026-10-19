@@ -370,9 +370,10 @@ while IFS= read -r skill_md; do
     fi
     check_scripts "$dir"
     check_license "$dir"
-    # The skills CLI copies a symlink's target, so the step's check would never find a match
+    # The skills step copies a symlink as a link, which points elsewhere, or nowhere, from the
+    # installed copy in ~/.agents/skills
     while IFS= read -r link; do
-        fail "$link" "a symlink, which the installed copy would hold as a file. Copy the file instead."
+        fail "$link" "a symlink, which the installed copy would hold as a link. Copy the file instead."
     done < <(find "$dir" -type l)
 
     # Markdown links to local files, from every .md file in the skill. Skills are installed side by

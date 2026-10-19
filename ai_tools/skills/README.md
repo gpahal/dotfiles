@@ -7,9 +7,9 @@ Agent skills for Claude Code and Codex, grouped by category:
 
 ## Installation
 
-`bash ai_tools/setup.sh skills` installs every skill globally for Claude Code and Codex with the
-[skills CLI](https://skills.sh). When `CLAUDE_CONFIG_DIR` points anywhere but `~/.claude`, it
-installs them for Codex only. Re-run it after changing a skill. See
+`bash ai_tools/setup.sh skills` installs every skill globally for Claude Code and Codex. When
+`CLAUDE_CONFIG_DIR` points anywhere but `~/.claude`, it installs them for Codex only. Re-run it
+after changing a skill. See
 [ai_tools/README.md](../README.md#skills) for details.
 
 ## Scratch files

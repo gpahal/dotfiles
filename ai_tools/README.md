@@ -22,7 +22,7 @@ How to set up the AI tools on macOS, and on an [Ubuntu](#ubuntu-1) machine used 
 
 ### macOS
 
-1. Run the main [`setup.sh`](../README.md#first-run) first. The steps here need its `jq`, `yq`, and Node.
+1. Run the main [`setup.sh`](../README.md#first-run) first. The steps here need its `jq` and `yq`.
 2. In a new Ghostty window, run `bash ai_tools/setup.sh`, and let it quit the apps it asks about. Use Ghostty rather than T3 Code's terminal, since the script quits T3 Code.
 3. Do the macOS [manual steps](#macos-1): the logins, the notifications, and the phone apps.
 4. Run the [checks](#check-it-works).
@@ -207,9 +207,10 @@ Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Cha
 
 [`ai_tools/skills`](./skills/README.md) holds agent skills, grouped into `engineering` and `productivity`. Most are modified copies of [mattpocock/skills](https://github.com/mattpocock/skills) and [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack), each with its source's `LICENSE`.
 
-The `skills` step installs them with a pinned version of the [skills CLI](https://skills.sh), which needs Node.js 24 or newer from the `runtimes` step **(script)**. Each skill is copied into `~/.agents/skills`, which Codex reads, and linked into `~/.claude/skills`. Type `/` in Claude Code or T3 Code, or `$` in Codex, to list them.
+The `skills` step copies each skill into `~/.agents/skills`, which Codex reads, and links it into `~/.claude/skills` **(script)**. Type `/` in Claude Code or T3 Code, or `$` in Codex, to list them.
 
-- **Changes need a re-run** of `bash ai_tools/setup.sh skills`, which backs up an edited copy before replacing it. It offers to remove each skill it installed that the repo no longer has, and leaves skills from elsewhere alone.
+- **Changes need a re-run** of `bash ai_tools/setup.sh skills`. It replaces a copy that differs from the repo, so make your edits in the repo.
+- **The repo owns both directories.** The step deletes every entry in them that isn't a skill in `ai_tools/skills`, including skills you installed from elsewhere. `--status` lists what it would delete.
 - **`code-review`** replaces Claude Code's bundled `/code-review`. In Codex, run it as `$code-review`.
 - **`interrogate`** runs reviewers through `claude -p` and `codex exec`, so sign in to both.
 
@@ -300,7 +301,7 @@ Run these over SSH from the Mac.
 
 ## Maintenance
 
-**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step records the skills it installed in `${XDG_STATE_HOME:-~/.local/state}/dotfiles/installed-skills`, and backs up edited skills to `skills-backup/` beside it.
+**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step writes to `~/.agents/skills`, and to `~/.claude/skills` unless `CLAUDE_CONFIG_DIR` points elsewhere.
 
 **When an app updates.** These apps don't document every key the steps write, so each was checked against one version:
 
@@ -317,5 +318,3 @@ After an update, check the keys against the app's settings file or schema, fix t
 - **Notifications.** For each app, start a short task, switch away, and wait for the notification.
 - **Keep-awake.** While the Claude app or ChatGPT runs a task, `pmset -g assertions` lists a `PreventUserIdleSystemSleep` assertion from it.
 - **T3 Code at login.** On macOS, after a login T3 Code is running and `launchctl getenv T3CODE_TELEMETRY_ENABLED` prints `false`. On Ubuntu, `systemctl --user is-enabled t3code` prints `enabled`.
-
-**A newer skills CLI.** Check its flags, Node.js version, and copy exclusions, then update `SKILLS_CLI` and the related values in [`skills/install.sh`](./skills/install.sh) and its tests.

@@ -81,11 +81,11 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
-**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's first `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs the installers and the `.deb` without a pinned checksum, as each vendor's instructions do, so the vendor's HTTPS server decides what runs. An apt key must match the fingerprint its step pins. The skills CLI comes from npm through `npx`, pinned by version but not by checksum, and the Ghostty snap from the Snap Store.
+**Downloads.** The installers for Homebrew, rustup, Claude Code, and T3 Code, Chrome's first `.deb`, and the Docker and Tailscale apt keys come over HTTPS only, with TLS 1.2 or later and no redirect to plain HTTP. Setup runs the installers and the `.deb` without a pinned checksum, as each vendor's instructions do, so the vendor's HTTPS server decides what runs. An apt key must match the fingerprint its step pins. The Ghostty snap comes from the Snap Store.
 
 **XDG.** git, tmux, and lazygit configs follow `$XDG_CONFIG_HOME` when it's set, and so do Ghostty and Zed on Ubuntu.
 
-The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md). It needs Node from the `runtimes` step.
+The AI tools have their own script, `bash ai_tools/setup.sh`, described in [ai_tools/README.md](./ai_tools/README.md).
 
 After Homebrew is installed, `just` in the repo lists the [justfile](./justfile)'s recipes, which wrap the setup scripts and the ones this README names. `just status` runs both setup scripts with `--status`.
 

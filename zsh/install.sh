@@ -3,31 +3,22 @@ set -euo pipefail
 
 # Copy the zsh and starship config, source it at login, and offer zsh as the login shell.
 #
-# Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and
-# ~/.zprofile (and ~/.zshenv and ~/.profile on Ubuntu), and make zsh the login shell.
+# On Ubuntu, ~/.zshenv and ~/.profile get a source line too.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# One line in each startup file sources a file the step copies, so a change to what they set
-# reaches the machine with the copy.
 # shellcheck disable=SC2016 # lines written to files, expanded when zsh reads them
 ZSHRC_LINE='source $HOME/.zsh/main.zsh'
-# zsh/path.zsh sets up PATH for zsh. Login shells, which tools such as editors and agents start
-# (`zsh -lc`), read it from ~/.zprofile, after macOS's path_helper in /etc/zprofile has reordered
-# PATH. main.zsh sources it for interactive shells. On Ubuntu, ~/.zshenv sources it too, for a
-# command run directly over SSH (`ssh host codex`), which starts a zsh that reads only ~/.zshenv.
+# zsh/path.zsh's header says which shells read it from which startup file, and why
 # shellcheck disable=SC2016
 PATH_ZSH_LINE='source $HOME/.zsh/path.zsh'
-# zsh/profile.sh sets up PATH for sh login shells and the desktop session on Ubuntu. It's appended
-# after Ubuntu's own ~/.local/bin lines, and puts ~/.local/bin first again. The check keeps a
-# missing copy from stopping sh, for which a failed . is fatal.
+# Ubuntu's ~/.profile sources zsh/profile.sh. The check keeps a missing copy from stopping sh, for
+# which a failed . is fatal.
 # shellcheck disable=SC2016
 PROFILE_LINE='[ ! -r "$HOME/.zsh/profile.sh" ] || . "$HOME/.zsh/profile.sh"'
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 zsh_files() {
     local file status=0
     # File by file: ~/.zsh also holds the completion cache, which a fresh copy would wipe
@@ -43,8 +34,6 @@ zsh_files() {
     return "$status"
 }
 
-# Add a line to a startup file, and say so
-# e.g. add_source_line ~/.zprofile path.zsh "$PATH_ZSH_LINE"
 add_source_line() {
     local file="$1" what="$2" line="$3" name
     name='~'"${file#"$HOME"}"
@@ -61,7 +50,6 @@ source_path_in_zprofile() { add_source_line "$HOME/.zprofile" path.zsh "$PATH_ZS
 source_path_in_zshenv() { add_source_line "$HOME/.zshenv" path.zsh "$PATH_ZSH_LINE"; }
 source_profile_in_profile() { add_source_line "$HOME/.profile" profile.sh "$PROFILE_LINE"; }
 
-# The source lines in the startup files. Only Ubuntu's ~/.zshenv and ~/.profile get one.
 zsh_items() {
     items_reset
     item "main.zsh sourced in ~/.zshrc" "Add the main.zsh source line to ~/.zshrc" \

@@ -3,13 +3,11 @@ set -euo pipefail
 
 # Copy the git config, ignore file, and git wt, and log in to GitHub with gh.
 #
-# Install the git config, global ignore file, and git-wt, and log in to GitHub with gh. On Ubuntu,
-# also send GitHub's SSH remotes over HTTPS.
-#
-# The repo config goes to ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set).
-# ~/.gitconfig, which git reads after it, holds what tools write there: gh's credential helper,
-# Ubuntu's HTTPS rewrite of GitHub's SSH remotes, and, from git/setup-signing.sh, commit signing.
-# The repo config includes ~/.gitconfig.local for any other per-machine settings.
+# On Ubuntu, also send GitHub's SSH remotes over HTTPS. The repo config goes to
+# ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set). ~/.gitconfig, which git reads
+# after it, holds what tools write there: gh's credential helper, Ubuntu's HTTPS rewrite, and, from
+# git/setup-signing.sh, commit signing. The repo config includes ~/.gitconfig.local for any other
+# per-machine settings.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -153,8 +151,6 @@ configure_github_https() {
     echo "  GitHub SSH remotes now go over HTTPS, through gh's credential helper"
 }
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 git_files() {
     local status=0
     "$1" "$REPO_CONFIG" "$XDG_GIT_DIR/config" || status=1

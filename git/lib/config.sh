@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 # Reading git config for the git step. git/install.sh and git/setup-signing.sh source this file.
-# It only defines functions and USER_GITCONFIG.
 
 # The user config git reads after the repo's ~/.config/git/config, which holds per-machine
 # settings and what tools write there

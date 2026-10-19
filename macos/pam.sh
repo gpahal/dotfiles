@@ -206,12 +206,10 @@ status_touch_id() {
             status_item missing "Touch ID in tmux: $blocker"
         elif ! reattach_in_use; then
             status_item skipped "Touch ID in tmux: pam-reattach isn't installed; the homebrew step installs it, then re-run just touch-id"
-        elif [ -L "$REATTACH_MODULE" ]; then
-            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, is a symlink; re-run just touch-id"
-        elif [ -e "$REATTACH_MODULE" ] && ! pam_owner_safe "$REATTACH_MODULE"; then
-            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't root's alone to write; re-run just touch-id"
-        elif [ -f "$REATTACH_MODULE" ] && reattach_source_installed && ! cmp -s "$REATTACH_SOURCE" "$REATTACH_MODULE"; then
-            status_item missing "Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id to install the new module"
+        elif { [ -e "$REATTACH_MODULE" ] || [ -L "$REATTACH_MODULE" ]; } && reattach_copy_needed; then
+            # A link, a copy others can write, or one older than Homebrew's. A missing copy is
+            # reported below, with the modules sudo_local loads.
+            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
         fi
     else
         status_item missing "Touch ID for sudo: $SUDO_LOCAL differs from what just touch-id writes; run it to rewrite the file"

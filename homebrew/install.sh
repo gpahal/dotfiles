@@ -221,19 +221,6 @@ install_mas_apps() {
     fi
 }
 
-# try_install_cask <cask> <app> <state>: install a cask, adding it to the caller's failed array
-# when that fails. The state is cask_state's, which spares install_cask asking brew again.
-try_install_cask() {
-    install_cask "$@" || failed+=("$1")
-}
-
-# Fail after trying every cask, naming the ones that failed, so one failure doesn't skip the rest
-report_failed_casks() {
-    [ $# -gt 0 ] || return 0
-    echo "  These casks failed to install: $*. Fix the errors above and re-run." >&2
-    return 1
-}
-
 # Print the casks this OS gets: CASKS on macOS, UBUNTU_CASKS on Ubuntu
 os_casks() {
     if is_macos; then
@@ -255,7 +242,8 @@ install_casks() {
         case "$state" in brew | other) continue ;; esac
         "$installing" || echo "Installing brew casks..."
         installing=true
-        try_install_cask "$cask" "$app" "$state"
+        # The state spares install_cask asking brew again
+        install_cask "$cask" "$app" "$state" || failed+=("$cask")
     done
     if ! "$installing"; then
         echo "Brew casks already installed."
@@ -263,7 +251,10 @@ install_casks() {
         # Homebrew copies fonts in but doesn't refresh fontconfig's cache, so apps wouldn't see them
         fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
     fi
-    report_failed_casks ${failed[@]+"${failed[@]}"}
+    # Every cask was tried, so one failure doesn't skip the rest
+    [ ${#failed[@]} -eq 0 ] && return 0
+    echo "  These casks failed to install: ${failed[*]}. Fix the errors above and re-run." >&2
+    return 1
 }
 
 status() {
@@ -327,19 +318,20 @@ apply() {
         install_ubuntu_packages
     fi
     install_homebrew
-    # Install the App Store apps and casks even when the bundle fails
-    local bundle_status=0 mas_status=0 casks_status=0
-    install_bundle || bundle_status=$?
-    # Ctrl-C, which brew catches
-    [ "$bundle_status" -le 128 ] || return "$bundle_status"
+    # Install the App Store apps and casks even when the bundle fails, but stop at Ctrl-C, which
+    # brew and mas catch, exiting above 128. The step fails with the first failure's status.
+    local parts=(install_bundle) part result status=0
     if is_macos; then
-        install_mas_apps || mas_status=$?
-        [ "$mas_status" -le 128 ] || return "$mas_status"
+        parts+=(install_mas_apps)
     fi
-    install_casks || casks_status=$?
-    [ "$bundle_status" -eq 0 ] || return "$bundle_status"
-    [ "$mas_status" -eq 0 ] || return "$mas_status"
-    return "$casks_status"
+    parts+=(install_casks)
+    for part in "${parts[@]}"; do
+        result=0
+        "$part" || result=$?
+        [ "$result" -le 128 ] || return "$result"
+        [ "$status" -ne 0 ] || status="$result"
+    done
+    return "$status"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

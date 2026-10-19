@@ -106,7 +106,7 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 chmod 644 "$SOURCE"
 put_reattach "reattach 1.1"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "reattach 1.1" "$(cat "$MODULE")" "the copy after the upgrade"
@@ -246,7 +246,7 @@ set_up
 rm -f "$MODULE"
 ln -s "$SOURCE" "$MODULE"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is a symlink; re-run just touch-id"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo mv -fh $MODULE.new $MODULE"
 [ ! -L "$MODULE" ] && [ -f "$MODULE" ] || fail "the linked module wasn't replaced with a copy"

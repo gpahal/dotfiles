@@ -48,22 +48,22 @@ done
 load_script homebrew/install.sh
 as_os ubuntu
 replace_fn cask_state "printf 'missing\t\n'"
-try_cask() {
-    local failed=()
-    try_install_cask foo ""
-    echo "carried on, failed: ${failed[*]}"
-}
+# shellcheck disable=SC2034 # os_casks reads it
+UBUNTU_CASKS=(foo bar)
+stub fc-cache
 direct() {
     install_cask foo "" || echo "returned $?"
 }
 for code in 130 143 129 1 137 141 255; do
     stub brew "exit $code"
+    : > "$STUB_LOG"
     if ! interrupted_status "$code"; then
-        assert_exit 0 try_cask
-        assert_contains "$RUN_OUTPUT" "carried on, failed: foo"
+        assert_exit 1 install_casks
+        assert_contains "$RUN_OUTPUT" "These casks failed to install: foo bar."
     else
-        assert_exit "$code" try_cask
-        assert_not_contains "$RUN_OUTPUT" "carried on"
+        assert_exit "$code" install_casks
+        assert_not_contains "$RUN_OUTPUT" "failed to install"
+        assert_file_not_contains "$STUB_LOG" "install --cask bar"
         assert_exit "$code" direct
         assert_not_contains "$RUN_OUTPUT" "returned"
     fi

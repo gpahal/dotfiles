@@ -12,7 +12,9 @@ set -euo pipefail
 # folder.
 
 DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="$DIR/com.gpahal.dotfiles.sdPlugin/profiles/System.streamDeckProfile"
+# An absolute path as the argument builds the zip there instead, as tests/test-stream-deck.sh does
+# to compare it with the committed one
+OUT="${1:-$DIR/com.gpahal.dotfiles.sdPlugin/profiles/System.streamDeckProfile}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

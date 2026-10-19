@@ -88,12 +88,14 @@ ubuntu_step_setup() {
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'
-    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails when
-    # $SANDBOX/sysctl-fails exists. sysctl -n prints one setting.
+    # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails, setting
+    # none, when $SANDBOX/sysctl-fails exists, and after setting them when $SANDBOX/sysctl-key-fails
+    # does, as for a key another file sets that the kernel lacks. sysctl -n prints one setting.
     stub sysctl 'live="'"$SANDBOX"'/sysctl-live"
     case "$1" in
         --system) [ ! -e "'"$SANDBOX"'/sysctl-fails" ] || exit 1
-            cat "'"$SANDBOX"'/sysctl.d/"*.conf | grep "=" | tr -d " " >> "$live" ;;
+            cat "'"$SANDBOX"'/sysctl.d/"*.conf | grep "=" | tr -d " " >> "$live"
+            [ ! -e "'"$SANDBOX"'/sysctl-key-fails" ] ;;
         -n) grep "^$2=" "$live" 2> /dev/null | tail -n 1 | cut -d= -f2 ;;
     esac'
     # The en_US.UTF-8 locale is there once locale-gen ran

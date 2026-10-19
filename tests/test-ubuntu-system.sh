@@ -142,6 +142,14 @@ assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_not_contains "$STUB_LOG" "tee $SYSCTL_CONF"
 assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
+# sysctl --system fails on a bad key in any file, such as one a VM's kernel lacks, after setting the
+# rest: the step's own settings took, so it succeeds
+rm -f "$SYSCTL_CONF" "$SANDBOX/sysctl-live"
+touch "$SANDBOX/sysctl-key-fails"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo sysctl --system"
+rm "$SANDBOX/sysctl-key-fails"
+assert_exit 0 status
 
 # Another file raising an inotify limit further, as an IDE's does, leaves it in effect: status is
 # ok, and a run has nothing to apply

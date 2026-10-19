@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
@@ -15,7 +13,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script stream-deck/install.sh
-is_macos() { true; }
+as_os macos
 src="$REPO_DIR/stream-deck/$PLUGIN"
 
 # The plugin's files, found in the repo, leave out a .DS_Store Finder leaves there

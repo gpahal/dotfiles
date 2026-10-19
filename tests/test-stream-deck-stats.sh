@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # The Stream Deck plugin's stats.js reads vm_stat, vm.swapusage, ps, and netstat output as
 # Activity Monitor counts them, and draws each stat key as an SVG, with a placeholder when a stat

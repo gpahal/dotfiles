@@ -51,8 +51,7 @@ stub scutil 'echo Garvits-MacBook-Pro'
 stub socketfilterfw 'echo "Firewall is enabled. (State = 1)"'
 
 load_script macos/install.sh
-# shellcheck disable=SC2329 # main calls it
-is_macos() { true; }
+as_os macos
 HOTKEYS="$DEFAULTS_DIR/com.apple.symbolichotkeys.AppleSymbolicHotKeys"
 
 # First run: the shortcut goes off and applies now, and the global keys need a logout. The input
@@ -97,7 +96,7 @@ rm "$HOTKEYS.64"
 stub defaults '[ "$1 $2" != "write com.apple.symbolichotkeys" ] || exit 1
 [ "$1" != read ] || [ "$2" == com.apple.symbolichotkeys ] || exit 1
 [ "$1" != read ] || printf "{\n    64 =     {\n        enabled = 1;\n    };\n}\n"'
-default_matches() { true; }
+replace_fn default_matches 'return 0'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't turn off Spotlight's Cmd+Space shortcut"
 test_done

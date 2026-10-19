@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # Without a terminal, the homebrew step installs Homebrew when sudo is cached or the prefix
@@ -14,19 +12,13 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script homebrew/install.sh
 hide brew
-run_installer() { echo "run_installer $*" >> "$STUB_LOG"; }
-load_brew() { :; }
+replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
+replace_fn load_brew
 PREFIX="$SANDBOX/homebrew"
-homebrew_prefix() { echo "$PREFIX"; }
+replace_fn homebrew_prefix 'echo "$PREFIX"'
 
 for os in ubuntu macos; do
-    if [ "$os" == ubuntu ]; then
-        is_ubuntu() { true; }
-        is_macos() { false; }
-    else
-        is_ubuntu() { false; }
-        is_macos() { true; }
-    fi
+    as_os "$os"
 
     # No terminal, no prefix, and sudo would ask for a password: stop before the installer
     : > "$STUB_LOG"
@@ -54,8 +46,8 @@ done
 # that a caller's `|| result=1` would turn into 1. Any other failure returns, so the rest still
 # install, including other codes above 128 such as 137, 141 from SIGPIPE, or 255.
 load_script homebrew/install.sh
-is_macos() { false; }
-cask_state() { printf 'missing\t\n'; }
+as_os ubuntu
+replace_fn cask_state "printf 'missing\t\n'"
 try_cask() {
     local failed=()
     try_install_cask foo ""
@@ -80,7 +72,7 @@ done
 # A cask that runs an installer names no app in brew's metadata, so cask_state takes its app from
 # CASK_PKG_APPS, on macOS. Without it, an app installed outside brew would count as missing.
 load_script homebrew/install.sh
-is_macos() { true; }
+as_os macos
 stub brew 'exit 1'
 for entry in "elgato-stream-deck=/Applications/Elgato Stream Deck.app" "tailscale-app=/Applications/Tailscale.app"; do
     IFS=$'\t' read -r _ app <<< "$(cask_state "${entry%%=*}")"

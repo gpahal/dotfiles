@@ -152,6 +152,13 @@ for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
             ;;
     esac
 done
+# test-ubuntu-sandbox.sh copies the repo to /var/tmp, outside the dir removed below, so a test
+# killed before its EXIT trap leaves the copy there. Remove those a day old, which no run still uses.
+find /var/tmp/ -maxdepth 1 -type d -name 'dotfiles-test.*' -user "$(id -u)" -mtime +0 2>/dev/null |
+    while IFS= read -r dir; do
+        chmod -R u+w "$dir" 2>/dev/null
+        rm -rf "$dir"
+    done
 # /tmp, not $TMPDIR, keeps the tests' TMUX_TMPDIR under tmux's socket path length limit on macOS
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 

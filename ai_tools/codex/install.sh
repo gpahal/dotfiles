@@ -3,10 +3,7 @@ set -euo pipefail
 
 # Install the Codex CLI and the ChatGPT app, and set Codex's config and instructions.
 #
-# Install the Codex CLI and the ChatGPT desktop app, configure ~/.codex/config.toml (shared by
-# both), and copy the user-level instructions to ~/.codex/AGENTS.md. The ChatGPT app writes to
-# config.toml too, so it must be quit first; when run interactively the script offers to quit
-# it, otherwise it skips the settings. On Ubuntu, also set up what Codex's sandbox needs.
+# The CLI and the app share ~/.codex/config.toml. On Ubuntu, also set up Codex's sandbox.
 #
 # A temp HOME doesn't isolate this step. On macOS it installs the chatgpt and codex casks, and on
 # Ubuntu it installs packages and loads an AppArmor profile with sudo. Test the casks in a macOS VM
@@ -140,7 +137,6 @@ codex_settings() {
             codex_set "${KEEP_PATHS[i]}" "${KEEP_VALUES[i]}"
         fi
     done
-    # Short answers and reasoning summaries
     codex_set .model_verbosity '"low"'
     codex_set .model_reasoning_summary '"concise"'
     # Edit and run commands in the workspace without network access. Anything else, including
@@ -150,9 +146,7 @@ codex_settings() {
     # Codex's built-in workspace-write sandbox, which keeps the network off unless
     # [sandbox_workspace_write] turns it on. Your settings there stay.
     codex_set .sandbox_mode '"workspace-write"'
-    # Send OpenAI less: no usage metrics or product events (CLI and desktop app), and no
-    # /feedback log uploads. Training on your chats is an account setting (see
-    # ai_tools/README.md → Privacy).
+    # No usage metrics or product events (CLI and desktop app), and no /feedback log uploads
     codex_set .analytics.enabled 'false'
     codex_set .feedback.enabled 'false'
     if is_ubuntu; then
@@ -165,32 +159,27 @@ codex_settings() {
     # The ChatGPT desktop app is macOS-only, so Ubuntu gets no [desktop] keys. Its keys have
     # dashes, which yq reads as minus outside brackets.
     if is_macos; then
-        # Desktop app: Settings → Git → Pull request merge method → Squash
+        # Settings → Git → Pull request merge method → Squash
         codex_set '.desktop["git-pull-request-merge-method"]' '"squash"'
-        # Desktop app: don't refresh worktrees from their upstream branch
         codex_set '.desktop["worktree-upstream-refresh-mode"]' '"never"'
-        # Desktop app: Settings → Notifications
+        # Settings → Notifications
         codex_set '.desktop["notifications-turn-mode"]' '"unfocused"'
         codex_set '.desktop["notifications-permissions-enabled"]' 'true'
         codex_set '.desktop["notifications-questions-enabled"]' 'true'
-        # Desktop app: Settings → General → Prevent sleep while running
+        # Settings → General → Prevent sleep while running
         codex_set '.desktop["preventSleepWhileRunning"]' 'true'
-        # Desktop app: Settings → General → Show in menu bar (keeps ChatGPT in the menu bar, and
+        # Settings → General → Show in menu bar (keeps ChatGPT in the menu bar, and
         # running, after the main window is closed)
         codex_set '.desktop["mac-menu-bar-enabled"]' 'false'
-        # Desktop app: Settings → Connections → Keep this Mac awake (plugged in, remote access on)
+        # Settings → Connections → Keep this Mac awake (plugged in, remote access on)
         codex_set '.desktop["keepRemoteControlAwakeWhilePluggedIn"]' 'true'
-        # Desktop app: a message sent mid-turn steers the running turn instead of queueing, and
-        # threads show steps and commands
+        # A message sent mid-turn steers the running turn instead of queueing
         codex_set '.desktop["followUpQueueMode"]' '"steer"'
         codex_set '.desktop["conversationDetailMode"]' '"STEPS_COMMANDS"'
-        # Desktop app: show context window usage and ambient suggestions
         codex_set '.desktop["show-context-window-usage"]' 'true'
         codex_set '.desktop["ambient-suggestions-enabled"]' 'true'
-        # Desktop app: open links and local URLs in your browser, not the built-in one
         codex_set '.desktop["open-link-in-target-preference"]' '"external-browser"'
         codex_set '.desktop["open-local-url-in-target-preference"]' '"external-browser"'
-        # Desktop app: offer every reasoning effort in the picker
         codex_set '.desktop["enabled-reasoning-efforts"]' \
             '["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]'
     fi
@@ -304,11 +293,10 @@ codex_add_tail() {
 # whole file: values and full-line comments stay, but end-of-line comments may move or go,
 # multi-line strings become one-line strings with \n, and dotted keys such as profile.fast = {...}
 # may become tables. yq 4.54.1 drops the comments after the last key, such as a commented-out
-# table at the end, so they're added back, and the copy must keep every full-line comment the source
-# has. It also
-# moves values in two shapes, a top-level inline table after a top-level dotted key, and top-level
-# keys after a top-level array of inline tables, so the copy is checked against the edit's own
-# result before use.
+# table at the end, so they're added back, and the copy must keep every full-line comment the
+# source has. It also moves values in two shapes, a top-level inline table after a top-level dotted
+# key, and top-level keys after a top-level array of inline tables, so the copy is checked against
+# the edit's own result before use.
 codex_config_edited() {
     local edited filter source=/dev/null
     codex_settings
@@ -391,7 +379,6 @@ configure_codex_settings() {
     echo "  Set the $settings in $CODEX_CONFIG"
 }
 
-# See user_instructions_to
 user_instructions_files() {
     user_instructions_to "$CODEX_INSTRUCTIONS" "$@"
 }

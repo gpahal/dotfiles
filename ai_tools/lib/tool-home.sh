@@ -1,6 +1,5 @@
 # shellcheck shell=bash
-# The check that an AI tool's home is the default, shared by the claude-code and codex steps, which
-# source this file after lib/common.sh. It only defines functions.
+# The check that an AI tool's home is the default, shared by the claude-code and codex steps.
 
 # tool_home_guard [--status <what>] <tool> <variable> <default home>
 # Succeed when the tool's home variable is unset or names the default (tool_home_is). The steps'

@@ -1,6 +1,5 @@
 # shellcheck shell=bash
-# The user-level instructions the claude-code and codex steps copy, which source this file after
-# lib/common.sh. It only defines functions.
+# The user-level instructions the claude-code and codex steps copy.
 
 # user_instructions_to <dest> <action> [arg...]
 # Pass ai_tools/user-instructions.md and <dest>, where an AI tool reads its user-level

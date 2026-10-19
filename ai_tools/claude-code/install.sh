@@ -2,10 +2,6 @@
 set -euo pipefail
 
 # Install Claude Code and set its settings, status line, worktree hook, and instructions.
-#
-# Install Claude Code, configure ~/.claude/settings.json, copy the status line script to
-# ~/.claude/statusline.sh and the worktree hook to ~/.claude/hooks/worktree-hook.sh, and copy the
-# user-level instructions to ~/.claude/CLAUDE.md.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -112,30 +108,18 @@ install_claude_code() {
 # Usage: claude_code_settings [<register the worktree hook: true|false>]
 claude_code_settings() {
     local register_hook="${1:-true}"
-    # /config → Push when actions required, Push when Claude decides
-    #   (mobile push notifications through the Claude app while Remote Control is active). Enable
-    #   Remote Control for all sessions stays off, since a connected session takes prompts from
-    #   claude.ai and the phone app, so only a session /remote-control connects can push
-    # Start new sessions in auto mode. Only user or managed settings can make auto the default.
-    # Turn off auto memory. Keep transcripts 90 days instead of 30, so /resume reaches further back.
-    # Default to Opus 5.5 with medium effort, the fullscreen TUI, and normal key bindings.
-    #   Switch models instead of pausing when safeguards flag a message.
-    # Worktrees: ~/.claude/hooks/worktree-hook.sh creates them, branching from origin's default
-    #   branch, and removes them under ~/.worktrees/<group>/<repo>/<name>, through git wt, and at
-    #   SessionEnd removes the session's subagent worktrees that hold nothing to lose. It's added
-    #   only once git wt is installed, and one already there gets its type and timeout back.
-    #   While another command holds WorktreeCreate or
-    #   WorktreeRemove, it's removed from all three events. Its 120 s timeout stops a stuck
-    #   git wt from holding up claude -w for the default 10 minutes.
-    # Status line: ~/.claude/statusline.sh (model, effort, context, 5-hour limit, git branch).
-    #   Refresh every five seconds, including while idle. Other keys, such as padding, stay.
-    # Send Anthropic less: no error reports, session quality surveys (they can attach the
-    #   transcript), /feedback, or feedback drafts. Training on your chats is an account
-    #   setting (see ai_tools/README.md → Privacy). Telemetry stays on: DO_NOT_TRACK and
-    #   DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns off
-    #   /advisor, /skill-doctor, skill and plugin sync, and more. Leave
-    #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so
-    #   mobile pushes stop.
+    # inputNeededNotifEnabled and agentPushNotifEnabled are /config's "Push when actions required"
+    #   and "Push when Claude decides". Remote Control at startup stays off, since a connected
+    #   session takes prompts from claude.ai and the phone app. Only user or managed settings can
+    #   make auto mode the default. Transcripts are kept 90 days, so /resume reaches further back.
+    # The worktree hook is added only once git wt is installed, and removed from all three events
+    #   while another command holds WorktreeCreate or WorktreeRemove. Its 120 s timeout stops a
+    #   stuck git wt from holding up claude -w for the default 10 minutes.
+    # Session quality surveys are off because they can attach the transcript. Telemetry stays on:
+    #   DO_NOT_TRACK and DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns
+    #   off /advisor, /skill-doctor, skill and plugin sync, and more. Leave
+    #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so mobile
+    #   pushes stop.
     # Each value you can change, with = to write over yours or //= to set it only when unset
     local i op keepable=""
     for i in $(keepable_indexes claude_code); do
@@ -212,8 +196,6 @@ configure_claude_code() {
     echo "  and opted out of error reports, surveys, and feedback"
 }
 
-# Pass the status line script and the worktree hook, each as source and destination, to a
-# function: copy_file to copy them, or status_file to report them
 script_files() {
     local status=0
     "$1" "$DOTFILES_DIR/ai_tools/claude-code/statusline.sh" "$CLAUDE_CODE_STATUSLINE" || status=1
@@ -221,7 +203,6 @@ script_files() {
     return "$status"
 }
 
-# See user_instructions_to
 user_instructions_files() {
     user_instructions_to "$CLAUDE_CODE_INSTRUCTIONS" "$@"
 }

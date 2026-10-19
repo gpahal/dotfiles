@@ -3,9 +3,6 @@ set -euo pipefail
 
 # Install the Claude desktop app, open it at login, and set its preferences.
 #
-# Claude must be quit first; when run interactively the script offers to quit it, otherwise it skips
-# the settings.
-#
 # A temp HOME doesn't isolate this step, which installs the claude cask into /Applications. Test it
 # in a macOS VM or on a spare Mac.
 
@@ -27,10 +24,8 @@ CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_c
 CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
 CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it. The LaunchAgent isn't loaded now, since it would open Claude, which
-# must be quit for the settings below. launchd loads it from ~/Library/LaunchAgents at the next
-# login.
+# The LaunchAgent isn't loaded now, since it would open Claude, which must be quit for the settings
+# below. launchd loads it at the next login.
 claude_desktop_files() {
     "$1" "$DOTFILES_DIR/ai_tools/claude-desktop/$CLAUDE_DESKTOP_LOGIN_LABEL.plist" "$CLAUDE_DESKTOP_LOGIN_AGENT"
 }

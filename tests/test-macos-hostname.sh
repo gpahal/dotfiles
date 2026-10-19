@@ -30,7 +30,7 @@ stub sudo
 # Already set: nothing changes
 export HOST_NAME=Garvits-MacBook-Pro.local
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "The hostname is already Garvits-MacBook-Pro.local."
+assert_not_contains "$RUN_OUTPUT" "hostname"
 assert_not_contains "$(cat "$STUB_LOG")" "sudo"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Hostname set"

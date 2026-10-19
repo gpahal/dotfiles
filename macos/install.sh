@@ -260,16 +260,10 @@ hostname_valid() {
 
 set_hostname() {
     local name
-    if hostname_valid; then
-        echo "  The hostname is already $(scutil --get HostName)."
-        return 0
-    fi
     if ! name="$(scutil --get LocalHostName)"; then
         echo "  Couldn't read the local hostname, so the hostname is left unset." >&2
         return 1
     fi
-    confirm_sudo_changes "Set the hostname to $name, so Ghostty's shell can report its folder" ||
-        return 0
     if ! sudo scutil --set HostName "$name"; then
         echo "  Couldn't set the hostname." >&2
         return 1
@@ -277,12 +271,32 @@ set_hostname() {
     echo "  Set the hostname to $name. Shells started from now on use it."
 }
 
+# The screenshot location key points here
+screenshots_dir() {
+    [ -d "$HOME/Screenshots" ]
+}
+
+make_screenshots_dir() {
+    mkdir -p "$HOME/Screenshots"
+}
+
+# What the step sets up besides the defaults and shortcuts, which each_default and
+# symbolic_hotkeys list
+macos_items() {
+    local name
+    name="$(scutil --get LocalHostName 2>/dev/null)" || name="the name in System Settings → General → Sharing"
+    items_reset
+    item "$HOME/Screenshots directory" "Create $HOME/Screenshots" screenshots_dir make_screenshots_dir
+    item --sudo "Hostname set, so Ghostty's shell can report its folder" \
+        "Set the hostname to $name, so Ghostty's shell can report its folder" hostname_valid set_hostname
+}
+
 status() {
+    macos_items
     each_default status_default
-    # The screenshot location key points here, and apply creates it
-    status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
+    items_status screenshots_dir
     symbolic_hotkeys status_hotkey
-    status_check "Hostname set, so Ghostty's shell can report its folder" hostname_valid
+    items_status hostname_valid
     # Touch ID for sudo is optional (just touch-id), so off is skipped
     status_touch_id skipped
     status_filevault
@@ -293,9 +307,14 @@ status() {
 
 apply() {
     echo "Setting macOS defaults..."
-    local status=0
-    set_hostname || status=1
-    mkdir -p "$HOME/Screenshots"
+    local status=0 pending=()
+    macos_items
+    items_pending hostname_valid
+    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
+        items_apply || status=1
+    else
+        items_apply --no-sudo || status=1
+    fi
     each_default set_default
     symbolic_hotkeys disable_hotkey
 

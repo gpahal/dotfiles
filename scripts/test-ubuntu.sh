@@ -73,9 +73,14 @@ VM_OUT_FILE="$LOG_DIR/step"
 KEY_DIR=""
 echo "Logging to $LOG"
 
+# Whether the machine is this run's to delete: set just before orb create, so an interrupted
+# create still cleans up, and cleared when the create fails, as when another run made the machine
+# since the check above
+OWN_MACHINE=false
+
 # shellcheck disable=SC2329 # the EXIT trap runs it
 cleanup() {
-    if orb list -q | grep -qx "$MACHINE"; then
+    if "$OWN_MACHINE" && orb list -q | grep -qx "$MACHINE"; then
         echo "Deleting the $MACHINE machine..."
         orb delete -f "$MACHINE" >> "$LOG" 2>&1 || echo "Couldn't delete it. Run: orb delete -f $MACHINE" >&2
     fi
@@ -84,7 +89,8 @@ cleanup() {
     echo "Log: $LOG"
 }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Run a command in the machine as the default user, from the repo, which OrbStack mounts at the
 # same path. Its output goes to the terminal and the log as it comes, and is kept in $VM_OUTPUT.
@@ -171,7 +177,9 @@ run_runner() {
 }
 
 echo "Creating the $MACHINE machine (Ubuntu 26.04, $ARCH)..."
+OWN_MACHINE=true
 if ! orb create --arch "$ARCH" ubuntu:resolute "$MACHINE" >> "$LOG" 2>&1; then
+    OWN_MACHINE=false
     echo "Couldn't create the machine. See $LOG." >&2
     exit 1
 fi

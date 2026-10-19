@@ -96,10 +96,6 @@ tmux_boot_enabled() {
 # continuum's restore, which it starts in the background, then finds no server and does nothing.
 setup_tmux_boot() {
     local tmpdir
-    if tmux_boot_enabled; then
-        echo "tmux already starts at boot."
-        return 0
-    fi
     if ! systemctl --user show-environment &>/dev/null; then
         echo "Couldn't reach your systemd user manager, so tmux doesn't start at boot yet. Re-run the"
         echo "step after the next reboot or login."
@@ -117,17 +113,23 @@ setup_tmux_boot() {
     echo "  Enabled $TMUX_BOOT_UNIT, which starts tmux at boot and restores your sessions"
 }
 
+# Only Ubuntu has an item. The plugins, read from plugins.lock, stay a loop of their own.
+tmux_items() {
+    items_reset
+    is_ubuntu || return 0
+    item "tmux starts at boot (continuum's systemd user unit, $TMUX_BOOT_UNIT)" "Start tmux at boot" \
+        tmux_boot_enabled setup_tmux_boot
+}
+
 status() {
     local repo sha
     tmux_files status_file
     while read -r repo sha; do
         status_check "tmux plugin $repo at ${sha:0:7}" plugin_installed "$repo" "$sha"
     done < <(tmux_plugins)
-    if is_ubuntu; then
-        status_check "tmux starts at boot (continuum's systemd user unit, $TMUX_BOOT_UNIT)" tmux_boot_enabled
-    else
-        status_item skipped "tmux starts at boot: Ubuntu only"
-    fi
+    tmux_items
+    items_status
+    is_ubuntu || status_item skipped "tmux starts at boot: Ubuntu only"
     status_result
 }
 
@@ -139,8 +141,12 @@ apply() {
     tmux_files copy_file || status=1
     echo "Installing tmux plugins..."
     sync_tmux_plugins || status=1
-    if is_ubuntu; then
-        setup_tmux_boot || status=1
+    tmux_items
+    # Not grep -q, whose early exit would fail the pipeline under pipefail
+    if items_status | grep '^  missing ' > /dev/null; then
+        items_apply || status=1
+    elif is_ubuntu; then
+        echo "tmux already starts at boot."
     fi
     return "$status"
 }

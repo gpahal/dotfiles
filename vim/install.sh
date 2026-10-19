@@ -23,10 +23,6 @@ plug_vim_pinned() {
 # Not a copy_file: plug.vim is vendored, not edited, so a copy that differs, such as one
 # PlugUpgrade wrote, is replaced without a backup
 install_plug_vim() {
-    if plug_vim_pinned; then
-        echo "  vim-plug is already at the pinned version"
-        return 0
-    fi
     if ! { mkdir -p "$(dirname "$PLUG_VIM")" && replace_file "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM" 644; }; then
         echo "  Couldn't write $PLUG_VIM" >&2
         return 1
@@ -61,6 +57,7 @@ vim_plugins_pinned() {
 # clone lacks. vim-plug's clones are shallow, and GitHub serves a single commit by its hash.
 pin_vim_plugins() {
     local repo sha dir status=0
+    require_cmd git || return 1
     while read -r repo sha; do
         dir="$PLUGGED_DIR/${repo##*/}"
         if { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
@@ -75,22 +72,30 @@ pin_vim_plugins() {
     return "$status"
 }
 
+vim_items() {
+    items_reset
+    item "vim-plug at the pinned version (~/.vim/autoload/plug.vim)" "Install vim-plug" \
+        plug_vim_pinned install_plug_vim
+    item "vim plugins at their pinned commits (~/.vim/plugged)" "Move the vim plugins to their pins" \
+        vim_plugins_pinned pin_vim_plugins
+}
+
 status() {
     vim_files status_file
-    status_check "vim-plug at the pinned version (~/.vim/autoload/plug.vim)" plug_vim_pinned
-    status_check "vim plugins at their pinned commits (~/.vim/plugged)" vim_plugins_pinned
+    vim_items
+    items_status
     status_result
 }
 
 apply() {
     local status=0
     copy_step "Copying vim config..." vim_files || status=1
-    install_plug_vim || status=1
-    if vim_plugins_pinned; then
-        echo "  vim plugins already at their pinned commits"
+    vim_items
+    # Not grep -q, whose early exit would fail the pipeline under pipefail
+    if items_status | grep '^  missing ' > /dev/null; then
+        items_apply || status=1
     else
-        require_cmd git || return 1
-        pin_vim_plugins || status=1
+        echo "  vim-plug and the vim plugins already at their pinned versions"
     fi
     return "$status"
 }

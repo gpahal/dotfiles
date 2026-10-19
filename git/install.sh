@@ -163,9 +163,26 @@ git_files() {
     return "$status"
 }
 
+user_gitconfig_exists() {
+    [ -e "$LOCAL_CONFIG" ]
+}
+
+# git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and the
+# next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
+create_user_gitconfig() {
+    touch "$LOCAL_CONFIG"
+}
+
+git_items() {
+    items_reset
+    item "A ~/.gitconfig for per-machine settings" "Create ~/.gitconfig" \
+        user_gitconfig_exists create_user_gitconfig
+}
+
 status() {
     git_files status_file
-    status_check "A ~/.gitconfig for per-machine settings" test -e "$LOCAL_CONFIG"
+    git_items
+    items_status
     if status_require_cmd gh "GitHub login"; then
         status_github_login
         status_check "git uses gh for GitHub credentials" gh_credential_helper_set
@@ -187,9 +204,8 @@ apply() {
     local status=0
     echo "Copying git config..."
     git_files copy_file || status=1
-    # git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and
-    # the next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
-    [ -e "$LOCAL_CONFIG" ] || touch "$LOCAL_CONFIG" || status=1
+    git_items
+    items_apply || status=1
     # The rewrite needs the credential helper the login sets up
     setup_github_auth || status=1
     configure_github_https || status=1

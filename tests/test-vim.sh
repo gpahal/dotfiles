@@ -51,7 +51,7 @@ plugin_pins() {
     assert_eq "$new" "$(git -C "$plug" rev-parse HEAD)" "the plugin's commit after a re-run"
     assert_exit 0 status
     assert_exit 0 apply
-    assert_contains "$RUN_OUTPUT" "vim plugins already at their pinned commits"
+    assert_contains "$RUN_OUTPUT" "vim-plug and the vim plugins already at their pinned versions"
     rm -rf "$HOME/.vim/plugged"
 }
 subtest plugin_pins

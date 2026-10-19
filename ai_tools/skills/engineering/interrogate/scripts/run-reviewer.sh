@@ -6,17 +6,18 @@ set -euo pipefail
 #
 # Run it from inside the repo under review: the reviewer works from the repo's root. Claude runs
 # in restricted mode, which confines its file tools to the repo and the prompt file's directory
-# (where the lead puts the diff file and any materialized head). It gets only the Read, Grep, and Glob tools, with no
-# settings files or MCP servers loaded, since the user's allow rules would otherwise apply.
+# (where the lead puts the diff file and any materialized head). It gets only the Read, Grep, and
+# Glob tools, with no settings files or MCP servers loaded, since the user's allow rules would
+# otherwise apply.
 # Codex runs in its read-only sandbox, which blocks writes but not reads. It skips the user's
 # config.toml and rules files, so no MCP servers, plugins, or auto-reviewer load, and it never
 # asks for approval, so a command the sandbox blocks stays blocked.
 # Both need network access to reach their model, so a sandboxed caller must run this outside the
 # sandbox. The out-file goes outside the prompt file's directory and the repo, so Claude can't
 # read another run's answer, and Codex, which can read anything, won't come across one while
-# searching the repo. The CLI's own log goes to <out-file>.log. A run that takes longer
-# than REVIEWER_TIMEOUT seconds (default 1800, or 3600 at high effort and above) is stopped and
-# counts as failed.
+# searching the repo. The CLI's own log goes to <out-file>.log. A run that takes longer than
+# REVIEWER_TIMEOUT seconds (default 1800, or 3600 at high effort and above) is stopped and counts
+# as failed.
 
 if [[ $# -ne 5 ]]; then
     echo "usage: run-reviewer.sh <claude|codex> <model> <effort> <prompt-file> <out-file>" >&2

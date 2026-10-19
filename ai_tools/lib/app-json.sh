@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Settings merged into JSON files a desktop app also writes, shared by the claude-desktop and
-# t3-code steps, which source this file after lib/common.sh. It only defines functions.
+# t3-code steps.
 
 # merge_app_json <app> <already message> <set message> <file> <jq filter> [<file> <jq filter>...]
 # Merge each filter into its file, as json_merge does, while the app is quit, since it would write

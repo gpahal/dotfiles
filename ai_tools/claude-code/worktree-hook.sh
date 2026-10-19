@@ -15,10 +15,8 @@ set -euo pipefail
 #
 # The hook replaces Claude Code's own git worktree code, so it does what that did: it honors
 # worktree.baseRef (fresh, the default, fetches and branches from origin's default branch; head
-# branches from HEAD), and copies the gitignored files .worktreeinclude names. Unlike Claude Code,
-# it doesn't look inside an ignored dir: a pattern such as build/config.json, when build/ is
-# ignored, copies nothing, so name the whole dir instead. It ignores worktree.symlinkDirectories
-# and worktree.sparsePaths. Nothing in it may wait for input.
+# branches from HEAD), and copies the gitignored files .worktreeinclude names. It ignores
+# worktree.symlinkDirectories and worktree.sparsePaths. Nothing in it may wait for input.
 
 # Claude Code started from the Dock or a launcher may have only the system's PATH. git wt is in
 # ~/.local/bin. Homebrew's dirs go last, for the jq Ubuntu lacks (macOS ships /usr/bin/jq), so the
@@ -157,16 +155,12 @@ symlinked_parent() {
     return 1
 }
 
-# Copy what the checkout's .worktreeinclude names, and git ignores, into the new worktree. The
-# candidates are what git lists without entering an ignored dir: ignored files outside one, and
-# each ignored dir whole, such as build/, which can hold far more files than the rest of the
-# checkout. git matches them against the include, with its patterns, directory patterns, and
-# negations, in an empty repo, so the checkout's .gitignore doesn't apply. A dir that matches is
-# copied whole. A pattern that reaches inside an ignored dir, such as build/config.json when
-# build/ is ignored, matches nothing; name the dir instead. Claude Code's own code searched every
-# ignored dir, node_modules included. An entry that can't be copied, such as a broken symlink,
-# gets a warning and is skipped, as does one under a dir the new worktree's branch tracks as a
-# symlink, which would lead outside it.
+# Copy what the checkout's .worktreeinclude names, and git ignores, into the new worktree. Unlike
+# Claude Code, which searched every ignored dir, node_modules included, git lists an ignored dir
+# whole without entering it, and a matching dir is copied whole. So a pattern inside an ignored
+# dir, such as build/config.json when build/ is ignored, matches nothing; name the dir instead.
+# The match runs in an empty repo, so the checkout's .gitignore doesn't apply. An entry that can't
+# be copied, or sits under a dir the new branch tracks as a symlink, is skipped with a warning.
 copy_worktree_include() {
     local top include tmp entry flags link
     top="$(git rev-parse --show-toplevel)"

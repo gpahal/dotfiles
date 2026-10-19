@@ -3,15 +3,10 @@ set -euo pipefail
 
 # Install T3 Code and set its settings, and on Ubuntu run its server as a service.
 #
-# Install the T3 Code desktop app, open it at login with its telemetry off, and set its settings.
-# T3 Code must be quit first; when run interactively the script offers to quit it, otherwise it
-# skips the settings.
-#
-# On Ubuntu, install the t3 CLI and run its server as a systemd user service, which starts at boot
-# (with linger, from the ubuntu step) and which the Mac reaches over Tailscale HTTPS. Set the server's
-# settings and turn off its telemetry. When its browser needs root to run in Chrome's sandbox, print
-# the command for you to run, since the step never runs the user-writable t3 under sudo. Ubuntu gets
-# no desktop app.
+# On Ubuntu, the server runs as a systemd user service, which starts at boot (with linger, from the
+# ubuntu step) and which the Mac reaches over Tailscale HTTPS. When its browser needs root to run in
+# Chrome's sandbox, the step prints the command for you to run, since it never runs the
+# user-writable t3 under sudo.
 #
 # A temp HOME doesn't isolate this step. On macOS it installs its cask and runs launchctl. On
 # Ubuntu it installs libatomic1 and runs systemctl --user. Test the cask in a macOS VM or on a spare
@@ -35,35 +30,31 @@ T3_CODE_SETTINGS="$HOME/.t3/userdata/settings.json"
 T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # T3 Code reads T3CODE_TELEMETRY_ENABLED only from its environment, and an app opened from the Dock
 # or Finder gets launchd's, not the shell's. At each login this LaunchAgent sets the variable in
-# launchd's environment, which covers later launches from the Dock too, and then opens T3 Code
-# with it: one agent does both, so it can't open T3 Code before the variable is set. macOS's
-# "Reopen windows when logging back in" can still start T3 Code first, and open then only brings
-# that copy forward, so the README says to quit and reopen it then. It opens T3 Code
-# because T3 Connect, which the phone app goes through, runs only while the app is open. The
-# app also reads the variable from the login shell, but gives that read 5 s, so a slow shell
-# startup would leave telemetry on without launchd's copy. The app's name carries its release
-# stage, so the agent opens it by bundle ID.
+# launchd's environment, then opens T3 Code: one agent does both, so it can't open T3 Code before
+# the variable is set. macOS's "Reopen windows when logging back in" can still start T3 Code
+# first, and open then only brings that copy forward, so the README says to quit and reopen it
+# then. It opens T3 Code because T3 Connect, which the phone app goes through, runs only while
+# the app is open. The app also reads the variable from the login shell, but gives that read 5 s,
+# so a slow shell would leave telemetry on without launchd's copy. The app's name carries its release stage, so the agent opens it by bundle ID.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 
-# Pass each file the step copies on macOS, as source and destination, to a function: copy_file to
-# copy it, or status_file to report it. The LaunchAgent isn't loaded now, since it would open T3
-# Code, which must be quit for the settings below. launchd loads it at the next login.
+# The LaunchAgent isn't loaded now, since it would open T3 Code, which must be quit for the
+# settings below. launchd loads it at the next login.
 t3_code_files() {
     "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
 }
 # Where `t3 service install` writes the unit, whatever XDG_CONFIG_HOME is. The systemd user manager
 # doesn't see an XDG_CONFIG_HOME set in the shell either, so the drop-in goes beside the unit.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
-# A drop-in, since `t3 service install` and `t3 update` rewrite the unit itself. It turns off
-# telemetry, and pins the port: without one, `t3 serve` falls back to a free port when 3773 is
-# taken, and T3 has no lock against a second server on the same data. `tailscale serve` and
-# pairing links always point at 3773 too. With the port pinned, the service fails its bind
-# instead, and T3's unit (StartLimitIntervalSec=300, StartLimitBurst=5, RestartSec=5) stops
-# retrying after about 25 s, while status names the other server. The drop-in leaves
-# systemd-oomd's preference to T3, since sparing the server would spare a runaway agent in its
-# cgroup too, while Restart= brings the server back. It also binds the server
-# to loopback, since `t3 serve` otherwise listens on every interface, and ufw lets the tailnet reach
-# every port: `tailscale serve`, which T3 points at 127.0.0.1, is the tailnet's way in, over HTTPS.
+# A drop-in, since `t3 service install` and `t3 update` rewrite the unit itself. It pins the port:
+# without one, `t3 serve` falls back to a free port when 3773 is taken, and T3 has no lock against
+# a second server on the same data, while `tailscale serve` and pairing links point at 3773. Pinned,
+# the service fails its bind instead, and T3's unit (StartLimitIntervalSec=300,
+# StartLimitBurst=5, RestartSec=5) stops retrying after about 25 s, while status
+# names the other server. It binds the server to loopback, since `t3 serve` otherwise listens on
+# every interface and ufw lets the tailnet reach every port: `tailscale serve` is the way in, over
+# HTTPS. It leaves systemd-oomd's preference to T3, since sparing the server would spare a runaway
+# agent in its cgroup too, while Restart= brings the server back.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
 T3_CODE_PORT=3773
 T3_CODE_HOST=127.0.0.1
@@ -85,15 +76,9 @@ T3_CODE_REPLACE_EFFORT=false
 # What the server settings cover, for the step's messages
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
 
-# Server settings, used by T3 Code on the Mac and by the server it starts on Ubuntu (Settings →
-# General, Threads, Storage): new threads use Claude Opus 5.5 at medium effort with the 1M context
-# window, in auto mode, each in its own worktree started from the local base branch, with a branch
-# named for its task; projects pull automatically; Add project starts in ~/Dev; inactive threads
-# settle after 10 days, unless they have a pull request; threads a usage limit stops are snoozed
-# and resume when it resets; old worktrees, settled threads' worktrees after 15 days, browser
-# artifacts, and logs are cleaned up; pull requests start with squash merge and lose the agent's
-# credits on merge; commit and PR text follows custom instructions. Existing worktree setup actions wait for
-# completion: T3 has no global async default, so each action list gets it.
+# Server settings, used by T3 Code on the Mac and by the server it starts on Ubuntu. Existing
+# worktree setup actions wait for completion: T3 has no global async default, so each action list
+# gets it.
 # A model of your own keeps its instance and options, a custom Claude instance's included, and its
 # effort is left to you too. Replacing it switches to Claude's instance, which drops another
 # provider's options. Model options are set in place, so any others and their order survive a
@@ -217,9 +202,7 @@ t3_code_status_server_settings() {
     t3_code_status_custom_values
 }
 
-# Desktop app settings: system notifications with sound and in-app notifications, a message sent
-# mid-turn steers the running turn instead of queueing, the sidebar's working shelf, and diffs
-# with their files expanded and no word wrap
+# Desktop app settings
 T3_CODE_CLIENT_FILTER='
     .notificationMode = "notifications-and-sound"
     | .inAppNotificationsEnabled = true
@@ -229,9 +212,8 @@ T3_CODE_CLIENT_FILTER='
     | .wordWrap = false
 '
 
-# The app's name can change between releases. Ask brew which app the t3-code
-# cask installs, and otherwise take any T3 Code*.app beside where brew puts it, or in
-# /Applications, except the separate nightly build. A caller that already asked brew passes its
+# The app's name can change between releases. Ask brew which app the t3-code cask installs, and
+# otherwise take any T3 Code*.app beside where brew puts it, or in /Applications, except the separate nightly build. A caller that already asked brew passes its
 # answer, cask_app_path's output, so brew isn't asked again.
 # Usage: t3_code_app_path [cask app path]
 t3_code_app_path() {
@@ -272,7 +254,6 @@ t3_code_cask_state() {
     printf '%s\t%s\n' "$state" "$app"
 }
 
-# The macOS items
 t3_code_macos_items() {
     items_reset
     item "T3 Code's telemetry off in launchd's environment" \

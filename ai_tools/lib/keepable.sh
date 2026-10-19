@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Values you can change in an AI tool's settings, such as the model, shared by the claude-code and
-# codex steps, which source this file. It only defines functions and the table below.
+# codex steps.
 #
 # Each value is set only when unset, and one of your own is replaced only when
 # replace_custom_value agrees. A step adds its values with keepable, and defines

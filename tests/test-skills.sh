@@ -142,7 +142,7 @@ for target in "$AGENTS_DIR" "$AGENTS_DIR/tdd"; do
     step
     assert_eq 1 "$RUN_STATUS" "a run with ~/.claude/skills linked to $target"
     assert_contains "$RUN_OUTPUT" "are one dir, or one is inside the other"
-    assert_eq "$before" "$(cd "$AGENTS_DIR" && /bin/ls -lAR)" "~/.agents/skills after a run with shared dirs"
+    assert_eq "$before" "$(cd "$AGENTS_DIR" && /bin/ls -lAR)" "the Codex skills dir after a run with shared dirs"
     step_status
     assert_eq 3 "$RUN_STATUS" "status with ~/.claude/skills linked to $target"
     assert_contains "$RUN_OUTPUT" "missing    Skills dirs: ~/.agents/skills and ~/.claude/skills are one dir"

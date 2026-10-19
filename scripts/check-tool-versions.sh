@@ -6,7 +6,7 @@ set -euo pipefail
 # older one may work, but nothing tests it. GitHub's Ubuntu runners ship a newer git than apt's, so
 # CI doesn't test git's floor; the version this prints for each tool is what the run tested. yq's is
 # a real requirement, YQ_MIN_VERSION in lib/common.sh, which the codex step checks too. CI pins
-# shellcheck instead, since each release reports different warnings.
+# the shellcheck version instead, since each release reports different warnings.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

@@ -878,16 +878,17 @@ sudo_ready() {
 
 # The oldest yq the codex step's config edit and scripts/check-tool-versions.sh take: yq -o toml's
 # encoder arrived in 4.52.1 and was fixed up to 4.54.1
+# shellcheck disable=SC2034 # they read it
 YQ_MIN_VERSION=4.54.1
 
 # version_at_least <version> <minimum>: compare dot-separated numbers, a missing part counting as 0
 version_at_least() {
-    local IFS=. i have want
-    read -ra have <<< "$1"
-    read -ra want <<< "$2"
-    for ((i = 0; i < ${#want[@]} || i < ${#have[@]}; i++)); do
-        [ "${have[i]:-0}" -eq "${want[i]:-0}" ] && continue
-        [ "${have[i]:-0}" -gt "${want[i]:-0}" ]
+    local IFS=. i have_parts want_parts
+    read -ra have_parts <<< "$1"
+    read -ra want_parts <<< "$2"
+    for ((i = 0; i < ${#want_parts[@]} || i < ${#have_parts[@]}; i++)); do
+        [ "${have_parts[i]:-0}" -eq "${want_parts[i]:-0}" ] && continue
+        [ "${have_parts[i]:-0}" -gt "${want_parts[i]:-0}" ]
         return
     done
 }

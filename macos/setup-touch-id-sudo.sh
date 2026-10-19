@@ -6,9 +6,8 @@ set -euo pipefail
 # macos/pam.sh): pam_tid, after pam_reattach when the homebrew step has installed pam-reattach, so
 # Touch ID works inside tmux too. sudo loads a root-owned copy of pam-reattach's module in
 # /usr/local/lib/pam, which this script installs from Homebrew's and updates when it changes.
-# Any other line in sudo_local goes: unlike the files AGENTS.md says are never replaced, macOS
-# reserves sudo_local for local sudo changes such as this one, and rebuilding it keeps status and
-# setup in agreement.
+# Any other line in sudo_local goes: macOS reserves sudo_local for local sudo changes such as this
+# one, and rebuilding it keeps status and setup in agreement.
 # setup.sh doesn't run it, since it changes /etc with sudo. --status reports, changing nothing.
 
 # shellcheck source=../lib/common.sh

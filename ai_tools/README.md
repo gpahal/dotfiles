@@ -53,10 +53,9 @@ Steps marked **(script)** below are done for you. The script adds no MCP servers
 The `upgrade` shell function updates the AI tools with everything else, through `upgrade-ai-tools`, which you can also run on its own. It updates only what's installed, and lists the failed stages at the end:
 
 - **Claude Code native install:** `claude update`.
-- **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
-- **Desktop apps installed with brew:** Claude, ChatGPT, and T3 Code, each skipped while it runs.
-- **Codex CLI installed with brew**, even while it runs.
+- **AI casks:** the Claude, ChatGPT, and T3 Code apps installed with brew, each skipped while it runs, and the Codex CLI, even while it runs.
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. Plugins can add hooks that run as you, so it prints each marketplace's commit and each plugin's version before and after, for you to review. A running session keeps the old version until `/reload-plugins`.
+- **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
 ## Claude Code
@@ -201,7 +200,7 @@ Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Cha
 
 ## User-level instructions
 
-[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A run replaces a copy that differs, so copy edits you want to keep back to the repo first.
+[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A run replaces a copy that differs, so run `just copy-back` first to keep edits made there.
 
 ## Skills
 

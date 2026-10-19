@@ -103,7 +103,6 @@ apply() {
     require_cmd mise || return 1
     # The rustup installer is downloaded with curl
     rustup_installed || require_cmd curl || return 1
-    # A failed mise command fails the step, after Rust is set up too
     local status=0 tool current set=() already=() unread=false
     for tool in "${MISE_GLOBALS[@]}"; do
         if ! current="$(global_tool_version "${tool%@*}")"; then

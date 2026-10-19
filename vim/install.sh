@@ -3,17 +3,14 @@ set -euo pipefail
 
 # Copy the vim config, install vim-plug, and move the plugins to their pins.
 #
-# Copy the vim config, install the vim-plug the repo vendors in vim/plug.vim, and move the plugins
-# vim-plug installed to the commits the vimrc pins. When vim starts, the vimrc creates its undo
-# dir, and vim-plug installs any missing plugins at their pins.
+# The repo vendors vim-plug in vim/plug.vim, and the vimrc pins the plugins. When vim starts, the
+# vimrc creates its undo dir, and vim-plug installs any missing plugins at their pins.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 PLUG_VIM="$HOME/.vim/autoload/plug.vim"
 
-# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 vim_files() {
     "$1" "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
 }

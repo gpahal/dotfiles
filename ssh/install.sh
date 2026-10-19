@@ -146,8 +146,6 @@ ssh_add_agent_loaded() {
     launchctl print "gui/$(id -u)/$SSH_ADD_LABEL" &>/dev/null
 }
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it. Only macOS gets the LaunchAgent.
 ssh_files() {
     is_macos || return 0
     "$1" "$DOTFILES_DIR/ssh/$SSH_ADD_LABEL.plist" "$SSH_ADD_AGENT"

@@ -16,6 +16,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
+STEP_OS=macos
+
 # socketfilterfw reads the application firewall's settings, and isn't on PATH
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 
@@ -276,10 +278,6 @@ set_hostname() {
 }
 
 status() {
-    if ! is_macos; then
-        status_item skipped "macOS defaults: macOS only"
-        return 0
-    fi
     each_default status_default
     # The screenshot location key points here, and apply creates it
     status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
@@ -295,10 +293,6 @@ status() {
 
 apply() {
     echo "Setting macOS defaults..."
-    if ! is_macos; then
-        echo "  Not macOS; skipping."
-        return 0
-    fi
     local status=0
     set_hostname || status=1
     mkdir -p "$HOME/Screenshots"

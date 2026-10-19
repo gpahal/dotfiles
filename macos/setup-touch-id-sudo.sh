@@ -18,6 +18,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
+STEP_OS=macos
+
 # Copy Homebrew's module to the root-owned dir, read-only like the modules macOS ships. It goes in
 # under a temp name that mv then renames over the copy, so between the sudo runs sudo_local never
 # names a missing module, which would keep the next sudo from starting PAM. The rename replaces a
@@ -30,20 +32,12 @@ install_reattach_module() {
 }
 
 status() {
-    if is_macos; then
-        status_touch_id missing
-    else
-        status_item skipped "Touch ID for sudo: macOS only"
-    fi
+    status_touch_id missing
     status_result
 }
 
 apply() {
     local desired copy=false write=false blocker reason pending=()
-    if ! is_macos; then
-        echo "Touch ID for sudo is macOS only. Nothing to do here."
-        return 0
-    fi
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1

@@ -10,34 +10,21 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+STEP_OS=macos
+
 # Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
 # or status_file to report it
 hammerspoon_files() {
     local status=0
-    is_macos || return 0
     "$1" "$DOTFILES_DIR/hammerspoon/init.lua" "$HOME/.hammerspoon/init.lua" || status=1
     "$1" "$DOTFILES_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in" \
         "$HOME/.hammerspoon/bin/open-in" || status=1
     return "$status"
 }
 
-status() {
-    if ! is_macos; then
-        status_item skipped "Hammerspoon config: Hammerspoon has no Linux app"
-        return 0
-    fi
-    hammerspoon_files status_file
-    status_result
-}
+status() { copy_status hammerspoon_files; }
 
-apply() {
-    echo "Copying Hammerspoon config..."
-    if ! is_macos; then
-        echo "  Hammerspoon has no Linux app; skipping."
-        return 0
-    fi
-    hammerspoon_files copy_file
-}
+apply() { copy_step "Copying Hammerspoon config..." hammerspoon_files; }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"

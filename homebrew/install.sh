@@ -3,9 +3,7 @@ set -euo pipefail
 
 # Install Homebrew and the formulae, casks, and App Store apps the step lists.
 #
-# Install Homebrew, the formulae in homebrew/Brewfile, and the App Store apps and casks listed
-# below. On macOS, also the Xcode Command Line Tools. On Ubuntu, also the apt packages Homebrew
-# needs, and only the casks with Linux builds.
+# Also the Xcode Command Line Tools on macOS, and on Ubuntu the apt packages Homebrew needs.
 #
 # A temp HOME doesn't isolate this step, which installs into the real Homebrew prefix and
 # /Applications, and on Ubuntu installs apt packages with sudo. Test it in a macOS VM or on a
@@ -24,8 +22,7 @@ BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
 # The App Store apps macOS gets, as "<id> <name>", and "optional" after a paid app you may not
 # buy. An optional app that isn't installed is information in status and the step's output, not
-# something to fix. Once you're signed in to the App Store, mas get takes a free app the Apple
-# Account doesn't have yet, and mas install one it has, such as a paid app bought once.
+# something to fix.
 MAS_APPS=(
     "937984704 Amphetamine"       # Keeps the Mac awake
     "1470584107 Dato optional"    # Menu bar calendar
@@ -107,7 +104,6 @@ install_ubuntu_packages() {
     else
         # Printed before asking, since confirm prints nothing without a terminal
         echo "Missing commands:$missing"
-        # Declining fails the step (see the header)
         if ! confirm "Install them with: $install?"; then
             echo "Install them with: $install"
             echo "Then re-run this script."
@@ -180,11 +176,10 @@ missing_mas_apps() {
 }
 
 # Install the App Store apps that aren't, as brew bundle would: mas install for an app the Apple
-# Account has, then, for a required one, mas get for a free one it doesn't. A new Mac isn't signed
-# in to the App Store yet, so a required app that fails only warns (see the header), and an
-# optional one that fails, as when it's never been bought, is only a note. An optional app that
-# isn't installed gets one mas install every run, even after setup, so it installs once an Apple
-# Account that owns it signs in. Returns the status of an interrupted mas, so apply stops.
+# Account has, then, for a required one, mas get for a free one it doesn't. A required app that
+# fails only warns (see the header), and an optional one is only a note. An optional app gets one
+# mas install every run, so it installs once an Apple Account that owns it signs in. Returns the
+# status of an interrupted mas, so apply stops.
 install_mas_apps() {
     local missing kind id name status failed=() optional=()
     missing="$(missing_mas_apps)"
@@ -223,7 +218,6 @@ install_mas_apps() {
     fi
 }
 
-# Print the casks this OS gets: CASKS on macOS, UBUNTU_CASKS on Ubuntu
 os_casks() {
     if is_macos; then
         printf '%s\n' "${CASKS[@]}"
@@ -237,7 +231,6 @@ os_casks() {
 # too, for casks added since setup ran.
 install_casks() {
     local cask state app apps installing=false failed=()
-    # One brew call for every cask: each lookup takes a moment
     apps="$(installed_cask_apps || true)"
     for cask in $(os_casks); do
         IFS=$'\t' read -r state app <<< "$(cask_state "$cask" "" "$apps")"
@@ -253,7 +246,6 @@ install_casks() {
         # Homebrew copies fonts in but doesn't refresh fontconfig's cache, so apps wouldn't see them
         fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
     fi
-    # Every cask was tried, so one failure doesn't skip the rest
     [ ${#failed[@]} -eq 0 ] && return 0
     echo "  These casks failed to install: ${failed[*]}. Fix the errors above and re-run." >&2
     return 1
@@ -303,7 +295,6 @@ status() {
     elif ! is_macos; then
         status_item skipped "App Store apps: macOS only"
     fi
-    # One brew call for every cask, rather than one each, which took seconds
     apps="$(installed_cask_apps || true)"
     for cask in $(os_casks); do
         status_cask "$cask" "" "$apps"

@@ -3,15 +3,8 @@ set -euo pipefail
 
 # Install the Stream Deck plugin, and restart Stream Deck to load it.
 #
-# Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Each of its app
-# actions runs bin/open-in, which says what each does: Editor, Terminal, and Files open the folder
-# or file in front in Zed, Ghostty, or Finder, and Chrome, New Tab, Gmail, T3 Code, and Claude do
-# what the matching Hammerspoon hotkeys do. The hammerspoon step copies bin/open-in too, for its
-# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU,
-# memory, and other stats, and its Overview key opens a page of them on the 15-key Stream Deck. A
-# file the repo's plugin no longer has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
-# that changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no
-# Linux app. The homebrew step installs Stream Deck.
+# bin/open-in says what each app key does, and plugin.js describes the stat keys. macOS only, since
+# Stream Deck has no Linux app.
 #
 # A temp HOME doesn't isolate this step, which restarts the Stream Deck you're running when the
 # plugin changed.
@@ -38,8 +31,6 @@ stale_plugin_list() {
     LC_ALL=C comm -13 <(plugin_file_list | LC_ALL=C sort) <(plugin_file_list "$PLUGIN_DIR" | LC_ALL=C sort)
 }
 
-# Pass each plugin file, as source and destination, to a function: copy_file to copy it, or
-# status_file to report it
 each_plugin_file() {
     local action="$1" file status=0
     while IFS= read -r file; do

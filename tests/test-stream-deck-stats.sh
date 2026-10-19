@@ -7,8 +7,8 @@ set -euo pipefail
 # is missing. Its sampler survives macmon failing to start, ignores a stopped macmon that exits
 # late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
 # installed, and starts the sparklines afresh after a reset, and a kind's rate and sparkline once
-# it's needed again. Fixed command output stands in for the real machine's, and a
-# fake spawn for macmon, apart from one real spawn of a file that isn't executable.
+# it's needed again. Fixed command output stands in for the real machine's, and a fake spawn for
+# macmon, apart from one real spawn of a file that isn't executable.
 # plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
 # hotkey does, and runs it again once that one exits. A key whose render throws shows a
 # placeholder, logged once, while the others update. A fake Stream Deck socket and open-in stand

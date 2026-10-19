@@ -3,11 +3,6 @@ set -euo pipefail
 
 # Set macOS defaults, free Cmd+Space for Raycast, and set the hostname when needed.
 #
-# Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, turn off Spotlight's
-# Cmd+Space shortcut, so Raycast can take it, and set the hostname when it's unset or invalid.
-# Only writes values that differ, and only restarts Finder, Dock, or SystemUIServer when one of
-# theirs changed.
-#
 # A temp HOME doesn't isolate this step. defaults writes the real preferences whatever HOME is, the
 # step restarts the real Finder, Dock, and SystemUIServer, and sudo scutil sets the real hostname.
 # Test it in a macOS VM or on a spare Mac.
@@ -120,12 +115,10 @@ status_hotkey() {
     status_check "$item off, so $4 can take it" hotkey_off "$1"
 }
 
-# Print activateSettings's path
 activate_settings_cmd() {
     PATH="$PATH:$SYSTEM_ADMIN_DIR" command -v activateSettings
 }
 
-# Print an item for a setting, reading it with `defaults read` and writing nothing
 status_default() {
     local result=0
     default_matches "$@" || result=$?
@@ -226,7 +219,6 @@ status_filevault() {
     esac
 }
 
-# Print socketfilterfw's path
 firewall_cmd() {
     PATH="$PATH:$APP_FIREWALL_DIR" command -v socketfilterfw
 }
@@ -248,12 +240,10 @@ status_app_firewall() {
     esac
 }
 
-# Ghostty's shell integration reports the shell's folder with OSC 7, as a URL whose host is the
-# hostname, and Ghostty drops a URL it can't parse. A Mac with no HostName takes one from the
-# network, which can be a name such as Unknown_d6:96:0e:05:c6:0a, whose colons break the URL.
-# Ghostty then knows no folder: new tabs open at home, and the Stream Deck keys and Hammerspoon's
-# Ctrl+Opt+Cmd+T and E find no folder. So HostName is set to LocalHostName, the name in System
-# Settings → General → Sharing, which macOS keeps to letters, digits, and hyphens.
+# Ghostty's shell integration reports the shell's folder with OSC 7, a URL whose host is the
+# hostname. A Mac with no HostName takes one from the network, such as Unknown_d6:96:0e:05:c6:0a,
+# whose colons break the URL, so Ghostty, the Stream Deck keys, and Hammerspoon find no folder.
+# LocalHostName, the name in System Settings → General → Sharing, is always a valid HostName.
 hostname_valid() {
     local name
     name="$(scutil --get HostName 2>/dev/null)" || return 1

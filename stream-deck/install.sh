@@ -5,9 +5,9 @@ set -euo pipefail
 # actions runs bin/open-in, which says what each does: Editor, Terminal, and Files open the folder
 # or file in front in Zed, Ghostty, or Finder, and Chrome, New Tab, Gmail, T3 Code, and Claude do
 # what the matching Hammerspoon hotkeys do. The hammerspoon step copies bin/open-in too, for its
-# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU, memory,
-# and other stats, and its Overview key opens a page of them. A file the repo's plugin no longer
-# has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
+# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU,
+# memory, and other stats, and its Overview key opens a page of them on the 15-key Stream Deck. A
+# file the repo's plugin no longer has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
 # that changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no
 # Linux app. The homebrew step installs Stream Deck.
 #

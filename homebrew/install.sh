@@ -182,7 +182,7 @@ missing_mas_apps() {
 # in to the App Store yet, so a required app that fails only warns (see the header), and an
 # optional one that fails, as when it's never been bought, is only a note. An optional app that
 # isn't installed gets one mas install every run, even after setup, so it installs once an Apple
-# Account that owns it signs in. Returns the status of an interrupted mas, so main stops.
+# Account that owns it signs in. Returns the status of an interrupted mas, so apply stops.
 install_mas_apps() {
     local missing kind id name status failed=() optional=()
     missing="$(missing_mas_apps)"

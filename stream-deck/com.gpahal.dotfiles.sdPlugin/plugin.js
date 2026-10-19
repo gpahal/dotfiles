@@ -11,7 +11,11 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const stats = require("./stats.js");
 
-const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
+// A flag's value, or undefined when Stream Deck didn't pass the flag
+const arg = (name) => {
+  const i = process.argv.indexOf(name);
+  return i === -1 ? undefined : process.argv[i + 1];
+};
 const pluginUUID = arg("-pluginUUID");
 const OPEN_IN = path.join(__dirname, "bin", "open-in");
 const INTERVAL_MS = 2000;

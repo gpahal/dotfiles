@@ -86,6 +86,12 @@ assert_exit 0 main
 assert_eq 0 "$(cat "$HOTKEYS.64")" "hotkey 64's enabled"
 assert_contains "$RUN_OUTPUT" "log out"
 
+# An entry with no enabled key is on, even when the next entry's is off
+stub defaults '[ "$1" == read ] || exit 1
+printf "{\n    64 =     {\n        value =         {\n            type = standard;\n        };\n    };\n    65 =     {\n        enabled = 0;\n    };\n}\n"'
+hotkey_off 64 && fail "hotkey 64 read as off from the next entry's enabled key"
+hotkey_off 65 || fail "hotkey 65 read as on"
+
 # A failed write fails the step
 rm "$HOTKEYS.64"
 stub defaults '[ "$1 $2" != "write com.apple.symbolichotkeys" ] || exit 1

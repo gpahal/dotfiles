@@ -12,7 +12,7 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-# The Touch ID status check, without the Touch ID script's main and status
+# The Touch ID status check, which the Touch ID script shares
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
@@ -88,12 +88,13 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Succeeds when symbolic hotkey $1 is turned off. An unset one is on. defaults prints
-# AppleSymbolicHotKeys in the old-style plist format, where each hotkey's entry starts at a
-# four-space indent.
+# Succeeds when symbolic hotkey $1 is turned off. An unset one is on, and so is one whose entry
+# has no enabled key. defaults prints AppleSymbolicHotKeys in the old-style plist format, where
+# each hotkey's entry starts at a four-space indent, so each entry header decides whether the
+# enabled keys after it are the hotkey's.
 hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
-        awk -v id="$1" '$0 ~ "^    " id " = " { on_id = 1 } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
+        awk -v id="$1" '/^    [0-9]+ = / { on_id = $1 == id } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
 # disable_hotkey <hotkey> <modifiers> <description> <app>
@@ -172,7 +173,7 @@ each_default() {
     # Spaces: keep their order instead of rearranging by most recent use
     "$apply" com.apple.dock mru-spaces -bool false
 
-    # Screenshots: save to ~/Screenshots (which main creates) as PNG
+    # Screenshots: save to ~/Screenshots (which apply creates) as PNG
     "$apply" com.apple.screencapture location -string "$HOME/Screenshots"
     "$apply" com.apple.screencapture type -string png
     # Screenshots: no window shadow
@@ -280,7 +281,7 @@ status() {
         return 0
     fi
     each_default status_default
-    # The screenshot location key points here, and main creates it
+    # The screenshot location key points here, and apply creates it
     status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
     symbolic_hotkeys status_hotkey
     status_check "Hostname set, so Ghostty's shell can report its folder" hostname_valid

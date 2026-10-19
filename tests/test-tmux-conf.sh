@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # tmux.conf loads without errors in a server started with only /usr/bin and /bin on PATH, and
 # leaves PATH alone. A reload (prefix+r) adds no second copy of its array options. A client

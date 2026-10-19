@@ -114,9 +114,9 @@ load_script zsh/install.sh
 # On macOS, which has no ~/.profile line to source it, profile.sh isn't copied
 # shellcheck disable=SC2329
 macos_profile() {
-    is_ubuntu() { false; }
-    is_macos() { true; }
-    login_zsh_path() { echo "$ZSH_BIN"; }
+    as_os macos
+    # shellcheck disable=SC2016 # expanded when it runs
+    replace_fn login_zsh_path 'echo "$ZSH_BIN"'
     rm -f "$HOME/.zsh/profile.sh"
     assert_exit 0 apply
     [ ! -e "$HOME/.zsh/profile.sh" ] || fail "apply copied profile.sh on macOS"
@@ -125,12 +125,9 @@ macos_profile() {
 }
 subtest macos_profile
 # Ubuntu's, which apply needs, at the path of the zsh found here
-# shellcheck disable=SC2329
-is_ubuntu() { true; }
-# shellcheck disable=SC2329
-is_macos() { false; }
-# shellcheck disable=SC2329
-login_zsh_path() { echo "$ZSH_BIN"; }
+as_os ubuntu
+# shellcheck disable=SC2016 # expanded when it runs
+replace_fn login_zsh_path 'echo "$ZSH_BIN"'
 stock='if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
@@ -177,11 +174,12 @@ done
 assert_eq ":/a::/b" "$(env -i HOME="$HOME" TERM=dumb MANPATH=::/a::/b:: PATH=/usr/bin:/bin "$ZSH_BIN" -c \
     'print -r -- $MANPATH' < /dev/null 2> /dev/null)" "MANPATH"
 [ ! -e "$SANDBOX/brew-ran" ] || fail "a shell without HOMEBREW_PREFIX ran brew"
-# A shell that inherits HOMEBREW_PREFIX, from a sh that read ~/.profile or a parent zsh, gets the
-# prefix's completions first in fpath
-assert_eq "$BREW/share/zsh/site-functions" \
-    "$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin:/bin "$ZSH_BIN" -c \
-        'source ~/.zsh/main.zsh; print -r -- $fpath[1]' < /dev/null 2> /dev/null)" "fpath's first dir"
+# An interactive shell that inherits HOMEBREW_PREFIX, from a sh that read ~/.profile or a parent
+# zsh, gets the prefix's completions first in fpath, once
+fpath_out="$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin:/bin "$ZSH_BIN" -ic \
+    'print -rl -- $fpath' < /dev/null 2> /dev/null)"
+assert_eq "$BREW/share/zsh/site-functions" "$(head -n 1 <<< "$fpath_out")" "fpath's first dir"
+assert_eq 1 "$(grep -cxF "$BREW/share/zsh/site-functions" <<< "$fpath_out")" "copies of Homebrew's dir in fpath"
 
 # On Ubuntu, ~/.profile puts ~/.local/bin ahead of Homebrew, as ~/.zprofile does, so `sh -lc` (T3
 # Code's SSH check) finds the same codex as zsh. Ubuntu's stock ~/.profile adds ~/.local/bin

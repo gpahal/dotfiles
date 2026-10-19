@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # macOS: add a Host * block to ~/.ssh/config that loads keys into the agent from the keychain, and
@@ -11,7 +12,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=lib/hosts.sh
 source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 
-SSH_CONFIG="$HOME/.ssh/config"
 SSH_ADD_LABEL="dotfiles.ssh-add"
 SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
 
@@ -175,8 +175,29 @@ ssh_dir_private() {
     [ -d "$HOME/.ssh" ] && [ "$(file_mode "$HOME/.ssh/")" == 700 ]
 }
 
+make_ssh_dir_private() {
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+}
+
+# Succeeds when ~/.ssh/config, if there is one, is mode 600, as main sets it
+ssh_config_private() {
+    [ ! -f "$SSH_CONFIG" ] || [ "$(file_mode "$SSH_CONFIG")" == 600 ]
+}
+
+make_ssh_config_private() {
+    chmod 600 "$SSH_CONFIG"
+}
+
+ssh_items() {
+    items_reset
+    item "Only you can read ~/.ssh (mode 700)" "Set ~/.ssh to mode 700" ssh_dir_private make_ssh_dir_private
+    item "Only you can read ~/.ssh/config (mode 600)" "Set ~/.ssh/config to mode 600" \
+        ssh_config_private make_ssh_config_private
+}
+
 status() {
-    status_check "Only you can read ~/.ssh (mode 700)" ssh_dir_private
+    ssh_items
+    items_status
     if is_macos; then
         status_host_star
         ssh_files status_file
@@ -192,15 +213,17 @@ status() {
 apply() {
     echo "Configuring SSH..."
     local status=0
-    mkdir -p "$HOME/.ssh" || return 1
-    chmod 700 "$HOME/.ssh" || status=1
+    ssh_items
+    items_apply ssh_dir_private || status=1
+    [ -d "$HOME/.ssh" ] || return 1
     if is_macos; then
         add_host_star || status=1
         install_ssh_add_agent || status=1
     else
         echo "  Skipping the keychain's Host * block and the LaunchAgent: macOS only"
     fi
-    [ ! -f "$SSH_CONFIG" ] || chmod 600 "$SSH_CONFIG" || status=1
+    # Last, since add_host_star may create the file
+    items_apply ssh_config_private || status=1
     return "$status"
 }
 

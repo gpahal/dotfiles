@@ -1,7 +1,6 @@
-# Only in a terminal you're looking at. Tools that read a shell's output source this file too:
-# T3 Code's server probes PATH with `$SHELL -ilc`, and Claude Code snapshots the shell config. Each
-# would print the reminders into its output and use up the oneshot ones.
-if [[ -o interactive && -t 1 && -z ${CLAUDECODE:-} ]]; then
+# Only in a terminal you're looking at, which options.zsh sets _human_tty for. Tools that read a
+# shell's output would print the reminders into it and use up the oneshot ones.
+if [[ -o interactive && -n ${_human_tty:-} ]]; then
     if [ -f $HOME/.remind ]; then
         command cat $HOME/.remind
     fi

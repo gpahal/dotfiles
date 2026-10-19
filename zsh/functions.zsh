@@ -35,7 +35,6 @@ function _please_addhistory {
     fi
     return 0
 }
-autoload -U add-zsh-hook
 add-zsh-hook zshaddhistory _please_addhistory
 
 function please {

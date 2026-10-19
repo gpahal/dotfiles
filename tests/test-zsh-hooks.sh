@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # zsh/hooks.zsh's preexec hook copies the outer terminal's TERM_PROGRAM and TERM_PROGRAM_VERSION,
 # and the SSH session's SSH_USER_AUTH, from tmux into the shell, and unsets one the attaching client
@@ -23,7 +24,7 @@ stub tmux '[ "$1" != show-environment ] || cat "$TMUX_ENV"'
 # Run the hook once per argument, after running that argument as a shell command, in one zsh that
 # starts with TERM_PROGRAM=tmux, printing TERM_PROGRAM and TERM_PROGRAM_VERSION after each run
 hook() {
-    local script='source "$1/zsh/hooks.zsh"; shift
+    local script='autoload -U add-zsh-hook; source "$1/zsh/hooks.zsh"; shift
 for cmd in "$@"; do
     eval "$cmd"
     _tmux_outer_terminal_preexec
@@ -83,7 +84,7 @@ assert_eq "unset unset" "$(hook :)" "variables when the outer terminal set neith
 # SSH_USER_AUTH, which the ubuntu step reads to prove a key login, comes through the same way:
 # exported when the attaching SSH session has it, and unset when it doesn't
 auth_after_hook() {
-    SSH_USER_AUTH=/run/old zsh -f -c 'source "$1/zsh/hooks.zsh"; _tmux_outer_terminal_preexec
+    SSH_USER_AUTH=/run/old zsh -f -c 'autoload -U add-zsh-hook; source "$1/zsh/hooks.zsh"; _tmux_outer_terminal_preexec
 print -r -- "${SSH_USER_AUTH-unset}"' zsh "$REPO_DIR"
 }
 rm -f "$SOCKET.attached"
@@ -131,7 +132,7 @@ fi
 # zsh/title.zsh sets the title with OSC 2: the directory at the prompt, and the command line, with
 # its control characters as spaces, while it runs, unless it starts with a space
 mkdir -p "$HOME/proj"
-title_script='source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
+title_script='autoload -U add-zsh-hook; source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
 assert_eq "$(printf '\033]2;~/proj\a\033]2;echo a  b\a')" \
     "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" $'echo a\n b')" "the titles"
 # A command with a leading space, which history leaves out, keeps the prompt's title

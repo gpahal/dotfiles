@@ -21,9 +21,11 @@ set -euo pipefail
 #                              remove the worktree, then the directories that leaves empty. One
 #                              holding changes, untracked files, or ignored files other than
 #                              build output, such as .env, is listed and needs -f, which
-#                              deletes them all. --delete-merged-branch also deletes the
-#                              worktree's branch when another branch, local or remote, has all
-#                              its commits.
+#                              deletes them all. Ignored build output, caches, and dependencies,
+#                              known by name (build, dist, target, node_modules, ...), go
+#                              without -f, and are listed as they go. --delete-merged-branch
+#                              also deletes the worktree's branch when another branch, local or
+#                              remote, has all its commits.
 #   git wt prune [--session <id>]
 #                              remove each worktree that Claude Code's worktree hook made a
 #                              branch for, and that branch, when the worktree is clean by
@@ -49,6 +51,11 @@ usage() {
 
 root="${WORKTREES_DIR:-$HOME/.worktrees}"
 root="${root%/}"
+# prune_empty climbs to $root, so a relative path or / would let it climb to /
+case "$root" in
+    /?*) ;;
+    *) die "WORKTREES_DIR must be an absolute path other than /, not '${WORKTREES_DIR:-}'" ;;
+esac
 
 common="$(git rev-parse --path-format=absolute --git-common-dir 2> /dev/null)" ||
     die "not in a git repository"
@@ -221,11 +228,12 @@ cmd_list() {
     done
 }
 
-# Print a worktree's ignored files and directories, except build output, caches, and dependencies
-# that can be rebuilt, and fail when git does. -z, since git otherwise quotes a name with a space or
-# non-ASCII character, and the quoted name isn't a path.
-kept_ignored() {
-    local entry path
+# ignored_files <worktree> kept|rebuildable: print the worktree's ignored files and directories
+# that git wt rm keeps it for, or those it deletes with it: build output, caches, and dependencies
+# that can be rebuilt, known by name at any depth. Fails when git does. -z, since git otherwise
+# quotes a name with a space or non-ASCII character, and the quoted name isn't a path.
+ignored_files() {
+    local entry path kind
     git -C "$1" status --porcelain -z --ignored --untracked-files=normal 2> /dev/null |
         while IFS= read -r -d '' entry; do
             case "$entry" in
@@ -237,9 +245,10 @@ kept_ignored() {
                     build | */build | .next | */.next | .turbo | */.turbo | __pycache__ | */__pycache__ | \
                     .pytest_cache | */.pytest_cache | .mypy_cache | */.mypy_cache | .ruff_cache | */.ruff_cache | \
                     .cache | */.cache | coverage | */coverage | .gradle | */.gradle | .svelte-kit | */.svelte-kit | \
-                    .tox | */.tox | *.egg-info | .DS_Store | */.DS_Store) ;;
-                *) printf '%s\n' "$path" ;;
+                    .tox | */.tox | *.egg-info | .DS_Store | */.DS_Store) kind=rebuildable ;;
+                *) kind=kept ;;
             esac
+            [ "$kind" != "$2" ] || printf '%s\n' "$path"
         done
 }
 
@@ -251,7 +260,7 @@ print_group() {
 }
 
 cmd_rm() {
-    local force=() delete_branch=false name="" arg path branch changes tracked untracked ignored
+    local force=() delete_branch=false name="" arg path branch changes tracked untracked ignored rebuildable
     # Options go before or after the name
     for arg in "$@"; do
         case "$arg" in
@@ -271,7 +280,7 @@ cmd_rm() {
         changes="$(git -C "$path" status --porcelain --untracked-files=normal 2> /dev/null)" || changes=""
         tracked="$(printf '%s\n' "$changes" | sed -n '/^??/d; s/^...//p')"
         untracked="$(printf '%s\n' "$changes" | sed -n 's/^?? //p')"
-        ignored="$(kept_ignored "$path")" || ignored=""
+        ignored="$(ignored_files "$path" kept)" || ignored=""
         if [ -n "$tracked$untracked$ignored" ]; then
             {
                 echo "git wt: removing $path would delete:"
@@ -280,6 +289,13 @@ cmd_rm() {
                 print_group "ignored files" "$ignored"
             } >&2
             die "keep what you need, then run git wt rm -f $name, which deletes all of these"
+        fi
+        # Deleted without asking, since they can be rebuilt, but named, since a directory such as
+        # build/ can hold files written by hand
+        rebuildable="$(ignored_files "$path" rebuildable)" || rebuildable=""
+        if [ -n "$rebuildable" ]; then
+            echo "git wt: also deleting ignored build output, caches, and dependencies:" >&2
+            printf '%s\n' "$rebuildable" | sed 's/^/    /' >&2
         fi
     fi
     branch="$(worktree_branch "$path")"
@@ -309,7 +325,7 @@ is_clean() {
     changes="$(git -C "$1" status --porcelain --untracked-files=normal)" || return 1
     [ -z "$changes" ] || return 1
     # exit, not return: the loop runs in a subshell, and pipefail fails the pipeline with it
-    files="$(kept_ignored "$1" | while IFS= read -r file; do find "$1/${file%/}" ! -type d || exit 1; done)" ||
+    files="$(ignored_files "$1" kept | while IFS= read -r file; do find "$1/${file%/}" ! -type d || exit 1; done)" ||
         return 1
     while IFS= read -r file; do
         [ -z "$file" ] || same_file "$file" "$main/${file#"$1"/}" || return 1

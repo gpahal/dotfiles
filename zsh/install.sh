@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and
@@ -42,17 +43,36 @@ zsh_files() {
     return "$status"
 }
 
-# Add a line to a startup file unless it has it, and say which
-# e.g. setup_line ~/.zprofile path.zsh "$PATH_ZSH_LINE"
-setup_line() {
+# Add a line to a startup file, and say so
+# e.g. add_source_line ~/.zprofile path.zsh "$PATH_ZSH_LINE"
+add_source_line() {
     local file="$1" what="$2" line="$3" name
     name='~'"${file#"$HOME"}"
-    if has_line "$line" "$file"; then
-        echo "  $name already sources $what"
-        return 0
-    fi
     append_line "$line" "$file" || return 1
     echo "  Added the $what source line to $name"
+}
+
+zshrc_sources_main() { has_line "$ZSHRC_LINE" "$HOME/.zshrc"; }
+zprofile_sources_path() { has_line "$PATH_ZSH_LINE" "$HOME/.zprofile"; }
+zshenv_sources_path() { has_line "$PATH_ZSH_LINE" "$HOME/.zshenv"; }
+profile_sources_profile() { has_line "$PROFILE_LINE" "$HOME/.profile"; }
+source_main_in_zshrc() { add_source_line "$HOME/.zshrc" main.zsh "$ZSHRC_LINE"; }
+source_path_in_zprofile() { add_source_line "$HOME/.zprofile" path.zsh "$PATH_ZSH_LINE"; }
+source_path_in_zshenv() { add_source_line "$HOME/.zshenv" path.zsh "$PATH_ZSH_LINE"; }
+source_profile_in_profile() { add_source_line "$HOME/.profile" profile.sh "$PROFILE_LINE"; }
+
+# The source lines in the startup files. Only Ubuntu's ~/.zshenv and ~/.profile get one.
+zsh_items() {
+    items_reset
+    item "main.zsh sourced in ~/.zshrc" "Add the main.zsh source line to ~/.zshrc" \
+        zshrc_sources_main source_main_in_zshrc
+    item "path.zsh sourced in ~/.zprofile" "Add the path.zsh source line to ~/.zprofile" \
+        zprofile_sources_path source_path_in_zprofile
+    is_ubuntu || return 0
+    item "path.zsh sourced in ~/.zshenv" "Add the path.zsh source line to ~/.zshenv" \
+        zshenv_sources_path source_path_in_zshenv
+    item "profile.sh sourced in ~/.profile" "Add the profile.sh source line to ~/.profile" \
+        profile_sources_profile source_profile_in_profile
 }
 
 # Print the zsh to use as the login shell: apt's on Ubuntu and the system's on macOS, so the login
@@ -127,12 +147,9 @@ set_login_shell() {
 
 status() {
     zsh_files status_file
-    status_check "main.zsh sourced in ~/.zshrc" has_line "$ZSHRC_LINE" "$HOME/.zshrc"
-    status_check "path.zsh sourced in ~/.zprofile" has_line "$PATH_ZSH_LINE" "$HOME/.zprofile"
-    if is_ubuntu; then
-        status_check "path.zsh sourced in ~/.zshenv" has_line "$PATH_ZSH_LINE" "$HOME/.zshenv"
-        status_check "profile.sh sourced in ~/.profile" has_line "$PROFILE_LINE" "$HOME/.profile"
-    else
+    zsh_items
+    items_status
+    if ! is_ubuntu; then
         status_item skipped "profile.sh in ~/.zsh: Ubuntu only"
         status_item skipped "path.zsh sourced in ~/.zshenv: Ubuntu only"
         status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"
@@ -156,11 +173,12 @@ apply() {
     echo "Copying zsh and starship config..."
     zsh_files copy_file || status=1
     echo "Setting up the startup files..."
-    setup_line "$HOME/.zshrc" main.zsh "$ZSHRC_LINE" || status=1
-    setup_line "$HOME/.zprofile" path.zsh "$PATH_ZSH_LINE" || status=1
-    if is_ubuntu; then
-        setup_line "$HOME/.zshenv" path.zsh "$PATH_ZSH_LINE" || status=1
-        setup_line "$HOME/.profile" profile.sh "$PROFILE_LINE" || status=1
+    zsh_items
+    # Not grep -q, whose early exit would fail the pipeline under pipefail
+    if items_status | grep '^  missing ' > /dev/null; then
+        items_apply || status=1
+    else
+        echo "  The startup files already source the zsh config"
     fi
     set_login_shell || status=1
     return "$status"

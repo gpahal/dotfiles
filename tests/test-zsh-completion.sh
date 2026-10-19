@@ -17,6 +17,7 @@ probe() {
     zsh -fc '
         unset HOMEBREW_PREFIX
         fpath=("$1/secure" "$1/insecure" $fpath)
+        autoload -U add-zsh-hook
         source "$2/zsh/basic-settings.zsh"
         source "$2/zsh/functions.zsh"
         print -r -- "git=${_comps[git]-missing} g=${_comps[g]-missing} insecure=${_comps[dotfiles-insecure]-missing}"

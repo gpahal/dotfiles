@@ -14,8 +14,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script ghostty/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 config="$HOME/.config/ghostty/config.ghostty"
 
 # A new config: copied, and Ghostty reloads it
@@ -52,8 +51,7 @@ run status
 assert_contains "$RUN_OUTPUT" "missing    ~/Library/Application Support/com.mitchellh.ghostty/config: Ghostty loads it after config.ghostty, so it overrides the repo's font-size, keybind super+shift+equal; merge it into the repo's config or remove it"
 assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty/config.ghostty" "a file that only adds settings"
 stub snap 'exit 1'
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 run status
 assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty"
 test_done

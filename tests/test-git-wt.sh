@@ -81,7 +81,11 @@ assert_exit 0 git wt rm t3code/abc
 printf '.env\nnode_modules/\n' >> "$(git rev-parse --git-common-dir)/info/exclude"
 out="$(git wt add secrets 2> /dev/null)" || fail "git wt add secrets failed"
 mkdir -p "$out/node_modules/x"
+: > "$out/node_modules/x/index.js"
 assert_exit 0 git wt rm secrets
+# and names the build output it deletes
+assert_contains "$RUN_OUTPUT" "also deleting ignored build output, caches, and dependencies:
+    node_modules/"
 out="$(git wt add secrets 2> /dev/null)" || fail "git wt add secrets again failed"
 printf 'local\n' > "$out/.env"
 # status.showUntrackedFiles=no hides ignored files from git status unless asked for them
@@ -299,4 +303,10 @@ WORKTREES_DIR="$SANDBOX/linked-worktrees" git -C "$HOME/Dev/x/s" wt prune 2> /de
     fail "git wt prune behind a symlink failed"
 [ ! -e "$SANDBOX/real-worktrees/x" ] || fail "git wt prune behind a symlink left $SANDBOX/real-worktrees/x"
 [ -d "$SANDBOX/real-worktrees" ] || fail "git wt prune behind a symlink removed \$WORKTREES_DIR"
+
+# A relative $WORKTREES_DIR, or /, would let rm and prune remove empty directories up to /
+for bad in worktrees / //; do
+    WORKTREES_DIR="$bad" assert_exit 1 git -C "$HOME/Dev/x/s" wt path
+    assert_contains "$RUN_OUTPUT" "WORKTREES_DIR must be an absolute path other than /"
+done
 test_done

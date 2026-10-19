@@ -41,8 +41,8 @@ mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT"
 stub systemctl 'case "$2" in is-active | is-enabled) exit 0 ;; show) echo 4242 ;; esac'
 stub sleep
-# No t3 serve started by hand, and the server listens on loopback
-stub pgrep 'exit 1'
+# No t3 serve started by hand, the service's launcher runs a server, and it listens on loopback
+stub pgrep 'case "$1" in -P) echo 4243 ;; *) exit 1 ;; esac'
 stub ss 'echo "LISTEN 0 511 127.0.0.1:3773 0.0.0.0:*"'
 # The t3 CLI, whose browser is set up
 mkdir -p "$HOME/.local/bin"
@@ -59,7 +59,8 @@ export DOTFILES_STATUS_QUICK=1
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
 assert_eq 1 "$(grep -c 'is-active' "$STUB_LOG")" "is-active checks with --quick"
-assert_file_not_contains "$STUB_LOG" "systemctl --user show"
+# One look at whether the launcher runs a server, instead of watching the service for 10 s
+assert_eq 1 "$(grep -c 'systemctl --user show -p MainPID' "$STUB_LOG")" "MainPID checks with --quick"
 assert_file_not_contains "$STUB_LOG" "sleep"
 assert_file_not_contains "$STUB_LOG" "t3 browser setup"
 assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --quick"

@@ -47,14 +47,15 @@ t3_code_files() {
 # doesn't see an XDG_CONFIG_HOME set in the shell either, so the drop-in goes beside the unit.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # A drop-in, since `t3 service install` and `t3 update` rewrite the unit itself. It pins the port:
-# without one, `t3 serve` falls back to a free port when 3773 is taken, and T3 has no lock against
-# a second server on the same data, while `tailscale serve` and pairing links point at 3773. Pinned,
-# the service fails its bind instead, and T3's unit (StartLimitIntervalSec=300,
-# StartLimitBurst=5, RestartSec=5) stops retrying after about 25 s, while status
-# names the other server. It binds the server to loopback, since `t3 serve` otherwise listens on
-# every interface and ufw lets the tailnet reach every port: `tailscale serve` is the way in, over
-# HTTPS. It leaves systemd-oomd's preference to T3, since sparing the server would spare a runaway
-# agent in its cgroup too, while Restart= brings the server back.
+# without one, `t3 serve` falls back to a free port when 3773 is taken, while `tailscale serve` and
+# pairing links point at 3773. Pinned, the server fails its bind instead when something other than
+# a T3 Code server on the same data holds the port, and T3's unit (StartLimitIntervalSec=300,
+# StartLimitBurst=5, RestartSec=5) stops retrying soon after. A second server on the same data
+# never gets that far, since T3 (as of 0.1.0) locks ~/.t3/userdata; t3_code_service_serving_nothing
+# says what the service does then. It binds the server to loopback, since `t3 serve` otherwise
+# listens on every interface and ufw lets the tailnet reach every port: `tailscale serve` is the
+# way in, over HTTPS. It leaves systemd-oomd's preference to T3, since sparing the server would
+# spare a runaway agent in its cgroup too, while Restart= brings the server back.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
 T3_CODE_PORT=3773
 T3_CODE_HOST=127.0.0.1
@@ -367,15 +368,41 @@ t3_code_service_active() {
     systemctl --user is-active --quiet t3code.service 2>/dev/null
 }
 
+# Succeeds when <pid>, the service's launcher, has a child process: the server it runs
+t3_code_launcher_has_server() {
+    pgrep -P "$1" > /dev/null 2>&1
+}
+
+# Succeeds when the service is active but its launcher runs no server. As of T3 Code 0.1.0, a
+# server that finds another server holding ~/.t3/userdata exits, and the launcher then stays up
+# serving nothing until the service restarts, even once the other server stops. The launcher also
+# runs no server for a moment while it swaps one for another, as in an update, so this checks 3
+# times, 1 s apart, or once under --quick.
+t3_code_service_serving_nothing() {
+    local pid check
+    for check in 1 2 3; do
+        # MainPID is 0 while the service is inactive, failed, or between restarts
+        pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null || true)"
+        case "$pid" in '' | 0 | *[!0-9]*) return 1 ;; esac
+        ! t3_code_launcher_has_server "$pid" || return 1
+        if [ "$check" -lt 3 ] && ! status_quick; then
+            sleep 1
+        else
+            return 0
+        fi
+    done
+}
+
 # The service's log, which T3's unit writes
 # shellcheck disable=SC2088 # shown, not expanded
 T3_CODE_SERVICE_LOG="~/.t3/userdata/logs/boot-service.log"
 
-# Start the service. wait_for_t3_code_service reports a start that fails. A unit that hit its start
-# limit, as when another server held the port, is reset first, since systemd would otherwise refuse
-# to start it for 5 minutes.
+# Start the service. wait_for_t3_code_service reports a start that fails. A failed unit is reset
+# first, since one that hit its start limit, as when another program held the port, refuses a start
+# for 5 minutes otherwise. systemd 259 leaves Result at exit-code then, not start-limit-hit, so
+# the check is for any failed unit.
 start_t3_code_service() {
-    if [ "$(systemctl --user show -p Result --value t3code.service 2>/dev/null)" == start-limit-hit ]; then
+    if systemctl --user is-failed --quiet t3code.service 2>/dev/null; then
         systemctl --user reset-failed t3code.service || true
     fi
     systemctl --user start t3code.service || true
@@ -672,6 +699,19 @@ ensure_t3_code_service() {
             changed=true
         fi
         wait_for_t3_code_service || return 1
+        # A launcher left serving nothing by a server that has since stopped. Restarting it stops
+        # no thread, so it happens without asking.
+        if t3_code_service_serving_nothing; then
+            systemctl --user restart t3code.service || true
+            wait_for_t3_code_service || return 1
+            if t3_code_service_serving_nothing; then
+                echo "  The T3 Code service runs no server. Check $T3_CODE_SERVICE_LOG" >&2
+                return 1
+            fi
+            echo "  Restarted the T3 Code service, which ran no server, as when another server had its"
+            echo "  data as it started"
+            changed=true
+        fi
         if "$changed"; then
             echo "  The T3 Code service is running"
         else
@@ -785,6 +825,21 @@ t3_code_status_connect() {
     esac
 }
 
+# Print an item for whether the service is installed and runs a server
+t3_code_status_service() {
+    if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
+        status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
+    elif [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
+        status_item missing "T3 Code service: re-run the t3-code step (bash ai_tools/setup.sh t3-code), which runs t3 service install"
+    elif ! t3_code_service_running_now; then
+        status_item missing "T3 Code service running; check $T3_CODE_SERVICE_LOG"
+    elif t3_code_service_serving_nothing; then
+        status_item missing "T3 Code service running a server: it runs none, as when another T3 Code server had its data as it started; stop any other server, then re-run the t3-code step"
+    else
+        status_item ok "T3 Code service running"
+    fi
+}
+
 status() {
     # jq reads the settings and t3 connect status; the rest doesn't need it
     local jq=true
@@ -820,15 +875,7 @@ status() {
     status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
     ! "$jq" || t3_code_status_server_settings
-    if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
-        status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
-    elif [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
-        status_item missing "T3 Code service: re-run the t3-code step (bash ai_tools/setup.sh t3-code), which runs t3 service install"
-    elif t3_code_service_running_now; then
-        status_item ok "T3 Code service running"
-    else
-        status_item missing "T3 Code service running; check $T3_CODE_SERVICE_LOG"
-    fi
+    t3_code_status_service
     if [ -f "$T3_CODE_SERVICE_UNIT" ]; then
         status_check "T3 Code service enabled at boot" t3_code_service_enabled
         status_check "Linger enabled for T3 Code to start without login" t3_code_lingering

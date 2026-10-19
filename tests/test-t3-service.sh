@@ -21,7 +21,8 @@ MANUAL_SERVER="304|t3|t3 serve"
 MANUAL_MESSAGE="PID 304, a t3 serve started by hand"
 
 # The service's state lives in files: active and enabled. Its main PID is 4242 while active.
-# start-limit-hit refuses a start until reset-failed.
+# start-limit-hit fails the unit and refuses a start until reset-failed. idle is a launcher that
+# runs no server, which a start clears.
 # systemd's loaded drop-in is loaded-drop-in, whose Environment= lines it shows.
 STATE="$SANDBOX/state"
 mkdir -p "$STATE"
@@ -30,10 +31,11 @@ state="$(dirname "$STUB_LOG")/state"
 case "$2" in
     is-active) [ -f "$state/active" ] ;;
     is-enabled) [ -f "$state/enabled" ] ;;
+    is-failed) [ -e "$state/start-limit-hit" ] ;;
     start | restart)
         [ ! -e "$state/start-limit-hit" ] || exit 1
         touch "$state/active"
-        rm -f "$state/old-env" "$state/old-env-host"
+        rm -f "$state/old-env" "$state/old-env-host" "$state/idle"
         ;;
     daemon-reload)
         rm -f "$state/reload-needed"
@@ -52,7 +54,6 @@ case "$2" in
                     echo no
                 fi
                 ;;
-            *Result*) if [ -e "$state/start-limit-hit" ]; then echo start-limit-hit; else echo success; fi ;;
             *Environment*) sed -n "s/^Environment=//p" "$state/loaded-drop-in" 2> /dev/null | tr "\n" " " ;;
             *) if [ -f "$state/active" ]; then echo 4242; else echo 0; fi ;;
         esac
@@ -100,6 +101,8 @@ chmod +x "$HOME/.local/bin/t3"
 # No process is in the service's cgroup unless a test says so, and linger is on
 replace_fn t3_code_in_service_cgroup 'false'
 replace_fn t3_code_lingering 'true'
+# The launcher runs a server unless it's idle, or always-idle, which no start clears
+replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] && [ ! -e "$STATE/always-idle" ]'
 # The service's running environment: old-env predates the telemetry line, old-env-host the host
 replace_fn t3_code_process_environ '
 if [ -e "$STATE/old-env" ]; then
@@ -239,8 +242,8 @@ assert_contains "$RUN_OUTPUT" "Enabled the T3 Code service"
 assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_file_not_contains "$STUB_LOG" "reset-failed"
 
-# A unit that hit its start limit, as when another server held the port, is reset before it starts,
-# since systemd would otherwise refuse the start for 5 minutes
+# A unit that hit its start limit, as when another program held the port, is reset before it
+# starts, since systemd would otherwise refuse the start for 5 minutes
 reset
 installed_unit
 touch "$STATE/enabled" "$STATE/start-limit-hit"
@@ -258,6 +261,39 @@ assert_contains "$RUN_OUTPUT" "already installed and running"
 for action in enable start stop restart daemon-reload; do
     assert_file_not_contains "$STUB_LOG" "systemctl --user $action"
 done
+
+# A running service whose launcher runs no server, as after another server had its data when it
+# started, is restarted without asking. Status reports it until then.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/idle"
+run status
+assert_contains "$RUN_OUTPUT" "missing    T3 Code service running a server: it runs none"
+assert_not_contains "$RUN_OUTPUT" "ok         T3 Code service running"
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "systemctl --user restart t3code.service"
+assert_contains "$RUN_OUTPUT" "Restarted the T3 Code service, which ran no server"
+[ ! -e "$STATE/idle" ] || fail "the idle service wasn't restarted"
+run status
+assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
+assert_not_contains "$RUN_OUTPUT" "running a server"
+
+# A launcher that runs no server only for a moment, as while it swaps servers in an update, isn't
+# restarted. The server comes back during the 1 s wait between checks, not the step's other waits.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/idle"
+stub sleep '[ "$1" != 1 ] || rm -f "$(dirname "$STUB_LOG")/state/idle"'
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_not_contains "$STUB_LOG" "systemctl --user restart"
+stub sleep
+
+# Still running no server after the restart, the step fails, saying where to look
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/always-idle"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "The T3 Code service runs no server. Check ~/.t3/userdata/logs/boot-service.log"
 
 # A service that won't stay up fails the step, saying where to look
 reset

@@ -49,6 +49,8 @@ ALLOWED_BEFORE=(
 # t3-code's status line for a t3 serve started by hand, up to the command line it shows in
 # parentheses. tests/test-smoke-patterns.sh checks it against the step's own formatter.
 T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
+# t3-code's status line for a service that runs no server, as once that t3 serve stops
+T3_IDLE_SERVICE_STATUS='^  missing +T3 Code service running a server: it runs none'
 
 if ! command -v orb &>/dev/null; then
     echo "OrbStack's orb command isn't installed. Install OrbStack (brew install --cask orbstack)." >&2
@@ -260,15 +262,12 @@ outside_listener() {
     [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] && ! t3_code_in_service_cgroup "$pids" &&
         echo "outside=$pids"
 }
-# Succeeds while the service, started with a server outside it on the port, fails its bind and
-# retries: systemd has restarted it, it is neither stopped nor failed, and <pid> still has the port
-service_locked_out() {
-    local state restarts
-    state="$(t3_unit ActiveState)/$(t3_unit SubState)"
-    restarts="$(t3_unit NRestarts)"
-    echo "service $state, NRestarts $restarts; on $T3_CODE_PORT: $(echo $(port_pids))"
-    case "$state" in inactive/* | failed/*) return 1 ;; esac
-    [ "${restarts:-0}" -ge 1 ] && [ "$(port_pids)" == "$1" ]
+# Succeeds while the service, started with a server outside it holding its data, runs no server:
+# T3 (as of 0.1.0) locks the data, and its launcher then stays up without one. <pid> still has the
+# port.
+service_shut_out() {
+    echo "service $(t3_unit ActiveState)/$(t3_unit SubState), MainPID $(t3_unit MainPID); on $T3_CODE_PORT: $(echo $(port_pids))"
+    t3_code_service_serving_nothing && [ "$(port_pids)" == "$1" ]
 }
 '
 
@@ -349,8 +348,8 @@ else
     fi
     if [ -n "$outside" ]; then
         in_vm_t3 'systemctl --user start t3code.service' || true
-        retry_t3 8 "service_locked_out $outside" ||
-            t3_fail "the T3 Code service didn't fail its bind and retry while a t3 serve started by hand had port 3773"
+        retry_t3 8 "service_shut_out $outside" ||
+            t3_fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
         # A status report with items missing exits 3
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
@@ -358,11 +357,21 @@ else
             t3_fail "t3-code's status doesn't flag the t3 serve started by hand"
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true
-        # T3's unit stops retrying after 5 failed starts in 300 s, and refuses a start until then
-        # unless its failure is reset
-        in_vm_t3 'systemctl --user reset-failed t3code.service; systemctl --user start t3code.service' || true
+        # The step leaves the service alone while another server runs
+        # shellcheck disable=SC2016 # expanded in the machine
+        retry_t3 12 '[ -z "$(t3_code_other_servers)" ]' ||
+            t3_fail "the t3 serve started by hand didn't stop"
+        # The service runs no server until it restarts. Status says so, and re-running the step, as
+        # status says to, restarts it.
+        # shellcheck disable=SC2016 # expanded in the machine
+        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
+        grep -qE "$T3_IDLE_SERVICE_STATUS" <<< "$VM_OUTPUT" ||
+            t3_fail "once the t3 serve started by hand stopped, t3-code's status doesn't flag the service that runs no server"
+        # shellcheck disable=SC2016 # expanded in the machine
+        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh t3-code' > /dev/null ||
+            t3_fail "once the t3 serve started by hand stopped, the t3-code step failed"
         retry_t3 12 one_server_stable ||
-            t3_fail "once the t3 serve started by hand stopped, the T3 Code service didn't become the one T3 Code server, on port 3773"
+            t3_fail "once the t3 serve started by hand stopped and the t3-code step ran, the T3 Code service isn't the one T3 Code server, on port 3773"
     fi
 fi
 

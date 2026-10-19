@@ -434,6 +434,9 @@ install_t3_cli() {
     # t3 links against libatomic, which build-essential (from the homebrew step) brings in
     if ! apt_installed libatomic1; then
         confirm_sudo_changes "Install libatomic1, which the t3 CLI needs" || return 2
+        # Stale package lists would point at versions the mirror no longer has
+        # shellcheck disable=SC2119 # it passes options on to apt-get update, and needs none here
+        apt_get_update || return 1
         apt_get install -y libatomic1 || return 1
     fi
     echo "  Installing the t3 CLI to ~/.local/bin..."

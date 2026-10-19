@@ -651,4 +651,14 @@ rm "$STATE/libatomic1"
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Install libatomic1"
 assert_file_not_contains "$STUB_LOG" "run_installer"
+# Agreed, apt's lists are updated before libatomic1 installs, since stale ones can 404
+confirm() { echo "$1"; }
+stub sudo
+echo 0 > "$STATE/installer-status"
+: > "$STUB_LOG"
+assert_exit 1 install_t3_cli
+assert_eq "update
+install -y libatomic1" "$(sed -n 's/^sudo .* apt-get -o [^ ]* //p' "$STUB_LOG")" "apt-get's commands"
+assert_file_contains "$STUB_LOG" "run_installer sh https://t3.codes/install.sh"
+stub sudo 'exit 1'
 test_done

@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2016 # backquotes and $ in sed and grep patterns, the uname stub, and inner bash -c scripts
+# shellcheck disable=SC2016 # backquotes and $ in sed and grep patterns
 set -euo pipefail
 
 # Check that the docs list each runner's steps as its STEPS has them, on macOS and on Ubuntu:
@@ -13,8 +13,6 @@ set -euo pipefail
 # - README.md "Ubuntu" names the casks in UBUNTU_CASKS, as Mac-only the formulae in the
 #   Brewfile's `if OS.mac?` blocks, and in its "System packages." item the apt packages in
 #   homebrew/install.sh's UBUNTU_PACKAGES
-# - README.md "Maintenance" copies back each file the steps' *_files functions copy, from where
-#   the step copies it, and nothing else
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
@@ -226,98 +224,6 @@ sed -n 's/^UBUNTU_PACKAGES="\(.*\)"$/\1/p' "$REPO_DIR/homebrew/install.sh" | tr 
 cmp -s "$tmp/ubuntu-packages" "$tmp/ubuntu-packages-doc" ||
     fail "README.md Ubuntu's System packages item doesn't match UBUNTU_PACKAGES. UBUNTU_PACKAGES: $(tr '\n' ' ' < "$tmp/ubuntu-packages")
   The doc: $(doc_words "$tmp/ubuntu-packages-doc" '"- **System packages.** ... installs these apt packages `<packages>`" under "## Ubuntu"')"
-
-# README.md "Maintenance": the copy-back list copies each file a step copies into $HOME, or into
-# /etc, back to the repo, from where the step puts it. A step names the files it copies in *_files
-# functions that take the action as their first argument. Each step is sourced twice, with uname
-# reporting Darwin, then Linux, and an empty HOME, and each such function called with an action that
-# records each copy as <repo file> <tab> <destination> <tab> <step>. A command that would change the
-# machine or use the network fails the check when sourcing or a *_files function runs it.
-copy_home="$tmp/home"
-mkdir -p "$copy_home" "$tmp/sentinels"
-# shellcheck source=../tests/sentinels.sh
-source "$REPO_DIR/tests/sentinels.sh"
-# git and sudo too, which tests/lib.sh leaves real or stubs on its own
-for cmd in $SENTINELS git sudo; do
-    printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$cmd" "$tmp/sentinels.log" > "$tmp/sentinels/$cmd"
-    chmod +x "$tmp/sentinels/$cmd"
-done
-# Only the repo's own steps, a new one not yet added included, so an install.sh .gitignore lists,
-# such as one under .scratch, isn't sourced. A tracked file deleted from the working tree is
-# skipped. Only those with such a function, since sourcing one takes a while.
-git -C "$REPO_DIR" ls-files --cached --others --exclude-standard -- '*/install.sh' |
-    awk -F/ -v repo="$REPO_DIR" 'NF <= 3 && !/\/skills\// { print repo "/" $0 }' |
-    while IFS= read -r f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done |
-    xargs -0 grep -lE '^[a-z0-9_]+_files\(\) \{' | sort -u > "$tmp/installs"
-for os in Darwin Linux; do
-    os_uname_shim "$tmp/$os" "$os"
-    env -i HOME="$copy_home" PATH="$tmp/$os:$tmp/sentinels:/usr/bin:/bin" REPO_DIR="$REPO_DIR" "$BASH" -c '
-        source "$REPO_DIR/lib/common.sh"
-        common="$(compgen -A function)"
-        while IFS= read -r install; do
-            (
-                record() { printf "%s\t%s\t%s\n" "${1#"$REPO_DIR"/}" "$2" "${install#"$REPO_DIR"/}"; }
-                source "$install" > /dev/null
-                for fn in $(compgen -A function | grep "_files\$"); do
-                    ! printf "%s\n" "$common" | grep -qxF "$fn" || continue
-                    "$fn" record || echo "FAILED ${install#"$REPO_DIR"/} $fn" >&2
-                done
-            ) < /dev/null
-        done < "$1"' bash "$tmp/installs"
-done > "$tmp/copies" 2> "$tmp/copies-errors"
-while IFS= read -r line; do
-    fail "Recording the files the steps copy failed: $line"
-done < "$tmp/copies-errors"
-if [ -s "$tmp/sentinels.log" ]; then
-    fail "Sourcing a step or calling its _files function ran: $(sort -u "$tmp/sentinels.log" | tr '\n' ';')"
-fi
-[ -s "$tmp/copies" ] || fail "Couldn't record the files the steps copy"
-
-# The copy-back list, the section's first code block, runs with a cp that records each copy as
-# <repo file> <tab> <home file>, from the repo with the same empty HOME. lazygit answers
-# --print-config-dir as it does on macOS. Each line must be a cp, or a loop around one, and only
-# those lines run.
-section "$readme" "## Maintenance" | awk -v fence="$MD_FENCE" '$0 ~ fence { fences++; next } fences == 1' > "$tmp/copy-back"
-while IFS= read -r line; do
-    case "$line" in
-        "cp "* | "for "*"; do cp "*"; done") printf '%s\n' "$line" ;;
-        *) fail "README.md Maintenance's copy-back list has a line that isn't a cp: $line" ;;
-    esac
-done < "$tmp/copy-back" > "$tmp/copy-back-cp"
-env -i HOME="$copy_home" PATH=/usr/bin:/bin "$BASH" -c '
-    cd "$1" || exit 1
-    cp() {
-        local dest="${!#}" src
-        for src in "${@:1:$#-1}"; do
-            case "$dest" in
-                */) printf "%s\t%s\n" "$dest${src##*/}" "$src" ;;
-                *) printf "%s\t%s\n" "$dest" "$src" ;;
-            esac
-        done
-    }
-    lazygit() { echo "$HOME/Library/Application Support/lazygit"; }
-    source "$2"' bash "$REPO_DIR" "$tmp/copy-back-cp" > "$tmp/copied-back" ||
-    fail "README.md Maintenance's copy-back list failed to run"
-
-# Print a path with HOME as ~
-tilde() {
-    # shellcheck disable=SC2088 # shown, not expanded
-    case "$1" in "$copy_home"/*) echo "~/${1#"$copy_home"/}" ;; *) echo "$1" ;; esac
-}
-cut -f1 "$tmp/copied-back" | sort -u > "$tmp/copied-back-files"
-while IFS=$'\t' read -r file _ install; do
-    [ -e "$REPO_DIR/$file" ] || fail "$install copies $file, which doesn't exist"
-    grep -qxF -- "$file" "$tmp/copied-back-files" ||
-        fail "$install copies $file, which README.md Maintenance's copy-back list lacks"
-done < <(sort -u "$tmp/copies")
-while IFS=$'\t' read -r file home; do
-    dests="$(awk -F '\t' -v f="$file" '$1 == f { print $2 }' "$tmp/copies" | sort -u)"
-    if [ -z "$dests" ]; then
-        fail "README.md Maintenance's copy-back list copies back to $file, which isn't a file a step copies"
-    elif ! printf '%s\n' "$dests" | grep -qxF -- "$home"; then
-        fail "README.md Maintenance's copy-back list copies $(tilde "$home") back to $file, which the steps copy to $(printf '%s\n' "$dests" | while IFS= read -r d; do tilde "$d"; done | paste -sd, - | sed 's/,/, /g')"
-    fi
-done < "$tmp/copied-back"
 
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
 # missing or empty

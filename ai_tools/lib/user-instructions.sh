@@ -5,7 +5,7 @@
 # user_instructions_to <dest> <action> [arg...]
 # Pass ai_tools/user-instructions.md and <dest>, where an AI tool reads its user-level
 # instructions, to <action>, followed by any further arguments: copy_file to copy them, or
-# status_file to report them. A step wraps it in a *_files function, which scripts/check-docs.sh
+# status_file to report them. A step wraps it in a *_files function, which scripts/copy-back.sh
 # finds.
 # e.g. user_instructions_to "$HOME/.codex/AGENTS.md" status_file
 user_instructions_to() {

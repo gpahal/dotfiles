@@ -31,7 +31,7 @@ plugin_file_list() {
 }
 
 # Print each file in the installed plugin that the repo's plugin no longer has
-stale_plugin_files() {
+stale_plugin_list() {
     [ -d "$PLUGIN_DIR" ] || return 0
     LC_ALL=C comm -13 <(plugin_file_list | LC_ALL=C sort) <(plugin_file_list "$PLUGIN_DIR" | LC_ALL=C sort)
 }
@@ -49,7 +49,7 @@ each_plugin_file() {
 # Remove the installed plugin's files that the repo's plugin no longer has, and the folders that
 # leaves empty, only ever inside PLUGIN_DIR. Sets COPIED when it removes one, so Stream Deck
 # restarts without it.
-remove_stale_plugin_files() {
+remove_stale_plugin() {
     local file status=0
     while IFS= read -r file; do
         if rm -f "$PLUGIN_DIR/$file"; then
@@ -58,7 +58,7 @@ remove_stale_plugin_files() {
         else
             status=1
         fi
-    done < <(stale_plugin_files)
+    done < <(stale_plugin_list)
     find "$PLUGIN_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     return "$status"
 }
@@ -95,7 +95,7 @@ status() {
     each_plugin_file status_file
     while IFS= read -r file; do
         status_item missing "$file in the installed plugin: the repo's plugin no longer has it; re-run the stream-deck step to remove it"
-    done < <(stale_plugin_files)
+    done < <(stale_plugin_list)
     status_result
 }
 
@@ -104,7 +104,7 @@ apply() {
     local status=0
     COPIED=false
     each_plugin_file copy_file || status=1
-    remove_stale_plugin_files || status=1
+    remove_stale_plugin || status=1
     if "$COPIED"; then
         restart_stream_deck || status=1
     fi

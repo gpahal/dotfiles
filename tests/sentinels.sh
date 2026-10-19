@@ -1,5 +1,5 @@
-# Sets SENTINELS, the commands that fail when they run in tests/lib.sh's sandbox, or while
-# scripts/check-docs.sh sources the steps. Both source this file. Bash 3.2.
+# Sets SENTINELS, the commands that fail when they run in tests/lib.sh's sandbox, which sources
+# this file. Bash 3.2.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the files that source this one read SENTINELS
 

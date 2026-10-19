@@ -39,6 +39,10 @@ test-ubuntu:
 bump-plugins:
     bash scripts/bump-plugins.sh
 
+# Copy the installed configs that differ from the repo's back into the repo, printing each diff, for review with git diff. With dry-run, only list them.
+copy-back mode="":
+    @case {{quote(mode)}} in "") bash scripts/copy-back.sh ;; dry-run) bash scripts/copy-back.sh --dry-run ;; *) echo "Usage: just copy-back [dry-run]" >&2; exit 2 ;; esac
+
 # Run setup.sh: every step, or only the named ones (e.g. just setup git zsh)
 [positional-arguments]
 setup *steps:

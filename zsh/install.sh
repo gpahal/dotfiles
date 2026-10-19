@@ -33,8 +33,7 @@ zsh_files() {
     for file in "$DOTFILES_DIR"/zsh/*.zsh; do
         "$1" "$file" "$HOME/.zsh/${file##*/}" || status=1
     done
-    # Only Ubuntu's ~/.profile sources it. Not is_ubuntu, which scripts/check-docs.sh's Linux run
-    # can't fake.
+    # Only Ubuntu's ~/.profile sources it
     if ! is_macos; then
         "$1" "$DOTFILES_DIR/zsh/profile.sh" "$HOME/.zsh/profile.sh" || status=1
     fi

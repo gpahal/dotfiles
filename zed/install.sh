@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the Zed settings and keymap, replacing copies edited in the app or by hand; copy those
-# changes back to the repo first (see README Maintenance). The homebrew step installs Zed on both
+# Copy the Zed settings and keymap, replacing copies edited in the app or by hand; `just copy-back`
+# copies those changes back to the repo first. The homebrew step installs Zed on both
 # OSes.
 
 # shellcheck source=../lib/common.sh

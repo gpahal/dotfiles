@@ -178,7 +178,7 @@ ubuntu_files() {
 }
 
 # The same for the files the step installs as root. Nothing in the step calls it:
-# scripts/check-docs.sh does, to check README "Maintenance" copies each one back.
+# scripts/copy-back.sh does, to copy them back to the repo.
 ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"

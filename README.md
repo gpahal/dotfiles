@@ -77,7 +77,7 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 **Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 
-**Files you also edit.** Setup copies configs over the installed ones whenever they differ, with no backup, so copy changes you want to keep back to the repo first ([Maintenance](#maintenance)). Settings merged into files other tools also edit ask whether to back up the file first, and `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
+**Files you also edit.** Setup copies configs over the installed ones whenever they differ, with no backup, so run `just copy-back` first to keep your changes ([Maintenance](#maintenance)). Settings merged into files other tools also edit ask whether to back up the file first, and `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 
@@ -499,38 +499,9 @@ Configs come from this repo, so to update them, pull, then re-run `bash setup.sh
 
 ## Maintenance
 
-Copy config files from the system back to this repo:
+`just copy-back` copies each installed config that differs from the repo's back into the repo, and prints its diff. Run it before a setup run, which overwrites the installed configs, to keep changes made in an app or by hand, such as Zed's settings. Review the result with `git diff`, and commit what you keep. `just copy-back dry-run` only lists the files that differ. When two installed copies of one file differ, such as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, it takes the first and names the second for you to merge by hand.
 
-```sh
-cp ~/.config/git/config git/gitconfig
-cp ~/.config/git/ignore git/ignore
-cp ~/.config/git/fsmonitor git/fsmonitor
-cp "$(lazygit --print-config-dir)/config.yml" lazygit/config.yml
-cp ~/.vimrc vim/vimrc
-for file in zsh/*.zsh; do cp "$HOME/.zsh/${file##*/}" "$file"; done
-cp ~/.zsh/profile.sh zsh/profile.sh   # Ubuntu
-cp ~/.config/starship.toml zsh/config/starship.toml
-cp ~/.config/ghostty/config.ghostty ghostty/config.ghostty
-cp ~/.config/tmux/tmux.conf tmux/tmux.conf
-cp ~/.local/bin/tmux-sessionizer tmux/bin/tmux-sessionizer
-cp ~/.local/bin/git-wt git/bin/git-wt
-cp ~/.claude/hooks/worktree-hook.sh ai_tools/claude-code/worktree-hook.sh
-cp ~/.claude/statusline.sh ai_tools/claude-code/statusline.sh
-cp ~/.config/zed/settings.json ~/.config/zed/keymap.json zed/
-cp ~/.editorconfig editorconfig/editorconfig
-cp ~/.hammerspoon/init.lua hammerspoon/init.lua   # macOS
-cp ~/.hammerspoon/bin/open-in stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in   # macOS
-cp ~/Library/LaunchAgents/dotfiles.ssh-add.plist ssh/dotfiles.ssh-add.plist   # macOS
-cp ~/Library/LaunchAgents/dotfiles.claude-desktop.plist ai_tools/claude-desktop/dotfiles.claude-desktop.plist   # macOS
-cp ~/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist   # macOS
-cp ~/.config/environment.d/99-homebrew.conf ubuntu/environment.d/99-homebrew.conf   # Ubuntu
-cp ~/.claude/CLAUDE.md ai_tools/user-instructions.md   # or ~/.codex/AGENTS.md
-cp /etc/smartmontools/run.d/50dotfiles-notify ubuntu/smartd-notify.sh   # Ubuntu
-cp /usr/local/libexec/dotfiles-ups-notify ubuntu/ups-notify.sh   # Ubuntu
-cp /usr/local/lib/dotfiles/ntfy.sh ubuntu/lib/ntfy.sh   # Ubuntu
-```
-
-With `XDG_CONFIG_HOME` set, copy the git and tmux configs, and on Ubuntu the Ghostty and Zed configs, from under it. The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
+The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
 
 Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, and each to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
 

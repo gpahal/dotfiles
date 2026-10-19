@@ -96,13 +96,11 @@ run t3_code_status_custom_values
 assert_contains "$RUN_OUTPUT" "ok         T3 Code's default effort (defaultModelSelection.options effort): yours, high (the repo's is medium)"
 
 # With a terminal, yes replaces your model, dropping the other provider's options
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
+replace_fn is_interactive 'true'
+replace_fn confirm 'local reply
+echo "$1"
+read -r reply
+[ "$reply" == y ]'
 printf '%s\n' "{\"defaultModelSelection\": $codex}" > "$settings"
 t3_code_choose_custom_values <<< y > /dev/null
 json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
@@ -113,8 +111,8 @@ t3_code_choose_custom_values <<< y > "$SANDBOX/choose.out"
 assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
 json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
-is_interactive() { false; }
-confirm() { false; }
+replace_fn is_interactive 'false'
+replace_fn confirm 'false'
 
 # A custom Claude instance on the repo's model keeps its instance and its effort, without a
 # terminal, and status counts the effort
@@ -136,14 +134,14 @@ assert_eq "$mine" "$(selection)" "a context window of your own"
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "medium"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection without a context window"
 # Replacing your effort, with a terminal, sets the 1M context window that goes with the repo's
-is_interactive() { true; }
-confirm() { true; }
+replace_fn is_interactive 'true'
+replace_fn confirm 'true'
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your effort"
 # So does replacing your model, on Claude's instance, which keeps the options
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-sonnet-5", "options": [{"id": "effort", "value": "medium"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your model"
-is_interactive() { false; }
-confirm() { false; }
+replace_fn is_interactive 'false'
+replace_fn confirm 'false'
 
 test_done

@@ -11,7 +11,10 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
+# shellcheck source=../lib/app-json.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
 
+STEP_OS=macos
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
@@ -56,38 +59,25 @@ CLAUDE_DESKTOP_SETTINGS='
 
 configure_claude_desktop() {
     echo "Configuring Claude desktop app..."
-    if json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"; then
-        echo "  Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are"
-        echo "  already set"
-        return 0
-    fi
-    ensure_app_quit "Claude" || return 0
-    json_merge "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS" || return 1
-    echo "  Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,"
-    echo "  and Cowork browser, web search, and scheduled tasks"
+    merge_app_json Claude \
+        "Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are
+already set" \
+        "Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,
+and Cowork browser, web search, and scheduled tasks" \
+        "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
 }
 
 status() {
-    if ! is_macos; then
-        status_item skipped "Claude desktop app: macOS only"
-        return 0
-    fi
-    if ! status_require_cmd jq "Claude desktop app"; then
-        status_result
-        return
-    fi
     status_cask claude /Applications/Claude.app
     claude_desktop_files status_file
-    status_check "Claude desktop app settings" json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
+    if status_require_cmd jq "Claude desktop app settings"; then
+        status_check "Claude desktop app settings" json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
+    fi
     status_result
 }
 
 apply() {
     echo "Setting up the Claude desktop app..."
-    if ! is_macos; then
-        echo "  The claude cask is macOS-only, and this machine is used over SSH; skipping."
-        return 0
-    fi
     require_cmd jq || return 1
     require_cmd brew || return 1
     local result=0

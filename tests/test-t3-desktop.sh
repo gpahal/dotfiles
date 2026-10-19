@@ -17,11 +17,10 @@ command -v jq &>/dev/null || skip "jq isn't installed"
 load_script ai_tools/t3-code/install.sh
 
 # macOS
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 APP="$SANDBOX/Applications/T3 Code (Beta).app"
 mkdir -p "$APP"
-t3_code_app_path() { echo "$APP"; }
+replace_fn t3_code_app_path 'echo "$APP"'
 # launchd's environment is in $SANDBOX/launchd-env: setenv writes the value, and getenv prints it
 stub_launchd() {
     stub launchctl 'case "$1" in
@@ -103,20 +102,19 @@ assert_eq false "$(cat "$SANDBOX/launchd-env")" "launchd's T3CODE_TELEMETRY_ENAB
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code
 assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
-assert_contains "$RUN_OUTPUT" "Telemetry is already off in launchd's environment"
 assert_contains "$RUN_OUTPUT" "settings are already set"
 assert_file_not_contains "$STUB_LOG" "launchctl setenv"
 
 # The app isn't installed: the agent and the settings are still set
-t3_code_app_path() { return 1; }
+replace_fn t3_code_app_path 'return 1'
 rm "$T3_CODE_SETTINGS" "$T3_CODE_TELEMETRY_AGENT"
 assert_exit 0 configure_t3_code
 [ -f "$T3_CODE_TELEMETRY_AGENT" ] || fail "the LaunchAgent wasn't written without the app"
 assert_eq claude-opus-5-5 "$(jq -r .defaultModelSelection.model "$T3_CODE_SETTINGS")" "the default model without the app"
 
 # The app is running, and there's no terminal to ask about quitting it: the settings wait
-t3_code_app_path() { echo "$APP"; }
-running_inside() { return 1; }
+replace_fn t3_code_app_path 'echo "$APP"'
+replace_fn running_inside 'return 1'
 stub pgrep
 rm "$T3_CODE_SETTINGS"
 assert_exit 0 configure_t3_code
@@ -125,8 +123,7 @@ assert_contains "$RUN_OUTPUT" "T3 Code (Beta) is running; skipping."
 
 # When brew info fails, the report still runs
 load_script ai_tools/t3-code/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 stub brew '[ "$1" != info ] || exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "t3-code (cask)"
@@ -185,4 +182,25 @@ assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Home
 run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
 assert_file_not_contains "$STUB_LOG" "brew install"
+
+# Without jq, status still reports the cask, the LaunchAgent, and launchd's variable; only the
+# settings are unknown
+no_jq_status() {
+    hide jq
+    run status
+    assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
+    assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
+    assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
+    assert_contains "$RUN_OUTPUT" "unknown    T3 Code's settings: $(missing_cmd_hint jq)"
+    assert_not_contains "$RUN_OUTPUT" "Server settings"
+}
+subtest no_jq_status
+
+# A model of the repo's with no instance gets Claude's, and a custom Claude instance stays
+jq -n '{defaultModelSelection: {model: "claude-opus-5-5"}}' > "$T3_CODE_SETTINGS"
+assert_eq claudeAgent "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
+    "the instance of the repo's model without one"
+jq -n '{defaultModelSelection: {model: "claude-opus-5-5", instanceId: "myClaude"}}' > "$T3_CODE_SETTINGS"
+assert_eq myClaude "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
+    "a custom instance of the repo's model"
 test_done

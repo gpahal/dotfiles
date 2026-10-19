@@ -53,17 +53,15 @@ assert_exit 0 configure_claude_code
 assert_contains "$RUN_OUTPUT" "Kept your value for Claude Code's status line refresh interval (statusLine.refreshInterval), 11."
 assert_eq 11 "$(interval)" "the refresh interval of your own without a terminal"
 assert_contains "$RUN_OUTPUT" "already set"
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
+replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 assert_contains "$RUN_OUTPUT" "ok         Claude Code's status line refresh interval (statusLine.refreshInterval): yours, 11 (the repo's is 5)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
+replace_fn is_interactive 'true'
+replace_fn confirm 'local reply
+echo "$1"
+read -r reply
+[ "$reply" == y ]'
 assert_exit 0 configure_claude_code <<< n
 assert_contains "$RUN_OUTPUT" "(statusLine.refreshInterval) is 11, not the repo's 5. Replace it?"
 assert_eq 11 "$(interval)" "the refresh interval after no"
@@ -79,7 +77,7 @@ assert_eq 5 "$(interval)" "the refresh interval with DOTFILES_ASSUME_YES=1"
 # 5.5, high for Sonnet 5.5). One of your own is kept without a terminal and named by status, and
 # replaced with DOTFILES_ASSUME_YES=1.
 load_script ai_tools/claude-code/install.sh
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
+replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
 effort() { jq -r --arg m "$1" '.modelSettings[$m].effortLevel' "$settings"; }
 echo '{}' > "$settings"
 assert_exit 0 configure_claude_code
@@ -99,15 +97,15 @@ assert_eq medium "$(effort claude-opus-5-5)" "the effort with DOTFILES_ASSUME_YE
 
 # The status line command, and on Ubuntu the notification channel, are set when unset
 load_script ai_tools/claude-code/install.sh
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
-is_ubuntu() { true; }
+replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+as_os ubuntu
 echo '{}' > "$settings"
 assert_exit 0 configure_claude_code
 # shellcheck disable=SC2088 # the literal value
 assert_eq "~/.claude/statusline.sh ghostty" \
     "$(jq -r '"\(.statusLine.command) \(.preferredNotifChannel)"' "$settings")" "the values set when unset"
 # Off Ubuntu, the step leaves the channel alone and status doesn't name it
-is_ubuntu() { false; }
+as_os macos
 jq '.preferredNotifChannel = "terminal_bell"' "$settings" > "$settings.new" && mv "$settings.new" "$settings"
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
 assert_eq terminal_bell "$(jq -r '.preferredNotifChannel' "$settings")" "the channel off Ubuntu"
@@ -118,9 +116,9 @@ assert_not_contains "$RUN_OUTPUT" "preferredNotifChannel"
 # create hook makes its own worktree. So neither of ours is registered, the step says why and fails
 # after the rest, and status names the other hook.
 load_script ai_tools/claude-code/install.sh
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
-claude_code_have_git_wt() { true; }
-install_claude_code() { :; }
+replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+replace_fn claude_code_have_git_wt 'true'
+replace_fn install_claude_code ':'
 for event in WorktreeCreate WorktreeRemove; do
     jq -n --arg e "$event" '{hooks: {($e): [{hooks: [{type: "command", command: "my-hook.sh"}]}]}}' > "$settings"
     assert_exit 1 main
@@ -153,8 +151,8 @@ assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 # Our hook with a hand-edited type or timeout gets the step's back, and status flags the drift
 # first. Other keys in its entry, and other hooks in its group, stay.
 load_script ai_tools/claude-code/install.sh
-claude_code_path() { echo "$HOME/.local/bin/claude"; }
-claude_code_have_git_wt() { true; }
+replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+replace_fn claude_code_have_git_wt 'true'
 echo '{}' > "$settings"
 json_merge "$settings" "$(claude_code_settings)" > /dev/null
 jq '.hooks.WorktreeCreate[0].hooks[0] += {type: "http", timeout: 5, x: 1}

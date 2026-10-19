@@ -5,7 +5,7 @@ set -euo pipefail
 
 # The claude-desktop step merges its settings into the app's config, keeping the keys it doesn't
 # set, copies the LaunchAgent that opens Claude at login, changes nothing on a re-run, leaves the
-# config alone while Claude runs, and skips on Ubuntu.
+# config alone while Claude runs, and is macOS only.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,28 +14,25 @@ setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script ai_tools/claude-desktop/install.sh
 # The test may run inside the Claude app, which ensure_app_quit handles on its own
-running_inside() { false; }
+replace_fn running_inside 'false'
 # Keep the real /Applications/Claude.app, present or not, out of the cask checks: the step passes
 # that path to install_cask and status_cask, and brew info would give it too
 APP="$HOME/Applications/Claude.app"
-cask_app_path() { printf '%s\n' "$APP"; }
+replace_fn cask_app_path 'echo "$APP"'
 eval "real_$(declare -f cask_state)"
-cask_state() { real_cask_state "$1" "$APP"; }
+replace_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 assert_eq "$CONFIG" "$CLAUDE_DESKTOP_CONFIG" "config path"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 
-# Ubuntu: nothing to do
-is_macos() { false; }
+# Ubuntu: STEP_OS skips the step, which writes nothing
+as_os ubuntu
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "macOS-only"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "skipped    Claude desktop app: macOS only"
 [ ! -e "$CONFIG" ] || fail "the config was written on Ubuntu"
 [ ! -e "$AGENT" ] || fail "the LaunchAgent was written on Ubuntu"
 
 # macOS, with neither the cask nor the app: status reports it, and the step installs it
-is_macos() { true; }
+as_os macos
 stub brew '[ "$*" == "install --cask claude" ]'
 stub pgrep 'exit 1'
 assert_exit 3 status
@@ -137,4 +134,14 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    claude (cask): brew lists it, but its app is gone; run brew reinstall --cask claude"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "brew reinstall --cask claude"
+
+# Without jq, status still reports the cask and the LaunchAgent; only the settings are unknown
+no_jq_status() {
+    hide jq
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "claude (cask): brew lists it"
+    assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
+    assert_contains "$RUN_OUTPUT" "unknown    Claude desktop app settings: $(missing_cmd_hint jq)"
+}
+subtest no_jq_status
 test_done

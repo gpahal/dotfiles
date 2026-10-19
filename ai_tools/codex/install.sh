@@ -15,9 +15,11 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/keepable.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/tool-home.sh
+source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck source=../lib/user-instructions.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
+source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -27,13 +29,39 @@ CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
 # Where Ubuntu keeps MCP OAuth tokens in plain text (mcp_oauth_credentials_store below)
 CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
-# The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
-# the step rather than leaving Codex reading files setup never wrote
-CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
 # Ubuntu's apparmor package installs this profile, which loads at boot
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+# The oldest yq whose TOML output the config edit below was checked against
+CODEX_YQ_MIN_VERSION=4.54.1
+
+# Print yq's version, such as 4.54.1, from mikefarah's yq's "yq (...) version v4.54.1", or nothing
+# for another yq
+codex_yq_version() {
+    yq --version 2>/dev/null | sed -nE 's/^yq .*version v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1
+}
+
+# Succeeds when yq is CODEX_YQ_MIN_VERSION or newer
+codex_yq_new_enough() {
+    local have want i
+    have="$(codex_yq_version)"
+    [ -n "$have" ] || return 1
+    IFS=. read -ra have <<< "$have"
+    IFS=. read -ra want <<< "$CODEX_YQ_MIN_VERSION"
+    for i in 0 1 2; do
+        [ "${have[i]}" -le "${want[i]}" ] || return 0
+        [ "${have[i]}" -ge "${want[i]}" ] || return 1
+    done
+}
+
+# Print why yq is too old, and how to update it
+codex_yq_too_old() {
+    local version
+    version="$(codex_yq_version)"
+    echo "yq ${version:-on PATH} isn't mikefarah's yq $CODEX_YQ_MIN_VERSION or newer, which the Codex config edit needs; run brew upgrade yq"
+}
 
 # Settings you may keep your own values of (ai_tools/lib/keepable.sh), each with a yq path and
 # the repo's value as TOML (see codex_set)
@@ -66,6 +94,30 @@ codex_keep_current() {
 # Print a TOML value as codex_keep_current prints it
 codex_keep_wanted() {
     keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
+}
+
+# Print the config's value at each yq path given, one line each, as codex_keep_current does, with
+# one yq. Each value is one line of JSON, so the lines line up with the paths.
+codex_keep_current_all() {
+    local filter values value
+    filter="$(printf '%s, ' "$@")"
+    values="$(yq -p toml -o json -I=0 "[${filter%, }] | .[]" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    while IFS= read -r value; do
+        if [ "$value" == null ]; then echo; else keepable_unquote "$value"; fi
+    done <<< "$values"
+}
+
+# Print each TOML value given, one line each, as codex_keep_wanted does, with one yq
+codex_keep_wanted_all() {
+    local i=0 toml="" filter="" value
+    for value; do
+        toml+="v$i = $value"$'\n'
+        filter+="${filter:+, }.v$i"
+        i=$((i + 1))
+    done
+    printf '%s' "$toml" | yq -p toml -o json -I=0 "[$filter] | .[]" | while IFS= read -r value; do
+        keepable_unquote "$value"
+    done
 }
 
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
@@ -297,7 +349,17 @@ codex_config_matches() {
         [ "$got" == "$want" ]
 }
 
+# Read the values you can change once for each phase, then forget them, since the config changes
+# under them: once here, and again once ChatGPT quits, since it can save the config as it quits
 configure_codex() {
+    local result=0
+    keepable_load codex
+    configure_codex_settings || result=$?
+    keepable_unload
+    return "$result"
+}
+
+configure_codex_settings() {
     echo "Configuring Codex..."
     local edited
     keepable_choose codex
@@ -316,6 +378,7 @@ configure_codex() {
     edited="$(codex_config_edited)" || return 1
     rm -f "$edited"
     ensure_app_quit "ChatGPT" || return 0
+    keepable_load codex
     edited="$(codex_config_edited)" || return 1
     if ! maybe_backup "$CODEX_CONFIG"; then
         rm -f "$edited"
@@ -363,19 +426,27 @@ codex_status_signed_in() {
     fi
 }
 
-# Print an item for whether only you can read the MCP tokens Codex keeps in plain text on Ubuntu.
-# Prints nothing when there are no tokens yet.
-codex_status_credentials() {
-    local mode name="Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
-    [ -e "$CODEX_CREDENTIALS" ] || return 0
-    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
-    if [ "$mode" == 600 ]; then
-        status_item ok "$name"
-    elif [ -z "$mode" ]; then
-        status_item unknown "$name: couldn't read its mode"
-    else
-        status_item missing "$name: its mode is $mode; run chmod 600 ~/.codex/.credentials.json"
+# The step's items. Only Ubuntu keeps the MCP tokens in a file, and there's nothing to say of them
+# before there are any.
+codex_items() {
+    items_reset
+    if is_ubuntu && [ -e "$CODEX_CREDENTIALS" ]; then
+        item "Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you" \
+            "Make ~/.codex/.credentials.json readable only by you" \
+            codex_credentials_private secure_codex_credentials
     fi
+}
+
+codex_credentials_private() {
+    [ "$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" == 600 ]
+}
+
+secure_codex_credentials() {
+    if ! chmod 600 "$CODEX_CREDENTIALS"; then
+        echo "  Couldn't make $CODEX_CREDENTIALS readable only by you." >&2
+        return 1
+    fi
+    echo "  Made Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 }
 
 bwrap_works() {
@@ -453,15 +524,20 @@ status() {
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
-    else
-        if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+    if tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$CODEX_DIR"; then
+        if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+            :
+        elif ! codex_yq_new_enough; then
+            status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
+        else
+            keepable_load codex
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             keepable_status codex
+            keepable_unload
         fi
         user_instructions_files status_file
-        ! is_ubuntu || codex_status_credentials
+        codex_items
+        items_status codex_credentials_private
     fi
     if is_ubuntu; then
         status_check "Codex's sandbox: bwrap can create one" bwrap_works
@@ -473,11 +549,12 @@ status() {
 
 apply() {
     echo "Setting up Codex..."
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2
+    tool_home_guard Codex CODEX_HOME "$CODEX_DIR" || return 1
+    require_cmd yq || return 1
+    if ! codex_yq_new_enough; then
+        echo "  $(codex_yq_too_old)" >&2
         return 1
     fi
-    require_cmd yq || return 1
     require_cmd brew || return 1
     local result=0
     if is_macos; then
@@ -487,6 +564,8 @@ apply() {
     configure_codex || result=1
     install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
     if is_ubuntu; then
+        codex_items
+        items_apply codex_credentials_private || result=1
         setup_codex_sandbox || result=1
     fi
     return "$result"

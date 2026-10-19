@@ -29,9 +29,7 @@ assert_contains "$RUN_OUTPUT" "Chrome origins allowed in unattended-upgrades"
 
 # codex without brew, and no codex installed another way
 load_script ai_tools/codex/install.sh
-# shellcheck disable=SC2329 # status calls them
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 hide brew codex
 # Codex's sandbox works
 stub bwrap

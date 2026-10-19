@@ -16,8 +16,7 @@ load_script ai_tools/codex/install.sh
 stub pgrep 'exit 1'
 # Signed in, for the status runs below
 stub codex 'echo "Logged in using ChatGPT" >&2'
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 
 yq --version 2>/dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 
@@ -90,15 +89,14 @@ assert_eq 'null null' "$(get .default_permissions) $(get .permissions)" "profile
 
 # On Ubuntu, the same sandbox, with notifications and MCP tokens set for SSH, and no [desktop]
 # keys, since there's no ChatGPT app. Status doesn't expect them, and leaves ones already there.
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on Ubuntu"
 assert_eq null "$(get .desktop)" "[desktop] on Ubuntu"
 assert_eq '"osc9"' "$(get .tui.notification_method)" "the notification method on Ubuntu"
 assert_eq '"file"' "$(get .mcp_oauth_credentials_store)" "the MCP token store on Ubuntu"
-bwrap_works() { true; }
+replace_fn bwrap_works 'true'
 stub brew 'exit 1'
 set_key .desktop.followUpQueueMode '"queue"'
 run status
@@ -114,8 +112,14 @@ assert_not_contains "$RUN_OUTPUT" ".credentials.json"
 echo '{}' > "$CODEX_CREDENTIALS"
 chmod 644 "$CODEX_CREDENTIALS"
 run status
-assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you: its mode is 644; run chmod 600 ~/.codex/.credentials.json"
-chmod 600 "$CODEX_CREDENTIALS"
+assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+# The step sets it, and a second run changes nothing
+codex_items
+assert_exit 0 items_apply codex_credentials_private
+assert_contains "$RUN_OUTPUT" "Made Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
+assert_eq 600 "$(file_mode "$CODEX_CREDENTIALS")" "the tokens' mode after the step"
+assert_exit 0 items_apply codex_credentials_private
+assert_eq "" "$RUN_OUTPUT" "a second run's output"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 rm -f "$CODEX_CREDENTIALS"
@@ -301,13 +305,11 @@ stub brew 'exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
 assert_contains "$RUN_OUTPUT" "ok         Codex's status line (tui.status_line): yours, [\"model\",\"git-branch\"] (the repo's is $repo_line)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
+replace_fn is_interactive 'true'
+replace_fn confirm 'local reply
+echo "$1"
+read -r reply
+[ "$reply" == y ]'
 assert_exit 0 configure_codex <<< n
 assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model\",\"git-branch\"], not the repo's $repo_line. Replace it?"
 assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config after no"
@@ -317,8 +319,7 @@ run status
 assert_not_contains "$RUN_OUTPUT" "yours"
 # Reloading brings back the real confirm and is_interactive
 load_script ai_tools/codex/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 printf '%s\n' "$mine" > "$CODEX_CONFIG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_ASSUME_YES=1"
@@ -327,7 +328,7 @@ assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_
 # "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. The stubbed
 # codex stands in for the cask's.
 stub brew 'exit 1'
-codex_cask_path() { echo "$STUB_DIR/codex"; }
+replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
 stub codex 'echo "Logged in using ChatGPT" >&2'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Signed in to Codex"
@@ -336,9 +337,45 @@ stub codex 'echo "Not logged in" >&2; exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
-is_macos() { false; }
-is_ubuntu() { true; }
-bwrap_works() { true; }
+as_os ubuntu
+replace_fn bwrap_works 'true'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
+
+# Status reads the values you can change, and the repo's, with one yq each, rather than one per
+# value. The configure phase reads them again once ChatGPT quits: a model the app removed as it
+# quit counts as unset, so the repo's is set, though your own was there before.
+real_yq="$(command -v yq)"
+as_os macos
+stub yq 'exec '"$(printf %q "$real_yq")"' "$@"'
+: > "$STUB_LOG"
+run status
+assert_eq 5 "$(grep -c '^yq' "$STUB_LOG")" "yq runs in status: version, values, repo's values, and the settings check"
+rm -f "$STUB_DIR/yq"
+printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"
+replace_fn ensure_app_quit 'yq -i -p toml -o toml "del(.model)" "$CODEX_CONFIG"'
+assert_exit 0 configure_codex
+assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model after ChatGPT removed yours as it quit"
+load_script ai_tools/codex/install.sh
+
+# A yq older than 4.54.1, or another tool named yq, fails the step before it changes anything, and
+# status says to upgrade it. Newer versions, by any part, pass.
+for version in "v4.54.1" "v4.55.0" "v4.100.0" "v5.0.0"; do
+    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
+    codex_yq_new_enough || fail "yq $version counts as too old"
+done
+for version in "v4.54.0" "v4.9.9" "v3.99.99"; do
+    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
+    codex_yq_new_enough && fail "yq $version counts as new enough"
+done
+: > "$STUB_LOG"
+run apply
+assert_eq 1 "$RUN_STATUS" "apply's exit with yq 3.99.99"
+assert_contains "$RUN_OUTPUT" "yq 3.99.99 isn't mikefarah's yq 4.54.1 or newer, which the Codex config edit needs; run brew upgrade yq"
+assert_file_not_contains "$STUB_LOG" "brew"
+stub yq 'echo "yq 3.4.3"'
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
+assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
+rm -f "$STUB_DIR/yq"
 test_done

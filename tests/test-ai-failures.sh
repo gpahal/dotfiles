@@ -14,8 +14,8 @@ stub pgrep 'exit 1'
 
 claude_failure() {
     load_script ai_tools/claude-code/install.sh
-    install_claude_code() { return 1; }
-    claude_code_have_git_wt() { true; }
+    replace_fn install_claude_code 'return 1'
+    replace_fn claude_code_have_git_wt 'true'
     main
 }
 assert_exit 1 claude_failure
@@ -24,10 +24,21 @@ assert_file_contains "$HOME/.claude/settings.json" '"autoMemoryEnabled": false'
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after installation failed"
 rm -rf "$HOME/.claude"
 
+# An installer that succeeds without leaving claude fails the install
+installer_without_claude() {
+    load_script ai_tools/claude-code/install.sh
+    hide claude
+    replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
+    install_claude_code
+}
+assert_exit 1 installer_without_claude
+assert_contains "$RUN_OUTPUT" "The Claude Code installer finished, but there's no claude on PATH or in ~/.local/bin."
+assert_file_contains "$STUB_LOG" "run_installer bash https://claude.ai/install.sh"
+
 desktop_failure() {
     load_script ai_tools/claude-desktop/install.sh
-    is_macos() { true; }
-    install_cask() { return 1; }
+    as_os macos
+    replace_fn install_cask 'return 1'
     main
 }
 assert_exit 1 desktop_failure
@@ -37,8 +48,8 @@ assert_file_contains "$HOME/Library/Application Support/Claude/claude_desktop_co
 stub launchctl
 t3_failure() {
     load_script ai_tools/t3-code/install.sh
-    is_macos() { true; }
-    t3_code_app_path() { return 1; }
+    as_os macos
+    replace_fn t3_code_app_path 'return 1'
     main
 }
 assert_exit 1 t3_failure
@@ -49,9 +60,9 @@ assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED fals
 # fail and leave no success message, while independent instruction copying carries on.
 claude_write_failure() {
     load_script ai_tools/claude-code/install.sh
-    install_claude_code() { return 0; }
-    claude_code_have_git_wt() { true; }
-    json_merge() { return 1; }
+    replace_fn install_claude_code 'return 0'
+    replace_fn claude_code_have_git_wt 'true'
+    replace_fn json_merge 'return 1'
     main
 }
 rm -rf "$HOME/.claude"
@@ -63,7 +74,7 @@ assert_not_contains "$RUN_OUTPUT" "Turned on push notifications"
 # nothing rather than /bin/codex
 load_script ai_tools/codex/install.sh
 hide brew
-cask_state() { echo "cask_state $*" >> "$STUB_LOG"; }
+replace_fn cask_state 'echo "cask_state $*" >> "$STUB_LOG"'
 assert_exit 1 install_cask claude /Applications/Claude.app
 assert_eq "  $(missing_cmd_hint brew)" "$RUN_OUTPUT" "install_cask without brew"
 assert_exit 1 install_codex_cli
@@ -77,10 +88,9 @@ stub brew 'exit 1'
 if yq --version 2>/dev/null | grep -q mikefarah; then
     codex_failure() {
         load_script ai_tools/codex/install.sh
-        is_macos() { [ "$TEST_OS" == macos ]; }
-        is_ubuntu() { [ "$TEST_OS" == ubuntu ]; }
-        install_cask() { return 1; }
-        setup_codex_sandbox() { echo sandbox >> "$STUB_LOG"; }
+        as_os "$TEST_OS"
+        replace_fn install_cask 'return 1'
+        replace_fn setup_codex_sandbox 'echo sandbox >> "$STUB_LOG"'
         main
     }
     for TEST_OS in macos ubuntu; do

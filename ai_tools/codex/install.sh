@@ -15,9 +15,11 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/keepable.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/tool-home.sh
+source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck source=../lib/user-instructions.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
+source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -27,9 +29,6 @@ CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
 # Where Ubuntu keeps MCP OAuth tokens in plain text (mcp_oauth_credentials_store below)
 CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
-# The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
-# the step rather than leaving Codex reading files setup never wrote
-CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
 # Ubuntu's apparmor package installs this profile, which loads at boot
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
@@ -525,9 +524,7 @@ status() {
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
-    else
+    if tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$CODEX_DIR"; then
         if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             :
         elif ! codex_yq_new_enough; then
@@ -552,10 +549,7 @@ status() {
 
 apply() {
     echo "Setting up Codex..."
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2
-        return 1
-    fi
+    tool_home_guard Codex CODEX_HOME "$CODEX_DIR" || return 1
     require_cmd yq || return 1
     if ! codex_yq_new_enough; then
         echo "  $(codex_yq_too_old)" >&2

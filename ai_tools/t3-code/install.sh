@@ -23,6 +23,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
+# shellcheck source=../lib/app-json.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -306,15 +308,11 @@ configure_t3_code() {
     items_apply t3_code_telemetry_off || result=1
 
     t3_code_choose_custom_values
-    if json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" &&
-        json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"; then
-        echo "  The $T3_CODE_SERVER_SETTINGS_NAME and app settings are already set"
-        return "$result"
-    fi
-    ensure_app_quit "${app_name:-T3 Code}" || return "$result"
-    json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || return 1
-    json_merge "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER" || return 1
-    echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and app settings"
+    merge_app_json "${app_name:-T3 Code}" \
+        "The $T3_CODE_SERVER_SETTINGS_NAME and app settings are already set" \
+        "Set the $T3_CODE_SERVER_SETTINGS_NAME and app settings" \
+        "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" \
+        "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER" || return 1
     return "$result"
 }
 

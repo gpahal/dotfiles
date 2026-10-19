@@ -8,9 +8,11 @@ set -euo pipefail
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/keepable.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/tool-home.sh
+source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck source=../lib/user-instructions.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
+source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -19,9 +21,6 @@ CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
 CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
-# The paths above and the docs all assume ~/.claude, so another CLAUDE_CONFIG_DIR fails the step
-# rather than leaving Claude Code reading files setup never wrote
-CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); unset CLAUDE_CONFIG_DIR or move it"
 # The worktree hook runs git wt, which the git step installs. Registered without it, every
 # `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
@@ -245,8 +244,8 @@ status() {
         status_item missing "Claude Code"
         status_item unknown "Signed in to Claude Code: Claude Code isn't installed"
     fi
-    if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then
-        status_item unknown "Claude Code settings, status line, and instructions: $CLAUDE_CODE_HOME_POLICY"
+    if ! tool_home_guard --status "Claude Code settings, status line, and instructions" \
+        "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude"; then
         status_result
         return
     fi
@@ -266,10 +265,7 @@ status() {
 apply() {
     # Anthropic's installer prints "Setting up Claude Code..." itself
     echo "Claude Code:"
-    if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then
-        echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but $CLAUDE_CODE_HOME_POLICY" >&2
-        return 1
-    fi
+    tool_home_guard "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude" || return 1
     require_cmd jq || return 1
     # Anthropic's installer downloads with curl
     if ! claude_code_path > /dev/null; then

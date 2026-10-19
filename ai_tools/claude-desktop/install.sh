@@ -11,6 +11,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
+# shellcheck source=../lib/app-json.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
 
 STEP_OS=macos
 # shellcheck disable=SC2034 # run_steps reads it
@@ -57,15 +59,12 @@ CLAUDE_DESKTOP_SETTINGS='
 
 configure_claude_desktop() {
     echo "Configuring Claude desktop app..."
-    if json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"; then
-        echo "  Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are"
-        echo "  already set"
-        return 0
-    fi
-    ensure_app_quit "Claude" || return 0
-    json_merge "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS" || return 1
-    echo "  Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,"
-    echo "  and Cowork browser, web search, and scheduled tasks"
+    merge_app_json Claude \
+        "Notifications, keep-awake, archiving, menu bar, quick entry, and Cowork settings are
+already set" \
+        "Set notifications, keep-awake, archiving, no menu bar icon, Option+Space quick entry,
+and Cowork browser, web search, and scheduled tasks" \
+        "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
 }
 
 status() {

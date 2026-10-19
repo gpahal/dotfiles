@@ -46,13 +46,17 @@ local function open(bundleID, name)
     return false
 end
 
--- open-in shows a notification when it fails, so only its log line is left to print. Returns the
--- task, or nil when it couldn't start.
+-- open-in shows a notification when it fails, so only its log line is left to print. bash exits
+-- 127 when open-in is missing and 126 when it can't run it, and then no notification shows, so
+-- those get an alert. Returns the task, or nil when it couldn't start.
 local function openIn(target)
     local task
-    task = hs.task.new("/bin/bash", function(_, _, stderr)
+    task = hs.task.new("/bin/bash", function(exitCode, _, stderr)
         dotfiles.tasks[task] = nil
         print("open-in: " .. stderr)
+        if exitCode == 126 or exitCode == 127 then
+            hs.alert.show("Couldn't run " .. OPEN_IN .. "; re-run the hammerspoon step")
+        end
     end, { OPEN_IN, target })
     local env = task:environment()
     env.OPEN_IN_CALLER = "Hammerspoon"

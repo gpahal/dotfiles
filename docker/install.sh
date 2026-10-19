@@ -38,23 +38,16 @@ DOCKER_UNATTENDED_CONTENT='// From the dotfiles docker step: install Docker upda
 Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
 DOCKER_DAEMON_CONFIG=/etc/docker/daemon.json
 DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, and address pools"
-# The local log driver rotates each container's logs (5 files of 20 MB); json-file, the default,
-# grows without limit. It applies to containers created after the change. live-restore keeps
-# containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
-# 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
-# default-network-opts the user-defined networks, such as Compose's, created after the change.
-# Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
-# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
-# 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
-# of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
-# Compose project per worktree. docker0 keeps the subnet Docker's network store gave it when the
-# daemon first started, through a reboot or a deleted docker0: 172.17.0.0/16, since the packages
-# start Docker before the step writes this file.
-# ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
-# 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
-# a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
-# other ports, and each user-defined network's bridge, br-<first 12 characters of the network ID>,
-# needs its own rule. The step adds neither.
+# The local log driver rotates the logs of containers created from now on (5 files of 20 MB);
+# json-file, the default, grows without limit. live-restore keeps containers running while the
+# daemon restarts. Published ports listen on 127.0.0.1 unless given an address, since they bypass
+# ufw: ip covers the default bridge, and default-network-opts networks created from now on.
+# Docker's default pools end in 192.168.0.0/16, which the ubuntu step's ufw lets SSH in from, so
+# default-address-pools keeps new networks in 172.17.0.0 to 172.31.255.255, in /24s, since 15 /16s
+# would run out with a Compose project per worktree. docker0 keeps the 172.17.0.0/16 it got when
+# the packages first started Docker.
+# ufw blocks containers from the host's ports; `sudo ufw allow in on docker0`, and one rule per
+# br-<network ID prefix>, opens them, which the step leaves to you.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
@@ -153,10 +146,9 @@ write_docker_auto_updates() {
     write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
 }
 
-# The step's items, in the order apply fixes them: the packages first, since the rest needs them,
-# then the socket, then the daemon config, so a daemon that starting at boot starts reads it
-# rather than restarting for it. The daemon item's pending text says when it can't be read
-# without sudo, and what a restart does to a running daemon.
+# In the order apply fixes them: the packages first, since the rest needs them, then the socket,
+# then the daemon config before enabling the service, so a daemon started at boot reads the config
+# rather than restarting for it.
 docker_items() {
     local daemon_pending="Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
     daemon_config_unreadable && daemon_pending="Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it"
@@ -319,8 +311,8 @@ status_docker_ports() {
     fi
 }
 
-# Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
-# are cached, and is otherwise unverified.
+# A config only root can read is checked with sudo -n when sudo credentials are cached, and is
+# otherwise unverified.
 status() {
     local installed=false SUDO_CACHED_CACHE=no
     ! sudo_cached || SUDO_CACHED_CACHE=yes
@@ -335,7 +327,6 @@ status() {
         status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
     fi
     items_status socket_ready starts_at_boot
-    # A config only root can read, or no jq, can't be checked
     if daemon_config_unreadable && ! sudo_ready; then
         status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
@@ -447,7 +438,6 @@ apply() {
         items_apply docker_installed || return 1
         "$installed" || fresh=true
         ! "$repair_source" || add_docker_repo || result=1
-        # Each item from here on runs whether or not the one before it failed
         items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
         if [ "$result" -ne 0 ]; then
             echo "  Applied the rest. Some changes failed; see the errors above." >&2

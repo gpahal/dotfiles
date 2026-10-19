@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Disk and machine health for the ubuntu step: smartd and SMART, fwupd, and the packages whose
 # updates need a reboot.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # smartmontools enables smartd when it installs, but it may have been turned off since
 smartd_enabled() {

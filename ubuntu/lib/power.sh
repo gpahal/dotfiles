@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Power and recovery for the ubuntu step: the sleep targets, sleep.conf, and the sysctl settings.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 sleep_masked() {
     local target

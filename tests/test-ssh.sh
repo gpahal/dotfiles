@@ -216,6 +216,13 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
 rm "$HOME/.ssh"
 mv "$SANDBOX/ssh-real" "$HOME/.ssh"
+# So is a symlinked ~/.ssh/config, by the file it points to
+mv "$SSH_CONFIG" "$SANDBOX/ssh-config"
+ln -s "$SANDBOX/ssh-config" "$SSH_CONFIG"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
+rm "$SSH_CONFIG"
+mv "$SANDBOX/ssh-config" "$SSH_CONFIG"
 
 # A Host line counts when it lists the pattern itself, before any comment, and case matters
 host_line_case() {

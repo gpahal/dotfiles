@@ -691,14 +691,14 @@ json_applied() {
     [ -s "$1" ] && jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" "$1" &>/dev/null
 }
 
-# Print a file's permission bits in octal, e.g. 644. It asks stat which form it takes rather than
-# using is_macos, which tests override: GNU stat (Ubuntu, or coreutils on macOS) takes -c, and
-# macOS's own takes -f.
+# Print a file's permission bits in octal, e.g. 644, following a symlink to its target, whose mode
+# is the one that counts. It asks stat which form it takes rather than using is_macos, which tests
+# override: GNU stat (Ubuntu, or coreutils on macOS) takes -c, and macOS's own takes -f.
 file_mode() {
     if stat -c %a / &>/dev/null; then
-        stat -c %a "$1"
+        stat -L -c %a "$1"
     else
-        /usr/bin/stat -f %Lp "$1"
+        /usr/bin/stat -L -f %Lp "$1"
     fi
 }
 

@@ -171,10 +171,10 @@ nut_password() {
     echo "$password"
 }
 
-# Print a file's owner, group, and permission bits in octal, e.g. "root nut 640". GNU stat, as
-# Ubuntu's, takes -c; macOS's, which the tests run, takes -f.
+# Print a file's owner, group, and permission bits in octal, e.g. "root nut 640", following a
+# symlink to its target. GNU stat, as Ubuntu's, takes -c; macOS's, which the tests run, takes -f.
 owner_group_mode() {
-    stat -c '%U %G %a' "$1" 2>/dev/null || stat -f '%Su %Sg %Lp' "$1"
+    stat -L -c '%U %G %a' "$1" 2>/dev/null || stat -L -f '%Su %Sg %Lp' "$1"
 }
 
 # nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and is

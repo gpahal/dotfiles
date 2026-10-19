@@ -308,6 +308,12 @@ NUT_OWNER=root
 assert_exit 1 nut_files_current
 # shellcheck disable=SC2034 # nut_file_current reads it
 NUT_OWNER="$(id -un)"
+# A symlink to a file that is current counts as current: its target's owner, group, and mode count
+mv "$NUT_DIR/upsd.users" "$SANDBOX/upsd.users"
+ln -s "$SANDBOX/upsd.users" "$NUT_DIR/upsd.users"
+assert_exit 0 nut_files_current
+rm "$NUT_DIR/upsd.users"
+mv "$SANDBOX/upsd.users" "$NUT_DIR/upsd.users"
 
 # The RTC wake hook out of date: status says so, and the step replaces it alone
 echo "# edited" >> "$UPS_RTC_HOOK"

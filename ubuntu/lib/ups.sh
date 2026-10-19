@@ -228,7 +228,8 @@ ups_notifier_installed() {
 }
 
 install_ups_notifier() {
-    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_ntfy_lib
+    # The ntfy code first, since the notifier sources it as soon as it runs
+    install_ntfy_lib && install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one

@@ -191,7 +191,8 @@ smartd_hook_installed() {
 }
 
 install_smartd_hook() {
-    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_ntfy_lib
+    # The ntfy code first, since the hook sources it as soon as it runs
+    install_ntfy_lib && install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755
 }
 
 # In a VM smartd doesn't run, so its hook doesn't matter there

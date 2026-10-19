@@ -189,6 +189,13 @@ chmod 644 "$checkout"/*
     NTFY_LIB_SRC="$checkout/ntfy.sh"
 }
 assert_exit 1 smartd_hook_installed
+# Each hook goes in only after the ntfy code it sources, so it never runs without it
+rm -f "$SMARTD_HOOK" "$UPS_NOTIFY" "$NTFY_LIB"
+mkdir -p "$NTFY_LIB"
+assert_exit 1 install_smartd_hook
+assert_exit 1 install_ups_notifier
+[ ! -e "$SMARTD_HOOK" ] && [ ! -e "$UPS_NOTIFY" ] || fail "a hook went in without the ntfy code"
+rmdir "$NTFY_LIB"
 assert_exit 0 install_smartd_hook
 assert_exit 0 install_ups_notifier
 assert_eq 755 "$(file_mode "$SMARTD_HOOK")" "smartd's hook's mode"

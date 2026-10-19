@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: macos
 
 # The T3 Code desktop app's setup on macOS. configure_t3_code writes the LaunchAgent that sets
 # telemetry off in launchd's environment and then opens T3 Code at login, runs launchctl setenv
@@ -25,7 +24,6 @@ mkdir -p "$APP"
 t3_code_app_path() { echo "$APP"; }
 # launchd's environment is in $SANDBOX/launchd-env: setenv writes the value, and getenv prints it
 stub_launchd() {
-    # shellcheck disable=SC2016 # expanded by the stub
     stub launchctl 'case "$1" in
     setenv) echo "$3" > "'"$SANDBOX"'/launchd-env" ;;
     getenv) cat "'"$SANDBOX"'/launchd-env" 2>/dev/null || true ;;
@@ -145,7 +143,6 @@ assert_contains "$RUN_OUTPUT" "Server settings in ~/.t3/userdata/settings.json"
 # The app renamed itself as it updated, before the cask caught up, as when T3 Code drops its
 # release stage: it counts as installed, not gone, so setup doesn't reinstall the cask's app beside
 # it. The nightly build doesn't count.
-# shellcheck disable=SC2016 # expanded by the stub
 stub brew 'case "$1" in
     info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
 esac'
@@ -159,8 +156,41 @@ run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
 assert_file_not_contains "$STUB_LOG" "brew reinstall"
 assert_file_not_contains "$STUB_LOG" "brew install"
-# Without it, the cask's app is gone, and setup reinstalls it
+# A run asks brew about the cask once
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run"
+# Without it, the cask's app is gone, and setup reinstalls it, still asking brew once
 rm -r "$SANDBOX/Applications/T3 Code.app"
+: > "$STUB_LOG"
 run status
 assert_contains "$RUN_OUTPUT" "missing    t3-code (cask): brew lists it, but its app is gone"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in status"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in status"
+: > "$STUB_LOG"
+run main
+assert_file_contains "$STUB_LOG" "brew reinstall"
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run that reinstalls"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run that reinstalls"
+# The cask's app in place is installed, and asks brew once too
+mkdir -p "$APP"
+: > "$STUB_LOG"
+run main
+assert_contains "$RUN_OUTPUT" "t3-code already installed."
+assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run with the app in place"
+assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run with the app in place"
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
+# A renamed app brew doesn't list was installed outside Homebrew
+rm -r "$APP"
+mkdir -p "$SANDBOX/Applications/T3 Code.app"
+stub brew 'case "$1" in
+    list) exit 1 ;;
+    info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
+esac'
+run status
+assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
+: > "$STUB_LOG"
+run main
+assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
+assert_file_not_contains "$STUB_LOG" "brew install"
 test_done

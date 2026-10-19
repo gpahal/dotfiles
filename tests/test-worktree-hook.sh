@@ -426,6 +426,42 @@ printf '{"session_id":"s2","hook_event_name":"SessionEnd","cwd":"%s"}' "$repo" |
 for name in e-changed e-copy e-committed e-other e-unmarked; do
     git -C "$repo" wt rm -f "$name" 2> /dev/null
 done
+# A .env that's a symlink in the checkout is copied as the file it points at, so the worktree has
+# its own copy, and the worktree still counts as clean
+mv "$repo/.env" "$repo/env-a"
+ln -s env-a "$repo/.env"
+create e-link "$repo" s3
+[ ! -L "$dir/e-link/.env" ] || fail "the hook copied the .env symlink as a link"
+assert_eq "secret" "$(cat "$dir/e-link/.env" 2> /dev/null)" "the .env copied into e-link"
+end_session s3 "$repo"
+[ ! -e "$dir/e-link" ] || fail "SessionEnd hook kept e-link, whose .env is a copy of the checkout's"
+rm "$repo/.env"
+mv "$repo/env-a" "$repo/.env"
+
+# Homebrew's dirs go after the PATH the hook starts with, so it runs the session's git. The hook
+# hard-codes them, so a copy points them into the sandbox.
+session_git() {
+    local name
+    mkdir -p "$SANDBOX/brew/bin" "$SANDBOX/session-bin"
+    for name in brew session; do
+        printf '%s\n' '#!/bin/bash' "echo $name >> \"$SANDBOX/git.log\"" "exec \"$real_git\" \"\$@\"" \
+            > "$SANDBOX/$name-bin-git"
+    done
+    mv "$SANDBOX/brew-bin-git" "$SANDBOX/brew/bin/git"
+    mv "$SANDBOX/session-bin-git" "$SANDBOX/session-bin/git"
+    chmod +x "$SANDBOX/brew/bin/git" "$SANDBOX/session-bin/git"
+    sed -e "s|/opt/homebrew/bin|$SANDBOX/brew/bin|" -e "s|/home/linuxbrew/.linuxbrew/bin|$SANDBOX/brew/bin|" \
+        "$REPO_DIR/ai_tools/claude-code/worktree-hook.sh" > "$SANDBOX/hook.sh"
+    hook="$SANDBOX/hook.sh"
+    rm "$HOME/.local/bin/git"
+    PATH="$SANDBOX/session-bin:$PATH"
+    create e-path "$repo" s4
+    assert_eq "0 $dir/e-path" "$status $out" "create hook with a git in Homebrew's dir"
+    assert_file_contains "$SANDBOX/git.log" session
+    assert_file_not_contains "$SANDBOX/git.log" brew
+    git -C "$repo" wt rm -f e-path 2> /dev/null
+}
+subtest session_git
 rm -r "$repo/.claude"
 
 # The claude-code step registers the hook for the three events, once, keeps hooks for other

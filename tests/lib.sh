@@ -57,8 +57,8 @@ setup_sandbox() {
     # mktemp's files go with the sandbox, among them the new contents a failed write_back keeps.
     # macOS's mktemp ignores TMPDIR without a template, so a wrapper below gives it one.
     export TMPDIR="$SANDBOX/tmp"
-    # Set, so zsh/main.zsh and ~/.zprofile don't run the real brew's shellenv, and pointing
-    # nowhere, so they put no real Homebrew dir ahead of the stubs
+    # Set, so zsh/path.zsh doesn't set the real Homebrew's environment, and pointing nowhere, so
+    # it puts no real Homebrew dir ahead of the stubs
     export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
     # The apt sources directory, where tests point the steps' apt sources, and the release
     # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
@@ -173,7 +173,6 @@ _stubs_first() {
 # e.g. stub systemctl '[ "$2" != is-active ] || echo active'
 stub() {
     local name="$1" body="${2:-}"
-    # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
     chmod +x "$STUB_DIR/$name"
 }
@@ -186,7 +185,6 @@ stub() {
 # with set --, as to drop options that need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
-    # shellcheck disable=SC2016 # expanded by the stub
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
@@ -231,7 +229,6 @@ EOF
 # sentinel. Every test writes about 60, so printf writes them and one chmod marks them all.
 _sentinels() {
     local cmd body
-    # shellcheck disable=SC2016 # expanded by the sentinel
     body="$(printf '#!/bin/bash\nlog=%q\n' "$SANDBOX/unstubbed.log")"'
 printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$log"
 echo "unstubbed command: ${0##*/}" >&2
@@ -309,6 +306,23 @@ test_done() {
     TEST_DONE=true
 }
 
+# Commit in repo $1, as an identity of the test's own, since the sandbox has no git config to give
+# one. The other arguments go to git commit.
+# e.g. git_commit "$SANDBOX/repo" --allow-empty -m one
+git_commit() {
+    local repo="$1"
+    shift
+    git -C "$repo" -c user.name=test -c user.email=test@example.com commit -q "$@"
+}
+
+# Stub what the zsh step reads your login shell with, dscl on macOS and getent on Ubuntu, to say
+# it's zsh already, and chsh to fail, so the step neither asks to change it nor changes it
+stub_login_shell_zsh() {
+    stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
+    stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
+    stub chsh 'exit 1'
+}
+
 # Stand in for GitHub for the tmux plugins in tmux/plugins.lock: give each a local repo with two
 # commits, under $SANDBOX/remotes, which a git url rewrite makes https://github.com/<repo>, and pin
 # each to its first commit, not HEAD, in a lock file the tmux step reads through
@@ -324,7 +338,7 @@ fake_tmux_plugins() {
         for n in 1 2; do
             echo "$repo $n" > "$remote/README"
             git -C "$remote" add README
-            git -C "$remote" -c user.name=test -c user.email=test@example.com commit -qm "$n"
+            git_commit "$remote" -m "$n"
             [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
         done
         echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
@@ -333,38 +347,44 @@ fake_tmux_plugins() {
     export GIT_CONFIG_VALUE_0=https://github.com/
 }
 
-# Source lib/common.sh or a step script, given relative to the repo, so the test can call its
-# functions. Remaining arguments become the script's "$@". A step runs main only when run
-# directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
-# A syntax error in the script or in lib/common.sh, which steps source, ends the test with status
-# 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
+# Source lib/common.sh, lib/system.sh, or a step script, given relative to the repo, so the test
+# can call its functions. Remaining arguments become the script's "$@". A step runs main only when
+# run directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
+# A syntax error in the script or in lib/common.sh or lib/system.sh, which steps source, ends the
+# test with status 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
 # e.g. load_script vim/install.sh
 load_script() {
     local script="$REPO_DIR/$1" f
     shift
-    for f in "$script" "$REPO_DIR/lib/common.sh"; do
+    for f in "$script" "$REPO_DIR/lib/common.sh" "$REPO_DIR/lib/system.sh"; do
         if ! "$BASH" -n "$f"; then
             echo "Syntax error in $f" >&2
             exit 2
         fi
     done
     # lib/common.sh defines its default main only when none exists, so a step loaded earlier with
-    # its own main would hide a later step's default one. Reloading lib/common.sh alone keeps main.
-    [ "$script" == "$REPO_DIR/lib/common.sh" ] || unset -f main
+    # its own main would hide a later step's default one. Loading lib/common.sh or lib/system.sh
+    # alone keeps main.
+    case "$script" in
+        "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
+        *) unset -f main ;;
+    esac
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first
 }
 
 # Copy a root ntfy hook (ubuntu/smartd-notify.sh or ubuntu/ups-notify.sh) to <dest>, with its
-# NTFY_URL_FILE and NTFY_LIB constants pointed at <url-file> and <lib>. The hooks hard-code the
-# installed paths, since root runs them, so no variable may redirect them.
+# NTFY_URL_FILE and NTFY_LIB constants pointed at <url-file> and <lib>, and its PATH set to the
+# test's, so the stubs come first. The hooks hard-code the installed paths and system PATH, since
+# root runs them, so no variable may redirect them.
 # e.g. ntfy_hook_copy ubuntu/smartd-notify.sh "$SANDBOX/ntfy-url" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$SANDBOX/hook"
 ntfy_hook_copy() {
     sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
-        "$REPO_DIR/$1" > "$4"
-    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4"; then
-        fail "$1 has no NTFY_URL_FILE= or NTFY_LIB= line to point at the sandbox"
+        -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
+    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4" ||
+        ! grep -qxF "PATH=\"$PATH\"" "$4"; then
+        fail "$1 has no NTFY_URL_FILE=, NTFY_LIB=, or PATH= line to point at the sandbox"
     fi
 }
 

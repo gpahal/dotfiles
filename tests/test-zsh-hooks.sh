@@ -18,7 +18,6 @@ setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 SOCKET="$SANDBOX/tmux/default"
 export TMUX_ENV="$SANDBOX/tmux-env"
-# shellcheck disable=SC2016 # expanded by the stub
 stub tmux '[ "$1" != show-environment ] || cat "$TMUX_ENV"'
 
 # Run the hook once per argument, after running that argument as a shell command, in one zsh that
@@ -132,7 +131,6 @@ fi
 # zsh/title.zsh sets the title with OSC 2: the directory at the prompt, and the command line, with
 # its control characters as spaces, while it runs, unless it starts with a space
 mkdir -p "$HOME/proj"
-# shellcheck disable=SC2016 # expanded by zsh
 title_script='source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
 assert_eq "$(printf '\033]2;~/proj\a\033]2;echo a  b\a')" \
     "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" $'echo a\n b')" "the titles"

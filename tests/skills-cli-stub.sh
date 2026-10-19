@@ -21,8 +21,17 @@ stub node 'echo "${NODE_VERSION:-v24.0.0}"'
 # remove, like the real one with --agent claude-code codex, deletes the Claude Code link, and the
 # shared copy only when no other agent that reads ~/.agents/skills is installed. NPX_FAIL=1 makes
 # add fail; NPX_REMOVE_FAIL=1 makes remove fail, changing nothing. NPX_SKIP=<name> makes add skip
-# that skill but exit zero.
+# that skill but exit zero. Like npm exec, it runs the skills package of the project it runs in
+# instead, when there is one: the nearest of its working directory and that directory's parents
+# with a package.json or a node_modules. It records its working directory in $NPX_ENV_LOG.
+NPX_ENV_LOG="$SANDBOX/npx-env.log"
 stub npx '
+echo "$PWD" >> "'"$NPX_ENV_LOG"'"
+project="$PWD"
+while [ "$project" != / ] && [ ! -e "$project/package.json" ] && [ ! -e "$project/node_modules" ]; do
+    project="$(dirname "$project")"
+done
+[ ! -x "$project/node_modules/.bin/skills" ] || exec "$project/node_modules/.bin/skills" "$@"
 case "$3" in
     add)
         [ "${NPX_FAIL:-}" != 1 ] || exit 1

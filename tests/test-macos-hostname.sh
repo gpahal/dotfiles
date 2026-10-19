@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: macos
 
 # The macos step sets HostName to LocalHostName when it's unset or has characters a URL can't
 # hold, after asking, since Ghostty drops an OSC 7 folder report whose host is such a name. A
@@ -21,7 +20,6 @@ status_filevault() { true; }
 status_app_firewall() { true; }
 
 # HOST_NAME is HostName, unset when empty
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub scutil 'case "$1 $2" in
     "--get HostName") [ -n "${HOST_NAME:-}" ] && echo "$HOST_NAME" ;;
     "--get LocalHostName") echo Garvits-MacBook-Pro ;;

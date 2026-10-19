@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# os: macos
 
 # The macos step turns off Spotlight's Cmd+Space shortcut (symbolic hotkey 64), so Raycast can
 # take it, and applies it with activateSettings. Its status checks it. The next input source's

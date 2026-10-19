@@ -57,7 +57,7 @@ sysctl_written() {
 # Print the files sysctl --system reads after $SYSCTL_CONF, whose values win over it, one per line
 # in the order it reads them. It reads the *.conf files in the SYSCTL_SOURCES dirs sorted by name,
 # only the first of each name in the dirs' order, then a source that's a file, /etc/sysctl.conf.
-sysctl_later_files() {
+sysctl_files_read_later() {
     local LC_ALL=C source file name ours seen=" "
     ours="${SYSCTL_CONF##*/}"
     for source in "${SYSCTL_SOURCES[@]}"; do
@@ -80,7 +80,7 @@ sysctl_later_files() {
 # as "<key> is <value>, set by <files>", one per line
 sysctl_overrides() {
     local key have files file later=()
-    while IFS= read -r file; do later+=("$file"); done < <(sysctl_later_files)
+    while IFS= read -r file; do later+=("$file"); done < <(sysctl_files_read_later)
     [ ${#later[@]} -gt 0 ] || return 0
     while read -r key have; do
         files=""

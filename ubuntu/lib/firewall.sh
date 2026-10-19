@@ -1,14 +1,29 @@
 # shellcheck shell=bash
 # ufw for the ubuntu step: SSH only from the private address ranges, on the ports sshd and
-# ssh.socket listen on, and any port from the tailnet (tailscale0), which Tailscale's ACLs limit.
+# ssh.socket listen on, but never from Docker's bridges, and any port from the tailnet
+# (tailscale0), which Tailscale's ACLs limit.
 # ufw goes on only while no SSH session comes from elsewhere.
 # ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
 
-# Succeeds when ufw is on and denies incoming connections, which its config files show to anyone
+# Succeeds when ufw is on and denies incoming connections: its config files say so, and
+# ufw.service, which loads the rules at boot, is enabled and active. systemctl stop ufw, or a unit
+# that failed at boot, unloads the rules but leaves the files as they were. Anyone may read both.
 ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
         grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
-        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null
+        grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULTS" 2>/dev/null &&
+        systemctl is-enabled -q ufw.service 2>/dev/null &&
+        systemctl is-active -q ufw.service 2>/dev/null
+}
+
+# ufw_stopped <sudo flags>: succeeds when `ufw status` says ufw is inactive, though ufw_enabled may
+# succeed, as after /usr/lib/ufw/ufw-init stop, which unloads the rules and leaves the files and
+# ufw.service as they were. Only root can run it. Fails when ufw is active, or its status can't be
+# read.
+ufw_stopped() {
+    local out
+    out="$(sudo "$@" ufw status 2>/dev/null)" || return 1
+    [ "$(head -n 1 <<< "$out")" == "Status: inactive" ]
 }
 
 # Succeeds when ufw filters IPv6 too. With IPV6=no, it leaves sshd open on the global IPv6
@@ -40,13 +55,18 @@ sshd_ports() {
     } | sort -un
 }
 
-# The allow rules the firewall needs, as `ufw status` lists them with runs of spaces squeezed: the
-# SSH ports from each private range, anything on tailscale0, and Tailscale's UDP port from
-# anywhere. Takes sudo's flags.
+# The rules the firewall needs, as `ufw status` lists them with runs of spaces squeezed: the SSH
+# ports denied on Docker's bridges ($DOCKER_BRIDGES), over IPv4 and IPv6, then allowed from each
+# private range, anything on tailscale0, and Tailscale's UDP port from anywhere. Takes sudo's
+# flags.
 ufw_wanted_rules() {
-    local ports port range
+    local ports port range bridge
     ports="$(sshd_ports "$@")" && [ -n "$ports" ] || return 1
     for port in $ports; do
+        for bridge in "${DOCKER_BRIDGES[@]}"; do
+            echo "$port/tcp on $bridge DENY Anywhere"
+            echo "$port/tcp (v6) on $bridge DENY Anywhere (v6)"
+        done
         for range in "${SSH_RANGES[@]}"; do
             echo "$port/tcp ALLOW $range"
         done
@@ -55,7 +75,7 @@ ufw_wanted_rules() {
     echo "$TAILSCALE_PORT/udp ALLOW Anywhere"
 }
 
-# The allow rules ufw has, with runs of spaces squeezed. Takes sudo's flags.
+# The rules ufw has, with runs of spaces squeezed. Takes sudo's flags.
 ufw_rules() {
     sudo "$@" ufw status 2>/dev/null | sed -E 's/ +/ /g; s/ $//'
 }
@@ -63,7 +83,8 @@ ufw_rules() {
 # Allow SSH only from the private ranges and the tailnet, so a port forward on the router can't
 # expose sshd. Takes sudo's flags: with -n it never asks for a password. Returns 2 when ufw is on
 # and denies incoming connections, but its rules (`ufw status` needs root) couldn't be read, so
-# they're unverified, and 1 for anything else missing. Rules you added by hand are left to you.
+# they're unverified, and 1 for anything else missing. Stopped (ufw_stopped), ufw lists no rules,
+# so they're missing. Rules you added by hand are left to you.
 # shellcheck disable=SC2120 # apply in install.sh passes sudo's flags
 ufw_configured() {
     local missing
@@ -72,14 +93,79 @@ ufw_configured() {
     [ -z "$missing" ]
 }
 
-# Print the rules ufw_wanted_rules lists that ufw lacks, one per line. Takes sudo's flags. Fails
-# when the rules or the SSH ports can't be read.
+# Print the rules ufw_wanted_rules lists that ufw lacks, or has in the wrong place, one per line.
+# Takes sudo's flags. Fails when the rules or the SSH ports can't be read.
 ufw_missing_rules() {
     local rules wanted rule
     rules="$(ufw_rules "$@")" && wanted="$(ufw_wanted_rules "$@")" || return 1
     while IFS= read -r rule; do
-        [ -z "$rule" ] || grep -qxF "$rule" <<< "$rules" || echo "$rule"
+        [ -z "$rule" ] || ufw_rule_in_place "$rule" "$rules" || echo "$rule"
     done <<< "$wanted"
+}
+
+# ufw_rule_in_place <rule> <rules>: succeeds when ufw's rules, as ufw_rules prints them, list the
+# rule, and a deny rule of the step's, "<port>/tcp [(v6)] on <bridge> DENY ...", comes before each
+# rule that lets its port in on its bridge over the same IP version, since ufw takes the first rule
+# that matches. `ufw status` lists the IPv4 rules, then the IPv6 ones.
+ufw_rule_in_place() {
+    local deny="$1" line v6=false bridge
+    grep -qxF -- "$deny" <<< "$2" || return 1
+    case "$deny" in *" DENY "*) ;; *) return 0 ;; esac
+    case "$deny" in *"(v6)"*) v6=true ;; esac
+    bridge="${deny#* on }"
+    bridge="${bridge%% *}"
+    while IFS= read -r line; do
+        [ "$line" != "$deny" ] || return 0
+        ufw_allow_rule "$line" && [ "$UFW_RULE_V6" == "$v6" ] || continue
+        # A rule on another interface, such as tailscale0, never sees the bridge's traffic
+        case "$UFW_RULE_IFACE" in
+            "" | "$bridge") ;;
+            br-*) [ "$bridge" == br-+ ] || continue ;;
+            *) continue ;;
+        esac
+        ! ufw_to_includes_port "$UFW_RULE_TO" "${deny%%/*}" || return 1
+    done <<< "$2"
+    return 1
+}
+
+# ufw_allow_rule <rule>: succeeds for an allow or limit rule, as `ufw status` lists it with runs of
+# spaces squeezed, and sets UFW_RULE_TO to its "To" without the (v6) or the interface,
+# UFW_RULE_SOURCE to its "From", UFW_RULE_IFACE to the interface it's on, or "", and UFW_RULE_V6 to
+# true for an IPv6 rule. "To" is [address] [ports[/proto] | app] [(v6)] [on <interface>]. A
+# comment, after " # ", is left out.
+ufw_allow_rule() {
+    local rule="${1%% # *}" to v6
+    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
+    to="${BASH_REMATCH[1]}" UFW_RULE_SOURCE="${BASH_REMATCH[4]}" v6="${BASH_REMATCH[5]}"
+    UFW_RULE_V6=false
+    case "$to $v6 $UFW_RULE_SOURCE" in *"(v6)"* | *:*) UFW_RULE_V6=true ;; esac
+    to="${to/ (v6)/}"
+    UFW_RULE_IFACE=""
+    case "$to" in *" on "*) UFW_RULE_IFACE="${to##* on }" ;; esac
+    UFW_RULE_TO="${to%% on *}"
+}
+
+# ufw_to_includes_port <to> <port>...: succeeds when a rule's "To", as ufw_allow_rule sets
+# UFW_RULE_TO, covers any of the ports over TCP. An address alone, or Anywhere, means every port.
+# Of the app profiles, only OpenSSH's port is known.
+ufw_to_includes_port() {
+    local to="$1" spec port
+    shift
+    spec="${to##* }"
+    case "$spec" in
+        OpenSSH) spec=22/tcp ;;
+        Anywhere) return 0 ;;
+    esac
+    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
+        # An address alone covers every port; another app profile, ufw can't say here
+        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
+        return
+    fi
+    [ "${spec#*/}" != udp ] || return 1
+    for port in "$@"; do
+        ufw_ports_include "${spec%/*}" "$port" && return 0
+    done
+    return 1
 }
 
 # Print each allow or limit rule ufw has that lets SSH in from beyond the private ranges, other
@@ -98,34 +184,14 @@ ufw_broad_ssh_rules() {
 
 # ufw_rule_broad_ssh <rule> <port>...: succeeds when the rule, as `ufw status` lists it with runs
 # of spaces squeezed, lets any of the ports in over TCP from beyond the private ranges, other than
-# on tailscale0, and sets UFW_RULE_SOURCE to where it lets them in from. "To" is [address]
-# [ports[/proto] | app] [(v6)] [on <interface>], and an address alone, or Anywhere, means every
-# port. Of the app profiles, only OpenSSH's port is known.
+# on tailscale0, and sets UFW_RULE_SOURCE to where it lets them in from
 ufw_rule_broad_ssh() {
-    local rule="${1%% # *}" to from spec port
+    local rule="$1"
     shift
-    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
-    to="${BASH_REMATCH[1]}" from="${BASH_REMATCH[4]}"
-    UFW_RULE_SOURCE="$from"
-    to="${to/ (v6)/}"
-    case "$to" in *" on tailscale0") return 1 ;; esac
-    to="${to%% on *}"
-    ! private_source "$from" || return 1
-    spec="${to##* }"
-    case "$spec" in
-        OpenSSH) spec=22/tcp ;;
-        Anywhere) return 0 ;;
-    esac
-    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
-        # An address alone covers every port; another app profile, ufw can't say here
-        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
-        return
-    fi
-    [ "${spec#*/}" != udp ] || return 1
-    for port in "$@"; do
-        ufw_ports_include "${spec%/*}" "$port" && return 0
-    done
-    return 1
+    ufw_allow_rule "$rule" || return 1
+    [ "$UFW_RULE_IFACE" != tailscale0 ] || return 1
+    ! private_source "$UFW_RULE_SOURCE" || return 1
+    ufw_to_includes_port "$UFW_RULE_TO" "$@"
 }
 
 # ufw_ports_include <list> <port>: succeeds when ufw's port list, such as 22, 80,443, or 8000:8100,
@@ -254,16 +320,25 @@ outside_ssh_peers() {
 # --force skips the question about dropping SSH connections, which the rules keep. Changes nothing
 # and fails while the SSH ports can't be read, or, to turn ufw on, while an SSH session comes from
 # outside the private ranges and the tailnet, which the firewall would cut off. With ufw already
-# on, it only adds the allow rules that are missing, which can't cut anyone off.
-# setup_ufw runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command
-# checks its own failure.
+# on, it only adds the rules that are missing or out of place, which can't cut anyone off.
+# apply runs this as `ufw_configured || configure_ufw`, where set -e is off, so each command checks
+# its own failure.
 configure_ufw() {
-    local ports port range outside="" on=false
+    local ports port range bridge deny4 deny6 rules outside="" on=false
+    # ufw rejects every IPv6 rule while IPV6=no, so it would end up half set up. Before ufw is
+    # installed, the file is missing, and the package writes IPV6=yes.
+    if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
+        echo "  ufw doesn't filter IPv6, so the firewall is left unchanged: set IPV6=yes in $UFW_DEFAULTS," >&2
+        echo "  run sudo ufw reload if ufw is on, then re-run the ubuntu step." >&2
+        return 1
+    fi
     ports="$(sshd_ports)" && [ -n "$ports" ] || {
         echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
         return 1
     }
-    ! ufw_enabled || on=true
+    if ufw_enabled && ! ufw_stopped; then
+        on=true
+    fi
     # shellcheck disable=SC2086 # one port per word
     if ! "$on" && ! outside="$(outside_ssh_peers $ports)"; then
         echo "  Couldn't list the established SSH connections with ss, so the firewall is left unchanged." >&2
@@ -272,7 +347,7 @@ configure_ufw() {
     if [ -n "$outside" ]; then
         echo "  SSH connections come from $(join_lines ', ' <<< "$outside"), outside the private ranges and" >&2
         echo "  the tailnet, and the firewall would cut them off, so it's left unchanged. Re-run the step at" >&2
-        echo "  the machine, from the local network, or over Tailscale." >&2
+        echo "  the machine, over SSH from ${SSH_RANGES[*]}, or over Tailscale." >&2
         echo "  If the Mac connects over IPv6 (e.g. to $(hostname).local), connect to the machine's IPv4" >&2
         echo "  address (ip -4 addr) or, once Tailscale is up, its tailnet name, and re-run." >&2
         return 1
@@ -281,37 +356,55 @@ configure_ufw() {
         apt_get install -y ufw || return 1
     fi
     "$on" || sudo ufw default deny incoming > /dev/null || return 1
+    # Off, ufw lists no rules, so each deny rule is put back in place
+    rules=""
+    ! "$on" || rules="$(ufw_rules)" || return 1
     for port in $ports; do
+        # Containers on a network in the private ranges, or with IPv6 addresses, would otherwise
+        # reach sshd through the allow rules, so a deny goes ahead of them. One out of place is
+        # deleted first, since ufw prepend skips a rule it has anywhere. A delete that finds no
+        # rule succeeds.
+        for bridge in "${DOCKER_BRIDGES[@]}"; do
+            deny4="$port/tcp on $bridge DENY Anywhere"
+            deny6="$port/tcp (v6) on $bridge DENY Anywhere (v6)"
+            ! ufw_rule_in_place "$deny4" "$rules" || ! ufw_rule_in_place "$deny6" "$rules" || continue
+            if ! "$on" || grep -qxF -e "$deny4" -e "$deny6" <<< "$rules"; then
+                sudo ufw delete deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
+            fi
+            sudo ufw prepend deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
+        done
         for range in "${SSH_RANGES[@]}"; do
             sudo ufw allow from "$range" to any port "$port" proto tcp > /dev/null || return 1
         done
     done
     sudo ufw allow in on tailscale0 > /dev/null || return 1
     sudo ufw allow "$TAILSCALE_PORT/udp" > /dev/null || return 1
-    "$on" || sudo ufw --force enable > /dev/null
-}
-
-# Set up the firewall once sudo is in use
-setup_ufw() {
-    ensure_sshd_run_dir || return 1
-    ufw_configured || configure_ufw
+    "$on" && return 0
+    sudo ufw --force enable > /dev/null || return 1
+    # ufw enable loads the rules but leaves a stopped ufw.service stopped, which ufw_enabled checks
+    sudo systemctl enable --now -q ufw.service
 }
 
 # Print the status items for ufw: on, filtering IPv6, its rules, and any other rule that lets SSH
 # in from elsewhere. Reads the rules, which only root can, with sudo -n.
 status_ufw() {
     local ufw=0 from rule where
-    local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
+    local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denying it on Docker's bridges"
+    # Before the on check, since the step can't turn ufw on while it's set
+    if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
+        status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
+    fi
     if ! ufw_enabled; then
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
         return 0
     fi
-    status_item ok "ufw on, denying incoming connections"
-    if ufw_ipv6_on; then
-        status_item ok "ufw filters IPv6"
-    else
-        status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, then run sudo ufw reload"
+    # Without cached credentials, the rules item below is unverified, which covers this too
+    if sudo_cached && ufw_stopped -n; then
+        status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
+        return 0
     fi
+    status_item ok "ufw on, denying incoming connections"
+    ! ufw_ipv6_on || status_item ok "ufw filters IPv6"
     if ! apt_installed openssh-server; then
         status_item missing "$rules: openssh-server isn't installed"
         return 0

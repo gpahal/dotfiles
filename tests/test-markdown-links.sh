@@ -3,7 +3,8 @@ set -euo pipefail
 
 # broken_links, which scripts/check-docs.sh and scripts/check-skills.sh run on the docs, flags a
 # local link whose file or #anchor is missing, in an inline link or a reference definition. A link
-# with a "title" checks its target alone, and a link shown in a code block isn't checked.
+# with a "title" checks its target alone, and a link shown in a code block isn't checked. A # line
+# in a code block, its fence indented or not, makes no anchor.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -23,7 +24,7 @@ See [other](./other.md "The other doc"), [its part](other.md#part), [here](#doc)
 [2]: ./gone.md "Gone"
  [3]: ./other.md#no-part
 
-Broken: [missing](./missing.md) and [no anchor](#nowhere).
+Broken: [missing](./missing.md), [no anchor](#nowhere), and [a comment](#a-comment).
 
 ```md
 [shown, not linked](./example.md)
@@ -31,11 +32,13 @@ Broken: [missing](./missing.md) and [no anchor](#nowhere).
 
   ~~~
   [in an indented fence](./example.md)
+# A comment
   ~~~
 DOC
 
 assert_eq "broken link to ./gone.md
 broken anchor in ./other.md#no-part
 broken link to ./missing.md
-broken anchor in #nowhere" "$(broken_links "$SANDBOX/docs/README.md")" "broken links"
+broken anchor in #nowhere
+broken anchor in #a-comment" "$(broken_links "$SANDBOX/docs/README.md")" "broken links"
 test_done

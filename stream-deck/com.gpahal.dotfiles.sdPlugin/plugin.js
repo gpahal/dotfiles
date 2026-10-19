@@ -19,9 +19,18 @@ const socket = new WebSocket(`ws://127.0.0.1:${arg("-port")}`);
 const send = (message) => socket.send(JSON.stringify(message));
 const log = (message) => send({ event: "logMessage", payload: { message } });
 
+// The targets whose open-in still runs, of those a second press would repeat: a second New Tab
+// press while the first's tab is on its way, as while Chrome starts, would open a second tab and
+// paste twice, so it's dropped, as the Hammerspoon hotkey drops it
+const ONE_AT_A_TIME = new Set(["chrome-tab"]);
+const running = new Set();
+
 // open-in's targets are the actions' names; it fails, so the key shows a warning, for any other
 function runScript(target, context) {
+  if (running.has(target)) return;
+  if (ONE_AT_A_TIME.has(target)) running.add(target);
   execFile("/bin/bash", [OPEN_IN, target], (error, stdout, stderr) => {
+    running.delete(target);
     for (const line of `${stdout}${stderr}`.split("\n").filter(Boolean)) log(line);
     if (error) send({ event: "showAlert", context });
   });

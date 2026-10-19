@@ -20,7 +20,6 @@ for file in options reminders; do
 done > "$ZDOTDIR/.zshrc"
 # /etc/zprofile's path_helper puts the system's dirs, /opt/homebrew/bin among them on macOS, ahead
 # of the stubs, so a sentinel the config ran would find the real command
-# shellcheck disable=SC2016 # expanded by zsh
 printf 'path=(%q $path)\n' "$STUB_DIR" > "$ZDOTDIR/.zprofile"
 stub mise
 
@@ -38,7 +37,8 @@ in_terminal() {
     if [[ "$OSTYPE" == darwin* ]]; then
         script -q /dev/null "$@"
     else
-        script -qec "$(printf '%q ' "$@")" /dev/null
+        # script runs the command with $SHELL, and %q output is bash quoting
+        SHELL=/bin/bash script -qec "$(printf '%q ' "$@")" /dev/null
     fi < /dev/null | tr -d '\r'
 }
 

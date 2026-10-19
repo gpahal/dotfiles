@@ -5,7 +5,8 @@ set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
 # longer has, and restarts a running Stream Deck only when the plugin changed, trying again when
-# it doesn't reopen at first, and carries on when Stream Deck isn't running. Each of the
+# it doesn't reopen at first, carries on when Stream Deck isn't running, and fails when it doesn't
+# quit. Each of the
 # manifest's actions is a target of open-in, a stat key stats.js draws, or Back. The bundled
 # System profile is built from stream-deck/profile and holds only the plugin's actions.
 
@@ -86,7 +87,6 @@ rm "$PLUGIN_DIR/plugin.js.bak"
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill
 stub sleep
-# shellcheck disable=SC2016 # expanded when the stub runs
 stub open '[ -f "$SANDBOX/opened-once" ] && exit 0; touch "$SANDBOX/opened-once"; exit 1'
 export SANDBOX
 : > "$STUB_LOG"
@@ -99,6 +99,18 @@ echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
+
+# Stream Deck doesn't quit within the wait: the step fails without reopening it, rather than
+# claiming a restart
+echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
+stub pgrep
+stub open
+: > "$STUB_LOG"
+assert_exit 1 main --no-backup
+assert_contains "$RUN_OUTPUT" "Stream Deck didn't quit; quit and reopen it to load the plugin"
+assert_not_contains "$RUN_OUTPUT" "Restarted"
+assert_file_not_contains "$STUB_LOG" "open -g"
+stub pgrep 'exit 1'
 
 # Each of the manifest's actions is a script's target, a stat key, or Back, and their images are in
 # the plugin

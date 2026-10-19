@@ -6,29 +6,25 @@ set -uo pipefail
 # (one per CPU by default). Prints PASS, FAIL, or SKIP per file, in name order, with a failing or
 # skipped test's output, and exits 1 when any fails. A test skips by exiting 77, and with
 # TEST_FAIL_ON_SKIP=1, as CI sets, a skip fails. A test that runs longer than $TEST_TIMEOUT seconds
-# (120 by default) is killed and fails. A slow test can raise its own limit with a
-# "# timeout: <seconds>" line in its first 20 lines. A test of code only one OS runs has an
-# "# os: macos" or "# os: ubuntu" line there, and a run of every test leaves it out on the other
-# OS, whose CI leg runs it; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR,
-# with XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It
-# syntax-checks the repo's other shell scripts and each selected test before running it, since a
-# syntax error in a sourced script can let a test pass.
+# (120 by default) is killed and fails. A test that needs a command only macOS ships, such as
+# ls -e or sqlite3, has an "# os: macos" line in its first 20 lines, and a run of every test leaves
+# it out on Ubuntu; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR, with
+# XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It syntax-checks
+# the repo's other shell scripts and each selected test before running it, since a syntax error in
+# a sourced script can let a test pass.
 
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
 
-case "$(uname -s)" in
-    Darwin) host_os=macos ;;
-    *) host_os=ubuntu ;;
-esac
+on_macos=false
+[ "$(uname -s)" != Darwin ] || on_macos=true
 tests=()
-other_os=0
+macos_only=0
 if [ $# -eq 0 ]; then
     for t in test-*.sh; do
         [ -e "$t" ] || continue
-        os="$(sed -n '1,20s/^# os: \([a-z]*\)$/\1/p' "$t" | head -1)"
-        if [ -n "$os" ] && [ "$os" != "$host_os" ]; then
-            other_os=$((other_os + 1))
+        if ! "$on_macos" && sed -n '1,20p' "$t" | grep -qx '# os: macos'; then
+            macos_only=$((macos_only + 1))
             continue
         fi
         tests+=("$t")
@@ -75,17 +71,6 @@ while IFS= read -r f; do
     fi
 done < <(repo_scripts)
 
-# Print a test's time limit: its "# timeout:" line, when that's above $TEST_TIMEOUT
-test_timeout() {
-    local own
-    own="$(sed -n '1,20s/^# timeout: \([0-9][0-9]*\)$/\1/p' "$1" | head -1)"
-    if [ -n "$own" ] && [ "$own" -gt "$TEST_TIMEOUT" ]; then
-        echo "$own"
-    else
-        echo "$TEST_TIMEOUT"
-    fi
-}
-
 # Kill test process group $1 once it has run $3 seconds, noting it in file $2
 watchdog() {
     local pid="$1" limit="$3" i=0
@@ -103,13 +88,16 @@ watchdog() {
 }
 
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
-# 0 would start no test and wait forever
-case "$jobs" in
-    '' | *[!0-9]* | 0*)
-        echo "TEST_JOBS must be a positive integer, not '$jobs'" >&2
-        exit 1
-        ;;
-esac
+# A TEST_JOBS of 0 would start no test and wait forever, and a TEST_TIMEOUT that isn't a number
+# would turn the watchdog off
+for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
+    case "${setting#*=}" in
+        '' | *[!0-9]* | 0*)
+            echo "${setting%%=*} must be a positive integer, not '${setting#*=}'" >&2
+            exit 1
+            ;;
+    esac
+done
 # /tmp, not $TMPDIR, keeps the tests' TMUX_TMPDIR under tmux's socket path length limit on macOS
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 
@@ -129,7 +117,7 @@ clean_test_dirs() {
 # Run test $2 as number $1 in $tmp/$1, leaving its output in output and, last, its exit status in
 # status. Runs in the background, one per test.
 run_test() {
-    local dir="$tmp/$1" t="$2" limit pid watchdog_pid status
+    local dir="$tmp/$1" t="$2" pid watchdog_pid status
     # A worker is a subshell, which mustn't run the runner's cleanup when it exits
     trap - EXIT
     mkdir "$dir/home" "$dir/tmux"
@@ -143,12 +131,11 @@ run_test() {
         # prints "child setpgid (N to N): Operation not permitted" when the parent's setpgid for
         # it ran first. The job still gets its own group. The child prints it before its own
         # redirections apply, so the braces discard it.
-        limit="$(test_timeout "$t")"
         set -m
         {
             "$BASH" "$t" < /dev/null > "$dir/output" 2>&1 &
             pid=$!
-            watchdog "$pid" "$dir/timed-out" "$limit" < /dev/null > /dev/null 2>&1 &
+            watchdog "$pid" "$dir/timed-out" "$TEST_TIMEOUT" < /dev/null > /dev/null 2>&1 &
             watchdog_pid=$!
         } 2>/dev/null
         set +m
@@ -248,6 +235,6 @@ done
 
 echo ""
 echo "$((${#tests[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"
-[ "$other_os" -eq 0 ] || echo "$other_os left out, as tests of code only the other OS runs"
+[ "$macos_only" -eq 0 ] || echo "$macos_only left out, as they need commands only macOS ships"
 [ "$broken" -eq 0 ] || echo "$broken script(s) with a syntax error"
 [ ${#failed[@]} -eq 0 ] && [ "$broken" -eq 0 ]

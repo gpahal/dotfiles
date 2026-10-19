@@ -1,5 +1,5 @@
-# Drop duplicate entries, e.g. when nested shells or tmux panes re-run brew shellenv. path.zsh
-# does the same for path.
+# Drop duplicate entries, e.g. when a nested shell or tmux pane inherits FPATH with Homebrew's dir
+# and adds it again. path.zsh does the same for path.
 typeset -U fpath
 
 ZSH_DIR=${${(%):-%x}:A:h}

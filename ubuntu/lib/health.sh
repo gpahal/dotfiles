@@ -189,11 +189,11 @@ install_smartd() {
 # hook runs away from the repo, as the UPS notifier does, whose nut user may not be able to read
 # it, so the ntfy code is installed for both.
 smartd_hook_installed() {
-    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB"
+    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
 install_smartd_hook() {
-    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB"
+    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
 # In a VM smartd doesn't run, so its hook doesn't matter there

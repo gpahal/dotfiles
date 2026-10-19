@@ -10,6 +10,8 @@
 # copy with these lines rewritten (ntfy_hook_copy in tests/lib.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
+# upsmon's PATH starts with /usr/local, so a curl or logger there would run instead of the system's
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 log() {
     logger -t dotfiles-ups -- "$*" 2> /dev/null || true

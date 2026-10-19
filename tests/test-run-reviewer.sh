@@ -56,9 +56,7 @@ no_sleeps_left() {
 # sends on a timeout or Ctrl-C doesn't reach, and the sleeps would run for days. The runner stops
 # its reviewer when it's stopped, and pkill gets any sleep left.
 RUNNER_PID=""
-# shellcheck disable=SC2016 # expanded at exit
 on_exit '[ -z "$RUNNER_PID" ] || kill -- "-$RUNNER_PID" 2> /dev/null'
-# shellcheck disable=SC2016
 on_exit '"$PKILL" -f "$SLEEP_PATTERN"'
 
 # Start the runner with a reviewer that sleeps, send it a signal, and check its exit status and
@@ -89,6 +87,15 @@ cd "$REPO"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$OUT"
 assert_file_contains "$OUT" "No findings."
 wait_for no_sleeps_left || fail "the watchdog outlived a finished review"
+"$PKILL" -f "$SLEEP_PATTERN" || true
+
+# Even when the review finishes just after the watchdog starts its sleep. A copy of the runner
+# that pauses there makes that happen every time.
+awk '{ print } /^ *sleep "\$timeout" &$/ { print "/bin/sleep 0.5" }' "$RUNNER" > "$SANDBOX/run-reviewer-paused.sh"
+grep -q '^/bin/sleep 0.5$' "$SANDBOX/run-reviewer-paused.sh" || fail "the paused runner has no pause"
+assert_exit 0 bash "$SANDBOX/run-reviewer-paused.sh" claude model high "$PROMPT" "$OUT"
+wait_for no_sleeps_left || fail "the watchdog's sleep outlived a review that finished as it started"
+"$PKILL" -f "$SLEEP_PATTERN" || true
 
 # A failed review still exits 1 and names the reviewer's status
 stub claude 'echo "boom" >&2; exit 5'

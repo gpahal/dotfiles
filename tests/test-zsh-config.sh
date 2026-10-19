@@ -15,16 +15,13 @@ command -v zsh &>/dev/null || skip "zsh isn't installed"
 command -v script &>/dev/null || skip "script isn't installed"
 # Under Claude Code, CLAUDECODE would turn off the terminal-only options and reminders
 unset CLAUDECODE
-stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
-stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
-stub chsh 'exit 1'
+stub_login_shell_zsh
 assert_exit 0 bash "$REPO_DIR/zsh/install.sh"
 stub brew 'exit 1'
 # mise is a sentinel, and the config runs mise when it finds one on PATH. /etc/zprofile's
 # path_helper puts the system's dirs, /opt/homebrew/bin among them on macOS, ahead of the stubs,
 # so ~/.zprofile puts them back in front.
 stub mise
-# shellcheck disable=SC2016 # expanded by zsh
 printf 'path=(%q $path)\n' "$STUB_DIR" >> "$HOME/.zprofile"
 
 WORK="$SANDBOX/work"
@@ -35,12 +32,12 @@ ERR="$SANDBOX/stderr"
 # without carriage returns. Its stderr goes to $ERR. Usage: in_terminal <TERM> <commands>
 in_terminal() {
     local cmd
-    # shellcheck disable=SC2016 # expanded by sh
     cmd="$(printf '%q ' /bin/sh -c 'cd "$1" && TERM=$2 exec zsh -lic "$3" 2> "$4"' sh "$WORK" "$@" "$ERR")"
     if [[ "$OSTYPE" == darwin* ]]; then
         script -q /dev/null /bin/sh -c "$cmd"
     else
-        script -qec "$cmd" /dev/null
+        # script runs the command with $SHELL, and %q output is bash quoting
+        SHELL=/bin/bash script -qec "$cmd" /dev/null
     fi < /dev/null | tr -d '\r'
 }
 
@@ -51,14 +48,34 @@ stub eza
 # pattern ^ would make. eza reads a bare -F as --classify [WHEN], so it would take a path after it
 # as the WHEN.
 touch "$WORK/main.go" "$WORK/main_test.go"
-# shellcheck disable=SC2016 # expanded by zsh
 checks='echo loaded; print -r -- main^; [[ -o extendedglob ]] && echo extendedglob-on
 print -r -- "mise=$(whence -p mise)"; for a in l la ll lla; do alias $a; done; true'
+# Succeeds when stdin holds an error zsh printed. The shell runs the real starship, atuin, and
+# zoxide, whose stderr once failed the check under a parallel test run, so only zsh's own errors
+# count. zsh starts each with where it ran: "<file or function>:<line>:", as in "zsh:1:",
+# "(eval):2:", "$HOME/.zprofile:1:", or "_cached_init:3:", but "<function>:" alone for a command
+# not found in a function, and "zsh:" alone for one typed at the prompt.
+zsh_errors() {
+    grep -qE -e '^[^ :]+:[0-9]+: ' -e '^[^ :]+: command not found: ' -e '^zsh:' -e "$HOME/\.z"
+}
+for line in "zsh:1: command not found: nocmd" "zsh: command not found: nocmd" \
+    "_cached_init: command not found: nocmd" "_cached_init:4: parse error near \`)'" \
+    "$HOME/.zprofile:1: command not found: nocmd" "(eval):3: command not found: nocmd" \
+    "$HOME/.zsh/main.zsh:12: no such file or directory: x"; do
+    zsh_errors <<< "$line" || fail "zsh_errors missed: $line"
+done
+for line in "Error: database is locked" "[WARN] - (starship::config): bad key" \
+    "thread 'main' panicked at src/main.rs:12:5:" "zoxide: warning: no match found"; do
+    ! zsh_errors <<< "$line" || fail "zsh_errors counted a tool's output: $line"
+done
 for term in xterm-256color dumb; do
     output="$(in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
     assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
-    assert_eq "" "$(cat "$ERR")" "stderr with TERM=$term"
+    if zsh_errors < "$ERR"; then
+        fail "the zsh config printed an error with TERM=$term:"
+        _show "$(cat "$ERR")"
+    fi
 done
 assert_contains "$output" "main^" "main^ in a terminal"
 assert_not_contains "$output" "extendedglob-on" "options in a terminal"
@@ -98,7 +115,6 @@ export HOMEBREW_PREFIX="$SANDBOX/brew" HOMEBREW_REPOSITORY="$SANDBOX/brew"
 mkdir -p "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found"
 echo 'command_not_found_handler() { print "homebrew: $1"; return 127; }' \
     > "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
-# shellcheck disable=SC2016 # expanded by zsh
 stub mise '[ "$*" != "activate zsh" ] || echo '\''
 (( $+functions[command_not_found_handler] )) && functions[_command_not_found_handler]=$functions[command_not_found_handler]
 command_not_found_handler() { print "mise: $1"; _command_not_found_handler "$@"; }'\'

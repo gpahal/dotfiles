@@ -169,23 +169,23 @@ Docs: [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/re
 
 The script merges these into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
-- **New threads.** Claude Opus 5.5 at medium effort with the 1M context window, in auto mode, each in its own worktree under `~/.t3/worktrees`. A model or effort you pick in T3 Code is kept unless you agree to replace it when the script asks.
-- **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's. Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run. Keep dev servers in manual actions.
+- **New threads.** Claude Opus 5.5 at medium effort, in auto mode, each in its own worktree under `~/.t3/worktrees`.
+  - A model or effort you pick in T3 Code is kept, unless you agree to replace it when the script asks.
+  - The context window starts at 1M when the model and effort are the script's, set now or earlier. With a model or effort of your own, the script leaves the window alone. A window you pick is kept, unless the script replaces your model or effort.
+- **Worktrees.** A new worktree branches from the local base branch, with a branch named for its task, while Claude Code's [worktree hook](#model-and-interface) fetches and branches from origin's.
+  - Before it starts the agent, T3 waits for the worktree setup actions that existed when the script ran. An action you add later needs `"async": false`, or another setup run.
+  - Keep dev servers in manual actions.
+- **Worktree cleanup.** T3 removes a worktree it made:
+  - 30 days after its thread was last active, or 15 days after the thread settles.
+  - Once its pull request is merged into the remote default branch.
+  - When its last thread is deleted, or it has no commits beyond the default branch.
+
+  It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It deletes ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 - **Projects.** They pull automatically, and **Add project** starts in `~/Dev`.
 - **Threads.** A mid-turn message steers the turn. Threads idle 10 days settle in the sidebar, unless they have a pull request. A thread stopped by a usage limit is snoozed and resumes when the limit resets.
 - **Pull requests.** They squash-merge and drop the agent's credits on merge. Commit and PR text has concise titles and short bullet points.
 - **Interface.** Notifications play a sound and show in the app too, the sidebar shows the working shelf, and diffs show files expanded without word wrap.
 - **Cleanup.** T3 deletes browser artifacts and logs after 30 days.
-
-Worktree cleanup **(script)** removes a worktree T3 made:
-
-- 30 days after its thread was last active.
-- 15 days after its thread settles.
-- Once its pull request is merged into the remote default branch.
-- When its last thread is deleted.
-- When it has no commits beyond the default branch.
-
-It keeps the branch and the thread, and skips a worktree in use or with uncommitted changes or untracked files. It does delete ignored files, such as a `.env`, unless you set **Settings → Storage → Keep worktrees with local changes** to **Any local files**, which the script leaves alone. Docs: [cleanup settings](https://github.com/pingdotgg/t3code/blob/main/docs/user/project-settings.md).
 
 ## Privacy
 
@@ -215,7 +215,7 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 ## Ubuntu
 
-Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. It runs `claude-code`, `codex`, `t3-code`, `skills`, and `manual-steps`. They set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
+Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. Its [steps](#automated-setup) set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
 Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file, and `--status` flags it when anyone else can.
 

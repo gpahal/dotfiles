@@ -6,8 +6,10 @@ set -euo pipefail
 # run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
 # Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
-# step that carries on runs. With --status, a step that exits 3 is listed as needing
-# attention when its report has a missing or unknown item, and as failed otherwise. Fake steps stand in for the real ones. Then every step in each runner's real STEPS, on
+# step that carries on runs. A real runner stopped that way dies of the signal, so the script
+# that ran it stops too. With --status, a step whose report has a missing or unknown item needs
+# attention, whether it exits 0 or 3, and one that exits 3 without such an item failed. Fake steps
+# stand in for the real ones. Then every step in each runner's real STEPS, on
 # macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
 # both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
 # report the OS.
@@ -34,6 +36,8 @@ fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; 
 # Exits 3 with no item needing attention, as a report that set -e cut short at a command that
 # exited 3, such as jq on a filter that doesn't compile
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
+# Reports a missing item, then exits 0, as a report that forgot status_result does
+fake_step quiet-missing '[ "${1:-}" != --status ] || echo "  missing    something"'
 # Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
 # Ctrl-C reaches the runner too, but the step carries on and fails, as one does when brew catches
@@ -115,6 +119,9 @@ attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
 # An unknown item needs attention too
 assert_exit 3 run_steps --status unknown
 assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
+# So does a report with a missing item that exits 0
+assert_exit 3 run_steps --status quiet-missing
+assert_contains "$RUN_OUTPUT" "Needs attention: quiet-missing."
 # A report that exits 3 without a missing or unknown item failed
 assert_exit 1 run_steps --status cut-short
 assert_contains "$RUN_OUTPUT" "The cut-short step failed."
@@ -146,6 +153,61 @@ rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first nope
 assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux"
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran despite an unknown step name"
+
+# Ctrl-C reaches the whole process group: a script that runs a runner, the runner, and its step.
+# The runner dies of SIGINT rather than exiting 130, so the script stops too, as bash stops after
+# a command SIGINT killed but carries on after one that exited 130. `just status` runs the AI
+# tools' report after the dotfiles' one this way.
+runner_dir="$SANDBOX/runner"
+mkdir -p "$runner_dir/slow"
+printf '%s\n' '#!/bin/bash' "touch \"$SANDBOX/slow-started\"" 'sleep 30' > "$runner_dir/slow/install.sh"
+printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.sh\"" \
+    'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' \
+    > "$runner_dir/setup.sh"
+printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
+    > "$runner_dir/caller.sh"
+stub uname 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac'
+CALLER_PID=""
+on_exit '[ -z "$CALLER_PID" ] || kill -KILL -- "-$CALLER_PID" 2> /dev/null'
+# Succeeds once a process has exited. A child that exited stays a zombie until waited for, and
+# kill -0 still finds it.
+exited() {
+    case "$(ps -o stat= -p "$1" 2> /dev/null)" in
+        '' | Z*) return 0 ;;
+    esac
+    return 1
+}
+# wait_until <command> [arg...]: succeeds once the command does, failing after 10 s
+wait_until() {
+    local i=0
+    until "$@"; do
+        [ "$i" -lt 100 ] || return 1
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
+for mode in "" --status; do
+    rm -f "$SANDBOX/slow-started"
+    status=0
+    # Job control puts the caller in its own process group, as a terminal does, and keeps SIGINT
+    # deliverable: without it, a background job ignores SIGINT
+    set -m
+    "$BASH" "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
+    CALLER_PID=$!
+    set +m
+    if wait_until test -e "$SANDBOX/slow-started"; then
+        kill -INT -- "-$CALLER_PID"
+        wait_until exited "$CALLER_PID" || kill -KILL -- "-$CALLER_PID"
+    else
+        fail "the runner's step didn't start${mode:+ with $mode}"
+        kill -KILL -- "-$CALLER_PID"
+    fi
+    wait "$CALLER_PID" || status=$?
+    CALLER_PID=""
+    assert_eq 130 "$status" "the caller's status after Ctrl-C${mode:+ with $mode}"
+    assert_file_contains "$SANDBOX/caller.out" "The slow step was interrupted; stopping."
+    assert_file_not_contains "$SANDBOX/caller.out" continued
+done
 
 # The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
 load_script lib/common.sh

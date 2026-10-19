@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
-# os: macos
 
 # The Stream Deck plugin's open-in opens Claude, Chrome, T3 Code, or Activity Monitor. For a new
 # tab it brings Chrome to the front, telling a running Chrome to activate rather than reopening it,
-# presses Cmd+T, then Cmd+V and Cmd+A only when the clipboard holds more than whitespace, however
-# large, and only while Chrome is still in front. For Gmail it has Chrome select a Gmail tab or open
-# the inbox. A failed open, a missing permission, or Chrome not coming to the front fails with a
+# waits for the modifier keys, such as those of Hammerspoon's hotkey, to be released, presses
+# Cmd+T, then Cmd+V and Cmd+A only when the clipboard holds more than whitespace, however large,
+# and only while Chrome is still in front. For Gmail it has Chrome select a Gmail tab or open the
+# inbox. A failed open, a missing permission, or Chrome not coming to the front fails with a
 # notification. Stubs stand in for open, lsappinfo, pbpaste, and osascript.
 # tests/test-stream-deck-open-in.sh covers its other targets.
 
@@ -17,21 +17,23 @@ setup_sandbox
 OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
 
 # CLIPBOARD is the clipboard's text, or with BIG_CLIPBOARD, hundreds of KB of lines, more than a
-# pipe holds. The new tab's script logs the keystrokes it would press, or fails with NEW_TAB_ERROR.
+# pipe holds. The new tab's script logs the keystrokes it would press, noting a Cmd+T it could
+# send with modifier keys still held, as when it doesn't wait for them or fail while they're down,
+# or fails with NEW_TAB_ERROR.
 # With FRONT_CHANGES, another app comes to the front during the delay before the paste: a script
 # that checks for that before pressing Cmd+V returns "moved". Gmail's script logs the URL it would
 # open and prints GMAIL_RESULT, or fails with GMAIL_ERROR. CHROME_RUNNING makes Chrome running.
-# shellcheck disable=SC2016 # stub bodies, expanded when they run
 stub pbpaste 'if [ -n "${BIG_CLIPBOARD:-}" ]; then yes https://example.com/a/long/path | head -n 20000; else printf "%s" "${CLIPBOARD:-}"; fi'
-# shellcheck disable=SC2016
 stub lsappinfo '[ -n "${CHROME_RUNNING:-}" ] && [ "$*" == "find bundleid=com.google.Chrome" ] && echo "ASN:0x0-0x3-\"Google Chrome\":"'
-# shellcheck disable=SC2016
 stub osascript 'script="$(cat)"
 case "$script" in
     *"keystroke \"t\""*)
         if [ -n "${NEW_TAB_ERROR:-}" ]; then echo "$NEW_TAB_ERROR" >&2; exit 1; fi
         case "$script" in *"first application process whose frontmost"*"com.google.Chrome"*) ;; *) exit 1 ;; esac
-        echo "  Cmd+T" >> "$STUB_LOG"
+        case "$script" in
+            *"modifierFlags"*"if modifiersHeld() then error"*"keystroke \"t\""*) echo "  Cmd+T" >> "$STUB_LOG" ;;
+            *) echo "  Cmd+T with the modifiers still held" >> "$STUB_LOG" ;;
+        esac
         [ "$2" == paste ] || exit 0
         if [ -n "${FRONT_CHANGES:-}" ] &&
             printf "%s\n" "$script" | sed -n "/delay 0.15/,/keystroke \"v\"/p" | grep -q frontmost; then

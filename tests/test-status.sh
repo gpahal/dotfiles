@@ -114,18 +114,8 @@ stub nmcli
 stub sshd '[ "$1" != -T ] || { echo "port 22"
     { cat "'"$SANDBOX"'/10-dotfiles.conf" 2> /dev/null || cat "'"$SANDBOX"'/10-dotfiles.conf.root"; } | awk "{ print tolower(\$1), \$2 }"; }'
 ufw_has_rules() {
-    stub ufw 'cat << EOF
-Status: active
-
-To                         Action      From
---                         ------      ----
-22/tcp                     ALLOW       10.0.0.0/8
-22/tcp                     ALLOW       192.168.0.0/16
-22/tcp                     ALLOW       fd00::/8
-22/tcp                     ALLOW       fe80::/10
-Anywhere on tailscale0     ALLOW       Anywhere
-41641/udp                  ALLOW       Anywhere
-EOF'
+    ufw_status_listing > "$SANDBOX/ufw-status"
+    stub ufw 'cat "'"$SANDBOX"'/ufw-status"'
 }
 ufw_has_rules
 SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
@@ -198,6 +188,8 @@ chmod 644 "$SSHD_DROP_IN"
 
 # The docker step: a daemon.json only root can read
 load_script docker/install.sh
+# No containerd shim runs, so a stopped daemon runs no containers
+stub pgrep 'exit 1'
 is_macos() { false; }
 # Docker's packages are installed
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'

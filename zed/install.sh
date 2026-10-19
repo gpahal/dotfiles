@@ -17,7 +17,8 @@ else
 fi
 
 # Pass each file the step copies, as source and destination, to a function, followed by any
-# further arguments: copy_file_ask to copy it, or status_file to report it
+# further arguments: copy_file_ask to copy it, or status_file to report it. The files are JSONC,
+# whose comments a jq merge would strip, so they're replaced whole, unlike other apps' settings.
 zed_files() {
     local action="$1" file status=0
     shift

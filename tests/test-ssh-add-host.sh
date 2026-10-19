@@ -83,6 +83,8 @@ done
 # A Match all is a catch-all too, as is a Host * whose defaults come from an included file. ssh -G
 # shows the block's values, other hosts resolve as before, and a second run changes nothing.
 printf 'Host *\n  ServerAliveInterval 6\n' > "$SANDBOX/star.conf"
+# ssh refuses an included file others can write, which a umask of 0 would make
+chmod 644 "$SANDBOX/star.conf"
 for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf" \
     "Host other\n  User other\n\nMatch all\n  ServerAliveInterval 5"; do
     # shellcheck disable=SC2059 # the fixtures hold \n

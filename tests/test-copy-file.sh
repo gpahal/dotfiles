@@ -115,6 +115,19 @@ assert_exit 0 copy_file "$src2" "$dest2" < /dev/null
 unset DOTFILES_BACKUP
 assert_not_contains "$RUN_OUTPUT" "Back it up"
 assert_eq "edit" "$(cat "$dest2.bak")" ".bak after --backup"
+# A file setup has no record of installing isn't called changed since. An & in its path stays in
+# the question, where bash 5.2's patsub_replacement would put the {} it replaced.
+amp="$HOME/a&b/config"
+mkdir -p "$HOME/a&b"
+printf 'mine\n' > "$amp"
+assert_exit 0 copy_file "$src2" "$amp" <<< n
+assert_contains "$RUN_OUTPUT" "$amp exists and differs from the repo's copy, and will be replaced. Back it up to $amp.bak first?"
+# A {} in the path stays too: the backup's path replaces the question's last {}
+braces="$HOME/x{}y/config"
+mkdir -p "$HOME/x{}y"
+printf 'mine\n' > "$braces"
+assert_exit 0 copy_file "$src2" "$braces" <<< n
+assert_contains "$RUN_OUTPUT" "  $braces exists and differs from the repo's copy, and will be replaced. Back it up to $braces.bak first?"
 # Put the real is_interactive and confirm back
 load_script lib/common.sh
 
@@ -345,6 +358,22 @@ for filter in 'error("bad")' '.a, .b'; do
     assert_eq "settings.json" "$(/bin/ls "$HOME/badfilter")" "files after json_merge $filter"
     assert_eq '{"mine": 1}' "$(cat "$settings")" "settings after json_merge $filter"
 done
+# A file that holds several JSON values isn't configured, even when the last one is, and
+# json_merge leaves it as it is, as it does invalid JSON
+# Each is "<file contents>|<what json_merge says>". Invalid JSON keeps jq's parse error, which
+# says where the file goes wrong.
+for case in '{"a": 0}
+{"a": 1}|holds 2 JSON values, not one, so it was left as it is.' \
+    '{"a": 1,}|jq: parse error' '{"a": 1,}|isn'"'"'t valid JSON, so it was left as it is.'; do
+    bad="${case%|*}"
+    printf '%s\n' "$bad" > "$settings"
+    ! json_applied "$settings" '.a = 1' || fail "json_applied passed $bad"
+    assert_exit 1 json_merge "$settings" '.a = 1' <<< y
+    assert_contains "$RUN_OUTPUT" "${case##*|}" "json_merge on $bad"
+    assert_not_contains "$RUN_OUTPUT" "Back up" "json_merge on $bad"
+    assert_eq "$bad" "$(cat "$settings")" "settings after json_merge on $bad"
+done
+printf '{"mine": 1}\n' > "$settings"
 # A good filter still offers the backup, then writes
 assert_exit 0 json_merge "$settings" '.a = 1' <<< y
 assert_contains "$RUN_OUTPUT" "Back up $settings"

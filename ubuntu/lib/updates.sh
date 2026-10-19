@@ -20,19 +20,38 @@ periodic_daily() {
     [ "$number" -gt 0 ] && [ "$number" -le 86400 ]
 }
 
+# Succeeds when $AUTO_UPGRADES_CONF exists but only root can read it. apt-config, run as you, then
+# skips it with a warning.
+auto_upgrades_unreadable() {
+    [ -e "$AUTO_UPGRADES_CONF" ] && [ ! -r "$AUTO_UPGRADES_CONF" ]
+}
+
 # Read the values the way apt.systemd.daily does, with apt-config shell and its defaults: Enable is
-# 1, so only 0 turns it off, and the two intervals are 0.
+# 1, so only 0 turns it off, and the two intervals are 0. apt-config runs as root when only root can
+# read $AUTO_UPGRADES_CONF, so pass sudo's flags, e.g. -n.
 unattended_upgrades_on() {
-    local values enable=1 update=0 upgrade=0
-    values="$(apt-config shell enable APT::Periodic::Enable update APT::Periodic::Update-Package-Lists \
-        upgrade APT::Periodic::Unattended-Upgrade 2>/dev/null)" || return 1
+    local values enable=1 update=0 upgrade=0 run=()
+    ! auto_upgrades_unreadable || run=(sudo "$@")
+    values="$(${run[@]+"${run[@]}"} apt-config shell enable APT::Periodic::Enable \
+        update APT::Periodic::Update-Package-Lists upgrade APT::Periodic::Unattended-Upgrade 2>/dev/null)" ||
+        return 1
     # apt-config quotes each value for the shell
     eval "$values"
     ! [[ "$enable" =~ ^0+$ ]] && periodic_daily "$update" && periodic_daily "$upgrade"
 }
 
 unattended_upgrades_running() {
-    apt_installed unattended-upgrades && unattended_upgrades_on
+    apt_installed unattended-upgrades && unattended_upgrades_on -n
+}
+
+# Print the status item for unattended-upgrades. Never asks for sudo.
+status_unattended_upgrades() {
+    local item="unattended-upgrades runs daily"
+    if auto_upgrades_unreadable && ! sudo_cached; then
+        status_item unverified "$item (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
+    else
+        status_check "$item" unattended_upgrades_running
+    fi
 }
 
 # Enabled starts a timer at boot, and active means it's scheduled now: a stopped timer never fires
@@ -49,14 +68,13 @@ enable_apt_timers() {
     sudo systemctl enable --now "${APT_TIMERS[@]}"
 }
 
-# Print $AUTO_UPGRADES_CONF with each line of $AUTO_UPGRADES_CONTENT in place of the lines that
-# set its key, or appended when none does. Software & Updates keeps other APT::Periodic keys there,
-# such as AutocleanInterval, so every other line stays, as software-properties leaves them.
+# Print the content of $AUTO_UPGRADES_CONF, given as $1, with each line of $AUTO_UPGRADES_CONTENT in
+# place of the lines that set its key, or appended when none does. Software & Updates keeps other
+# APT::Periodic keys there, such as AutocleanInterval, so every other line stays, as
+# software-properties leaves them.
 merged_auto_upgrades() {
-    local current
-    current="$(cat "$AUTO_UPGRADES_CONF" 2>/dev/null)" || current=""
     # Through the environment, since BSD awk's -v rejects a newline
-    printf '%s' "$current" | AUTO_UPGRADES_LINES="$AUTO_UPGRADES_CONTENT" awk '
+    printf '%s' "$1" | AUTO_UPGRADES_LINES="$AUTO_UPGRADES_CONTENT" awk '
         function key_of(line) {
             sub(/^[ \t]+/, "", line)
             sub(/[ \t"].*/, "", line)
@@ -83,15 +101,19 @@ merged_auto_upgrades() {
 # Installing the package turns it on. dpkg-reconfigure can't turn it on without a terminal: it
 # reads the setting back from $AUTO_UPGRADES_CONF, so the step merges its keys into that file.
 turn_on_unattended_upgrades() {
-    local merged
+    local current merged
     if ! apt_installed unattended-upgrades; then
         apt_get install -y unattended-upgrades || return 1
     fi
     if ! unattended_upgrades_on; then
-        merged="$(merged_auto_upgrades)"
+        # A failed read fails, so the merge never starts from nothing
+        if ! current="$(read_root_file "$AUTO_UPGRADES_CONF")"; then
+            echo "  Couldn't read $AUTO_UPGRADES_CONF, so it was left as it is." >&2
+            return 1
+        fi
+        merged="$(merged_auto_upgrades "$current")" || return 1
         # Unchanged, the keys are already set here, and another file overrides them
-        [ "$merged" == "$(cat "$AUTO_UPGRADES_CONF" 2>/dev/null)" ] ||
-            write_root_file "$AUTO_UPGRADES_CONF" "$merged" || return 1
+        [ "$merged" == "$current" ] || write_root_file "$AUTO_UPGRADES_CONF" "$merged" || return 1
     fi
     unattended_upgrades_on && return 0
     echo "  APT's effective periodic settings still disable daily updates after writing $AUTO_UPGRADES_CONF." >&2

@@ -1,11 +1,10 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
 # ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
-# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy, only when one
-# exits 1 or 3, and again only when the message changed or a week passed, with one all-clear when
-# nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
+# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy when one exits
+# 1 or 3, and that one couldn't run when it exits otherwise, and again only when the message
+# changed or a week passed, with one all-clear when nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
 # saved, neither pushes.
 # The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
 # and the two runners are stubs.
@@ -92,7 +91,7 @@ assert_file_not_contains "$STUB_LOG" "ntfy URL set"
 assert_file_not_contains "$STUB_LOG" "Disk health"
 assert_file_not_contains "$STUB_LOG" "Claude Code"
 # An item only root could check comes back unverified, so the push says what wasn't checked
-assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, and NUT's and Docker's config files. Run sudo -v, then just status, to check them."
+assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
 fi
@@ -153,12 +152,33 @@ rm "$STATE"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_not_contains "$STUB_LOG" "curl"
 echo "$first_state" > "$STATE"
+# A runner that crashes checks nothing, so it's pushed, and the unit still fails
+cp "$SANDBOX/out/setup" "$SANDBOX/out/setup.report"
+printf '%s\n' "lib/common.sh: line 12: syntax error near unexpected token \`<<<'" "" > "$SANDBOX/out/setup"
 echo 2 > "$SANDBOX/exit/setup"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "setup.sh --status --quick exited 2"
+assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
+assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2"
+assert_file_contains "$STUB_LOG" "setup.sh's last output: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"
+# Its last line stays out of the hash, so a line that changes each run, such as one naming a temp
+# file, isn't pushed again
+printf '%s\n' "mktemp: /tmp/tmp.Xyz: something else" > "$SANDBOX/out/setup"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "Unchanged since the last push"
 assert_file_not_contains "$STUB_LOG" "curl"
+# A runner killed with no output, as by the OOM killer, still gets its push
+echo "$first_state" > "$STATE"
+: > "$SANDBOX/out/setup"
+echo 137 > "$SANDBOX/exit/setup"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 137"
+assert_file_not_contains "$STUB_LOG" "last output"
 echo 0 > "$SANDBOX/exit/setup"
+mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
 # A failed push fails the service, the output leaves the topic out, and the state stays as it was.
 # A changed message is pushed though the last push was recent.

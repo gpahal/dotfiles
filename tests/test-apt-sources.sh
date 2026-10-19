@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
-# os: ubuntu
 
-# lib/common.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
+# lib/system.sh's apt repo helpers. apt_source_state and status_apt_source judge a step's source
 # file by its exact content, so a missing file, a stale suite, and one a release upgrade turned off
 # all count. apt_repo_published says to wait while the repo's Release file for this release is a
 # 404. add_apt_repo keeps the old key and source when the key's download fails or its fingerprint
@@ -61,7 +60,6 @@ fetch() {
     [ ! -e "$SANDBOX/fetch-fails" ] || return 1
     cp "$SANDBOX/served-key" "$2"
 }
-# shellcheck disable=SC2016 # expanded by the stub
 stub gpg 'for key; do :; done
 [ "$1 $2" == "--show-keys --with-colons" ] || exit 2
 while IFS= read -r f; do

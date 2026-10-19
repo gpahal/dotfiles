@@ -2,12 +2,11 @@
 # The steps' functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The read-only diagnostics in the ubuntu and docker steps' status reports: free space, SMART
 # health, firmware updates, and Docker's disk usage, and run_bounded with timeout(1). Failing SMART
 # health, low free space, and unknown results need attention; firmware and Docker's usage are
-# information. df, sudo, smartctl, fwupdmgr, systemctl, and docker are stubs, and the checks below
+# information. df, sudo, smartctl, fwupdmgr, systemctl, docker, and dpkg are stubs, and the checks below
 # prove status asks for no password, starts no service, and refreshes, prunes, or wakes nothing.
 
 # shellcheck source=lib.sh
@@ -17,6 +16,9 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
+# No package is installed, and the machine is amd64
+stub dpkg-query 'exit 1'
+stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 # The ubuntu step's status reads apt's periodic settings
 stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
 echo "APT::Periodic::Unattended-Upgrade \"1\";"'
@@ -474,13 +476,24 @@ echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "info       Container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
-# A stopped daemon runs no containers, and isn't started
+# A stopped daemon isn't started. With no containerd shim running, it runs no containers. With one,
+# live-restore kept containers running, whose ports can't be checked.
 touch "$SANDBOX/docker-inactive"
+# pgrep -f matches the shims' command lines in $SANDBOX/shims, as real pgrep does with ERE
+stub pgrep '[ "$1" == -f ] && grep -qE -- "$2" "'"$SANDBOX"'/shims" 2> /dev/null'
 : > "$STUB_LOG"
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 assert_file_not_contains "$STUB_LOG" "docker ps"
-rm "$SANDBOX/docker-inactive"
+# Another containerd client's shim, such as k3s's, isn't Docker's
+echo "/usr/bin/containerd-shim-runc-v2 -namespace k8s.io -id abc -address /run/k3s/containerd/containerd.sock" > "$SANDBOX/shims"
+assert_exit 0 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
+echo "/usr/bin/containerd-shim-runc-v2 -namespace moby -id 032f -address /run/containerd/containerd.sock" >> "$SANDBOX/shims"
+assert_exit 3 diag status_docker_ports
+assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: containers are running while the Docker daemon is down, so their published ports can't be checked; start it with sudo systemctl start docker"
+assert_file_not_contains "$STUB_LOG" "docker ps"
+rm "$SANDBOX/docker-inactive" "$SANDBOX/shims"
 read_only
 # The docker step's report includes both once Docker is installed
 docker_installed() { true; }

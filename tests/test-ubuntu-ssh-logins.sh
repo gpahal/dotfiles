@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's SSH logins on a set-up machine (tests/ubuntu-step-fixture.sh): the drop-in's
 # settings, turning password logins off only on a key login's evidence (or the VM opt-in), and never
@@ -56,6 +55,7 @@ key_only_pending() {
     MAIN_OUTPUT="$RUN_OUTPUT"
     assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
     assert_contains "$RUN_OUTPUT" "Password logins stay on: $1"
+    assert_contains "$RUN_OUTPUT" "Copy your key over (ssh-copy-id <alias> from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale is up), SSH in with it, and re-run the ubuntu step."
     [ "${3:-}" == status ] || return 0
     assert_exit 3 status
     assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off ($1"

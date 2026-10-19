@@ -4,9 +4,9 @@
 set -euo pipefail
 
 # The tmux step installs tpm and each plugin at the commit tmux/plugins.lock pins, not at HEAD. A
-# re-run changes nothing, a plugin at another commit is missing until a re-run moves it back, and a
-# plugin that fails to fetch fails the step after the others install. plugins.lock lists the
-# plugins tmux.conf loads. Local repos stand in for GitHub.
+# re-run changes nothing, a plugin at another commit is missing until a re-run moves it back, with
+# no fetch when the checkout has the pin, and a plugin that fails to fetch fails the step after the
+# others install. plugins.lock lists the plugins tmux.conf loads. Local repos stand in for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -60,6 +60,23 @@ assert_contains "$RUN_OUTPUT" "missing    tmux plugin tmux-plugins/tmux-yank at 
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank at $short"
 assert_eq "$pinned" "$(installed)" "the checkouts after a re-run"
+
+# Offline, a checkout that has its pin, as one moved from it does, goes back to it without a fetch.
+# One that lacks its pin fails.
+yank="$HOME/.tmux/plugins/tmux-yank"
+git -C "$yank" checkout -q --detach "$(cat "$SANDBOX/head")"
+mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" "$SANDBOX/yank"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank at $short"
+assert_eq "$pinned" "$(installed)" "the checkouts after an offline re-run"
+rm -rf "$yank"
+git init -q "$yank"
+git -C "$yank" fetch -q --depth 1 "$SANDBOX/yank" "$(cat "$SANDBOX/head")"
+git -C "$yank" checkout -q --detach FETCH_HEAD
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-yank"
+assert_eq "$(cat "$SANDBOX/head")" "$(git -C "$yank" rev-parse HEAD)" "a checkout without its pin, offline"
+mv "$SANDBOX/yank" "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
 
 # A plugin that can't be fetched fails the step, and the others still install
 rm -rf "$HOME/.tmux/plugins"

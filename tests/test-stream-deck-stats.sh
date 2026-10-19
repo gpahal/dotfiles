@@ -4,9 +4,12 @@ set -euo pipefail
 # The Stream Deck plugin's stats.js reads vm_stat, vm.swapusage, ps, and netstat output as
 # Activity Monitor counts them, and draws each stat key as an SVG, with a placeholder when a stat
 # is missing. Its sampler survives macmon failing to start, ignores a stopped macmon that exits
-# late, backs off from one that keeps crashing, notices macmon once it's installed, and starts the
-# sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
+# late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
+# installed, and starts the sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
 # fake spawn for macmon, apart from one real spawn of a file that isn't executable.
+# plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
+# hotkey does, and runs it again once that one exits. A fake Stream Deck socket and open-in stand
+# in for the real ones.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -122,16 +125,65 @@ sampler.stop();
 console.log(JSON.stringify({ spawned: children.length, killed: children.map((c) => c.killed), gpu }));')" \
     "a stopped macmon's late exit"
 
-# A macmon that keeps exiting non-zero is restarted at once twice, then only after a wait
+# A macmon that keeps exiting, with a status, by a signal, or even with 0, is restarted at once
+# twice, then only after a wait, and each exit is logged
+crashing_macmon() {
+    local code="$1" signal="$2" shown="$3"
+    out="$(sampler_js "const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess });
+for (let i = 0; i < 6; i++) {
+  await sampler.sample(['gpu']);
+  children.at(-1).emit('exit', $code, $signal);
+}
+console.log(children.length);
+console.log(logs.join('\\n'));")"
+    assert_eq 3 "$(printf '%s\n' "$out" | head -n 1)" "macmon starts while it keeps exiting ($shown)"
+    assert_contains "$out" "macmon exited ($shown)
+macmon exited ($shown)
+macmon exited ($shown); trying again in 4 s"
+}
+crashing_macmon 1 null 1
+crashing_macmon null "'SIGSEGV'" SIGSEGV
+crashing_macmon 0 null 0
+
+# A macmon that prints a sample, then exits, still backs off: a sample doesn't end the row of
+# failures. A run that lasted a minute does, so one that exits now and then never waits.
 out="$(sampler_js 'const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess });
 for (let i = 0; i < 6; i++) {
   await sampler.sample(["gpu"]);
+  children.at(-1).stdout.emit("data", JSON.stringify({ gpu_active_ratio: 0.5 }) + "\n");
   children.at(-1).emit("exit", 1, null);
 }
 console.log(children.length);
 console.log(logs.join("\n"));')"
-assert_eq 3 "$(printf '%s\n' "$out" | head -n 1)" "macmon starts while it keeps crashing"
-assert_contains "$out" "macmon exited with status 1; trying again in 4 s"
+assert_eq 3 "$(printf '%s\n' "$out" | head -n 1)" "macmon starts while it keeps exiting after a sample"
+assert_contains "$out" "macmon exited (1); trying again in 4 s"
+out="$(sampler_js 'let t = 0;
+const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess, clock: () => t });
+for (let i = 0; i < 6; i++) {
+  await sampler.sample(["gpu"]);
+  t += 120000;
+  children.at(-1).emit("exit", 1, null);
+}
+console.log(children.length);
+console.log(logs.join("\n"));')"
+assert_eq 6 "$(printf '%s\n' "$out" | head -n 1)" "macmon starts when each run lasts two minutes"
+assert_not_contains "$out" "trying again"
+
+# A macmon spawn throws for, such as ENOEXEC from a file that isn't a program, is a failed start
+# like any other: logged, backed off from, and the other stats still update
+out="$(sampler_js 'let spawns = 0;
+const throwingSpawn = () => {
+  spawns++;
+  throw Object.assign(new Error("spawn ENOEXEC"), { code: "ENOEXEC" });
+};
+const sampler = s.createSampler({ log, macmonPath: process.argv[1], spawnProcess: throwingSpawn });
+await new Promise((r) => setTimeout(r, 100));
+const cpu = (await sampler.sample(["cpu", "gpu"])).cpu != null;
+for (let i = 0; i < 5; i++) await sampler.sample(["cpu", "gpu"]);
+console.log(spawns, cpu);
+console.log(logs.join("\n"));')" || fail "a spawn that throws ended node: $out"
+assert_eq "3 true" "$(printf '%s\n' "$out" | head -n 1)" "macmon starts, and CPU samples, while spawn throws"
+assert_contains "$out" "couldn't run macmon: spawn ENOEXEC; trying again in 4 s"
 
 # macmon installed while the keys show: they stop saying "needs macmon" without a plugin restart,
 # and the missing binary is logged once
@@ -151,4 +203,40 @@ const sample = await sampler.sample(["cpu"]);
 const before = sample.cpuHistory.length;
 sampler.reset();
 console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
+# A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
+# chrome-tab waits until $SANDBOX/release exists.
+PLUGIN="$SANDBOX/plugin"
+mkdir -p "$PLUGIN/bin"
+cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
+cat > "$PLUGIN/bin/open-in" << EOF
+echo "\$1" >> "$SANDBOX/open-in.log"
+if [ "\$1" == chrome-tab ]; then
+    while [ ! -e "$SANDBOX/release" ]; do sleep 0.05; done
+fi
+echo "done \$1"
+EOF
+# Press New Tab twice and Files twice, let New Tab's open-in exit, then press New Tab again
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const press = (key) =>
+  socket.onmessage({ data: JSON.stringify({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key }) });
+const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
+const until = async (test) => { while (!test()) await new Promise((r) => setTimeout(r, 20)); };
+(async () => {
+  press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
+  await until(() => done("files") === 2);
+  require("node:fs").writeFileSync(process.argv[2], "");
+  await until(() => done("chrome-tab") >= 1);
+  press("chrome-tab");
+  await until(() => done("chrome-tab") >= 2);
+  process.exit(0);
+})();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
+assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
+    "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
 test_done

@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's warning about Wi-Fi that connects only after login: a connection limited to a
 # user, or whose password NetworkManager doesn't keep for the system (psk-flags agent-owned or

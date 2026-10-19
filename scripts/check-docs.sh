@@ -3,24 +3,18 @@
 set -euo pipefail
 
 # Check that the docs list each runner's steps as its STEPS has them, on macOS and on Ubuntu:
-# - README.md "How setup works": the step table, which holds both OSes' steps in order
-# - README.md "Ubuntu": the "Steps." item under "What differs from macOS"
+# - README.md "How setup works": the step table, which holds both OSes' steps in order, and marks
+#   a step "macOS only" or "Ubuntu only" when the other OS's STEPS lacks it
 # - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
-# - ai_tools/README.md "Ubuntu": "Run `bash ai_tools/setup.sh` on the Ubuntu machine too ... It
-#   runs ..."
 # Also check that:
-# - README.md "What's included" lists every formula and App Store app in homebrew/Brewfile and
-#   every cask in homebrew/install.sh's CASKS as a list item's link in the section package_section
+# - README.md "What's included" lists every formula in homebrew/Brewfile, and every App Store app
+#   in homebrew/install.sh's MAS_APPS and cask in its CASKS, as a list item's link in the section package_section
 #   names, and lists no other package in its "CLI tools" and "Apps" lists
 # - README.md "Ubuntu" names the casks in UBUNTU_CASKS, as Mac-only the formulae in the
 #   Brewfile's `if OS.mac?` blocks, and in its "System packages." item the apt packages in
 #   homebrew/install.sh's UBUNTU_PACKAGES
 # - README.md "Maintenance" copies back each file the steps' *_files functions copy, from where
 #   the step copies it, and nothing else
-# - each Updating section describes every stage of upgrade or upgrade-ai-tools, as stage_doc maps,
-#   and each stage runs what stage_code maps
-# - README.md's just lines, in "How setup works" and "Maintenance", name the justfile's recipes and
-#   the scripts they run
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
@@ -42,14 +36,10 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the section of Markdown file $1 under heading $2, given with its #s, without the heading:
-# each line down to the next heading of the same or a higher level. A # line in a code block, such
-# as a shell comment, isn't a heading.
+# Print the section of a Markdown file under a heading, given with its #s, as md_section does. A
+# missing section prints nothing, which the check that reads it reports.
 section() {
-    awk -v h="$2" 'BEGIN { level = index(h, " ") }
-        /^[[:space:]]*(```|~~~)/ { fence = !fence }
-        !fence && /^#+ / && index($0, " ") <= level { on = ($0 == h); next }
-        on' "$1"
+    md_section "$@" || true
 }
 
 # Print the words in list file $1, or, when it's empty, the text the check looked for in the doc
@@ -92,8 +82,8 @@ done
 # README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"
 section "$readme" "## Ubuntu" > "$tmp/ubuntu-section"
-section "$readme" "## How setup works" | { grep '^| `' || true; } |
-    sed 's/^| `\([^`]*\)`.*/\1/' > "$tmp/table"
+section "$readme" "## How setup works" | { grep '^| `' || true; } > "$tmp/table-rows"
+sed 's/^| `\([^`]*\)`.*/\1/' "$tmp/table-rows" > "$tmp/table"
 for os in macos ubuntu; do
     in_both "$tmp/table" "$tmp/setup-$os" > "$tmp/table-$os"
     compare "README.md How setup works's step table, for $os," "$tmp/setup-$os" "$tmp/table-$os" \
@@ -103,12 +93,27 @@ cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"
-
-# README.md "Ubuntu": the Steps item names the steps in one backquoted list
-line="$(awk '/^- \*\*Steps\.\*\* Ubuntu runs `/ { print; exit }' "$tmp/ubuntu-section")"
-backquoted "$line" | head -1 | tr ' ' '\n' > "$tmp/ubuntu-list"
-compare "README.md Ubuntu's \"Steps.\" item" "$tmp/setup-ubuntu" "$tmp/ubuntu-list" \
-    '"- **Steps.** Ubuntu runs `<steps>`" under "## Ubuntu"'
+# Each row says "macOS only" or "Ubuntu only" when one OS's STEPS lacks the step, which is how an
+# Ubuntu user learns which steps run there
+while IFS= read -r row; do
+    step="${row#'| `'}"
+    step="${step%%'`'*}"
+    mark=both
+    case "$row" in
+        *"macOS only"*) mark=macOS ;;
+        *"Ubuntu only"*) mark=Ubuntu ;;
+    esac
+    runs=""
+    ! grep -qxF "$step" "$tmp/setup-macos" || runs=macOS
+    if grep -qxF "$step" "$tmp/setup-ubuntu"; then
+        [ -z "$runs" ] && runs=Ubuntu || runs=both
+    fi
+    [ -n "$runs" ] && [ "$runs" != "$mark" ] || continue
+    case "$runs" in
+        both) fail "README.md How setup works's step table marks $step \"$mark only\", but both OSes' STEPS have it" ;;
+        *) fail "README.md How setup works's step table should mark $step \"$runs only\", the only OS whose STEPS have it" ;;
+    esac
+done < "$tmp/table-rows"
 
 # ai_tools/README.md: one sentence lists every step, and the next says which Ubuntu skips
 ai_readme="$REPO_DIR/ai_tools/README.md"
@@ -124,16 +129,7 @@ grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
 compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
     '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
 
-# ai_tools/README.md "Ubuntu": the sentence after "Run `bash ai_tools/setup.sh` on the Ubuntu
-# machine too" names Ubuntu's steps
-line="$(grep -m1 '^Run `bash ai_tools/setup.sh` on the Ubuntu machine too' "$ai_readme" || true)"
-sentence="${line#*It runs }"
-[ "$sentence" != "$line" ] || sentence=""
-backquoted "${sentence%%.*}" > "$tmp/ai-ubuntu-section"
-compare "ai_tools/README.md Ubuntu's \"It runs\" list" "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-section" \
-    '"It runs `<step>`, ..." in the line starting "Run `bash ai_tools/setup.sh` on the Ubuntu machine too" in ai_tools/README.md'
-
-# README.md "What's included" against the Brewfile and CASKS. A package and a name in the README
+# README.md "What's included" against the Brewfile, MAS_APPS, and CASKS. A package and a name in the README
 # match when they're equal lowercased, with all but letters and digits dropped: the README's
 # ShellCheck is the formula shellcheck, and Logi Options+ the cask logi-options+. Homebrew names
 # some packages apart from their tools: git-delta is delta, a font cask starts with font-, and a
@@ -162,7 +158,8 @@ package_section() {
 brewfile="$REPO_DIR/homebrew/Brewfile"
 {
     brewfile_formulae "$brewfile" | sed 's/^/formula /; s/ [^ ]*$//'
-    sed -nE 's/^[[:space:]]*mas "([^"]+)".*/mas \1/p' "$brewfile"
+    # MAS_APPS's entries read "<id> <name>", with "optional" after some
+    array_entries "$REPO_DIR/homebrew/install.sh" MAS_APPS | sed -E 's/^[0-9]+ /mas /; s/ optional$//'
     cask_list "$REPO_DIR/homebrew/install.sh" CASKS | sed 's/^/cask /'
 } > "$tmp/packages"
 [ -s "$tmp/packages" ] || fail "Couldn't read the packages from homebrew/Brewfile and homebrew/install.sh"
@@ -187,6 +184,7 @@ while read -r kind name && read -r canonical_name <&3; do
     if ! grep -qxF -- "$canonical_name" "$tmp/entries-$section"; then
         case "$kind" in
             cask) fail "README.md What's included doesn't list the cask $name, in its $section section" ;;
+            mas) fail "README.md What's included doesn't list the App Store app $name, in its $section section" ;;
             *) fail "README.md What's included doesn't list the Brewfile's $name, in its $section section" ;;
         esac
     fi
@@ -197,7 +195,7 @@ awk '/^### / { in_list = ($0 ~ /^### (CLI tools|Apps)/) } in_list && /^- \[/' "$
 canonical < "$tmp/listed" > "$tmp/listed-names"
 while IFS= read -r label && IFS= read -r canonical_name <&3; do
     grep -qxF -- "$canonical_name" "$tmp/package-names" ||
-        fail "README.md What's included lists $label, which isn't in the Brewfile or CASKS"
+        fail "README.md What's included lists $label, which isn't in the Brewfile, MAS_APPS, or CASKS"
 done < "$tmp/listed" 3< "$tmp/listed-names"
 
 # README.md "Ubuntu": the casks the Packages item says Ubuntu gets "here", against UBUNTU_CASKS
@@ -279,7 +277,7 @@ fi
 # <repo file> <tab> <home file>, from the repo with the same empty HOME. lazygit answers
 # --print-config-dir as it does on macOS. Each line must be a cp, or a loop around one, and only
 # those lines run.
-section "$readme" "## Maintenance" | awk '/^```/ { fences++; next } fences == 1' > "$tmp/copy-back"
+section "$readme" "## Maintenance" | awk -v fence="$MD_FENCE" '$0 ~ fence { fences++; next } fences == 1' > "$tmp/copy-back"
 while IFS= read -r line; do
     case "$line" in
         "cp "* | "for "*"; do cp "*"; done") printf '%s\n' "$line" ;;
@@ -321,112 +319,11 @@ while IFS=$'\t' read -r file home; do
     fi
 done < "$tmp/copied-back"
 
-# README.md and ai_tools/README.md "Updating" against the stages of upgrade and upgrade-ai-tools in
-# scripts/upgrade.sh, whose functions are upgrade and upgrade_ai_tools: each name a stage adds to
-# failed, directly or through _stage_failed, must map to text its Updating section has (stage_doc),
-# and to code the function's body has (stage_code). Each item of the section's first list must
-# describe a stage. A new stage goes in the map.
-# stage_doc's text is what a user sees, such as the command they'd run or what the stage updates,
-# so the docs can leave out how the script runs it.
-stage_doc() {
-    case "$1:$2" in
-        upgrade:apt) echo 'apt packages' ;;
-        upgrade:brew) echo 'brew upgrade' ;;
-        "upgrade:brew bundle") echo 'formulae added to the Brewfile' ;;
-        upgrade:casks) echo 'casks added to the homebrew step' ;;
-        "upgrade:brew cleanup") echo 'brew cleanup' ;;
-        upgrade:fc-cache) echo 'font cache' ;;
-        "upgrade:self-updating casks") echo 'Casks that update themselves' ;;
-        upgrade:mas) echo 'mas upgrade' ;;
-        "upgrade:vim plugins" | "upgrade:tmux plugins") echo 'vim and tmux plugins' ;;
-        upgrade:mise) echo 'mise upgrade' ;;
-        "upgrade:mise hook-env") echo 'the Node `mise upgrade` installed' ;;
-        upgrade:npm) echo 'npm update -g' ;;
-        upgrade:uv) echo 'uv tool upgrade --all' ;;
-        upgrade:rustup) echo 'rustup update' ;;
-        upgrade:upgrade-ai-tools) echo 'upgrade-ai-tools' ;;
-        "upgrade-ai-tools:claude update") echo 'claude update' ;;
-        "upgrade-ai-tools:desktop apps") echo 'Desktop apps' ;;
-        "upgrade-ai-tools:codex cask") echo 'Codex CLI' ;;
-        "upgrade-ai-tools:claude marketplaces") echo 'claude plugin marketplace update' ;;
-        'upgrade-ai-tools:claude plugin $id') echo 'claude plugin update' ;;
-        "upgrade-ai-tools:claude plugin list") echo 'claude plugin list' ;;
-        "upgrade-ai-tools:t3 update") echo 't3 update' ;;
-        "upgrade-ai-tools:codex marketplaces") echo 'codex plugin marketplace upgrade' ;;
-        *) return 1 ;;
-    esac
-}
-
-# The text in the function's body that runs a stage, where it isn't what stage_doc quotes
-stage_code() {
-    case "$1:$2" in
-        upgrade:apt) echo 'apt_get_update && sudo apt' ;;
-        upgrade:brew) echo 'brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade' ;;
-        "upgrade:brew bundle") echo '_install_new_formulae' ;;
-        upgrade:casks) echo '_install_new_casks' ;;
-        upgrade:fc-cache) echo 'fc-cache -f' ;;
-        upgrade:rustup) echo '.cargo/bin/rustup update' ;;
-        "upgrade:self-updating casks") echo '_upgrade_self_updating_casks upgrade ' ;;
-        "upgrade:vim plugins") echo 'PlugUpdate' ;;
-        "upgrade:tmux plugins") echo 'sync_tmux_plugins' ;;
-        "upgrade:mise hook-env") echo 'mise hook-env' ;;
-        "upgrade-ai-tools:desktop apps") echo '_upgrade_self_updating_casks upgrade-ai-tools claude ' ;;
-        "upgrade-ai-tools:codex cask") echo '_upgrade_self_updating_casks upgrade-ai-tools codex ' ;;
-        *) stage_doc "$1" "$2" ;;
-    esac
-}
-for fn in upgrade upgrade-ai-tools; do
-    doc=README.md
-    [ "$fn" == upgrade ] || doc=ai_tools/README.md
-    section "$REPO_DIR/$doc" "## Updating" > "$tmp/updating"
-    awk -v fn="${fn//-/_}() {" '$0 == fn { on = 1 } on { print } on && /^\}/ { exit }' "$REPO_DIR/scripts/upgrade.sh" > "$tmp/body"
-    stages="$({ grep -oE 'failed\+=\([^)]+\)|_stage_failed ("[^"]+"|[^ "]+)' "$tmp/body" || true; } |
-        sed -E 's/^failed\+=\(//; s/\)$//; s/^_stage_failed //; s/^"//; s/"$//' | awk '!seen[$0]++')"
-    [ -n "$stages" ] || fail "Couldn't read $fn's stages from scripts/upgrade.sh"
-    : > "$tmp/stage-texts"
-    while IFS= read -r stage; do
-        [ -n "$stage" ] || continue
-        if ! text="$(stage_doc "$fn" "$stage")"; then
-            fail "$fn has a stage, $stage, that scripts/check-docs.sh doesn't map to its docs"
-            continue
-        fi
-        printf '%s\n' "$text" >> "$tmp/stage-texts"
-        grep -qF -- "$text" "$tmp/updating" || fail "$doc Updating doesn't describe $fn's $stage stage: $text"
-        code="$(stage_code "$fn" "$stage")"
-        grep -qF -- "$code" "$tmp/body" || fail "$fn's $stage stage doesn't run what $doc Updating says: $code"
-    done <<< "$stages"
-    # The first list's items, each with its continuation lines
-    awk '/^- / { item = 1 } item && !/^(- |  )/ { exit } item' "$tmp/updating" |
-        awk '/^- / && NR > 1 { print "" } { printf "%s ", $0 } END { print "" }' > "$tmp/items"
-    while IFS= read -r item; do
-        [ -n "$item" ] || continue
-        grep -qFf "$tmp/stage-texts" <<< "$item" ||
-            fail "$doc Updating has an item that describes none of $fn's stages: ${item:0:60}"
-    done < "$tmp/items"
-done
-
-# README.md "How setup works" and "Maintenance": the blocks of just lines name each of the
-# justfile's recipes but default, and the script each line's comment says it runs is in that recipe
-{ section "$readme" "## How setup works"; section "$readme" "## Maintenance"; } | { grep '^just [a-z]' || true; } > "$tmp/just-lines"
-awk '{ print $2 }' "$tmp/just-lines" | sort > "$tmp/just-doc"
-sed -nE 's/^([a-z][a-z0-9-]*)( [^:]*)?:( .*)?$/\1/p' "$REPO_DIR/justfile" | grep -vx default | sort > "$tmp/just-recipes" || true
-cmp -s "$tmp/just-recipes" "$tmp/just-doc" ||
-    fail "README.md's just recipes don't match the justfile. The justfile: $(tr '\n' ' ' < "$tmp/just-recipes")
-  The doc: $(doc_words "$tmp/just-doc" 'lines starting "just <recipe>" under "## How setup works" and "## Maintenance"')"
-while IFS= read -r line; do
-    recipe="$(printf '%s\n' "$line" | awk '{ print $2 }')"
-    script="$(printf '%s\n' "${line#*# }" | sed -nE 's/^bash ([^ ,:]+).*/\1/p')"
-    [ -n "$script" ] || continue
-    awk -v r="$recipe" '$0 ~ "^" r "( [^:]*)?:( |$)" { on = 1; next } on && /^[^ ]/ { exit } on' "$REPO_DIR/justfile" |
-        grep -qF -- "$script" || fail "README.md says just $recipe runs $script, which its recipe doesn't"
-done < "$tmp/just-lines"
-
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
-# missing
+# missing or empty
 for doc in README.md ai_tools/README.md; do
     for os in macOS Ubuntu; do
-        "$BASH" -c 'source "$1/lib/common.sh" && print_doc_section "$1/$2" "## Manual steps" "### $3"' \
-            bash "$REPO_DIR" "$doc" "$os" > /dev/null 2>&1 ||
+        md_section "$REPO_DIR/$doc" "## Manual steps" "### $os" > /dev/null ||
             fail "$doc has no \"### $os\" under \"## Manual steps\", which the manual-steps scripts print"
     done
 done

@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # setup_codex_sandbox on Ubuntu: it installs bubblewrap, and when bwrap then fails because AppArmor
 # restricts user namespaces, loads the bwrap-userns-restrict profile that the apparmor package puts

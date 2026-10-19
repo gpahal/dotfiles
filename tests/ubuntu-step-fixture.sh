@@ -119,19 +119,27 @@ ubuntu_step_setup() {
     # sshd -t fails on any drop-in with a "Bogus" line, naming the file the way sshd does. sshd -T
     # prints the port, and the settings the drop-in sets as sshd reads them: the first value in the
     # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
-    # user=<user>,..., a "Match User <user>" block's first value wins over those. sshd -T fails while
-    # $SANDBOX/sshd-T-fails exists.
+    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" or "Match Address
+    # <address>" block, or one whose list has a /24 the address is in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
     stub ss
     stub sshd 'case "$1" in
         -T) [ ! -e "'"$SANDBOX"'/sshd-T-fails" ] || exit 255
-            user=""
+            user="" addr=""
             [ "${2:-}" != -C ] || user="$(sed -n "s/^user=\([^,]*\).*/\1/p" <<< "$3")"
+            [ "${2:-}" != -C ] || addr="$(sed -n "s/.*addr=\([^,]*\).*/\1/p" <<< "$3")"
             echo "port 22"
-            cat "'"$SANDBOX"'"/sshd_config.d/*.conf 2> /dev/null | awk -v user="$user" '"'"'
+            cat "'"$SANDBOX"'"/sshd_config.d/*.conf 2> /dev/null | awk -v user="$user" -v addr="$addr" '"'"'
                 { k = tolower($1) }
-                k == "match" { matched = tolower($2) == "user" && $3 == user; inmatch = 1; next }
+                k == "match" {
+                    matched = (tolower($2) == "user" && $3 == user) || (tolower($2) == "address" && $3 == addr)
+                    # A /24, or a list that has one, as the step samples them
+                    if (tolower($2) == "address" && match($3, /[0-9.]+\.0\/24/))
+                        matched = matched || index(addr, substr($3, RSTART, RLENGTH - 4)) == 1
+                    inmatch = 1
+                    next
+                }
                 inmatch && !matched { next }
                 k == "allowusers" { for (i = 2; i <= NF; i++) users = users " " $i; next }
                 k ~ /^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin)$/ {
@@ -150,15 +158,10 @@ ubuntu_step_setup() {
             done ;;
     esac'
     # ufw status lists every rule the step adds, once it has run ufw --force enable
+    ufw_status_listing > "$SANDBOX/ufw-status"
     stub ufw 'case "$1" in
         --force) touch "'"$SANDBOX"'/ufw-on" ;;
-        status) [ -e "'"$SANDBOX"'/ufw-on" ] && printf "%s\n" "Status: active" "" \
-            "22/tcp                     ALLOW       10.0.0.0/8" \
-            "22/tcp                     ALLOW       192.168.0.0/16" \
-            "22/tcp                     ALLOW       fd00::/8" \
-            "22/tcp                     ALLOW       fe80::/10" \
-            "Anywhere on tailscale0     ALLOW       Anywhere" \
-            "41641/udp                  ALLOW       Anywhere" ;;
+        status) [ -e "'"$SANDBOX"'/ufw-on" ] && cat "'"$SANDBOX"'/ufw-status" ;;
     esac'
     # One wired connection, "Wired connection 1", whose Wake-on-LAN setting is in $SANDBOX/wol, and
     # a Wi-Fi one. The step names connections by UUID, since two can share a name.

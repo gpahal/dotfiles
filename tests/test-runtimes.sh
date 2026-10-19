@@ -38,7 +38,6 @@ mv "$STUB_DIR/rustup" "$RUST_STUB"
 export MISE_CONFIG_FILE="$HOME/.config/mise/config.toml"
 mkdir -p "$HOME/.config/mise"
 touch "$MISE_CONFIG_FILE"
-# shellcheck disable=SC2016 # expanded by the stub
 stub mise 'echo "mise-cwd $PWD" >> "$STUB_LOG"
 case "$1 ${2:-}" in
     "config get")
@@ -67,7 +66,6 @@ case "$1 ${2:-}" in
         [ -z "${MISE_LS_ERR:-}" ] || echo "$MISE_LS_ERR" >&2 ;;
 esac'
 # Writes an installer that logs its arguments to the file after -o
-# shellcheck disable=SC2016
 stub curl 'while [ $# -gt 0 ]; do
     if [ "$1" == -o ]; then
         echo "echo \"rustup-init \$*\" >> \"\$STUB_LOG\"" > "$2"
@@ -116,6 +114,13 @@ assert_file_not_contains "$STUB_LOG" "mise use"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
 assert_contains "$RUN_OUTPUT" "ok         mise's global go: latest"
+# A global in table form, which mise config get prints as several lines of TOML, shows as its
+# version, or as "(a table)" without one
+MISE_NODE='version = "22"
+postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
+assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
+assert_contains "$RUN_OUTPUT" "ok         mise's global go: yours, (a table) (the repo's is latest)"
+assert_not_contains "$RUN_OUTPUT" "postinstall"
 # Asked with a terminal: no keeps it, yes replaces only that tool
 is_interactive() { true; }
 confirm() {
@@ -131,6 +136,16 @@ assert_file_not_contains "$STUB_LOG" "mise use"
 assert_exit 0 main <<< y
 assert_file_contains "$STUB_LOG" "mise use --global node@lts"
 assert_file_not_contains "$STUB_LOG" "go@latest"
+# A table-form global: one without a version is asked about as "(a table)", and one whose version
+# is the repo's counts as already set
+: > "$STUB_LOG"
+MISE_NODE='version = "lts"
+postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run main <<< n
+assert_eq 0 "$RUN_STATUS" "main's status with table-form globals"
+assert_contains "$RUN_OUTPUT" "mise's global go is (a table), not the repo's latest. Replace it?"
+assert_contains "$RUN_OUTPUT" "mise's global node is already lts."
+assert_not_contains "$RUN_OUTPUT" "postinstall"
+assert_file_not_contains "$STUB_LOG" "mise use"
 # lib/common.sh brings back the real confirm and is_interactive
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"

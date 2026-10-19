@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale waiting for its
 # first login, its apt source for an older release or a release it has no packages for, and its
@@ -270,4 +269,53 @@ APT::Periodic::Enable "1";' "$(cat "$AUTO_UPGRADES_CONF")" "20auto-upgrades afte
 : > "$STUB_LOG"
 run main
 assert_file_not_contains "$STUB_LOG" "tee $AUTO_UPGRADES_CONF"
+
+# Only root can read 20auto-upgrades, so apt-config skips it as you. Status leaves it unverified
+# without cached credentials. The step reads it with sudo, merges its keys into what's there, and
+# keeps the rest. sudo's stub runs the command as you, with the file readable for its length, as
+# root reads it, and sudo -n works while $SANDBOX/cached exists.
+stub sudo '[ "${1:-}" != -n ] || { [ -e "'"$SANDBOX"'/cached" ] || exit 1; shift; }
+f="'"$AUTO_UPGRADES_CONF"'"
+[ ! -e "'"$SANDBOX"'/sudo-cat-fails" ] || [ "$*" != "cat $f" ] || exit 1
+hidden=false
+if [ -e "$f" ] && [ ! -r "$f" ]; then chmod u+r "$f"; hidden=true; fi
+status=0
+env "$@" || status=$?
+! "$hidden" || chmod u-r "$f"
+exit "$status"'
+printf '%s\n' 'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended-Upgrade "0";' > "$AUTO_UPGRADES_CONF"
+chmod 200 "$AUTO_UPGRADES_CONF"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
+# With nothing else to change, a re-run doesn't ask for sudo only to read it, and says how to check
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_not_contains "$RUN_OUTPUT" "These need sudo"
+assert_contains "$RUN_OUTPUT" "Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
+assert_file_not_contains "$STUB_LOG" "sudo cat"
+# With another change pending, checking it joins the list. sudo can't read it either: the step
+# fails and writes nothing.
+rm "$SANDBOX/locale"
+touch "$SANDBOX/sudo-cat-fails"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off"
+assert_contains "$RUN_OUTPUT" "Couldn't read $AUTO_UPGRADES_CONF, so it was left as it is."
+rm "$SANDBOX/sudo-cat-fails"
+chmod 600 "$AUTO_UPGRADES_CONF"
+assert_eq 'APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "0";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after a failed read"
+chmod 200 "$AUTO_UPGRADES_CONF"
+rm -f "$SANDBOX/locale"
+assert_exit 0 main
+chmod 600 "$AUTO_UPGRADES_CONF"
+assert_eq 'APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Enable "1";
+APT::Periodic::Update-Package-Lists "1";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after the merge"
+chmod 200 "$AUTO_UPGRADES_CONF"
+# With cached credentials, status checks it through sudo
+touch "$SANDBOX/cached"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         unattended-upgrades runs daily"
+chmod 600 "$AUTO_UPGRADES_CONF"
 test_done

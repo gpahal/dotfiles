@@ -2,7 +2,6 @@
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-# os: ubuntu
 
 # The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh): what status
 # lists, a declined run, an approved one, then apt's daily timers, the packages apt holds back, a
@@ -288,7 +287,7 @@ eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
 GIT_REPO="$SANDBOX/git-main"
 git init -q "$GIT_REPO"
 mkdir "$GIT_REPO/sub"
-git -C "$GIT_REPO" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+git_commit "$GIT_REPO" --allow-empty -m init
 git -C "$GIT_REPO" worktree add -q "$SANDBOX/git-wt" -b wt
 mkdir "$SANDBOX/git-wt/sub"
 assert_exit 1 in_git_worktree "$GIT_REPO"

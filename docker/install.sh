@@ -5,15 +5,17 @@ set -euo pipefail
 # Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
 # rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
 # networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. Then it asks on its own whether
-# to add you to the docker group, which lets `docker` run without sudo but is root-equivalent;
-# without it, use sudo docker. On macOS, OrbStack (from the homebrew step) provides Docker.
+# These need sudo, so the step lists what's missing and asks once. The run that installs Docker
+# then asks on its own whether to add you to the docker group, which lets `docker` run without sudo
+# but is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
@@ -35,17 +37,23 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
 # default-network-opts the user-defined networks, such as Compose's, created after the change.
 # Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
-# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps only the
-# 172 ones, so docker0 stays on 172.17.0.0/16, and a network created after the change stays out of
-# the SSH ranges. The trade-off: docker0 takes one of the 15, so a 15th network of your own fails.
-# ufw blocks containers from reaching ports on the host, SSH included, since the ubuntu step's SSH
-# ranges leave out 172.16.0.0/12. `sudo ufw allow in on docker0` lets in the default bridge, and
-# each user-defined network's bridge, br-<first 12 characters of the network ID>, needs its own
-# rule. The step adds neither.
+# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
+# 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
+# of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
+# Compose project per worktree. docker0 keeps the subnet Docker's network store has for it, through
+# a reboot or a deleted docker0: 172.17.0.0/16 where Docker ran before the change, and
+# 172.17.0.0/24 on a fresh install.
+# ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
+# 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
+# a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
+# other ports, and each user-defined network's bridge, br-<first 12 characters of the network ID>,
+# needs its own rule. The step adds neither.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
-    | .["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]
+    | .["default-address-pools"] = [
+        {base: "172.17.0.0/16", size: 24}, {base: "172.18.0.0/15", size: 24},
+        {base: "172.20.0.0/14", size: 24}, {base: "172.24.0.0/13", size: 24}]
     | if has("log-opts") then .["log-opts"] |= with_entries(select(
         .key | IN("max-size", "max-file", "compress", "labels", "labels-regex",
                   "env", "env-regex", "tag", "mode", "max-buffer-size")
@@ -143,7 +151,7 @@ docker_sudo_items() {
 daemon_settings_applied() {
     local current
     current="$(cat)"
-    [ -n "$current" ] && jq -e "($DOCKER_DAEMON_SETTINGS) == ." <<< "$current" &> /dev/null
+    [ -n "$current" ] && jq -s -e "length == 1 and (.[0] | ($DOCKER_DAEMON_SETTINGS) == .)" <<< "$current" &> /dev/null
 }
 
 daemon_config_unreadable() {
@@ -153,11 +161,7 @@ daemon_config_unreadable() {
 # Reads without sudo, or with sudo only when it doesn't ask for a password. A file only root can
 # read is otherwise unverified, so apply lists it to check after approval.
 daemon_configured() {
-    if [ -r "$DOCKER_DAEMON_CONFIG" ]; then
-        daemon_settings_applied < "$DOCKER_DAEMON_CONFIG"
-    else
-        sudo -n cat "$DOCKER_DAEMON_CONFIG" 2> /dev/null | daemon_settings_applied
-    fi
+    read_root_file "$DOCKER_DAEMON_CONFIG" -n | daemon_settings_applied
 }
 
 # What applying the daemon settings does to a running daemon, for the pending list
@@ -252,13 +256,20 @@ ports_on_every_address() {
 # Published ports skip ufw, since Docker's iptables rules come first. The daemon settings bind them
 # to 127.0.0.1, but not on a network created before them, or for a port published on 0.0.0.0, so
 # status lists the running containers' ports that every address reaches. docker.socket would start
-# a stopped daemon, which then runs no containers, so a stopped one isn't asked.
+# a stopped daemon, so a stopped one isn't asked. live-restore keeps containers running while it's
+# stopped, each under a containerd-shim-runc-v2 process in containerd's moby namespace, which
+# Docker's are; other containerd clients, such as k3s, use their own. The [m] keeps the pattern
+# from matching a shell whose command line holds it.
 status_docker_ports() {
     local label="Container ports published on every address, which ufw doesn't filter"
     local none="No container ports published on every address, which ufw doesn't filter"
     local out status=0 name ports open="" port DOCKER_OUT DOCKER_STATUS
     if ! systemctl is-active --quiet docker.service 2>/dev/null; then
-        status_item ok "$none: the daemon isn't running"
+        if pgrep -f 'containerd-shi[m].* -namespace moby( |$)' > /dev/null 2>&1; then
+            status_item unknown "$label: containers are running while the Docker daemon is down, so their published ports can't be checked; start it with sudo systemctl start docker"
+        else
+            status_item ok "$none: the daemon isn't running"
+        fi
         return 0
     fi
     docker_status_run "$label" ps --format '{{.Names}}\t{{.Ports}}' || status=$?
@@ -293,11 +304,11 @@ status() {
     docker_sudo_items
     status_check "Docker Engine from Docker's apt repo" "$installed"
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
-    # The step asks about the group on its own, and you may say no, so its absence isn't missing
+    # The step asks about the group once, and you may say no, so its absence isn't missing
     if in_docker_group; then
         status_item ok "$(id -un) in the docker group"
     else
-        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it"
+        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
     fi
     if "$installed"; then
         sudo_items_status starts_at_boot socket_ready
@@ -333,9 +344,11 @@ configure_daemon() {
         [ -z "${original//[[:space:]]/}" ] || current="$original"
     fi
     tmp="$(mktemp)" || return 1
-    if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp"; then
+    # A file with several JSON values would come out as several, which dockerd may not reject
+    if ! printf '%s\n' "$current" | jq "$DOCKER_DAEMON_SETTINGS" > "$tmp" ||
+        [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
         rm -f "$tmp"
-        echo "  $DOCKER_DAEMON_CONFIG isn't valid JSON; fix it and re-run." >&2
+        echo "  $DOCKER_DAEMON_CONFIG isn't one valid JSON object; fix it and re-run." >&2
         return 1
     fi
     if daemon_settings_applied <<< "$current"; then
@@ -411,22 +424,20 @@ apply() {
         if daemon_config_unreadable; then
             pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
         else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and keep new networks out of 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
+            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
         fi
     fi
     sudo_items_pending docker_auto_updates_configured
 
-    local result=0
+    local result=0 fresh=false
     if [ ${#pending[@]} -eq 0 ]; then
-        if in_docker_group; then
-            echo "  Docker is already installed and set up."
-            return 0
-        fi
+        echo "  Docker is already installed and set up."
+        return 0
     elif confirm_sudo_changes "${pending[@]}"; then
         if ! "$installed"; then
             # The rest needs Docker's packages, and the docker group they add
             install_docker || return 1
-            installed=true
+            fresh=true
         elif "$repair_source"; then
             add_docker_repo || result=1
         fi
@@ -441,8 +452,9 @@ apply() {
             echo "  Applied."
         fi
     fi
-    # Docker's packages add the group
-    if "$installed" && ! in_docker_group; then
+    # Asked only once, in the run that installs Docker, whose packages add the group. A no then lasts,
+    # and status's info item says how to join later.
+    if "$fresh" && ! in_docker_group; then
         add_to_docker_group || result=1
     fi
     return "$result"

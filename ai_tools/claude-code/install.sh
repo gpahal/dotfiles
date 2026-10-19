@@ -9,6 +9,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/keepable.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+# shellcheck source=../lib/user-instructions.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
 
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
@@ -46,11 +48,6 @@ claude_code_keepable .preferredNotifChannel '"ghostty"' "notification channel (p
 # Print the settings' value at jq path $1, or nothing when it's unset or the file can't be read
 claude_code_keep_current() {
     jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
-}
-
-# Print a JSON value as claude_code_keep_current prints it
-claude_code_keep_wanted() {
-    keepable_unquote "$1"
 }
 
 claude_code_have_git_wt() {

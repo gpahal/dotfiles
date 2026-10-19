@@ -12,7 +12,7 @@ mise_global_config() {
 }
 
 # Print a tool's version from the global mise config, or nothing when the file or the key is
-# missing. Fails, with mise's error on stderr, when mise can't read the file. The file is named,
+# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on stderr, when mise can't read the file. The file is named,
 # since --global could read another one. Every mise command here runs from $HOME: mise refuses to
 # run in a project with an untrusted mise.toml, and would add a trusted one's tools.
 global_tool_version() {
@@ -21,6 +21,11 @@ global_tool_version() {
     [ -f "$file" ] || return 0
     errors="$(mktemp)" || return 1
     if value="$(cd "$HOME" && mise config get -f "$file" "tools.$1" 2> "$errors")"; then
+        # A table, such as { version = "22", postinstall = "..." }, comes out as key = value lines
+        if [[ "$value" == *" = "* ]]; then
+            value="$(printf '%s\n' "$value" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1)"
+            [ -n "$value" ] || value="(a table)"
+        fi
         printf '%s\n' "$value"
     elif ! grep -q 'Key not found' "$errors"; then
         cat "$errors" >&2

@@ -15,13 +15,40 @@ mcd() {
     [[ "$1" ]] && mkdir -p "$1" && cd "$1"
 }
 
-# Run the last command in history as root, showing it first. With hist_ignore_space, a line typed
-# with a leading space never reaches history, so that may not be the last command typed. The
-# function keyword, since please was once an alias: a shell that still has it would expand
-# `please()` into a parse error on re-sourcing, and stop loading this file.
+# Run the line typed before this one as root, showing it first. A zshaddhistory hook keeps the
+# lines as typed, since history can't give them: share_history puts other shells' commands there,
+# hist_ignore_space leaves a line out, and fc -n prints a newline as \n, which zsh -c reads as n.
+# The hook sees every line, also one zsh doesn't run, such as a parse error or a comment, so please
+# never reaches past it to an older command. A line that starts with please doesn't count, so a
+# second please runs the same command, and please after another command on its line runs the line
+# before. The function keyword, since please was once an alias: a shell that still has it would
+# expand `please()` into a parse error on re-sourcing, and stop loading this file.
+function _please_addhistory {
+    local line=${1%$'\n'}
+    local -a words=(${(z)line})
+    # 0 keeps the line in history, as without the hook
+    (( $#words )) || return 0
+    if [[ $words[1] == please ]]; then
+        typeset -g _please_skipped=1
+    else
+        typeset -g _please_skipped= _please_prev=${_please_line-} _please_line=$line
+    fi
+    return 0
+}
+autoload -U add-zsh-hook
+add-zsh-hook zshaddhistory _please_addhistory
+
 function please {
     local c
-    c="$(fc -ln -1)"
+    if [[ -n ${_please_skipped-} ]]; then
+        c=${_please_line-}
+    else
+        c=${_please_prev-}
+    fi
+    if [[ -z $c ]]; then
+        print -u2 "please: no earlier command in this shell"
+        return 1
+    fi
     print -r -- "sudo: $c"
     sudo zsh -c "$c"
 }

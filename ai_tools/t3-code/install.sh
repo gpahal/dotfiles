@@ -14,6 +14,10 @@ set -euo pipefail
 # A temp HOME doesn't isolate this step. On macOS it installs its cask and runs launchctl. On
 # Ubuntu it installs libatomic1 and runs systemctl --user. Test the cask in a macOS VM or on a spare
 # Mac, and the Ubuntu side in an Ubuntu VM that runs systemd, such as an OrbStack machine.
+#
+# T3 has no read-only check for its browser's setup, so on Ubuntu --status runs `t3 browser setup`
+# without sudo, relying on it changing nothing then and saying "needs root" when there's something
+# to do (as of T3 Code 0.1.0). Recheck that when T3 updates. --status --quick skips it.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -830,7 +834,10 @@ status() {
         status_item missing "T3 Code service restarted for its drop-in: systemctl --user restart t3code"
     fi
     t3_code_status_other_servers
-    if "$have_cli"; then
+    if "$have_cli" && status_quick; then
+        status_item unverified "T3 Code's browser sandbox: skipped by --quick, since it runs t3 browser setup"
+        t3_code_status_connect
+    elif "$have_cli"; then
         t3_code_browser_ready || ready=$?
         case "$ready" in
             0) status_item ok "T3 Code's browser can run in Chrome's sandbox" ;;

@@ -403,8 +403,21 @@ codex_status_credentials() {
     elif [ -z "$mode" ]; then
         status_item unknown "$name: couldn't read its mode"
     else
-        status_item missing "$name: its mode is $mode; run chmod 600 ~/.codex/.credentials.json"
+        status_item missing "$name: its mode is $mode; re-run the codex step, which sets it to 600"
     fi
+}
+
+# Make the MCP tokens Codex keeps in plain text on Ubuntu readable only by you, when there are any
+secure_codex_credentials() {
+    local mode
+    [ -e "$CODEX_CREDENTIALS" ] || return 0
+    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
+    [ "$mode" != 600 ] || return 0
+    if ! chmod 600 "$CODEX_CREDENTIALS"; then
+        echo "  Couldn't make $CODEX_CREDENTIALS readable only by you." >&2
+        return 1
+    fi
+    echo "  Made Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 }
 
 bwrap_works() {
@@ -524,6 +537,7 @@ apply() {
     configure_codex || result=1
     install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
     if is_ubuntu; then
+        secure_codex_credentials || result=1
         setup_codex_sandbox || result=1
     fi
     return "$result"

@@ -217,7 +217,7 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. Its [steps](#automated-setup) set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
-Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file, and `--status` flags it when anyone else can.
+Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file. The step makes it readable only by you, and `--status` flags it when anyone else can read it.
 
 ### Notifications over SSH
 

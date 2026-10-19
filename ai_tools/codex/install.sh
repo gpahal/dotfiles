@@ -12,6 +12,8 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../../lib/casks.sh
+source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/keepable.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
 # shellcheck source=../lib/user-instructions.sh

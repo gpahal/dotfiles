@@ -2,11 +2,8 @@
 set -euo pipefail
 
 # write_back moves a temp file from the same directory into place, so a failed write can't leave
-# a settings file cut short. The file keeps its mode, and a symlink stays a symlink while its
-# target is replaced the same way. A read-only file is left alone. json_merge starts a missing, empty, or whitespace-only file from
-# {}, and fails on one it can't read, leaving it as it is. append_line adds a line only once, and
-# fails only when it can't write the file. install_root_file and write_root_file replace a
-# root-owned file the same way, through sudo.
+# a settings file cut short. Also json_merge's start from {}, append_line, and install_root_file
+# and write_root_file, which replace a root-owned file the same way, through sudo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

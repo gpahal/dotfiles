@@ -3,9 +3,7 @@ set -euo pipefail
 
 # scripts/check-t3-settings.sh, with GitHub stubbed, reads the latest release's tag, or the one
 # given, downloads T3 Code's schemas at it, and fails naming each key the t3-code step writes that
-# they lack. It passes once they have every key, fails when its search would find a made-up key,
-# and warns, without failing, when the step writes a key's default, given directly or through a
-# constant. A schema it can't download fails it.
+# they lack.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

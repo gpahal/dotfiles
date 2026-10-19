@@ -232,9 +232,8 @@ for filter in 'error("bad")' '.a, .b'; do
     assert_eq '{"mine": 1}' "$(cat "$settings")" "settings after json_merge $filter"
 done
 # A file that holds several JSON values isn't configured, even when the last one is, and
-# json_merge leaves it as it is, as it does invalid JSON
-# Each is "<file contents>|<what json_merge says>". Invalid JSON keeps jq's parse error, which
-# says where the file goes wrong.
+# json_merge leaves it as it is, as it does invalid JSON, keeping jq's parse error.
+# Each is "<file contents>|<what json_merge says>".
 for case in '{"a": 0}
 {"a": 1}|holds 2 JSON values, not one, so it was left as it is.' \
     '{"a": 1,}|jq: parse error' '{"a": 1,}|isn'"'"'t valid JSON, so it was left as it is.'; do

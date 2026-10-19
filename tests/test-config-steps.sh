@@ -3,9 +3,7 @@ set -euo pipefail
 
 # The config steps run through setup.sh twice in a sandbox: the second run changes nothing, and
 # --status then reports everything set up apart from the GitHub login and the settings that depend
-# on it. Stubs stand in for what would touch the real machine: gh, the account's login
-# shell (dscl, getent), launchctl, systemctl, chsh, brew, and lib.sh's sudo. Local repos stand in
-# for the tmux plugins' GitHub repos.
+# on it.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

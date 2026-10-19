@@ -2,9 +2,7 @@
 set -euo pipefail
 
 # Both runners take -h/--help, --status, --quick, --backup, and --no-backup anywhere among the step
-# names, and fail with a usage line on an unknown flag, and with the step lists on an unknown step
-# name. check_args reads --status and --quick
-# wherever they are too.
+# names, and fail with a usage line on an unknown flag, and with the step lists on an unknown step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

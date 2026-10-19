@@ -4,16 +4,8 @@
 set -euo pipefail
 # serial
 
-# run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
-# "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
-# Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
-# step that carries on runs. A real runner stopped that way dies of the signal, so the script
-# that ran it stops too. With --status, a step whose report has a missing or unknown item needs
-# attention, whether it exits 0 or 3, and one that exits 3 without such an item failed. Fake steps
-# stand in for the real ones. Then every step in each runner's real STEPS, on
-# macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
-# both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
-# report the OS.
+# run_steps, which both runners use, with fake steps: failures, interrupts, and --status's
+# attention. Then each runner's real steps, on macOS and on Ubuntu, resolve through step_script.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

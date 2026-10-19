@@ -23,10 +23,12 @@ _cached_init() {
         key+=" -f ${(q)file:A} $mtime"
     fi
     [[ -r $cache ]] && read -r first < $cache
-    if [[ $first != $key || ${bin:A} -nt $cache ]]; then
-        mkdir -p ${cache:h}
+    # Every shell sources the cache, so one others could write, as an app's umask 0 leaves it, is
+    # rewritten as the user's alone
+    local -a loose=($cache(N.f:g+w:) $cache(N.f:o+w:))
+    if [[ $first != $key || ${bin:A} -nt $cache || -n $loose ]]; then
         # Temp file, so a concurrent shell never reads half of it
-        if ! { print -r -- $key && "$bin" "${@:2}" } >| $cache.$$; then
+        if ! ( umask 077 && mkdir -p ${cache:h} && { print -r -- $key && "$bin" "${@:2}" } >| $cache.$$ ); then
             rm -f $cache.$$
             return 1
         fi

@@ -149,7 +149,7 @@ ssh_dir_private() {
 }
 
 make_ssh_dir_private() {
-    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh" && echo "  Set ~/.ssh to mode 700"
 }
 
 ssh_config_private() {
@@ -157,7 +157,7 @@ ssh_config_private() {
 }
 
 make_ssh_config_private() {
-    chmod 600 "$SSH_CONFIG"
+    chmod 600 "$SSH_CONFIG" && echo "  Set ~/.ssh/config to mode 600"
 }
 
 ssh_items() {
@@ -184,8 +184,9 @@ status() {
 
 apply() {
     echo "Configuring SSH..."
-    local status=0
+    local status=0 private=false
     ssh_items
+    ! { ssh_dir_private && ssh_config_private; } || private=true
     items_apply ssh_dir_private || status=1
     [ -d "$HOME/.ssh" ] || return 1
     if is_macos; then
@@ -196,6 +197,7 @@ apply() {
     fi
     # add_host_star may create the file
     items_apply ssh_config_private || status=1
+    ! "$private" || echo "  ~/.ssh and its config are already private"
     return "$status"
 }
 

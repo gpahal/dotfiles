@@ -165,6 +165,9 @@ chmod 755 "$HOME/.ssh"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh (mode 700)"
 assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Set ~/.ssh to mode 700"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "/.ssh and its config are already private"
 assert_exit 0 status
 chmod 644 "$SSH_CONFIG"
 assert_exit 3 status

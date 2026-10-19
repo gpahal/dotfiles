@@ -105,6 +105,16 @@ skill_dirs_shared() {
     return 1
 }
 
+# Print the first skills dir that is a symlink. The step removes what it didn't install there, so
+# a link to another dir, such as the repo's ai_tools/skills, would lose that dir's files.
+linked_skill_dir() {
+    local dir
+    while IFS= read -r dir; do
+        [ -L "$dir" ] && echo "$dir" && return 0
+    done < <(skill_dirs)
+    return 1
+}
+
 # Print the path of each entry in the skills dirs that isn't a repo skill, one per line. Claude
 # Code writes its own entries to ~/.claude/skills, synced for the skills claude.ai syncs and
 # dot-entries such as .trash, so those aren't extra.
@@ -133,7 +143,7 @@ shown() {
 
 install_skills() {
     echo "Installing skills..."
-    local result=0 changed=false i name dir path
+    local result=0 changed=false i name dir path linked
     load_repo_skills || result=1
     # Every entry would count as extra
     if [ ${#SKILL_NAMES[@]} -eq 0 ]; then
@@ -142,6 +152,10 @@ install_skills() {
     fi
     if skill_dirs_shared; then
         echo "  ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink, so left them alone. Make them separate dirs." >&2
+        return 1
+    fi
+    if linked="$(linked_skill_dir)"; then
+        echo "  $(shown "$linked") is a symlink, so left the skills dirs alone, since the step removes what it didn't install there. Make it a real dir." >&2
         return 1
     fi
     claude_skills_on || echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude, so the skills are for Codex only."
@@ -211,6 +225,7 @@ status_skills() {
 }
 
 status() {
+    local linked
     load_repo_skills 2>/dev/null ||
         status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
     # As in install_skills, where every entry would count as extra
@@ -218,6 +233,8 @@ status() {
         status_item missing "Skills in ai_tools/skills: found none, so the step leaves the skills dirs alone"
     elif skill_dirs_shared; then
         status_item missing "Skills dirs: ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink; make them separate dirs"
+    elif linked="$(linked_skill_dir)"; then
+        status_item missing "Skills dirs: $(shown "$linked") is a symlink, and the step removes what it didn't install there; make it a real dir"
     else
         status_skills
     fi

@@ -23,13 +23,11 @@ zed_files() {
 }
 
 status() {
-    zed_files status_file
-    status_result
+    copy_status zed_files
 }
 
 apply() {
-    echo "Copying Zed config..."
-    zed_files copy_file
+    copy_step "Copying Zed config..." zed_files
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

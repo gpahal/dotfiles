@@ -23,12 +23,14 @@ for flags in "1 (agent-owned)" "2 (not-saved)" "3 (agent-owned, not-saved)"; do
     assert_contains "$RUN_OUTPUT" 'Wi-Fi "Office" only connects after you log in'
     assert_contains "$RUN_OUTPUT" 'sudo nmcli --ask connection up uuid 4444-dddd'
 done
+assert_exit 1 wifi_connects_at_boot 4444-dddd
 
 for flags in "0 (none)" "4 (not-required)" ""; do
     echo "$flags" > "$SANDBOX/flags"
     run warn_wifi_needs_login
     assert_eq "" "$RUN_OUTPUT" "the warning for psk-flags \"$flags\""
 done
+assert_exit 0 wifi_connects_at_boot 4444-dddd
 
 # nmcli -e no leaves a colon or a backslash in the name unescaped
 

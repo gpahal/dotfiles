@@ -173,6 +173,11 @@ assert_contains "$RUN_OUTPUT" "unverified Disk health (SMART) of /dev/sdc: smart
 disk sda sat "something unexpected\n"
 assert_exit 3 diag status_smart
 assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART) of /dev/sda: couldn't read smartctl's output"
+# A kill's 137 has bit 8 set, but isn't smartctl's
+: > "$SANDBOX/disks"
+disk sda sat "" 137
+assert_exit 3 diag status_smart
+assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART) of /dev/sda: smartctl didn't run (exit 137)"
 : > "$SANDBOX/disks"
 assert_exit 0 diag status_smart
 assert_contains "$RUN_OUTPUT" "unverified Disk health (SMART): smartctl found no disks"
@@ -281,6 +286,7 @@ subtest firmware_without_fwupd
 read_only
 
 stub apt-get
+stub lsblk
 ubuntu_report() {
     hide tailscale nmcli
     replace_fn ufw_enabled false

@@ -225,8 +225,10 @@ remove() {
     fi
 }
 
+# Not on /clear, which ends the session id while its background agents may still use their worktrees
 session_end() {
     local session cwd
+    [ "$(field reason)" != clear ] || return 0
     session="$(field session_id)" && cwd="$(field cwd)" || return 0
     [ -n "$session" ] && [ -n "$cwd" ] || return 0
     git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1 || return 0

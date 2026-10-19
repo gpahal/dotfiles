@@ -29,6 +29,7 @@ sbin_cmd() {
 
 # smartctl's exit bits: 1 bad args or sudo refused, 2 open failed or asleep, 4 SMART command
 # failed, 8 failing, 16 prefail attribute at threshold, 32 was before, 64 error log, 128 self-test log.
+# A status from 125 up without smartctl's banner is timeout's or a signal's, not those bits.
 status_smart_disk() {
     local smartctl="$1" dev="$2" label out status=0 health note=""
     shift 2
@@ -38,6 +39,8 @@ status_smart_disk() {
         -e 's/^SMART Health Status: *//p' <<< "$out" | head -n 1)"
     if [ "$status" -eq 124 ]; then
         status_item unknown "$label: smartctl didn't answer within 30 s; check it with sudo smartctl -a $dev"
+    elif [ "$status" -ge 125 ] && [[ "$out" != smartctl\ * ]]; then
+        status_item unknown "$label: smartctl didn't run (exit $status); check it with sudo smartctl -H $dev"
     elif [ $((status & 8)) -ne 0 ] || [[ "$health" == FAIL* ]]; then
         status_item missing "$label: ${health:-FAILED}; the disk reports itself failing, so back up its data and replace it"
     elif [ $((status & 16)) -ne 0 ]; then

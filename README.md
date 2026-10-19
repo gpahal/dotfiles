@@ -56,7 +56,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
 - `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached. `--quick` skips the slowest checks.
 - Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup (`--backup`, `--no-backup`).
-- Settings that are yours, such as mise's global versions and the AI tools' models, are set only when unset.
+- Settings that are yours, such as mise's global versions and the AI tools' models, are set when unset. When yours differs, setup asks before replacing it, and keeps it without a terminal.
 - Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.
 - The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
 - `just` lists the [justfile](./justfile)'s recipes. `just status` runs both scripts with `--status`.
@@ -90,7 +90,7 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 
 ### git
 
-Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig.local`.
+Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig`, which git reads after this config. Signing setup and `gh` write there too.
 
 - `git dft`, `git dd`, `git dlog`: difftastic diffs.
 - `git cob`, `git cobr`: pick a local or remote branch with fzf.

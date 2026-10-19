@@ -243,7 +243,7 @@ upgrade_ai_tools() {
 upgrade() {
     local failed=()
     # apt upgrade, unlike apt-get upgrade, installs new dependencies, so kernel meta-packages aren't held back.
-    if [[ "$OSTYPE" == linux* ]]; then
+    if ! is_macos; then
         # shellcheck disable=SC2119 # needs no options here
         { apt_get_update && sudo apt -o DPkg::Lock::Timeout="$APT_LOCK_TIMEOUT" upgrade; } || _stage_failed apt "$?"
     fi
@@ -251,7 +251,7 @@ upgrade() {
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
     _homebrew_step install_bundle || _stage_failed "brew bundle" "$?"
     _homebrew_step install_casks || _stage_failed casks "$?"
-    if [[ "$OSTYPE" == linux* ]]; then
+    if ! is_macos; then
         # Homebrew doesn't refresh fontconfig's cache for fonts it upgrades on Linux
         if command -v fc-cache &>/dev/null; then
             fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts" || _stage_failed fc-cache "$?"

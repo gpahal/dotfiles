@@ -48,15 +48,19 @@ write_root_file() {
 }
 
 # read_root_file <file> [-n]: -n uses sudo -n. Prints nothing when missing, fails when unreadable.
+# In a directory only root can search, such as /etc/nut, only sudo can tell whether it exists.
 read_root_file() {
-    if [ ! -e "$1" ]; then
-        return 0
-    elif [ -r "$1" ]; then
+    local sudo=(sudo) err=/dev/stderr
+    [ "${2:-}" != -n ] || { sudo=(sudo -n); err=/dev/null; }
+    if [ -r "$1" ]; then
         cat "$1"
-    elif [ "${2:-}" == -n ]; then
-        sudo -n cat "$1" 2>/dev/null
+    elif [ -e "$1" ]; then
+        "${sudo[@]}" cat "$1" 2>"$err"
+    elif [ -x "$(dirname "$1")" ]; then
+        return 0
     else
-        sudo cat "$1"
+        # shellcheck disable=SC2016 # root's shell expands it
+        "${sudo[@]}" sh -c '[ ! -e "$1" ] || cat "$1"' _ "$1" 2>"$err"
     fi
 }
 
@@ -138,7 +142,7 @@ add_apt_repo() {
         rm -f "$key" "$old_key"
         return 1
     fi
-    if ! sudo install -m 0755 -d "$(dirname "$keyring")" || ! install_root_file "$key" "$keyring" 0644; then
+    if ! install_root_file "$key" "$keyring" 0644; then
         rm -f "$key" "$old_key"
         return 1
     fi

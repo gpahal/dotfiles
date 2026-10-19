@@ -195,6 +195,8 @@ run warn_disk_encryption
 assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase. Every boot waits for it at the console"
 assert_contains "$RUN_OUTPUT" "binding the disk to the TPM (systemd-cryptenroll)"
 assert_not_contains "$RUN_OUTPUT" "Only a reinstall"
+run status
+assert_contains "$RUN_OUTPUT" "info       Disk encrypted with a passphrase"
 # systemd-cryptenroll keeps the label, so crypttab shows the TPM binding
 echo "dm_crypt-0 UUID=1234 none luks,tpm2-device=auto" > "$CRYPTTAB"
 run warn_disk_encryption

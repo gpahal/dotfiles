@@ -146,9 +146,14 @@ nut_password() {
     echo "$password"
 }
 
-# GNU stat takes -c; macOS's, which the tests use, takes -f
+# Probes stat's flavor as file_mode does: GNU takes -c; macOS's, which the tests use, takes -f.
+# Self-contained, since nut_file_current also runs it under sudo.
 owner_group_mode() {
-    stat -L -c '%U %G %a' "$1" 2>/dev/null || stat -L -f '%Su %Sg %Lp' "$1"
+    if stat -c %a / &>/dev/null; then
+        stat -L -c '%U %G %a' "$1"
+    else
+        /usr/bin/stat -L -f '%Su %Sg %Lp' "$1"
+    fi
 }
 
 # nut_file_current <file> <content>: returns 2 when it can't be read without sudo

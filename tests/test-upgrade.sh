@@ -62,20 +62,15 @@ mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
 fake_tmux_plugins
 "$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$REPO_DIR" > /dev/null
-# uname -s follows upgrade_on's OS so is_macos agrees with OSTYPE; unlike a stub, it doesn't log
-printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || exec cat "'"$SANDBOX"'/uname-s"' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
+# uname -s says UNAME_S, Darwin by default, for is_macos; unlike a stub, it doesn't log
+printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || { echo "${UNAME_S:-Darwin}"; exit; }' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
 chmod +x "$STUB_DIR/uname"
-echo Darwin > "$SANDBOX/uname-s"
 
 # DOTFILES_DIR points elsewhere: upgrade finds the Brewfile from its own path
 upgrade_on() {
     : > "$STUB_LOG"
-    case "$1" in
-        darwin*) echo Darwin ;;
-        *) echo Linux ;;
-    esac > "$SANDBOX/uname-s"
-    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" \
-        "$BASH" -c 'source "$2/scripts/upgrade.sh"; OSTYPE=$1; upgrade' bash "$1" "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1 || {
+    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" UNAME_S="$1" \
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1 || {
         fail "upgrade failed on $1:"
         _show "$(cat "$SANDBOX/output")"
     }
@@ -110,27 +105,27 @@ claude plugin marketplace update
 claude plugin update a@m --scope user
 t3 update
 codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_actions darwin25.0)" "commands upgrade runs on macOS"
+brew cleanup" "$(upgrade_actions Darwin)" "commands upgrade runs on macOS"
 assert_file_contains "$SANDBOX/output" "Claude is running; quit it and run upgrade-ai-tools again to update it."
 
 # HOME through a symlink
 ln -s "$HOME" "$SANDBOX/home-link"
 : > "$STUB_LOG"
 env HOME="$SANDBOX/home-link" PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR" \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR" \
     < /dev/null > "$SANDBOX/output" 2>&1 || true
 assert_file_contains "$STUB_LOG" "claude update"
 
 # A rustup elsewhere on PATH isn't the runtimes step's
 mv "$HOME/.cargo/bin/rustup" "$STUB_DIR/rustup"
-assert_not_contains "$(upgrade_on darwin25.0)" "rustup" "commands upgrade runs with rustup only on PATH"
+assert_not_contains "$(upgrade_on Darwin)" "rustup" "commands upgrade runs with rustup only on PATH"
 mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 
 cp "$STUB_DIR/brew" "$SANDBOX/brew"
 stub brew 'case "$*" in
     "bundle check"*) ;;
 esac'
-assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with the Brewfile installed"
+assert_not_contains "$(upgrade_on Darwin)" "bundle install" "commands upgrade runs with the Brewfile installed"
 assert_eq "" "$(find "$TMPDIR" -maxdepth 1 -name 'tmp.*' -print)" "temporary files upgrade leaves behind"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
@@ -143,7 +138,7 @@ stub brew 'case "$*" in
 esac'
 stub pgrep 'exit 0'
 : > "$STUB_LOG"
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade logi-options+' bash "$REPO_DIR"
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade logi-options+' bash "$REPO_DIR"
 assert_eq 0 "$RUN_STATUS" "the upgrade of a cask with no app"
 assert_not_contains "$RUN_OUTPUT" "is running"
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
@@ -178,11 +173,11 @@ claude plugin marketplace update
 claude plugin update a@m --scope user
 t3 update
 codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_actions linux-gnu)" "commands upgrade runs on Ubuntu"
+brew cleanup" "$(upgrade_actions Linux)" "commands upgrade runs on Ubuntu"
 
 # Replacing a running Zed would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'
-upgrade_on linux-gnu > /dev/null
+upgrade_on Linux > /dev/null
 assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
 assert_file_contains "$SANDBOX/output" "zed is running; quit it and run upgrade again to update it."
 stub pgrep 'exit 1'
@@ -192,7 +187,7 @@ stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
 : > "$STUB_LOG"
 if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1; then
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1; then
     fail "upgrade succeeded with failed stages"
 fi
 assert_file_contains "$STUB_LOG" "rustup update"
@@ -204,7 +199,7 @@ stub sudo
 stub claude '[ "$*" != "plugin list --json" ] || exit 2'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" 'claude plugin list'
 assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
 
@@ -224,7 +219,7 @@ stub claude 'case "$*" in
     "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
 esac'
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
   m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
   dir: -
@@ -237,7 +232,7 @@ assert_not_contains "$RUN_OUTPUT" "c@m"
 stub claude '[ "$*" != "plugin list --json" ] || exit 130'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "t3 "
 assert_file_not_contains "$STUB_LOG" "codex "
@@ -247,7 +242,7 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
 mv "$HOME/.local/bin/t3" "$SANDBOX/t3-link"
 : > "$STUB_LOG"
 assert_exit 0 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 assert_file_not_contains "$STUB_LOG" "t3 update"
 mv "$SANDBOX/t3-link" "$HOME/.local/bin/t3"
 
@@ -256,7 +251,7 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
 stub mise '[ "$1" != hook-env ] || exit 1'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=linux-gnu; upgrade' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "mise hook-env"
 assert_file_not_contains "$STUB_LOG" "npm"
 assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
@@ -266,7 +261,7 @@ stub mise
 upgrade_ai_tools_mac() {
     : > "$STUB_LOG"
     assert_exit "$1" env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin; upgrade_ai_tools' bash "$REPO_DIR"
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 }
 stub brew 'case "$*" in
     "list --cask -1") printf "t3-code\ncodex\n" ;;
@@ -315,7 +310,7 @@ esac'
 stub pgrep 'exit 1'
 : > "$STUB_LOG"
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+' bash "$REPO_DIR"
 assert_eq "brew list --cask -1
 brew outdated --cask --greedy --quiet zed appcleaner the-unarchiver
 brew upgrade --cask --greedy zed
@@ -330,7 +325,7 @@ stub brew 'case "$*" in
 esac'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Couldn't check whether gone-cask is up to date"
 assert_eq "brew upgrade --cask --greedy zed
 brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades beside a cask brew can't find"
@@ -344,7 +339,7 @@ for info in 'exit 1' 'echo "{}"'; do
     esac'
     : > "$STUB_LOG"
     assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
     assert_contains "$RUN_OUTPUT" "Couldn't read zed's metadata; leaving it alone."
     assert_file_not_contains "$STUB_LOG" "brew upgrade"
     assert_file_not_contains "$STUB_LOG" "pgrep"
@@ -357,7 +352,7 @@ stub brew 'case "$*" in
 esac'
 : > "$STUB_LOG"
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_file_contains "$STUB_LOG" 'pgrep -af ^/Elsewhere/Zed Preview[^/]*\.app/Contents/MacOS/'
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
 # A . in the app's path is escaped in pgrep's regex
@@ -368,7 +363,7 @@ stub brew 'case "$*" in
 esac'
 stub pgrep 'echo "/Elsewhere/ZedxDev.app/Contents/MacOS/zed" | grep -E -- "${!#}"'
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_not_contains "$RUN_OUTPUT" "is running"
 
 # An app that renamed itself (T3 Code Alpha to Beta) is re-recorded, since brew upgrade stops on
@@ -387,7 +382,7 @@ stub pgrep
 upgrade_t3_cask() {
     : > "$STUB_LOG"
     assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
 }
 receipt '[{"app": ["T3 Code (Alpha).app"]}, {"zap": [{"trash": ["~/.t3/userdata"]}]}]'
 upgrade_t3_cask
@@ -414,14 +409,14 @@ stub brew 'case "$*" in
 esac'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Couldn't re-record t3-code. Run: brew install --cask --adopt t3-code"
 
 # brew exits 129, 130, or 143 when it catches Ctrl-C
 stub brew '[ "$*" != update ] || exit 130'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "brew bundle"
 assert_file_not_contains "$STUB_LOG" "rustup"
@@ -433,7 +428,7 @@ stub brew 'case "$*" in
 esac'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy claude"
 assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 assert_file_not_contains "$STUB_LOG" "claude plugin"
@@ -444,13 +439,13 @@ plugin="$HOME/.tmux/plugins/tmux-yank"
 pin="$(git -C "$plugin" rev-parse HEAD)"
 git -C "$plugin" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
 git -C "$plugin" checkout -q --detach FETCH_HEAD
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
 assert_eq "$pin" "$(git -C "$plugin" rev-parse HEAD)" "tmux-yank's commit after upgrade"
 assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank"
 assert_not_contains "$RUN_OUTPUT" "Failed: tmux plugins"
 rm -rf "$HOME/.tmux/plugins/tmux-open"
 mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade' bash "$REPO_DIR"
+run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
 assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
 test_done

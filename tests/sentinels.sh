@@ -16,7 +16,9 @@
 #   devices, lsblk, which reads the real disks' encryption, lsappinfo and pgrep, which read the
 #   running apps and processes, scutil, which reads and sets the real hostname, pbpaste, which
 #   reads the real clipboard, dpkg and dpkg-query, which read the real architecture and packages,
-#   and ip, which reads the real routes
+#   ip, which reads the real routes, bwrap, whose sandbox depends on the real kernel and AppArmor,
+#   systemd-detect-virt, which reads whether the real machine is a VM, as CI runners are, and
+#   mdls, which reads the real Spotlight metadata
 # Other read-only commands the tests rely on, such as dscl, uname, and id, stay real. A test
 # that needs a real sentinel command, such as mise, saves its path before setup_sandbox and runs
 # that.
@@ -25,4 +27,4 @@ osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill 
 locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss
 smartctl fwupdmgr fdesetup socketfilterfw notify-send runuser logger nmcli apt-config journalctl
 orb nut-scanner upsc udevadm activateSettings apt-mark lsblk lsappinfo pgrep scutil pbpaste dpkg
-dpkg-query ip"
+dpkg-query ip bwrap systemd-detect-virt mdls"

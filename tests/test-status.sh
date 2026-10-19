@@ -98,6 +98,8 @@ sshd_enabled() { true; }
 ufw_enabled() { true; }
 echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
+# Not a VM
+stub systemd-detect-virt 'exit 1'
 stub dpkg-query 'echo "install ok installed"'
 # Tailscale's apt source is the one the step writes
 tailscale_list_line > "$TAILSCALE_LIST"

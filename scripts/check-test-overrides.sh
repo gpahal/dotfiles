@@ -45,11 +45,12 @@ awk -v nsources="${#files[@]}" '
         return ""
     }
     FNR == 1 { file_index++; heredoc = "" }
-    # A heredoc body ends at its delimiter, alone on a line, after tabs for <<-
+    # A heredoc body ends at its delimiter, alone on a line, after tabs for <<-. One in a stub body
+    # a test quotes ends with the closing quote after it, as in EOF\047.
     heredoc != "" {
         line = $0
         if (strip_tabs) sub(/^\t+/, "", line)
-        if (line == heredoc) heredoc = ""
+        if (line == heredoc || line == heredoc "\047" || line == heredoc "\"") heredoc = ""
         next
     }
     {

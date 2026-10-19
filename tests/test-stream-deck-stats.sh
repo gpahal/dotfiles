@@ -235,14 +235,14 @@ rates.push(cpu.cpuHistory.length);
 rates.push((await sampler.sample(["cpu"])).cpu ?? null);
 console.log(JSON.stringify(rates));')" "rates after a kind is hidden"
 # A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
-# chrome-tab waits until $SANDBOX/release exists.
+# chrome-tab waits until $SANDBOX/release exists, for up to 10 s.
 PLUGIN="$SANDBOX/plugin"
 mkdir -p "$PLUGIN/bin"
 cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
 cat > "$PLUGIN/bin/open-in" << EOF
 echo "\$1" >> "$SANDBOX/open-in.log"
 if [ "\$1" == chrome-tab ]; then
-    while [ ! -e "$SANDBOX/release" ]; do sleep 0.05; done
+    for _ in \$(seq 200); do [ ! -e "$SANDBOX/release" ] || break; sleep 0.05; done
 fi
 echo "done \$1"
 EOF
@@ -258,14 +258,24 @@ require(process.argv[1]);
 const press = (key) =>
   socket.onmessage({ data: JSON.stringify({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key }) });
 const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
-const until = async (test) => { while (!test()) await new Promise((r) => setTimeout(r, 20)); };
+// Wait up to 10 s for a condition, then fail naming it, rather than leave the test to the watchdog
+const until = async (what, test) => {
+  const deadline = Date.now() + 10000;
+  while (!test()) {
+    if (Date.now() > deadline) {
+      console.log(`timed out waiting for ${what}; sent: ${JSON.stringify(sent)}`);
+      process.exit(1);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+};
 (async () => {
   press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
-  await until(() => done("files") === 2);
+  await until("both Files presses", () => done("files") === 2);
   require("node:fs").writeFileSync(process.argv[2], "");
-  await until(() => done("chrome-tab") >= 1);
+  await until("the first New Tab", () => done("chrome-tab") >= 1);
   press("chrome-tab");
-  await until(() => done("chrome-tab") >= 2);
+  await until("the second New Tab", () => done("chrome-tab") >= 2);
   process.exit(0);
 })();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
 assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \

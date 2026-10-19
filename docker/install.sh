@@ -45,7 +45,7 @@ DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, an
 # Docker's default pools end in 192.168.0.0/16, which the ubuntu step's ufw lets SSH in from, so
 # default-address-pools keeps new networks in 172.17.0.0 to 172.31.255.255, in /24s, since 15 /16s
 # would run out with a Compose project per worktree. docker0 keeps the 172.17.0.0/16 it got when
-# the packages first started Docker.
+# the packages first started Docker, even through a reboot or a deleted docker0.
 # ufw blocks containers from the host's ports; `sudo ufw allow in on docker0`, and one rule per
 # br-<network ID prefix>, opens them, which the step leaves to you.
 DOCKER_DAEMON_SETTINGS='
@@ -311,7 +311,7 @@ status_docker_ports() {
     fi
 }
 
-# A config only root can read is checked with sudo -n when sudo credentials are cached, and is
+# Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials are cached, and is
 # otherwise unverified.
 status() {
     local installed=false SUDO_CACHED_CACHE=no

@@ -310,7 +310,7 @@ enable_linger() {
     sudo loginctl enable-linger "$(id -un)"
 }
 
-# What only root can read is checked with sudo -n when sudo credentials are cached, and is
+# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo credentials are cached, and is
 # otherwise unverified.
 status() {
     local uuid name wired=false item packages overrides

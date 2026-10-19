@@ -836,7 +836,6 @@ status() {
     t3_code_status_other_servers
     if "$have_cli" && status_quick; then
         status_item unverified "T3 Code's browser sandbox: skipped by --quick, since it runs t3 browser setup"
-        t3_code_status_connect
     elif "$have_cli"; then
         t3_code_browser_ready || ready=$?
         case "$ready" in
@@ -844,6 +843,8 @@ status() {
             1) status_item missing "T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup" ;;
             *) status_item unknown "T3 Code's browser sandbox: t3 browser setup failed; run it directly to inspect the error" ;;
         esac
+    fi
+    if "$have_cli"; then
         if "$jq"; then
             t3_code_status_connect
         else

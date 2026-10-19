@@ -6,8 +6,8 @@ set -euo pipefail
 # The T3 Code server filter sets the global worktreeCleanup to custom rules, which take precedence
 # over storageCleanup. It sets the writing style without resetting the style's other fields, and
 # keeps a default model and effort of your own, a custom Claude instance's included, and a context
-# window of your own unless it replaces your model or effort. Keys a newer
-# T3 Code adds to an object the filter sets survive. A second run changes nothing.
+# window of your own unless it replaces your model or effort. Keys a newer T3 Code adds to an
+# object the filter sets survive. A second run changes nothing.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

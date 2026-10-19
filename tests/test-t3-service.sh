@@ -3,17 +3,10 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The Ubuntu side of the t3-code step. Another T3 Code server keeps setup from changing the
-# server's settings or installing the service. An existing service is enabled and started without
-# asking, and left alone when it's already both. The step warns when the service lacks the docker
-# group you're in. A running service is restarted, after asking once, when its settings or its
-# drop-in change, and the settings change only once it has stopped. A declined restart still writes
-# the drop-in, and is offered again.
-# The drop-in holds only the telemetry, port, and host settings, and the step installs no desktop
-# app. Settings it can't apply fail the step, after the service and browser setup still run. A
-# drop-in it can't write or load fails the step and keeps the service from starting.
-# Stubs stand in for systemctl, pgrep, ss, id, getent, sleep, and the t3 CLI, and the functions that
-# read /proc and /var, and run the installer, are replaced.
+# The Ubuntu side of the t3-code step: the server's settings, its service and drop-in, other
+# servers, listeners, the browser setup, and T3 Connect. Stubs stand in for systemctl, pgrep, ss,
+# id, getent, sleep, and the t3 CLI, and the functions that read /proc and /var, and run the
+# installer, are replaced.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -202,7 +195,8 @@ subtest special_home
 reset
 
 # Status names each T3 Code server outside the service, with its PID, kind, and command line, as
-# missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own server, in its cgroup, isn't one, nor is another program that runs serve.
+# missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own
+# server, in its cgroup, isn't one, nor is another program that runs serve.
 reset
 installed_unit
 touch "$STATE/active" "$STATE/enabled"

@@ -392,6 +392,38 @@ wait_for_t3_code_service() {
     return 1
 }
 
+# Print the local address of each TCP listener on the server's port that isn't on loopback, one per
+# line, from ss -Hltn, whose fourth column is <address>:<port>, such as 127.0.0.1:3773, [::1]:3773,
+# or *:3773. The drop-in sets the host, but T3 could take one from elsewhere, such as its settings
+# or a --host flag, so the step checks what actually listens. Fails when ss does.
+t3_code_exposed_listeners() {
+    local listeners
+    listeners="$(ss -Hltn 2>/dev/null)" || return 1
+    awk -v port=":$T3_CODE_PORT" '
+        { addr = $4 }
+        length(addr) > length(port) && substr(addr, length(addr) - length(port) + 1) == port {
+            host = substr(addr, 1, length(addr) - length(port))
+            # An interface scope, as in 127.0.0.1%lo
+            sub(/%[^]]*$/, "", host)
+            if (host !~ /^127\./ && host != "[::1]" && host !~ /^\[::ffff:127\./) print addr
+        }' <<< "$listeners"
+}
+
+# Fail, saying what to do, when the server listens anywhere but loopback, where ufw would let the
+# tailnet reach it without tailscale serve's HTTPS
+t3_code_check_listeners() {
+    local exposed
+    if ! exposed="$(t3_code_exposed_listeners)"; then
+        echo "  ss couldn't list the listeners on port $T3_CODE_PORT, so the step couldn't check that the" >&2
+        echo "  T3 Code server listens only on loopback." >&2
+        return 1
+    fi
+    [ -n "$exposed" ] || return 0
+    echo "  Port $T3_CODE_PORT is open beyond loopback, where the tailnet can reach it: $(join_lines ', ' <<< "$exposed")." >&2
+    echo "  Stop the service (systemctl --user stop t3code), and check T3's host setting." >&2
+    return 1
+}
+
 # Returns 1 when installing t3 failed, whatever the installer exited with, and 2 only when you
 # declined the sudo it needs
 install_t3_cli() {
@@ -635,6 +667,7 @@ ensure_t3_code_service() {
             echo "  The T3 Code service is already installed and running"
         fi
     fi
+    t3_code_check_listeners || return 1
     warn_t3_code_service_docker_group
 }
 
@@ -709,6 +742,18 @@ t3_code_status_other_servers() {
     done <<< "$servers"
 }
 
+# Print an item for whether everything listening on the server's port is on loopback
+t3_code_status_listeners() {
+    local exposed name="Port $T3_CODE_PORT open only on loopback"
+    if ! exposed="$(t3_code_exposed_listeners)"; then
+        status_item unknown "$name: ss couldn't list the listeners"
+    elif [ -n "$exposed" ]; then
+        status_item missing "$name: also on $(join_lines ', ' <<< "$exposed"), which the tailnet can reach; stop the service (systemctl --user stop t3code) and check T3's host setting"
+    else
+        status_item ok "$name"
+    fi
+}
+
 # Print an item for whether the server is linked to T3 Connect and publishes agent activity, which
 # the phone app needs for push notifications. t3 connect status reads what's saved; the server
 # sets up an authorized link only when it starts.
@@ -777,6 +822,7 @@ status() {
         status_check "T3 Code service enabled at boot" t3_code_service_enabled
         status_check "Linger enabled for T3 Code to start without login" t3_code_lingering
     fi
+    t3_code_status_listeners
     if t3_code_restart_pending; then
         status_item missing "T3 Code service restarted for its drop-in: systemctl --user restart t3code"
     fi

@@ -12,7 +12,7 @@ set -euo pipefail
 # The drop-in holds only the telemetry, port, and host settings, and the step installs no desktop
 # app. Settings it can't apply fail the step, after the service and browser setup still run. A
 # drop-in it can't write or load fails the step and keeps the service from starting.
-# Stubs stand in for systemctl, pgrep, id, getent, sleep, and the t3 CLI, and the functions that
+# Stubs stand in for systemctl, pgrep, ss, id, getent, sleep, and the t3 CLI, and the functions that
 # read /proc and /var, and run the installer, are replaced.
 
 # shellcheck source=lib.sh
@@ -85,6 +85,12 @@ while IFS="|" read -r pid name cmd; do
 done < "$procs"
 exit "$found"'
 stub sleep
+# The listeners: the service's server on loopback while it's active, plus the lines of
+# $SANDBOX/state/listeners
+stub ss '
+state="$(dirname "$STUB_LOG")/state"
+[ ! -f "$state/active" ] || echo "LISTEN 0      511        127.0.0.1:3773      0.0.0.0:*"
+[ ! -f "$state/listeners" ] || cat "$state/listeners"'
 # The t3 CLI: `t3 service install` starts the service
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/t3" << 'EOF'
@@ -473,6 +479,32 @@ assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
 assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_exit 1 t3_code_restart_pending
 confirm() { echo "$1"; false; }
+
+# Every listener on the server's port must be on loopback, whatever the drop-in says: status
+# names any other, and the step fails once the service runs, without stopping it. Other ports,
+# and loopback in its other forms, don't count. ss failing is unknown.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled"
+printf '%s\n' "LISTEN 0 511 [::1]:3773 [::]:*" "LISTEN 0 511 127.0.0.1%lo:3773 0.0.0.0:*" \
+    "LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*" "LISTEN 0 511 *:37730 *:*" > "$STATE/listeners"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Port 3773 open only on loopback"
+assert_exit 0 configure_t3_code_ubuntu
+printf '%s\n' "LISTEN 0 511 0.0.0.0:3773 0.0.0.0:*" "LISTEN 0 511 [::]:3773 [::]:*" >> "$STATE/listeners"
+run status
+assert_eq 3 "$RUN_STATUS" "status's exit with the port open beyond loopback"
+assert_contains "$RUN_OUTPUT" "missing    Port 3773 open only on loopback: also on 0.0.0.0:3773, [::]:3773, which the tailnet can reach"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Port 3773 is open beyond loopback, where the tailnet can reach it: 0.0.0.0:3773, [::]:3773."
+[ -f "$STATE/active" ] || fail "the step stopped the service"
+stub ss 'exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Port 3773 open only on loopback: ss couldn't list the listeners"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "ss couldn't list the listeners on port 3773"
+rm "$STATE/listeners"
+stub ss '[ ! -f "$(dirname "$STUB_LOG")/state/active" ] || echo "LISTEN 0 511 127.0.0.1:3773 0.0.0.0:*"'
 
 # An enabled unit without linger doesn't start at boot until login.
 t3_code_lingering() { false; }

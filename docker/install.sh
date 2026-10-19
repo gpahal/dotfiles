@@ -311,8 +311,8 @@ status_docker_ports() {
     fi
 }
 
-# Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials are cached, and is
-# otherwise unverified.
+# Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
+# are cached, and is otherwise unverified.
 status() {
     local installed=false SUDO_CACHED_CACHE=no
     ! sudo_cached || SUDO_CACHED_CACHE=yes

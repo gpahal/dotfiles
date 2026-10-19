@@ -169,7 +169,7 @@ install_ssh_add_agent() {
     fi
 }
 
-# Succeeds when only you can read ~/.ssh, as main sets it
+# Succeeds when only you can read ~/.ssh, as apply sets it
 ssh_dir_private() {
     [ -d "$HOME/.ssh" ] && [ "$(file_mode "$HOME/.ssh/")" == 700 ]
 }
@@ -178,7 +178,7 @@ make_ssh_dir_private() {
     mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 }
 
-# Succeeds when ~/.ssh/config, if there is one, is mode 600, as main sets it
+# Succeeds when ~/.ssh/config, if there is one, is mode 600, as apply sets it
 ssh_config_private() {
     [ ! -f "$SSH_CONFIG" ] || [ "$(file_mode "$SSH_CONFIG")" == 600 ]
 }

@@ -103,7 +103,7 @@ function stopUpdates() {
 const STREAM_DECK_15_KEY = 0;
 const deviceTypes = new Map();
 
-socket.onopen =() => send({ event: arg("-registerEvent"), uuid: pluginUUID });
+socket.onopen = () => send({ event: arg("-registerEvent"), uuid: pluginUUID });
 socket.onclose = () => {
   sampler.stop();
   process.exit(0);

@@ -3,18 +3,17 @@ set -euo pipefail
 
 # Set Ubuntu up to run unattended around the clock.
 #
-# Set up Ubuntu to run unattended around the clock: never sleep, watch a UPS on USB with NUT once
-# one is plugged in, which shuts down on a dying battery and has the UPS cut and restore power,
-# reboot after a kernel panic, raise the inotify limits for agents' file watchers, add the
-# en_US.UTF-8 locale, watch disk health and push its warnings to ntfy, install security
-# updates daily and keep edited conffiles through them, start user services (the T3 Code server)
-# at boot without a login, start sshd at boot and take SSH logins only for you, and with keys only
-# once a session shows your key logs in, install Tailscale, turn on the firewall, letting SSH in
-# only from the private ranges and anything in from the tailnet (tailscale0), which Tailscale's
-# ACLs limit, once no SSH session comes from elsewhere, and wake on LAN. These need sudo, so the
-# step lists what's missing and asks once. When one part fails, the step still does the others,
-# then fails. It also puts Homebrew on PATH for user services, and turns on a daily health alert
-# and a boot notice pushed to ntfy, which need no sudo.
+# That means: never sleep, watch a UPS on USB with NUT once one is plugged in, which shuts down on a
+# dying battery and has the UPS cut and restore power, reboot after a kernel panic, raise the
+# inotify limits for agents' file watchers, add the en_US.UTF-8 locale, watch disk health and push
+# its warnings to ntfy, install security updates daily and keep edited conffiles through them, start
+# user services (the T3 Code server) at boot without a login, start sshd at boot and take SSH logins
+# only for you, and with keys only once a session shows your key logs in, install Tailscale, turn on
+# the firewall, letting SSH in only from the private ranges and anything in from the tailnet
+# (tailscale0), which Tailscale's ACLs limit, once no SSH session comes from elsewhere, and wake on
+# LAN. These need sudo, so the step lists what's missing and asks once. When one part fails, the
+# step still does the others, then fails. It also puts Homebrew on PATH for user services, and turns
+# on a daily health alert and a boot notice pushed to ntfy, which need no sudo.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo, systemctl, and
 # loginctl. Test it in an Ubuntu VM that runs systemd, such as an OrbStack machine.

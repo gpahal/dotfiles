@@ -3,14 +3,14 @@ set -euo pipefail
 
 # Install Docker Engine from Docker's apt repo, started at boot.
 #
-# Install Docker Engine on Ubuntu from Docker's apt repo, the Linux counterpart of OrbStack on the
-# Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
-# rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
-# networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. The run that installs Docker then
-# asks on its own whether to add you to the docker group, which lets `docker` run without sudo but
-# is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS,
-# OrbStack (from the homebrew step) provides Docker.
+# Docker Engine is the Linux counterpart of OrbStack on the Mac. The daemon starts at boot, so
+# containers with a restart policy come back, container logs rotate, containers keep running across
+# daemon restarts, published ports listen on 127.0.0.1, networks stay out of the SSH ranges, and
+# Docker updates install with the daily security updates. These need sudo, so the step lists what's
+# missing and asks once. The run that installs Docker then asks on its own whether to add you to the
+# docker group, which lets `docker` run without sudo but is root-equivalent; without it, use sudo
+# docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides
+# Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.

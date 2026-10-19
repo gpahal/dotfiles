@@ -3,10 +3,10 @@ set -euo pipefail
 
 # Install Google Chrome from Google's apt repo.
 #
-# Install Google Chrome on Ubuntu from Google's .deb, which also adds Google's apt repo, and let
-# unattended-upgrades install its updates, which the ubuntu step turns on. These need sudo, so the
-# step lists what's missing and asks once. It skips when Google has no .deb for this CPU. On macOS,
-# the homebrew step installs Chrome as a cask, which updates itself.
+# On Ubuntu, Google's .deb also adds Google's apt repo, and the step lets unattended-upgrades
+# install its updates, which the ubuntu step turns on. These need sudo, so the step lists what's
+# missing and asks once. It skips when Google has no .deb for this CPU. On macOS, the homebrew step
+# installs Chrome as a cask, which updates itself.
 #
 # A temp HOME doesn't isolate this step, which adds an apt repo and packages with sudo. Test it in
 # an Ubuntu VM.

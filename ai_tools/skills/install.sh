@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Install the repo's skills for Codex and Claude Code.
 #
-# Install every skill in ai_tools/skills for Codex, as a copy in ~/.agents/skills, and for Claude
-# Code, as a link to that copy in ~/.claude/skills. The repo owns both dirs: a run replaces a copy
-# that differs from the repo, and deletes every entry that isn't a repo skill, such as a skill
-# installed from elsewhere or one the repo no longer has. Claude Code's own entries in
-# ~/.claude/skills, its dot-entries and synced, stay.
+# Codex gets a copy of each skill in ~/.agents/skills, and Claude Code a link to that copy in
+# ~/.claude/skills. The repo owns both dirs: a run replaces a copy that differs from the repo, and
+# deletes every entry that isn't a repo skill, such as a skill installed from elsewhere or one the
+# repo no longer has. Claude Code's own entries in ~/.claude/skills, its dot-entries and synced,
+# stay.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"

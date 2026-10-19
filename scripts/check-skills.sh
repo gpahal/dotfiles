@@ -6,7 +6,7 @@ set -euo pipefail
 # and its skill has an agents/openai.yaml. Its invocation agrees across SKILL.md, agents/openai.yaml,
 # and the one heading it's listed under in its category README. Links to local files resolve, and
 # stay inside the skill or point at another skill, and the READMEs' links and anchors resolve.
-# Needs mikefarah's yq. `just check` runs it.
+# Needs mikefarah's yq.
 
 SKILLS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../ai_tools/skills" && pwd)"
 # shellcheck source=lib/markdown.sh

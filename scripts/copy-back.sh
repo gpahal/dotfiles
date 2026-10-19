@@ -3,12 +3,10 @@ set -euo pipefail
 
 # Copy the configs the steps installed back into the repo where they differ, so a change made in
 # an app or by hand, such as to Zed's settings, survives the next setup run, which overwrites it.
-# Each step is sourced and every function whose name ends in _files called, with an action that
-# records each source and destination. Each installed file that differs gets its diff printed and
-# is copied over the repo's, which keeps its mode; review the result with git diff. A file not
-# installed here is skipped. When two installed copies of one repo file differ, such as
+# Each differing file gets its diff printed and is copied over the repo's, which keeps its mode. A
+# file not installed here is skipped. When two installed copies of one repo file differ, such as
 # ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, the first is copied back and the second named, to
-# merge by hand, which fails the script. `just copy-back` runs it.
+# merge by hand, which fails the script.
 # Usage: copy-back.sh [--dry-run]
 
 # shellcheck source=../lib/common.sh

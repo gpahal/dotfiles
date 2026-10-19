@@ -9,10 +9,7 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-# Ubuntu also gets Docker, Chrome, Solaar, and the settings that keep it running around the clock.
-# The Mac gets Stream Deck, Hammerspoon, and the macos step's defaults instead. On the Mac, OrbStack
-# provides Docker, and the homebrew step installs Chrome and Logi Options+.
-# manual-steps prints what's left to do by hand.
+# On the Mac, OrbStack provides Docker, and the homebrew step installs Chrome and Logi Options+
 MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon editorconfig
     macos manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker

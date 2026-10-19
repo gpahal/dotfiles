@@ -11,7 +11,6 @@ set -euo pipefail
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
-# `just check` runs it.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # For step_header_line

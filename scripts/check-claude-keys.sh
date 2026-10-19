@@ -4,8 +4,7 @@ set -euo pipefail
 # Check that every key in a Claude Code settings file is one scripts/claude-settings-keys.txt
 # lists. With no argument, it checks the settings the claude-code step writes on either OS, made
 # in a temp HOME with the step's own functions. Claude Code ignores unknown keys, so a misspelled
-# one would do nothing without a word. Needs jq. `just check` runs it, and so does
-# scripts/check-ai-settings.sh.
+# one would do nothing without a word. Needs jq.
 # Usage: check-claude-keys.sh [<settings.json>]
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -2,23 +2,16 @@
 set -euo pipefail
 
 # Check the settings the claude-code and codex steps write with the installed claude and codex
-# CLIs. In a temp HOME, it writes ~/.claude/settings.json and ~/.codex/config.toml with the steps'
-# own functions, then:
-# - claude doctor must list no invalid settings. It checks types and allowed values, but not
-#   unknown keys, and exits 0 either way, so the check reads its output.
-# - every key the step writes must be in scripts/claude-settings-keys.txt
-#   (scripts/check-claude-keys.sh), the keys checked by hand against Claude Code. Doctor would
-#   ignore an unknown one.
-# - codex doctor must load config.toml with no warning. It warns about unknown top-level keys,
-#   but not about a [desktop] key it doesn't know, so check those by hand against the ChatGPT
-#   app's version.
-# - every flag the interrogate skill's run-reviewer.sh passes must be in `claude --help` or
-#   `codex exec --help`.
-# - codex sandbox must run true with the step's config. On Linux it needs a bwrap that can create
-#   a sandbox.
+# CLIs, written in a temp HOME with the steps' own functions:
+# - claude doctor lists no invalid settings. It skips unknown keys and exits 0 either way, so the
+#   keys go through scripts/check-claude-keys.sh too, and the check reads its output.
+# - codex doctor loads config.toml with no warning. It skips unknown [desktop] keys, so check
+#   those by hand against the ChatGPT app's version.
+# - the interrogate skill's run-reviewer.sh passes only flags the CLIs' --help lists.
+# - codex sandbox runs true with the step's config. On Linux it needs a bwrap that can sandbox.
 # Each doctor first gets a broken file, which it must reject, so a change to its output can't turn
 # the check into a pass. Needs claude, codex, jq, and yq, and no login: auth failures are ignored.
-# CI runs it with the latest CLIs (.github/workflows/check.yml); `just check` doesn't.
+# CI runs it with the latest CLIs; `just check` doesn't.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -93,9 +86,8 @@ else
     echo "  codex doctor loads it"
 fi
 
-# The flags the interrogate skill's run-reviewer.sh passes each CLI, read from its claude) and
-# codex) branches, must be in `claude --help` and `codex exec --help`, so a renamed or dropped
-# flag shows up here rather than as a failed review. A made-up flag must be missing.
+# Flags read from run-reviewer.sh's claude) and codex) branches, so a renamed or dropped flag
+# shows up here rather than as a failed review. A made-up flag must be missing.
 echo "Reviewer flags:"
 reviewer="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
 for family in claude codex; do

@@ -1,17 +1,11 @@
 #!/bin/bash
 set -uo pipefail
 
-# Test a whole Ubuntu setup in a throwaway OrbStack machine: create it, install unattended-upgrades,
-# run setup.sh and then ai_tools/setup.sh in it with DOTFILES_ASSUME_YES=1, DOTFILES_SSH_KEY_ONLY=1,
-# and DOTFILES_ALLOW_WORKTREE=1, twice, so a second pass over a set-up machine must pass too. Then
-# restart it, run both --status reports, and check sshd's effective settings (sshd -T), that ufw is
-# active, that a key logs in over SSH from this Mac, that the health alert's timer is active, that
-# the T3 Code service is active, and that docker ps works from the user manager the service runs
-# under. Then check the service stays the one T3 Code server on its port: after t3 service restart,
-# after a kill -9 of its server, and against a t3 serve started by hand while it's stopped, which it
-# must wait out, retrying, while status flags the extra server. The machine is deleted at the end,
-# even when the run fails or is interrupted. Needs OrbStack on macOS, and takes a while: Homebrew,
-# apt packages, and the AI tools all install from scratch. The full output goes to a log file.
+# Test a whole Ubuntu setup in a throwaway OrbStack machine: run setup.sh and ai_tools/setup.sh
+# twice, so a second pass over a set-up machine must pass too, restart, then check both --status
+# reports and the machine's services, logins, and T3 Code server (each section below says what).
+# The machine is deleted at the end, even when the run fails or is interrupted. Needs OrbStack on
+# macOS, and takes a while, since everything installs from scratch. The full output goes to a log.
 
 MACHINE=dotfiles-test
 # arm64 by default: OrbStack runs amd64 through Rosetta on Apple Silicon, where T3 Code 0.0.45
@@ -133,11 +127,9 @@ only_allowed_items() {
     "$found"
 }
 
-# Check a runner's exit status and the steps it lists as failed or needing attention against the
-# allowed ones. A line such as "Failed steps: git ghostty" or "Needs attention: git. Run: ..." in
-# $VM_OUTPUT gives the steps. A step that needs attention only for items only_allowed_items
-# accepts, from ALLOWED_ITEMS or ALLOWED_BEFORE, passes. A runner that exits non-zero without
-# listing a step fails too.
+# Check a runner's exit status and the steps its summary lines in $VM_OUTPUT list as failed or
+# needing attention against the allowed ones. A runner that exits non-zero without listing a step
+# fails.
 # e.g. check_runner "setup.sh" "$status" ghostty
 check_runner() {
     local what="$1" status="$2" step listed attention

@@ -401,7 +401,7 @@ Configs come from this repo, so to update them, pull, then re-run `bash setup.sh
 
 ## Maintenance
 
-`just copy-back` copies each installed config that differs from the repo's back into the repo, and prints its diff. Run it before a setup run, which overwrites the installed configs, to keep changes made in an app or by hand, such as Zed's settings. Review the result with `git diff`, and commit what you keep. `just copy-back dry-run` only lists the files that differ. When two installed copies of one file differ, such as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, it takes the first and names the second for you to merge by hand.
+`just copy-back` copies each installed config that differs from the repo's back into the repo, and prints its diff. Run it before a setup run, which overwrites the installed configs, to keep changes made in an app or by hand, such as Zed's settings. Review the result with `git diff`, and commit what you keep. `just copy-back dry-run` only lists the files that differ. When you edited both installed copies of one file, such as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, differently, it takes the first and names the second for you to merge by hand. It skips a repo file with uncommitted changes, and names it, so commit or discard those first.
 
 The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
 

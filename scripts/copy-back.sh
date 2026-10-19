@@ -4,9 +4,10 @@ set -euo pipefail
 # Copy the configs the steps installed back into the repo where they differ, so a change made in
 # an app or by hand, such as to Zed's settings, survives the next setup run, which overwrites it.
 # Each differing file gets its diff printed and is copied over the repo's, which keeps its mode. A
-# file not installed here is skipped. When two installed copies of one repo file differ, such as
-# ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, the first is copied back and the second named, to
-# merge by hand, which fails the script.
+# file not installed here is skipped. When two installed copies of one repo file differ from it and
+# from each other, such as ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, the first is copied back and
+# the second named, to merge by hand, which fails the script. So does a repo file with uncommitted
+# changes, which is named and left alone, so the copy doesn't overwrite them.
 # Usage: copy-back.sh [--dry-run]
 
 # shellcheck source=../lib/common.sh
@@ -40,8 +41,8 @@ trap 'rm -rf "$tmp"' EXIT
 # shellcheck disable=SC2088 # shown, not expanded
 shown() {
     case "$1" in
-        "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
         "$DOTFILES_DIR"/*) echo "${1#"$DOTFILES_DIR"/}" ;;
+        "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
         *) echo "$1" ;;
     esac
 }
@@ -63,14 +64,39 @@ for install in "$DOTFILES_DIR"/*/install.sh "$DOTFILES_DIR"/ai_tools/*/install.s
     ) < /dev/null
 done
 touch "$tmp/copies"
+awk '!seen[$0]++' "$tmp/copies" > "$tmp/unique"
+
+# Each repo file's content before any copy, as <repo file> <tab> <snapshot>. A repo file installed
+# twice is compared with what it was, not with the first copy taken over it, so a dry run and a
+# real run agree, and an unedited second copy isn't a conflict.
+mkdir "$tmp/orig"
+: > "$tmp/snapshots"
+n=0
+while IFS=$'\t' read -r src dest; do
+    [ -f "$src" ] || continue
+    ! awk -F '\t' -v s="$src" '$1 == s { found = 1 } END { exit !found }' "$tmp/snapshots" || continue
+    n=$((n + 1))
+    cp "$src" "$tmp/orig/$n"
+    printf '%s\t%s\n' "$src" "$tmp/orig/$n" >> "$tmp/snapshots"
+done < "$tmp/unique"
+
+# Succeeds when the repo file has changes git hasn't committed, or git doesn't track it. Outside
+# a git work tree there's nothing to compare with, so nothing counts.
+uncommitted() {
+    git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree &>/dev/null || return 1
+    ! git -C "$DOTFILES_DIR" ls-files --error-unmatch -- "$1" &>/dev/null ||
+        ! git -C "$DOTFILES_DIR" diff --quiet HEAD -- "$1"
+}
 
 found=0
 conflicts=0
+skipped=0
 : > "$tmp/taken"
 while IFS=$'\t' read -r src dest; do
     [ -f "$dest" ] && [ -f "$src" ] || continue
-    cmp -s "$src" "$dest" && continue
-    # A repo file installed twice, whose first differing copy was already taken
+    orig="$(awk -F '\t' -v s="$src" '$1 == s { print $2; exit }' "$tmp/snapshots")"
+    cmp -s "$orig" "$dest" && continue
+    # A repo file installed twice, whose first edited copy was already taken
     first="$(awk -F '\t' -v s="$src" '$1 == s { print $2; exit }' "$tmp/taken")"
     if [ -n "$first" ]; then
         if ! cmp -s "$first" "$dest"; then
@@ -80,6 +106,11 @@ while IFS=$'\t' read -r src dest; do
         continue
     fi
     printf '%s\t%s\n' "$src" "$dest" >> "$tmp/taken"
+    if uncommitted "$src"; then
+        echo "Skipped $(shown "$dest"): $(shown "$src") has uncommitted changes, which copying would overwrite. Commit or discard them, then run this again."
+        skipped=$((skipped + 1))
+        continue
+    fi
     found=$((found + 1))
     if "$dry_run"; then
         echo "$(shown "$dest") differs from $(shown "$src")"
@@ -91,13 +122,13 @@ while IFS=$'\t' read -r src dest; do
         echo "Couldn't copy $(shown "$dest") to $(shown "$src")" >&2
         exit 1
     fi
-done < <(awk '!seen[$0]++' "$tmp/copies")
+done < "$tmp/unique"
 
 if [ "$found" -eq 0 ]; then
-    echo "Every installed config matches the repo's."
+    [ "$skipped" -gt 0 ] || echo "Every installed config matches the repo's."
 elif "$dry_run"; then
     echo "Run without --dry-run to copy them back."
 else
     echo "Copied $found file(s) back. Review them with git diff."
 fi
-[ "$conflicts" -eq 0 ]
+[ "$conflicts" -eq 0 ] && [ "$skipped" -eq 0 ]

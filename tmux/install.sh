@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the tmux config and tmux-sessionizer, and install tpm and the plugins into ~/.tmux/plugins,
@@ -143,8 +142,7 @@ apply() {
     echo "Installing tmux plugins..."
     sync_tmux_plugins || status=1
     tmux_items
-    # Not grep -q, whose early exit would fail the pipeline under pipefail
-    if items_status | grep '^  missing ' > /dev/null; then
+    if ! items_ok; then
         items_apply || status=1
     elif is_ubuntu; then
         echo "tmux already starts at boot."

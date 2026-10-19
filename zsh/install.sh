@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and
@@ -173,8 +172,7 @@ apply() {
     zsh_files copy_file || status=1
     echo "Setting up the startup files..."
     zsh_items
-    # Not grep -q, whose early exit would fail the pipeline under pipefail
-    if items_status | grep '^  missing ' > /dev/null; then
+    if ! items_ok; then
         items_apply || status=1
     else
         echo "  The startup files already source the zsh config"

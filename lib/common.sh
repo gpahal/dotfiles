@@ -1,6 +1,6 @@
 # Helpers shared by the runners, their steps, and the repo's other scripts. Source it; don't run it.
 # The APIs a step builds on, each documented where it's defined:
-# - item and its drivers (items_reset, items_status, items_pending, items_apply): what a step sets
+# - item and its drivers (items_reset, items_status, items_ok, items_pending, items_apply): what a step sets
 #   up, listed once for its status, its confirm_sudo_changes list, and its fixes
 # - STEP_OS: the one OS a step supports; the default main and run_steps skip it on the other
 # - STEP_NEEDS: the steps a step needs; run_steps skips it when one of them failed earlier
@@ -142,7 +142,7 @@ load_brew() {
 
 # Each step runs in its own process, so pick up Homebrew even when the calling shell hasn't
 command -v brew &>/dev/null || load_brew || true
-# The same for the runtimes mise installs, such as the Node.js the skills step needs
+# The same for the runtimes mise installs, such as Node.js
 MISE_SHIMS="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
 if [ -d "$MISE_SHIMS" ] && [[ ":$PATH:" != *":$MISE_SHIMS:"* ]]; then
     export PATH="$MISE_SHIMS:$PATH"
@@ -991,6 +991,7 @@ status_check() {
 #   items_status [check-fn...]   status_item ok "<status text>", or missing "<status text>[; <hint>]"
 #   items_pending [check-fn...]  append the pending text of each failing --sudo item to the caller's
 #                                pending array, for confirm_sudo_changes
+#   items_ok [check-fn...]       succeed when every item's check passes, printing nothing
 #   items_apply [--no-sudo] [check-fn...]
 #                                run the fix of each item whose check still fails; --no-sudo skips
 #                                the --sudo items, for when confirm_sudo_changes was declined. Every
@@ -1039,6 +1040,7 @@ item() {
     ITEM_HINT+=("$hint")
 }
 
+# shellcheck disable=SC2120 # with no check functions, it drives every item
 items_status() {
     local i=0
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
@@ -1048,6 +1050,17 @@ items_status() {
             else
                 status_item missing "${ITEM_STATUS[i]}${ITEM_HINT[i]:+; ${ITEM_HINT[i]}}"
             fi
+        fi
+        i=$((i + 1))
+    done
+}
+
+# shellcheck disable=SC2120 # with no check functions, it checks every item
+items_ok() {
+    local i=0
+    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
+        if _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
+            return 1
         fi
         i=$((i + 1))
     done
@@ -1064,6 +1077,7 @@ items_pending() {
     done
 }
 
+# shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply() {
     local i=0 result=0 sudo=true
     if [ "${1:-}" == --no-sudo ]; then

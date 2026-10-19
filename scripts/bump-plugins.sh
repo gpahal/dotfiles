@@ -4,8 +4,8 @@ set -euo pipefail
 
 # Move the pinned vim and tmux plugins to their default branch's HEAD, and the vendored vim-plug
 # to its latest release, in this repo's vim/vimrc, tmux/plugins.lock, and vim/plug.vim. Prints a
-# link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps, then
-# PlugUpdate, for that.
+# link to review each change, and changes nothing in $HOME: re-run the vim and tmux steps, which
+# move the installed plugins to the new pins, for that.
 # A repo whose HEAD can't be read keeps its pin and fails the script once the rest are done.
 # `just bump-plugins` runs it. Needs git and the network.
 # Usage: bump-plugins.sh

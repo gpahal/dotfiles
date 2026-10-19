@@ -4,8 +4,8 @@
 set -euo pipefail
 
 # item lists a step's simple item once, and its drivers build the pending list, apply the fixes,
-# and print the status from it: every item, or only the ones named, in the order they were added.
-# Only --sudo items are pending, and --no-sudo applies only the rest. Apply re-checks each item
+# print the status from it, and say whether all are set up: every item, or only the ones named,
+# in the order they were added. Only --sudo items are pending, and --no-sudo applies only the rest. Apply re-checks each item
 # first, runs each fix whether or not the one before it failed, and fails when any did. A --hint
 # goes on a missing status item.
 
@@ -86,6 +86,15 @@ assert_eq "  ok         A is set up
   missing    C is set up
   ok         D is set up" "$RUN_OUTPUT" "status after apply"
 
+# items_ok succeeds only when every item named, or every item, is set up, and prints nothing
+assert_exit 0 items_ok a_done
+assert_eq "" "$RUN_OUTPUT" "items_ok's output"
+rm -f "$SANDBOX/b"
+assert_exit 1 items_ok
+assert_exit 1 items_ok a_done b_done
+assert_exit 0 items_ok a_done d_done
+touch "$SANDBOX/b"
+
 # Applying only named items leaves the rest
 : > "$fixes"
 rm -f "$SANDBOX/b" "$SANDBOX/d"
@@ -98,6 +107,7 @@ touch "$SANDBOX/c"
 assert_eq "" "$(pending_list)" "pending items once set up"
 assert_exit 0 report
 assert_not_contains "$RUN_OUTPUT" "missing"
+assert_exit 0 items_ok
 
 # A malformed item fails
 assert_exit 2 item --sudo "E is set up" "Set up E" e_done

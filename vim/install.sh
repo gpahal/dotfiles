@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the vim config, install the vim-plug the repo vendors in vim/plug.vim, and move the plugins
@@ -92,8 +91,7 @@ apply() {
     local status=0
     copy_step "Copying vim config..." vim_files || status=1
     vim_items
-    # Not grep -q, whose early exit would fail the pipeline under pipefail
-    if items_status | grep '^  missing ' > /dev/null; then
+    if ! items_ok; then
         items_apply || status=1
     else
         echo "  vim-plug and the vim plugins already at their pinned versions"

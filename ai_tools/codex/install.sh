@@ -97,6 +97,30 @@ codex_keep_wanted() {
     keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
 }
 
+# Print the config's value at each yq path given, one line each, as codex_keep_current does, with
+# one yq. Each value is one line of JSON, so the lines line up with the paths.
+codex_keep_current_all() {
+    local filter values value
+    filter="$(printf '%s, ' "$@")"
+    values="$(yq -p toml -o json -I=0 "[${filter%, }] | .[]" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    while IFS= read -r value; do
+        if [ "$value" == null ]; then echo; else keepable_unquote "$value"; fi
+    done <<< "$values"
+}
+
+# Print each TOML value given, one line each, as codex_keep_wanted does, with one yq
+codex_keep_wanted_all() {
+    local i=0 toml="" filter="" value
+    for value; do
+        toml+="v$i = $value"$'\n'
+        filter+="${filter:+, }.v$i"
+        i=$((i + 1))
+    done
+    printf '%s' "$toml" | yq -p toml -o json -I=0 "[$filter] | .[]" | while IFS= read -r value; do
+        keepable_unquote "$value"
+    done
+}
+
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
 # TOML, which for the strings, booleans, and arrays of strings set here is also a yq literal.
 codex_set() {
@@ -326,7 +350,17 @@ codex_config_matches() {
         [ "$got" == "$want" ]
 }
 
+# Read the values you can change once for each phase, then forget them, since the config changes
+# under them: once here, and again once ChatGPT quits, since it can save the config as it quits
 configure_codex() {
+    local result=0
+    keepable_load codex
+    configure_codex_settings || result=$?
+    keepable_unload
+    return "$result"
+}
+
+configure_codex_settings() {
     echo "Configuring Codex..."
     local edited
     keepable_choose codex
@@ -345,6 +379,7 @@ configure_codex() {
     edited="$(codex_config_edited)" || return 1
     rm -f "$edited"
     ensure_app_quit "ChatGPT" || return 0
+    keepable_load codex
     edited="$(codex_config_edited)" || return 1
     if ! maybe_backup "$CODEX_CONFIG"; then
         rm -f "$edited"
@@ -498,8 +533,10 @@ status() {
         elif ! codex_yq_new_enough; then
             status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
         else
+            keepable_load codex
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             keepable_status codex
+            keepable_unload
         fi
         user_instructions_files status_file
         codex_items

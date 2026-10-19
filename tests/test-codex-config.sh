@@ -342,9 +342,24 @@ replace_fn bwrap_works 'true'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
 
+# Status reads the values you can change, and the repo's, with one yq each, rather than one per
+# value. The configure phase reads them again once ChatGPT quits: a model the app removed as it
+# quit counts as unset, so the repo's is set, though your own was there before.
+real_yq="$(command -v yq)"
+as_os macos
+stub yq 'exec '"$(printf %q "$real_yq")"' "$@"'
+: > "$STUB_LOG"
+run status
+assert_eq 5 "$(grep -c '^yq' "$STUB_LOG")" "yq runs in status: version, values, repo's values, and the settings check"
+rm -f "$STUB_DIR/yq"
+printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"
+replace_fn ensure_app_quit 'yq -i -p toml -o toml "del(.model)" "$CODEX_CONFIG"'
+assert_exit 0 configure_codex
+assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model after ChatGPT removed yours as it quit"
+load_script ai_tools/codex/install.sh
+
 # A yq older than 4.54.1, or another tool named yq, fails the step before it changes anything, and
 # status says to upgrade it. Newer versions, by any part, pass.
-real_yq="$(command -v yq)"
 for version in "v4.54.1" "v4.55.0" "v4.100.0" "v5.0.0"; do
     stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
     codex_yq_new_enough || fail "yq $version counts as too old"
@@ -362,5 +377,5 @@ stub yq 'echo "yq 3.4.3"'
 run status
 assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
 assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
-ln -sf "$real_yq" "$STUB_DIR/yq"
+rm -f "$STUB_DIR/yq"
 test_done

@@ -7,7 +7,7 @@
 # <tool>_keep_current <path>, which prints the setting's value. When the repo's values aren't
 # JSON, it also defines <tool>_keep_wanted <value>, which prints the repo's value the same way, so
 # the two compare equal when they match; keepable_unquote is the default. Each prints nothing for
-# unset.
+# unset. A step whose reads are slow reads them once per phase with keepable_load.
 
 # One row per value: its tool, its path in the tool's settings, the repo's value in the settings'
 # own syntax, the name prompts and status give it, and whether only Ubuntu gets it.
@@ -24,6 +24,8 @@ KEEP_REPLACE=(${KEEP_REPLACE[@]+"${KEEP_REPLACE[@]}"})
 # Usage: keepable_forget <tool>
 keepable_forget() {
     local i tools=() paths=() values=() names=() ubuntu=() replace=()
+    # The loaded values are by index, which this changes
+    keepable_unload
     for i in ${KEEP_TOOLS[@]+"${!KEEP_TOOLS[@]}"}; do
         [ "${KEEP_TOOLS[i]}" != "$1" ] || continue
         tools+=("${KEEP_TOOLS[i]}")
@@ -61,14 +63,66 @@ keepable_indexes() {
     done
 }
 
+# The tool keepable_load read the values of, and those values and the repo's, by row index
+KEEP_LOADED=""
+KEEP_LOADED_CURRENT=()
+KEEP_LOADED_WANTED=()
+
+# Read each of a tool's values, and the repo's, once, for keepable_current and keepable_wanted to
+# print until keepable_unload. A tool whose reads are slow, such as yq on a TOML file, defines
+# <tool>_keep_current_all <path>... and <tool>_keep_wanted_all <value>..., which print one line per
+# argument, as <tool>_keep_current and <tool>_keep_wanted print one. Load again after anything else
+# may have written the settings, such as an app that saved them as it quit.
+# Usage: keepable_load <tool>
+keepable_load() {
+    local i line n indexes=() paths=() values=()
+    keepable_unload
+    for i in $(keepable_indexes "$1"); do
+        indexes+=("$i")
+        paths+=("${KEEP_PATHS[i]}")
+        values+=("${KEEP_VALUES[i]}")
+    done
+    if [ ${#indexes[@]} -gt 0 ] && declare -F "$1_keep_current_all" > /dev/null; then
+        n=0
+        while IFS= read -r line; do
+            KEEP_LOADED_CURRENT[indexes[n]]="$line"
+            n=$((n + 1))
+        done < <("$1_keep_current_all" "${paths[@]}")
+        n=0
+        while IFS= read -r line; do
+            KEEP_LOADED_WANTED[indexes[n]]="$line"
+            n=$((n + 1))
+        done < <("$1_keep_wanted_all" "${values[@]}")
+    else
+        for i in ${indexes[@]+"${indexes[@]}"}; do
+            KEEP_LOADED_CURRENT[i]="$(keepable_current "$1" "$i")"
+            KEEP_LOADED_WANTED[i]="$(keepable_wanted "$1" "$i")"
+        done
+    fi
+    KEEP_LOADED="$1"
+}
+
+# Forget the values keepable_load read, so they're read afresh
+keepable_unload() {
+    KEEP_LOADED=""
+    KEEP_LOADED_CURRENT=()
+    KEEP_LOADED_WANTED=()
+}
+
 # Print value $2 of tool $1's settings as <tool>_keep_current prints it
 keepable_current() {
-    "$1_keep_current" "${KEEP_PATHS[$2]}"
+    if [ "$KEEP_LOADED" == "$1" ]; then
+        printf '%s\n' "${KEEP_LOADED_CURRENT[$2]:-}"
+    else
+        "$1_keep_current" "${KEEP_PATHS[$2]}"
+    fi
 }
 
 # Print the repo's value $2 as <tool>_keep_current prints it
 keepable_wanted() {
-    if declare -F "$1_keep_wanted" > /dev/null; then
+    if [ "$KEEP_LOADED" == "$1" ]; then
+        printf '%s\n' "${KEEP_LOADED_WANTED[$2]:-}"
+    elif declare -F "$1_keep_wanted" > /dev/null; then
         "$1_keep_wanted" "${KEEP_VALUES[$2]}"
     else
         keepable_unquote "${KEEP_VALUES[$2]}"

@@ -12,8 +12,9 @@ set -uo pipefail
 # ls -e or sqlite3, has an "# os: macos" line in its first 20 lines, and a run of every test leaves
 # it out on Ubuntu; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR, with
 # XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It syntax-checks
-# the repo's other shell scripts and each selected test before running it, since a syntax error in
-# a sourced script can let a test pass. Ctrl-C or SIGTERM stops every test and exits 130.
+# each selected test before running it, and, on a run of every test, the repo's other shell
+# scripts, since a syntax error in a sourced script can let a test pass. Ctrl-C or SIGTERM stops
+# every test and exits 130.
 
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
@@ -120,23 +121,25 @@ repo_scripts() {
     fi
 }
 
-# The *.sh files, and the scripts in */bin/ that run under bash. Each test gets its own check in
-# run_test.
+# The *.sh files, and the scripts in */bin/ that run under bash, on a run of every test. Each test
+# gets its own check in run_test.
 broken=0
-while IFS= read -r f; do
-    # git lists a tracked file deleted from the working tree
-    [ -f "$f" ] || continue
-    case "$f" in
-        ../tests/test-*.sh) continue ;;
-        *.sh) ;;
-        *) head -1 "$f" | grep -q bash || continue ;;
-    esac
-    if ! output="$("$BASH" -n "$f" 2>&1)"; then
-        echo "FAIL  ${f#../}"
-        printf '%s\n' "$output" | sed 's/^/    /'
-        broken=$((broken + 1))
-    fi
-done < <(repo_scripts)
+if [ $# -eq 0 ]; then
+    while IFS= read -r f; do
+        # git lists a tracked file deleted from the working tree
+        [ -f "$f" ] || continue
+        case "$f" in
+            ../tests/test-*.sh) continue ;;
+            *.sh) ;;
+            *) head -1 "$f" | grep -q bash || continue ;;
+        esac
+        if ! output="$("$BASH" -n "$f" 2>&1)"; then
+            echo "FAIL  ${f#../}"
+            printf '%s\n' "$output" | sed 's/^/    /'
+            broken=$((broken + 1))
+        fi
+    done < <(repo_scripts)
+fi
 
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 # A TEST_JOBS of 0 would start no test, and a TEST_TIMEOUT that isn't a number would turn the

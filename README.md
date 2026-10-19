@@ -221,7 +221,7 @@ macOS only. The `stream-deck` step installs a plugin whose **Dotfiles** category
 
 A thread's folder is its worktree, or else its project's folder. With no folder to use, as when another app is in front or the folder is on another machine, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. **Chrome**, **New Tab**, **T3 Code**, and **Claude** do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. [`stream-deck/icons`](stream-deck/icons/README.md) lists where the app icons came from.
 
-**Overview** shows CPU and memory use, and a press opens the **System** page, laid out for the 15-key Stream Deck:
+**Overview** shows CPU and memory use. On the 15-key Stream Deck, a press opens the **System** page. The plugin has no page for other models, so there a press shows a warning on the key. The page:
 
 | | | | | |
 | :- | :- | :- | :- | :- |

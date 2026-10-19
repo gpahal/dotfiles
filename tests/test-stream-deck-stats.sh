@@ -299,4 +299,25 @@ appear("swap"); appear("disk");
 })();' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin with a broken key failed: $out"
 assert_eq "true true
 ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
+
+# Overview opens the System page on the 15-key Stream Deck (device type 0), and shows a warning on
+# any other, which has no page to open
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const message = (m) => socket.onmessage({ data: JSON.stringify(m) });
+message({ event: "deviceDidConnect", device: "classic", deviceInfo: { type: 0 } });
+message({ event: "deviceDidConnect", device: "xl", deviceInfo: { type: 2 } });
+for (const device of ["classic", "xl"])
+  message({ event: "keyDown", action: "com.gpahal.dotfiles.overview", context: `key-${device}`, device });
+for (const m of sent) console.log(m.event, m.device ?? m.context ?? m.payload.message);
+process.exit(0);' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin's Overview presses failed: $out"
+assert_eq "switchToProfile classic
+logMessage Overview's System page is laid out for the 15-key Stream Deck, not device type 2
+showAlert key-xl" "$out" "Overview on the 15-key Stream Deck and on another"
 test_done

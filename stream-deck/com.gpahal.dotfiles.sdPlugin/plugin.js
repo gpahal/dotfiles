@@ -5,8 +5,8 @@
 // needs no packages.
 //
 // The stat keys, which stats.js draws, update every 2 seconds while one is on screen. Overview
-// switches to profiles/System, the page of stat keys the plugin bundles, and Back returns to the
-// profile before it. Pressing a stat key opens Activity Monitor.
+// switches to profiles/System, the page of stat keys the plugin bundles for the 15-key model, and
+// Back returns to the profile before it. Pressing a stat key opens Activity Monitor.
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const stats = require("./stats.js");
@@ -93,7 +93,13 @@ function stopUpdates() {
   sampler.stop();
 }
 
-socket.onopen = () => send({ event: arg("-registerEvent"), uuid: pluginUUID });
+// Each connected device's type, from Stream Deck's deviceDidConnect. The bundled System profile is
+// for the 15-key model alone (DeviceType 0 in the manifest), and switching to it on any other
+// device does nothing, so Overview shows a warning there instead.
+const STREAM_DECK_15_KEY = 0;
+const deviceTypes = new Map();
+
+socket.onopen =() => send({ event: arg("-registerEvent"), uuid: pluginUUID });
 socket.onclose = () => {
   sampler.stop();
   process.exit(0);
@@ -108,6 +114,8 @@ socket.onmessage = ({ data }) => {
     return;
   }
   const { event, action, context, device } = message;
+  if (event === "deviceDidConnect") deviceTypes.set(device, message.deviceInfo?.type);
+  if (event === "deviceDidDisconnect") deviceTypes.delete(device);
   if (!action) return;
   // com.gpahal.dotfiles.files is files
   const target = action.slice(action.lastIndexOf(".") + 1);
@@ -119,7 +127,10 @@ socket.onmessage = ({ data }) => {
   } else if (event === "willDisappear" && visible.delete(context) && visible.size === 0) {
     stopUpdates();
   } else if (event === "keyDown") {
-    if (target === "overview") {
+    if (target === "overview" && deviceTypes.has(device) && deviceTypes.get(device) !== STREAM_DECK_15_KEY) {
+      log(`Overview's System page is laid out for the 15-key Stream Deck, not device type ${deviceTypes.get(device)}`);
+      send({ event: "showAlert", context });
+    } else if (target === "overview") {
       send({ event: "switchToProfile", context: pluginUUID, device, payload: { profile: "profiles/System" } });
     } else if (target === "back") {
       // With no profile named, Stream Deck returns to the one before

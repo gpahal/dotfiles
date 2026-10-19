@@ -249,14 +249,11 @@ _upgrade_ai_tools_stages() {
         claude update || _stage_failed "claude update" "$?"
     fi
 
-    # Desktop apps installed with brew on macOS
-    _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code || _stage_failed "desktop apps" "$?"
-
-    # The Codex CLI cask the codex setup step installs. `upgrade` covers it with `brew upgrade`,
-    # but upgrade-ai-tools also runs on its own. It has no app, so it's upgraded even while a codex
-    # process runs, as the ChatGPT app's app-server nearly always does. Replacing a CLI's binary
-    # doesn't break a running copy.
-    _upgrade_self_updating_casks upgrade-ai-tools codex || _stage_failed "codex cask" "$?"
+    # The desktop apps installed with brew on macOS, and the Codex CLI cask the codex step
+    # installs. `upgrade` covers codex with `brew upgrade`, but upgrade-ai-tools also runs on its
+    # own. It has no app, so it's upgraded even while a codex process runs, as the ChatGPT app's
+    # app-server nearly always does. Replacing a CLI's binary doesn't break a running copy.
+    _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code codex || _stage_failed "AI casks" "$?"
 
     # Plugins are separate from the CLIs above. Claude Code has no update-all, so update
     # each installed plugin in the scope it was installed in. Updates apply on next start.

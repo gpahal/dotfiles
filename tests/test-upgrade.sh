@@ -135,7 +135,6 @@ brew outdated --cask --greedy --quiet claude
 brew info --json=v2 --cask claude
 brew --caskroom
 pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
-brew list --cask -1
 claude plugin marketplace list --json
 claude plugin marketplace update
 claude plugin marketplace list --json
@@ -216,7 +215,6 @@ mise hook-env --force -s bash
 new-node npm update -g
 uv tool upgrade --all
 rustup update
-brew list --cask -1
 brew list --cask -1
 claude plugin marketplace list --json
 claude plugin marketplace update
@@ -319,7 +317,7 @@ assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
 
 # brew outdated exits 1 without listing the cask: upgrade-ai-tools can't tell whether the casks are
-# up to date, so it upgrades neither and fails, naming them. A successful empty answer is up to
+# up to date, so it asks for each alone, upgrades neither, and fails, naming them. A successful empty answer is up to
 # date.
 upgrade_ai_tools_mac() {
     : > "$STUB_LOG"
@@ -331,14 +329,15 @@ stub brew 'case "$*" in
     "outdated "*) exit 1 ;;
 esac'
 upgrade_ai_tools_mac 1
-assert_contains "$RUN_OUTPUT" "desktop apps"
-assert_contains "$RUN_OUTPUT" "codex cask"
+assert_contains "$RUN_OUTPUT" "Couldn't check whether t3-code is up to date"
+assert_contains "$RUN_OUTPUT" "Couldn't check whether codex is up to date"
+assert_contains "$RUN_OUTPUT" "Failed: AI casks"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
 stub brew 'case "$*" in
     "list --cask -1") printf "t3-code\ncodex\n" ;;
 esac'
 upgrade_ai_tools_mac 0
-assert_file_contains "$STUB_LOG" "brew outdated --cask --greedy --quiet codex"
+assert_file_contains "$STUB_LOG" "brew outdated --cask --greedy --quiet t3-code codex"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
 # brew lists both casks as outdated and exits 1, as it does for a named outdated cask: both upgrade
 stub brew 'case "$*" in
@@ -363,7 +362,7 @@ stub pgrep 'exit 1'
 stub brew '[ "$*" != "list --cask -1" ] || exit 1'
 upgrade_ai_tools_mac 1
 assert_contains "$RUN_OUTPUT" "Couldn't list the installed casks"
-assert_contains "$RUN_OUTPUT" "Failed: desktop apps, codex cask"
+assert_contains "$RUN_OUTPUT" "Failed: AI casks"
 assert_file_not_contains "$STUB_LOG" "brew outdated"
 assert_file_contains "$STUB_LOG" "codex plugin marketplace upgrade"
 
@@ -493,9 +492,10 @@ assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
 assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "brew bundle"
 assert_file_not_contains "$STUB_LOG" "rustup"
-# upgrade-ai-tools too, here when brew is interrupted upgrading a cask
+# upgrade-ai-tools too, here when brew is interrupted upgrading a cask: the casks after it aren't
+# upgraded
 stub brew 'case "$*" in
-    "list --cask -1") printf "claude\n" ;;
+    "list --cask -1") printf "claude\ncodex\n" ;;
     "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
     "info --json=v2 --cask claude") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Claude.app\"]}]}]}" ;;
     "upgrade --cask --greedy claude") exit 130 ;;
@@ -503,7 +503,8 @@ esac'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; OSTYPE=darwin25.0; upgrade_ai_tools' bash "$REPO_DIR"
-assert_eq 1 "$(grep -c '^brew list --cask' "$STUB_LOG")" "cask listings after Ctrl-C in the desktop apps' stage"
+assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy claude"
+assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 assert_file_not_contains "$STUB_LOG" "claude plugin"
 stub brew
 

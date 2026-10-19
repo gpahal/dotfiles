@@ -29,10 +29,9 @@ echo "$(claude --version), $(codex --version)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-# Nothing may read or write the real ~/.claude or ~/.codex
-export HOME="$tmp"
-unset CLAUDE_CONFIG_DIR CODEX_HOME
-for var in $(compgen -v XDG_); do unset "$var"; done
+# shellcheck source=lib/ai-settings.sh
+source "$REPO_DIR/scripts/lib/ai-settings.sh"
+temp_tool_home "$tmp"
 # claude doctor also reads the settings in the current directory
 cd "$HOME"
 
@@ -40,10 +39,6 @@ cd "$HOME"
 source "$REPO_DIR/ai_tools/claude-code/install.sh"
 # shellcheck source=../ai_tools/codex/install.sh
 source "$REPO_DIR/ai_tools/codex/install.sh"
-# The claude-code step adds the worktree hooks only once git wt is installed
-mkdir -p "$HOME/.local/bin" "$HOME/.claude" "$HOME/.codex"
-printf '#!/bin/sh\n' > "$HOME/.local/bin/git-wt"
-chmod +x "$HOME/.local/bin/git-wt"
 
 errors=0
 fail() {
@@ -67,8 +62,7 @@ echo "Claude Code settings:"
 echo '{"tui": "not-a-mode"}' > "$CLAUDE_CODE_SETTINGS"
 [ -n "$(claude_invalid_settings)" ] ||
     fail "claude doctor didn't report a broken settings.json, so it can't check the step's"
-echo '{}' > "$CLAUDE_CODE_SETTINGS"
-json_merge "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)" > /dev/null
+write_claude_settings
 invalid="$(claude_invalid_settings)"
 if [ -n "$invalid" ]; then
     printf '%s\n' "$invalid" >&2

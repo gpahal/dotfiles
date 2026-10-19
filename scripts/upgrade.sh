@@ -44,7 +44,7 @@ _cask_listed() {
 # lose a suffix in parentheses between releases, so match any running app whose name starts with the
 # cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
 # `brew info` for a cask leaves it alone and fails, since its output can't say the cask is up to
-# date or what app it has. An interrupted brew command returns its status, so the caller stops. An
+# date or what app it has, and a failed `brew list` fails before upgrading any. An interrupted brew command returns its status, so the caller stops. An
 # app that renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
 # under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
 # keeping the app on disk (_readopt_renamed_cask).
@@ -56,6 +56,11 @@ _upgrade_self_updating_casks() {
     rc=0
     installed="$(brew list --cask -1 2>/dev/null)" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
+    # An empty list would pass for no casks installed, skipping them all without a word
+    if [ "$rc" -ne 0 ]; then
+        echo "Couldn't list the installed casks: brew list --cask failed." >&2
+        return 1
+    fi
     for entry in "$@"; do
         if _cask_listed "${entry%%:*}" <<< "$installed"; then
             listed+=("$entry")
@@ -156,19 +161,13 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Install the formulae added to this repo's Brewfile since setup last ran. Sourcing the step only
-# defines its functions, but it also sets -euo pipefail, so this and _install_new_casks run in a
-# subshell.
-_install_new_formulae() (
-    # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && install_bundle
-)
-
-# Install the casks added to the homebrew step since setup last ran
-_install_new_casks() (
+# Run the homebrew step's function $1, such as install_bundle, which installs the formulae added
+# to the Brewfile since setup last ran. Sourcing the step only defines its functions, but it also
+# sets -euo pipefail, so this runs in a subshell.
+_homebrew_step() (
     # Not followed: shellcheck would flag the lib/common.sh variables it sets again as lost
     # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && install_casks
+    source "$DOTFILES_DIR/homebrew/install.sh" && "$1"
 )
 
 # Add stage $1, which exited $2, to the caller's failed array, or stop the script when it was
@@ -235,23 +234,20 @@ _print_versions() {
     done <<< "$2"
 }
 
-# Update AI tools that the package manager upgrades miss
-upgrade_ai_tools() {
-    local failed=()
+# Update AI tools that the package manager upgrades miss, adding each stage that fails to the
+# caller's failed array, so upgrade names them in its own summary
+_upgrade_ai_tools_stages() {
     # Claude Code's native install (~/.local/share/claude) updates through `claude update`. HOME
     # is resolved too, since the path claude resolves to has no symlinks in it.
     if command -v claude &>/dev/null && [[ "$(realpath "$(command -v claude)")" == "$(realpath "$HOME")/.local/share/claude/"* ]]; then
         claude update || _stage_failed "claude update" "$?"
     fi
 
-    # Desktop apps installed with brew on macOS
-    _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code || _stage_failed "desktop apps" "$?"
-
-    # The Codex CLI cask the codex setup step installs. `upgrade` covers it with `brew upgrade`,
-    # but upgrade-ai-tools also runs on its own. It has no app, so it's upgraded even while a codex
-    # process runs, as the ChatGPT app's app-server nearly always does. Replacing a CLI's binary
-    # doesn't break a running copy.
-    _upgrade_self_updating_casks upgrade-ai-tools codex || _stage_failed "codex cask" "$?"
+    # The desktop apps installed with brew on macOS, and the Codex CLI cask the codex step
+    # installs. `upgrade` covers codex with `brew upgrade`, but upgrade-ai-tools also runs on its
+    # own. It has no app, so it's upgraded even while a codex process runs, as the ChatGPT app's
+    # app-server nearly always does. Replacing a CLI's binary doesn't break a running copy.
+    _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code codex || _stage_failed "AI casks" "$?"
 
     # Plugins are separate from the CLIs above. Claude Code has no update-all, so update
     # each installed plugin in the scope it was installed in. Updates apply on next start.
@@ -293,7 +289,11 @@ upgrade_ai_tools() {
     if command -v codex &>/dev/null; then
         codex plugin marketplace upgrade || _stage_failed "codex marketplaces" "$?"
     fi
+}
 
+upgrade_ai_tools() {
+    local failed=()
+    _upgrade_ai_tools_stages
     _upgrade_report ${failed[@]+"${failed[@]}"}
 }
 
@@ -310,8 +310,9 @@ upgrade() {
     fi
 
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
-    _install_new_formulae || _stage_failed "brew bundle" "$?"
-    _install_new_casks || _stage_failed casks "$?"
+    # The formulae added to the Brewfile, and the casks added to the step, since setup last ran
+    _homebrew_step install_bundle || _stage_failed "brew bundle" "$?"
+    _homebrew_step install_casks || _stage_failed casks "$?"
     if [[ "$OSTYPE" == linux* ]]; then
         # Homebrew doesn't refresh fontconfig's cache for the fonts it upgrades on Linux, which go
         # where it put them: under XDG_DATA_HOME when that's set
@@ -384,7 +385,7 @@ upgrade() {
         ~/.cargo/bin/rustup update || _stage_failed rustup "$?"
     fi
 
-    upgrade_ai_tools || _stage_failed upgrade-ai-tools "$?"
+    _upgrade_ai_tools_stages
 
     # Last, so the old versions of every cask upgraded above, the AI tools' included, go now, not
     # on the next run

@@ -11,6 +11,8 @@ set -euo pipefail
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTRACT="$REPO_DIR/scripts/claude-settings-keys.txt"
 command -v jq &>/dev/null || { echo "check-claude-keys.sh needs jq" >&2; exit 1; }
+# shellcheck source=lib/ai-settings.sh
+source "$REPO_DIR/scripts/lib/ai-settings.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -23,10 +25,7 @@ else
     # Build the settings once per OS branch, so a run on either OS checks the keys both write
     for os in macos ubuntu; do
         (
-            # Nothing may read or write the real ~/.claude
-            export HOME="$tmp/$os"
-            unset CLAUDE_CONFIG_DIR
-            for var in $(compgen -v XDG_); do unset "$var"; done
+            temp_tool_home "$tmp/$os"
             # shellcheck source=../ai_tools/claude-code/install.sh
             source "$REPO_DIR/ai_tools/claude-code/install.sh"
             # shellcheck disable=SC2329 # the step's functions call them
@@ -37,12 +36,7 @@ else
                 is_macos() { return 1; }
                 is_ubuntu() { return 0; }
             fi
-            # The step adds the worktree hooks only once git wt is installed
-            mkdir -p "$HOME/.local/bin" "$HOME/.claude"
-            printf '#!/bin/sh\n' > "$HOME/.local/bin/git-wt"
-            chmod +x "$HOME/.local/bin/git-wt"
-            echo '{}' > "$CLAUDE_CODE_SETTINGS"
-            json_merge "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)" > /dev/null
+            write_claude_settings
             cp "$CLAUDE_CODE_SETTINGS" "$tmp/settings-$os.json"
         ) < /dev/null
     done

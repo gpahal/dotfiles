@@ -114,9 +114,9 @@ load_script zsh/install.sh
 # On macOS, which has no ~/.profile line to source it, profile.sh isn't copied
 # shellcheck disable=SC2329
 macos_profile() {
-    is_ubuntu() { false; }
-    is_macos() { true; }
-    login_zsh_path() { echo "$ZSH_BIN"; }
+    as_os macos
+    # shellcheck disable=SC2016 # expanded when it runs
+    replace_fn login_zsh_path 'echo "$ZSH_BIN"'
     rm -f "$HOME/.zsh/profile.sh"
     assert_exit 0 apply
     [ ! -e "$HOME/.zsh/profile.sh" ] || fail "apply copied profile.sh on macOS"
@@ -125,12 +125,9 @@ macos_profile() {
 }
 subtest macos_profile
 # Ubuntu's, which apply needs, at the path of the zsh found here
-# shellcheck disable=SC2329
-is_ubuntu() { true; }
-# shellcheck disable=SC2329
-is_macos() { false; }
-# shellcheck disable=SC2329
-login_zsh_path() { echo "$ZSH_BIN"; }
+as_os ubuntu
+# shellcheck disable=SC2016 # expanded when it runs
+replace_fn login_zsh_path 'echo "$ZSH_BIN"'
 stock='if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi

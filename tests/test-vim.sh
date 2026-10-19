@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # The vim step's status flags a vim-plug copy that differs from the vendored one until a re-run
 # restores it. The vimrc downloads nothing, pins every plugin to a commit, and starts without

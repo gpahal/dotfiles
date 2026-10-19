@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # Claude Code's WorktreeCreate, WorktreeRemove, and SessionEnd hook puts worktrees where git wt
 # does, honors worktree.baseRef, copies the files .worktreeinclude names, and prints only the path
@@ -491,14 +492,12 @@ assert_contains "$RUN_OUTPUT" "worktree-hook.sh"
 # an earlier run made, since Claude Code would fail to create worktrees, keeps other hooks, and fails
 failures="$TEST_FAILURES"
 (
-    # shellcheck disable=SC2329 # main calls them
-    install_claude_code() { :; }
-    # shellcheck disable=SC2329
-    install_scripts() {
+    replace_fn install_claude_code
+    # shellcheck disable=SC2016 # expanded when it runs
+    replace_fn install_scripts '
         mkdir -p "$(dirname "$CLAUDE_CODE_WORKTREE_HOOK")" && : > "$CLAUDE_CODE_WORKTREE_HOOK"
         chmod 644 "$CLAUDE_CODE_WORKTREE_HOOK"
-        return 1
-    }
+        return 1'
     assert_exit 1 main
     assert_eq "null null null" \
         "$(jq -r '"\(.hooks.WorktreeCreate) \(.hooks.WorktreeRemove) \(.hooks.SessionEnd)"' "$settings")" \
@@ -510,7 +509,7 @@ rm -f "$CLAUDE_CODE_WORKTREE_HOOK"
 
 # Without git wt the step removes the hook's registrations, keeping other hooks, says to run the
 # git step, and fails after doing the rest; status reports the hook as missing
-install_claude_code() { :; }
+replace_fn install_claude_code
 echo '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}' > "$settings"
 assert_exit 0 main
 assert_eq '["SessionEnd","Stop","WorktreeCreate","WorktreeRemove"]' "$(jq -c '.hooks | keys' "$settings")" \

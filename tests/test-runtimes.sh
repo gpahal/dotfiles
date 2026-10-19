@@ -121,32 +121,28 @@ postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
 assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
 assert_contains "$RUN_OUTPUT" "ok         mise's global go: yours, (a table) (the repo's is latest)"
 assert_not_contains "$RUN_OUTPUT" "postinstall"
-# Asked with a terminal: no keeps it, yes replaces only that tool
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
+# Asked: no keeps it, yes replaces only that tool
 : > "$STUB_LOG"
-assert_exit 0 main <<< n
+answer no
+assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "mise's global node is 22, not the repo's lts. Replace it?"
 assert_file_not_contains "$STUB_LOG" "mise use"
-assert_exit 0 main <<< y
+answer yes
+assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global node@lts"
 assert_file_not_contains "$STUB_LOG" "go@latest"
 # A table-form global: one without a version is asked about as "(a table)", and one whose version
 # is the repo's counts as already set
 : > "$STUB_LOG"
+answer no
 MISE_NODE='version = "lts"
-postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run main <<< n
+postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run main
 assert_eq 0 "$RUN_STATUS" "main's status with table-form globals"
 assert_contains "$RUN_OUTPUT" "mise's global go is (a table), not the repo's latest. Replace it?"
 assert_contains "$RUN_OUTPUT" "mise's global node is already lts."
 assert_not_contains "$RUN_OUTPUT" "postinstall"
 assert_file_not_contains "$STUB_LOG" "mise use"
-# lib/common.sh brings back the real confirm and is_interactive
+# lib/common.sh brings back the real confirm
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 # Unset: set without a question, alongside a kept custom value

@@ -22,8 +22,7 @@ assert_eq "" "$(grep -v '^#' "$REPO_DIR/tmux/plugins.lock" | grep -vE '^[^ ]+/[^
 
 fake_tmux_plugins
 load_script tmux/install.sh
-is_ubuntu() { false; }
-is_macos() { true; }
+as_os macos
 stub tmux
 
 # Print each plugin's checkout as "<name> <HEAD>"

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # zsh/hooks.zsh's preexec hook copies the outer terminal's TERM_PROGRAM and TERM_PROGRAM_VERSION,
 # and the SSH session's SSH_USER_AUTH, from tmux into the shell, and unsets one the attaching client

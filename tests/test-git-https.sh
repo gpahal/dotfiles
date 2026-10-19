@@ -22,16 +22,14 @@ insteadof() {
 }
 
 # --- macOS: nothing added ---
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 assert_exit 0 main
 assert_eq "" "$(insteadof)" "insteadOf on macOS"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    GitHub SSH remotes go over HTTPS"
 
 # --- Ubuntu ---
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS, through gh's credential helper"
 
@@ -81,8 +79,7 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
 assert_contains "$RUN_OUTPUT" 'Not logged in to GitHub. Run gh auth login --insecure-storage --git-protocol https'
 # A terminal can still opt in to login.
-# shellcheck disable=SC2329
-is_interactive() { true; }
+replace_fn is_interactive 'return 0'
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_contains "$STUB_LOG" 'gh auth login --insecure-storage --git-protocol https'
 assert_exit 3 status
@@ -148,8 +145,7 @@ assert_file_not_contains "$STUB_LOG" 'gh auth status'
 
 # The rewrite needs gh's credential helper, or git would have no credentials for GitHub. Without a
 # login, main leaves the remotes on SSH and says a re-run after logging in adds the rewrite.
-# shellcheck disable=SC2329
-is_interactive() { false; }
+replace_fn is_interactive 'return 1'
 rm -f "$HOME/.gitconfig"
 stub gh 'case "$*" in "auth token"* | "auth status"*) exit 1 ;; esac'
 assert_exit 0 main

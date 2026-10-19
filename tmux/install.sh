@@ -3,9 +3,8 @@ set -euo pipefail
 
 # Copy the tmux config and tmux-sessionizer, and install tpm and the pinned plugins.
 #
-# Copy the tmux config and tmux-sessionizer, and install tpm and the plugins into ~/.tmux/plugins,
-# each at the commit tmux/plugins.lock pins. tpm loads them when tmux starts. On Ubuntu, have
-# tmux-continuum enable its systemd user unit, which starts tmux at boot and restores the sessions.
+# The plugins go into ~/.tmux/plugins, each at the commit tmux/plugins.lock pins, and tpm loads
+# them when tmux starts. On Ubuntu, have tmux-continuum enable its systemd user unit, which starts tmux at boot and restores the sessions.
 #
 # A temp HOME doesn't isolate the Ubuntu part, which enables the unit in your real user manager.
 # Test it in an ubuntu:26.04 container, which has no user manager, or with systemctl stubbed, as
@@ -75,8 +74,6 @@ sync_tmux_plugins() {
     return "$status"
 }
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 tmux_files() {
     local status=0
     "$1" "$DOTFILES_DIR/tmux/tmux.conf" "${XDG_CONFIG_HOME:-$HOME/.config}/tmux/tmux.conf" || status=1

@@ -3,9 +3,8 @@ set -euo pipefail
 
 # Copy the Ghostty config and reload it, and on Ubuntu install the Ghostty snap.
 #
-# Copy the Ghostty config and, when it changed, reload it in running Ghostty windows. On Ubuntu,
-# also install Ghostty from its snap, which snapd keeps updated; the homebrew step installs it on
-# macOS. Without snapd, the step still copies the config, then fails.
+# The reload happens only when the config changed. snapd keeps the snap updated; the homebrew step
+# installs Ghostty on macOS. Without snapd, the step still copies the config, then fails.
 #
 # A temp HOME doesn't isolate this step, which signals the running Ghostty to reload, and on Ubuntu
 # runs sudo snap install. Test its Ubuntu side in an Ubuntu VM, such as an OrbStack machine. On
@@ -44,8 +43,6 @@ install_ghostty() {
     fi
 }
 
-# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 ghostty_files() {
     "$1" "$DOTFILES_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty"
 }
@@ -96,7 +93,6 @@ status() {
 
 apply() {
     echo "Setting up Ghostty..."
-    # A failed install or copy fails the step, after the rest has run
     local installed=0
     if is_ubuntu; then
         install_ghostty || installed=$?

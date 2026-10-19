@@ -15,8 +15,6 @@ config_path() {
     echo "${XDG_CONFIG_HOME:-$config_home}/lazygit/config.yml"
 }
 
-# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 lazygit_files() {
     "$1" "$DOTFILES_DIR/lazygit/config.yml" "$(config_path)"
 }

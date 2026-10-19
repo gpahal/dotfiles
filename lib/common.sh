@@ -1229,11 +1229,12 @@ reraise_interrupt() {
 }
 
 # run_steps <mode> [step...]
-# Run the named steps, or every step in $STEPS, in order, each in its own process. A failing step
+# An empty mode runs the named steps, or every step in $STEPS, in order, each in its own process. A failing step
 # doesn't stop the rest; the failures are listed at the end with the command that re-runs them,
 # and the run fails. With mode --status, run each step's report instead, under a header with its
 # name. Steps with an item needing attention are listed too, and the run returns 3 (1 when a step
-# also failed). A report that exits 3 without such an item failed.
+# also failed); one with such an item that exits 0 is listed too. A report that exits 3 without
+# such an item failed.
 run_steps() {
     local mode="$1" step script status codes skipped blocker interrupted="" failed=() attention=()
     shift

@@ -2,7 +2,8 @@
 set -uo pipefail
 
 # Run every tests/test-*.sh, or the named ones (e.g. bash tests/run.sh vim copy-file), each in its
-# own process group with stdin from /dev/null, $TEST_JOBS at a time (one per CPU by default).
+# own process group under the bash running this script (so /bin/bash tests/run.sh tests bash 3.2),
+# with stdin from /dev/null, $TEST_JOBS at a time (one per CPU by default).
 # Prints PASS, FAIL, or SKIP per test in name order, with a failing or skipped test's output, and
 # exits 1 when any fails.
 # - "# serial": a test whose timing can flake under load runs after the others, one at a time.
@@ -10,7 +11,8 @@ set -uo pipefail
 #   so a run of every test leaves it out on Ubuntu; a named test always runs.
 # - A test skips by exiting 77; with TEST_FAIL_ON_SKIP=1, as CI sets, a skip fails.
 # - A test that runs longer than $TEST_TIMEOUT seconds (120 by default) is killed and fails.
-# Each test gets its own HOME and TMUX_TMPDIR, as a backstop for one that forgets setup_sandbox.
+# Each test is syntax-checked first (a syntax error exits 2), and gets its own HOME and
+# TMUX_TMPDIR, with XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox.
 # A run of every test also syntax-checks the repo's other scripts, since a syntax error in a
 # sourced script can let a test pass. Ctrl-C or SIGTERM stops every test and exits 130.
 

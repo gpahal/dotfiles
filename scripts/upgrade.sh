@@ -240,9 +240,9 @@ _print_versions() {
     done <<< "$2"
 }
 
-# Update AI tools that the package manager upgrades miss
-upgrade_ai_tools() {
-    local failed=()
+# Update AI tools that the package manager upgrades miss, adding each stage that fails to the
+# caller's failed array, so upgrade names them in its own summary
+_upgrade_ai_tools_stages() {
     # Claude Code's native install (~/.local/share/claude) updates through `claude update`. HOME
     # is resolved too, since the path claude resolves to has no symlinks in it.
     if command -v claude &>/dev/null && [[ "$(realpath "$(command -v claude)")" == "$(realpath "$HOME")/.local/share/claude/"* ]]; then
@@ -298,7 +298,11 @@ upgrade_ai_tools() {
     if command -v codex &>/dev/null; then
         codex plugin marketplace upgrade || _stage_failed "codex marketplaces" "$?"
     fi
+}
 
+upgrade_ai_tools() {
+    local failed=()
+    _upgrade_ai_tools_stages
     _upgrade_report ${failed[@]+"${failed[@]}"}
 }
 
@@ -389,7 +393,7 @@ upgrade() {
         ~/.cargo/bin/rustup update || _stage_failed rustup "$?"
     fi
 
-    upgrade_ai_tools || _stage_failed upgrade-ai-tools "$?"
+    _upgrade_ai_tools_stages
 
     # Last, so the old versions of every cask upgraded above, the AI tools' included, go now, not
     # on the next run

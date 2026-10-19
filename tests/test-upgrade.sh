@@ -235,8 +235,8 @@ assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
 assert_file_contains "$SANDBOX/output" "zed is running; quit it and run upgrade again to update it."
 stub pgrep 'exit 1'
 
-# apt, mise, and t3 update fail: every stage still runs, and both functions name what failed and
-# fail
+# apt, mise, and t3 update fail: every stage still runs, and upgrade names them all, the AI tools'
+# stage among them, once at the end, and fails
 stub sudo 'exit 1'
 stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
@@ -247,8 +247,7 @@ if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
 fi
 assert_file_contains "$STUB_LOG" "rustup update"
 assert_file_contains "$STUB_LOG" "codex plugin marketplace upgrade"
-assert_file_contains "$SANDBOX/output" "Failed: t3 update"
-assert_file_contains "$SANDBOX/output" "Failed: apt, mise, upgrade-ai-tools"
+assert_eq "Failed: apt, mise, t3 update" "$(grep '^Failed' "$SANDBOX/output")" "upgrade's list of failed stages"
 stub t3
 
 # Discovery failures are failures too, and later independent stages still run.

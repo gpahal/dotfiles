@@ -9,12 +9,14 @@ if [[ $OSTYPE == darwin* ]]; then
 else
     alias ls="ls --color=auto"
 fi
+# tree stays the real command, whose flags differ from eza's (tree -d)
 if command -v eza &>/dev/null; then
     # eza reads -F as --classify [WHEN], so a bare -F would take a path after it as the WHEN
     alias l="eza --classify=auto"
     alias la="eza -a --classify=auto"
     alias ll="eza -l --classify=auto"
     alias lla="eza -al --classify=auto"
+    alias t="eza --tree -a -I .git"
 else
     alias l="ls -F"
     alias la="ls -AF"
@@ -57,10 +59,6 @@ alias dus="du -sckx * | sort -nr"
 alias df="df -h"
 # macOS top's flags; procps top on Linux takes others
 [[ $OSTYPE == darwin* ]] && alias ttop="top -ocpu -R -F -s 2 -n30"
-# tree stays the real command, whose flags differ from eza's (tree -d)
-if command -v eza &>/dev/null; then
-    alias t="eza --tree -a -I .git"
-fi
 
 alias public-ip="curl -Ss https://icanhazip.com"
 alias public-ip4="curl -Ss4 https://icanhazip.com/v4"

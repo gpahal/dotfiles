@@ -23,5 +23,4 @@ function _tmux_outer_terminal_preexec {
     done
 }
 
-autoload -U add-zsh-hook
 add-zsh-hook preexec _tmux_outer_terminal_preexec

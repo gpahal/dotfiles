@@ -11,10 +11,6 @@ export LANG="en_US.UTF-8"
 # https://github.com/pingdotgg/t3code/blob/main/docs/user/telemetry.md
 export T3CODE_TELEMETRY_ENABLED=false
 
-# Completions for brew-installed tools. Neither macOS's zsh nor Ubuntu's has this dir built in, and
-# HOMEBREW_PREFIX may come from a shell that didn't add it, such as sh reading ~/.profile.
-[[ -n ${HOMEBREW_PREFIX:-} ]] && fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
-
 # Completion and the zcalc calculator
 autoload -U compinit zcalc
 # The full compinit audits every completion directory, so run it at most once a day and reuse

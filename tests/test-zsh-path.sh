@@ -174,11 +174,12 @@ done
 assert_eq ":/a::/b" "$(env -i HOME="$HOME" TERM=dumb MANPATH=::/a::/b:: PATH=/usr/bin:/bin "$ZSH_BIN" -c \
     'print -r -- $MANPATH' < /dev/null 2> /dev/null)" "MANPATH"
 [ ! -e "$SANDBOX/brew-ran" ] || fail "a shell without HOMEBREW_PREFIX ran brew"
-# A shell that inherits HOMEBREW_PREFIX, from a sh that read ~/.profile or a parent zsh, gets the
-# prefix's completions first in fpath
-assert_eq "$BREW/share/zsh/site-functions" \
-    "$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin:/bin "$ZSH_BIN" -c \
-        'source ~/.zsh/main.zsh; print -r -- $fpath[1]' < /dev/null 2> /dev/null)" "fpath's first dir"
+# An interactive shell that inherits HOMEBREW_PREFIX, from a sh that read ~/.profile or a parent
+# zsh, gets the prefix's completions first in fpath, once
+fpath_out="$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin:/bin "$ZSH_BIN" -ic \
+    'print -rl -- $fpath' < /dev/null 2> /dev/null)"
+assert_eq "$BREW/share/zsh/site-functions" "$(head -n 1 <<< "$fpath_out")" "fpath's first dir"
+assert_eq 1 "$(grep -cxF "$BREW/share/zsh/site-functions" <<< "$fpath_out")" "copies of Homebrew's dir in fpath"
 
 # On Ubuntu, ~/.profile puts ~/.local/bin ahead of Homebrew, as ~/.zprofile does, so `sh -lc` (T3
 # Code's SSH check) finds the same codex as zsh. Ubuntu's stock ~/.profile adds ~/.local/bin

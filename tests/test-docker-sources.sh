@@ -220,7 +220,7 @@ stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && ech
 stub usermod 'touch "'"$SANDBOX"'/in-group"'
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce"
 assert_contains "$RUN_OUTPUT" "root-equivalent"
 assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
 assert_contains "$RUN_OUTPUT" "Added you to the docker group."

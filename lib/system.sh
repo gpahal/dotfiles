@@ -9,16 +9,29 @@
 # write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
 # setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
 # *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
-# A group, when given, is set by the same install, so no write can leave the file without it.
+# A group, when given, is set by the same install, so no write can leave the file without it. A
+# symlink's target is replaced, as replace_file does, and a dangling one fails: stat reads a
+# link's own mode as 777, and mv would replace the link with a file of that mode. A missing
+# directory gets 755 whatever the umask, so the users the hooks run as, such as nut, can read
+# what's in it; an existing one keeps its mode, since install -d would reset it.
 # Usage: install_root_file <src> <dest> [mode] [group]
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
+    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts target
     dir="$(dirname "$dest")"
-    sudo mkdir -p "$dir" || return 1
+    sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
     # mv would move the new file into a directory, and succeed
     if sudo test -d "$dest"; then
         echo "  $dest is a directory; remove it and re-run." >&2
         return 1
+    fi
+    if sudo test -L "$dest"; then
+        if ! target="$(sudo readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
+            ! sudo test -e "$target"; then
+            echo "  $dest is a symlink to nothing; remove it and re-run." >&2
+            return 1
+        fi
+        dest="$target"
+        dir="$(dirname "$dest")"
     fi
     # Through sudo, since the file or its directory may be root-only
     if [ -z "$mode" ]; then

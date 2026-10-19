@@ -81,7 +81,7 @@ rm "$SANDBOX/fetch-fails"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $URL"
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
 [ -e "$SANDBOX/installed" ] || fail "Chrome wasn't installed"
 deb="$(cat "$SANDBOX/deb-path")"
 assert_eq google-chrome-stable.deb "${deb##*/}" "the .deb apt-get installed"

@@ -68,9 +68,7 @@ current_url() {
 # compromised daemon, which could then read or send alerts. The machine has one login user, and
 # the topic's secrecy matters most off the machine.
 save_url() {
-    sudo mkdir -p "$(dirname "$NTFY_URL_FILE")" &&
-        sudo chmod 755 "$(dirname "$NTFY_URL_FILE")" &&
-        write_root_file "$NTFY_URL_FILE" "$1" 0644
+    write_root_file "$NTFY_URL_FILE" "$1" 0644
 }
 
 send_test_push() {

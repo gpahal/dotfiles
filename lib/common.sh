@@ -37,10 +37,11 @@ APT_LOCK_TIMEOUT=300
 
 # Run apt-get with sudo, without prompts, waiting for dpkg's lock instead of failing at once. Only
 # commands that change packages wait: apt-get update fails right away while another update holds
-# the lists lock, timeout or not, so use apt_get_update for it.
+# the lists lock, timeout or not, so use apt_get_update for it. LC_ALL=C keeps its messages in
+# English for apt_lists_locked, since sudo keeps the caller's locale.
 # e.g. apt_get install -y ufw
 apt_get() {
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout="$APT_LOCK_TIMEOUT" "$@"
+    sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout="$APT_LOCK_TIMEOUT" "$@"
 }
 
 # Tries of apt_get_update, and the seconds between them: about as long as apt_get waits
@@ -49,7 +50,7 @@ APT_UPDATE_RETRY_DELAY=15
 
 # Succeeds when apt-get's output on stdin says another update holds the lists lock. Other errors
 # name the lock too, such as "Could not open lock file ... Permission denied", and aren't worth a
-# retry. The phrases are apt's English ones, so under another language apt-get fails at once.
+# retry.
 apt_lists_locked() {
     grep -E '/var/lib/apt/lists/lock' | grep -qE 'Could not get lock|is held by|Unable to acquire'
 }
@@ -586,8 +587,8 @@ append_line() {
 # it. The backup goes where backup_file puts it, so an older, different .bak is kept. --backup or
 # --no-backup (DOTFILES_BACKUP) answers for you. Otherwise the question is asked with a terminal;
 # without one, yes backs the file up, and no leaves it to confirm, which says no unless
-# DOTFILES_ASSUME_YES=1. The question's last {} is the backup's path. Fails when the backup does;
-# the caller must then leave the file as it is.
+# DOTFILES_ASSUME_YES=1. The question's last {} is the backup's path; a question without one gets
+# the path appended. Fails when the backup does; the caller must then leave the file as it is.
 # e.g. maybe_backup "$CODEX_CONFIG"
 maybe_backup() {
     local file="$1" default="${2:-no}" question="${3:-}" bak
@@ -603,7 +604,11 @@ maybe_backup() {
                 # Not ${question//\{\}/$bak}: bash 5.2's patsub_replacement would put the {} back
                 # in place of each & in $bak. The last {}, since the file's path before it may hold
                 # one.
-                confirm "${question%\{\}*}$bak${question##*\{\}}" || return 0
+                case "$question" in
+                    *"{}"*) question="${question%\{\}*}$bak${question##*\{\}}" ;;
+                    *) question="$question ($bak)" ;;
+                esac
+                confirm "$question" || return 0
             fi
             ;;
     esac

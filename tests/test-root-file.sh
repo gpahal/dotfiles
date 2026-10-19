@@ -56,6 +56,36 @@ for kind in dir link; do
     assert_eq "" "$(/bin/ls -A "$dest/")" "files in a $kind destination"
 done
 
+# A symlinked destination keeps its link: the target is replaced, keeping the target's mode, not
+# the 777 stat reads for the link. One that points nowhere fails, and leaves the link.
+target="$SANDBOX/etc/real/target.conf"
+link="$SANDBOX/etc/linked.conf"
+mkdir -p "$(dirname "$target")"
+printf 'old\n' > "$target"
+chmod 640 "$target"
+ln -s "$target" "$link"
+assert_exit 0 write_root_file "$link" "new"
+[ -L "$link" ] || fail "install_root_file replaced the symlink"
+assert_eq new "$(cat "$target")" "symlink target after write_root_file"
+assert_eq 640 "$(file_mode "$target")" "symlink target's mode after write_root_file"
+assert_eq target.conf "$(/bin/ls -A "$(dirname "$target")")" "files beside the symlink target"
+ln -s "$SANDBOX/etc/nowhere.conf" "$SANDBOX/etc/dangling.conf"
+assert_exit 1 write_root_file "$SANDBOX/etc/dangling.conf" "new"
+assert_contains "$RUN_OUTPUT" "is a symlink to nothing"
+[ -L "$SANDBOX/etc/dangling.conf" ] || fail "install_root_file replaced a dangling symlink"
+
+# A new directory gets 755 under any umask, so the users hooks run as can read what's in it. An
+# existing one keeps its mode.
+(
+    umask 077
+    write_root_file "$SANDBOX/usr/local/lib/dotfiles/ntfy.sh" "lib" > /dev/null
+)
+assert_eq 755 "$(file_mode "$SANDBOX/usr/local/lib/dotfiles")" "mode of a new directory"
+mkdir -p "$SANDBOX/etc/private"
+chmod 750 "$SANDBOX/etc/private"
+assert_exit 0 write_root_file "$SANDBOX/etc/private/file" "x"
+assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directory"
+
 # confirm_sudo_changes says to run the step from a terminal only when there was none to ask in
 assert_exit 1 confirm_sudo_changes "Write /etc/example"
 assert_contains "$RUN_OUTPUT" "    - Write /etc/example"

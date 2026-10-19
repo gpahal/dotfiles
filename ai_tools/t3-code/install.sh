@@ -288,7 +288,11 @@ configure_t3_code() {
     echo "  LaunchAgent that opens T3 Code at login with telemetry off:"
     t3_code_files copy_file || result=1
     t3_code_macos_items
-    items_apply t3_code_telemetry_off || result=1
+    if items_ok t3_code_telemetry_off; then
+        echo "  Telemetry is already off in launchd's environment"
+    else
+        items_apply t3_code_telemetry_off || result=1
+    fi
 
     t3_code_choose_custom_values
     merge_app_json "${app_name:-T3 Code}" \

@@ -50,8 +50,7 @@ invoke the skill on its own). Some skills carry extra reference files or scripts
 
 Most of these skills are modified copies of skills from these repos. Their licenses are in
 [`THIRD_PARTY_LICENSES`](./THIRD_PARTY_LICENSES), and each copied skill carries its source's
-notice in its own `LICENSE`, so the notice installs with it. `scripts/check-skills.sh` checks that
-every skill listed here has that `LICENSE`.
+notice in its own `LICENSE`, so the notice installs with it.
 
 - [mattpocock/skills](https://github.com/mattpocock/skills)
   by [Matt Pocock](https://github.com/mattpocock), used under the MIT License:

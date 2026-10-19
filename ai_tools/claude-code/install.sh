@@ -252,7 +252,7 @@ status() {
         [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered; remove it from ~/.claude/settings.json and re-run the step"
     done <<< "$(claude_code_other_worktree_hooks)"
     script_files status_file
-    user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+    user_instructions_files status_file
     status_result
 }
 

@@ -201,7 +201,7 @@ Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Cha
 
 ## User-level instructions
 
-[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A copy you edited stays until you agree to replace it, which backs it up first.
+[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A run replaces a copy that differs, so copy edits you want to keep back to the repo first.
 
 ## Skills
 

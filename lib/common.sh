@@ -362,75 +362,20 @@ join_lines() {
     printf '%s\n' "$out"
 }
 
-# The record of the files copy_file and copy_file_ask installed, so a later run can tell a file
-# setup put there from one edited by hand since. One line per file, as sha256sum prints it:
-# "<sha256>  <absolute path>". Paths may contain spaces.
-INSTALLED_FILES="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/installed-files"
-
-# Print a file's SHA-256. Reading stdin keeps sha256sum from escaping odd file names.
-file_sha256() {
-    local sum
-    if command -v sha256sum &>/dev/null; then
-        sum="$(sha256sum < "$1")" || return 1
-    else
-        sum="$(shasum -a 256 < "$1")" || return 1
-    fi
-    echo "${sum%% *}"
-}
-
-# Print the SHA-256 recorded for a destination when setup last installed it, or nothing. The
-# hash takes 64 characters and two spaces, so the path starts at column 67. awk reads the path
-# from the environment, since -v would expand backslashes in it.
-recorded_sha256() {
-    [ -f "$INSTALLED_FILES" ] || return 0
-    DEST="$1" awk 'substr($0, 67) == ENVIRON["DEST"] { print substr($0, 1, 64); exit }' "$INSTALLED_FILES"
-}
-
-# Rewrite the record with "<sha>  <dest>" in place of a destination's line. The new record goes
-# to a temp file in the same directory and is moved into place, so a crash can't leave it cut
-# short.
-_rewrite_installed() {
-    local dest="$1" sha="$2" dir tmp
-    dir="$(dirname "$INSTALLED_FILES")"
-    mkdir -p "$dir" || return 1
-    tmp="$(mktemp "$dir/installed-files.XXXXXX")" || return 1
-    if {
-        if [ -f "$INSTALLED_FILES" ]; then
-            DEST="$dest" awk 'substr($0, 67) != ENVIRON["DEST"]' "$INSTALLED_FILES"
-        fi
-        printf '%s  %s\n' "$sha" "$dest"
-    } > "$tmp" && mv "$tmp" "$INSTALLED_FILES"; then
+# Copy a file, creating the destination directory. Setup owns the files it copies: one that
+# matches, executable bit included, is left alone, and one that differs is replaced, with no
+# question or backup, since the repo holds the config. A new file gets 644, or 755 when the source
+# is executable, the two modes the repo holds. An existing one keeps its mode, plus the executable
+# bits an executable source needs. Each command is checked, since a caller may run this under ||
+# or if, where set -e is off. Sets COPIED to true once the file is copied, so a caller that resets
+# it can tell whether anything changed.
+# e.g. copy_file "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
+copy_file() {
+    local src="$1" dest="$2" new_mode=644 exec=""
+    if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
+        echo "  $dest is already up to date"
         return 0
     fi
-    rm -f "$tmp"
-    return 1
-}
-
-# Record a destination's current hash, replacing its line
-record_installed() {
-    local sha
-    sha="$(file_sha256 "$1")" || return 1
-    _rewrite_installed "$1" "$sha" && return 0
-    echo "  Couldn't record $1 in $INSTALLED_FILES." >&2
-    return 1
-}
-
-# Succeeds when a file is what setup last installed there: its hash matches the record. Fails
-# when it was edited by hand since, or was never recorded.
-installed_unedited() {
-    local sha
-    [ -f "$1" ] || return 1
-    # A file that can't be read hashes to "", which would match a missing record
-    sha="$(file_sha256 "$1" 2>/dev/null)" && [ -n "$sha" ] || return 1
-    [ "$sha" == "$(recorded_sha256 "$1")" ]
-}
-
-# Each command is checked, since a caller may run this under || or if, where set -e is off. A
-# new file gets 644, or 755 when the source is executable, the two modes the repo holds. An
-# existing one keeps its mode, plus the executable bits an executable source needs. Sets COPIED
-# to true once the file is copied, so a caller that resets it can tell whether anything changed.
-_copy_and_record() {
-    local src="$1" dest="$2" new_mode=644 exec=""
     mkdir -p "$(dirname "$dest")" || return 1
     if [ -x "$src" ]; then
         new_mode=755
@@ -446,50 +391,11 @@ _copy_and_record() {
     }
     # shellcheck disable=SC2034 # callers read it
     COPIED=true
-    record_installed "$dest" || return 1
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
 }
 
-# _copy_file <replace|ask> <src> <dest>: copy_file's and copy_file_ask's shared body. A file that
-# matches, executable bit included, is left alone, and recorded if it isn't yet: a later run would
-# take an unrecorded file for an edit, so failing to record it fails.
-_copy_file() {
-    local mode="$1" src="$2" dest="$3" how
-    if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
-        installed_unedited "$dest" || record_installed "$dest" || return 1
-        echo "  $dest is already up to date"
-        return 0
-    fi
-    # A file whose content matches lacks only its executable bit, which a backup wouldn't keep
-    if [ -e "$dest" ] && ! cmp -s "$src" "$dest" && ! installed_unedited "$dest"; then
-        if [ "$mode" != ask ]; then
-            how="exists and differs from the repo's copy"
-            [ -z "$(recorded_sha256 "$dest")" ] || how="was changed since setup installed it"
-            maybe_backup "$dest" yes "  $dest $how, and will be replaced. Back it up to {} first?" ||
-                return 1
-        # An empty file holds nothing to merge, so it's replaced without asking
-        elif [ -s "$dest" ]; then
-            if ! confirm "  $dest differs from ${src#"$DOTFILES_DIR"/}. Replace it?"; then
-                echo "  Left $dest unchanged. Merge ${src#"$DOTFILES_DIR"/} into it by hand."
-                return 0
-            fi
-            if [ "${DOTFILES_BACKUP:-}" != no ]; then
-                backup_file "$dest" || return 1
-            fi
-        fi
-    fi
-    _copy_and_record "$src" "$dest"
-}
-
-# Copy a file, creating the destination directory, and record it. A file that already matches is
-# left alone. One that differs is replaced: silently when it's what setup last installed, and
-# otherwise after maybe_backup, which backs it up without a terminal, since the edit would be
-# lost. Fails, leaving it, when that backup does.
-copy_file() { _copy_file replace "$@"; }
-
 # Print where backup_file backs a file up: <file>.bak, unless that holds something else, then
-# <file>.bak.<timestamp>, adding -2, -3, ... until the name is free or holds the same content, as
-# the skills step's backups do
+# <file>.bak.<timestamp>, adding -2, -3, ... until the name is free or holds the same content
 backup_path() {
     local bak="$1.bak" base n=1
     if [ -e "$bak" ] && ! cmp -s "$1" "$bak"; then
@@ -521,12 +427,6 @@ backup_file() {
     fi
     echo "  Backed up $file to $bak"
 }
-
-# Like copy_file, but for files that may hold changes made by hand, such as settings an app also
-# edits. One that differs and isn't what setup last installed is replaced only when the user
-# agrees, and left alone without a terminal. Agreeing backs it up too, without a second question,
-# unless --no-backup is set. Fails, leaving it, when that backup does.
-copy_file_ask() { _copy_file ask "$@"; }
 
 # A setting you can change yourself, such as mise's global node, is one setup sets when it's unset.
 # When it holds a value of your own, setup asks each run whether to replace it with the repo's,
@@ -914,14 +814,12 @@ status_check() {
     fi
 }
 
-# Print an item for whether an installed file still matches its source in the repo, and is
-# executable when the source is. A file that differs is missing, and the item says why: the
-# repo has a newer version (the copy is what setup last installed), the installed copy was
-# edited, or there is no installation record.
-# A changed or unrecorded copy gets how to fix it, for steps that won't replace it themselves.
-# e.g. status_file "$DOTFILES_DIR/zed/keymap.json" ~/.config/zed/keymap.json "merge by hand"
+# Print an item for whether a file copy_file installs matches its source in the repo, and is
+# executable when the source is. A file that differs is missing, since the step's next run
+# replaces it.
+# e.g. status_file "$DOTFILES_DIR/zed/keymap.json" ~/.config/zed/keymap.json
 status_file() {
-    local src="$1" dest="$2" fix="${3:-}" shown="$2"
+    local src="$1" dest="$2" shown="$2"
     # shellcheck disable=SC2088 # shown, not expanded
     [[ "$dest" == "$HOME/"* ]] && shown="~/${dest#"$HOME"/}"
     if cmp -s "$src" "$dest"; then
@@ -931,14 +829,8 @@ status_file() {
         else
             status_item ok "$shown"
         fi
-    elif installed_unedited "$dest"; then
-        status_item missing "$shown differs from ${src#"$DOTFILES_DIR"/}: the repo has a newer version"
     elif [ -e "$dest" ]; then
-        if [ -n "$(recorded_sha256 "$dest")" ]; then
-            status_item missing "$shown was edited since setup installed it${fix:+; $fix}"
-        else
-            status_item missing "$shown differs, and setup has no record of installing it${fix:+; $fix}"
-        fi
+        status_item missing "$shown differs from the repo's ${src#"$DOTFILES_DIR"/}"
     else
         status_item missing "$shown"
     fi
@@ -1017,9 +909,9 @@ _runner_usage() {
     echo "Steps, run in this order by default: ${STEPS[*]}"
     echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
     echo "unknown items. $quick"
-    echo "A config file edited since setup installed it is backed up before it's replaced: setup"
-    echo "asks with a terminal, and backs it up without one. Settings merges also ask whether to"
-    echo "back up an existing file. --backup or --no-backup answers every backup question yes or no."
+    echo "A config file that differs from the repo's is replaced. Settings merges into files other"
+    echo "tools also edit ask whether to back up the file first. --backup or --no-backup answers"
+    echo "every backup question yes or no."
     echo "Flags may come before or after the step names."
 }
 

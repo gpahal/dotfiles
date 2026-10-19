@@ -78,13 +78,12 @@ assert_contains "$RUN_OUTPUT" "missing    $ENV_ITEM"
 assert_exit 0 configure_t3_code
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 
-# A LaunchAgent edited by hand counts as missing, and a re-run backs it up and replaces it
+# A LaunchAgent edited by hand counts as missing, and a re-run replaces it
 printf '%s\n' "$DIFFERENT_AGENT" > "$T3_CODE_TELEMETRY_AGENT"
 run status
-assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM was edited since setup installed it"
+assert_contains "$RUN_OUTPUT" "missing    $AGENT_ITEM differs from the repo's"
 assert_exit 0 configure_t3_code
 assert_exit 0 cmp -s "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
-assert_eq "$DIFFERENT_AGENT" "$(cat "$T3_CODE_TELEMETRY_AGENT.bak")" "the edited LaunchAgent's backup"
 
 # launchctl can't set the variable: the settings still go on, and the step fails after them, also
 # where a caller's || turns set -e off
@@ -107,13 +106,6 @@ assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
 assert_contains "$RUN_OUTPUT" "Telemetry is already off in launchd's environment"
 assert_contains "$RUN_OUTPUT" "settings are already set"
 assert_file_not_contains "$STUB_LOG" "launchctl setenv"
-# The LaunchAgent an earlier version of the step wrote, with no record of installing it, has the
-# repo file's bytes, so it's recorded without a backup
-rm -f "$INSTALLED_FILES" "$T3_CODE_TELEMETRY_AGENT".bak*
-assert_exit 0 configure_t3_code
-assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
-installed_unedited "$T3_CODE_TELEMETRY_AGENT" || fail "the earlier LaunchAgent wasn't recorded"
-[ ! -e "$T3_CODE_TELEMETRY_AGENT.bak" ] || fail "the earlier LaunchAgent was backed up"
 
 # The app isn't installed: the agent and the settings are still set
 t3_code_app_path() { return 1; }

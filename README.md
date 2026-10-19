@@ -62,7 +62,7 @@ bash setup.sh
 | `vim` | Copies the vim config and installs vim-plug |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |
 | `ghostty` | Copies the Ghostty config and reloads it. On Ubuntu, installs the Ghostty snap |
-| `zed` | Copies the Zed settings and keymap, asking before replacing ones Zed edited |
+| `zed` | Copies the Zed settings and keymap, replacing ones Zed edited |
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and restarts Stream Deck to load it. macOS only |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config, whose hotkeys open Claude, Chrome, a new Chrome tab, Ghostty, T3 Code, and Zed. macOS only |
 | `editorconfig` | Copies `~/.editorconfig` |
@@ -77,7 +77,7 @@ Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists th
 
 **Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 
-**Files you also edit.** Setup copies most configs over the installed ones, and backs up a file you edited first, after asking when there's a terminal. `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
+**Files you also edit.** Setup copies configs over the installed ones whenever they differ, with no backup, so copy changes you want to keep back to the repo first ([Maintenance](#maintenance)). Settings merged into files other tools also edit ask whether to back up the file first, and `--backup` or `--no-backup` answers every backup question. Shell startup files, `~/.ssh/config`, and `~/.gitconfig` only get setup's own lines added.
 
 **Settings that are yours.** mise's global versions, the AI tools' models and status lines, and a few others are set only when unset. A run with a terminal asks before replacing your own, and a run without one keeps it.
 

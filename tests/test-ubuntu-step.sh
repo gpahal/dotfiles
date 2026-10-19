@@ -72,7 +72,6 @@ fi
 # The environment.d file needs no sudo, so it's copied either way, and the user manager reloaded
 ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 assert_eq "$(cat "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf")" "$(cat "$ENV_CONF")" "the environment.d file"
-installed_unedited "$ENV_CONF" || fail "the environment.d file wasn't recorded"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 # So are the health alert's user units, which name this repo, and they're turned on: the timer
 # runs, and the boot notice waits for the next boot

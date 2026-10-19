@@ -457,7 +457,7 @@ status() {
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             keepable_status codex
         fi
-        user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+        user_instructions_files status_file
         ! is_ubuntu || codex_status_credentials
     fi
     if is_ubuntu; then

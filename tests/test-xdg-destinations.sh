@@ -43,6 +43,6 @@ check lazygit ubuntu lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" co
 check lazygit macos lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" copy_file
 check ghostty ubuntu ghostty/config.ghostty "$XDG_CONFIG_HOME/ghostty/config.ghostty" copy_file
 check ghostty macos ghostty/config.ghostty "$HOME/.config/ghostty/config.ghostty" copy_file
-check zed ubuntu zed/settings.json "$XDG_CONFIG_HOME/zed/settings.json" copy_file_ask
-check zed macos zed/settings.json "$HOME/.config/zed/settings.json" copy_file_ask
+check zed ubuntu zed/settings.json "$XDG_CONFIG_HOME/zed/settings.json" copy_file
+check zed macos zed/settings.json "$HOME/.config/zed/settings.json" copy_file
 test_done

@@ -445,6 +445,8 @@ load_script() {
         "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
         *) unset -f main ;;
     esac
+    # A step sets STEP_OS only when it's one-OS, so one loaded earlier would gate this one.
+    unset STEP_OS STEP_NEEDS
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first

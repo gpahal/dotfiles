@@ -62,8 +62,6 @@ assert_not_contains "$RUN_OUTPUT" "already set"
 assert_contains "$RUN_OUTPUT" "com.apple.TextEdit RichText"
 fail_defaults
 rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
-# The macos step's STEP_OS would skip the steps loaded after it, which set none
-unset STEP_OS
 
 # --- zsh ---
 # The account's login shell is bash. The step reads it and the zsh to switch to from the system,

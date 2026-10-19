@@ -37,8 +37,8 @@ assert_exit 0 status
 # t3-code on Ubuntu, with the service installed and active
 unset DOTFILES_STATUS_QUICK
 load_script ai_tools/t3-code/install.sh
-is_macos() { false; }
-apt_installed() { false; }
+as_os ubuntu
+replace_fn apt_installed false
 mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT"
 stub systemctl 'case "$2" in is-active | is-enabled) exit 0 ;; show) echo 4242 ;; esac'

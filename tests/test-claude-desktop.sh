@@ -14,13 +14,13 @@ setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script ai_tools/claude-desktop/install.sh
 # The test may run inside the Claude app, which ensure_app_quit handles on its own
-running_inside() { false; }
+replace_fn running_inside 'false'
 # Keep the real /Applications/Claude.app, present or not, out of the cask checks: the step passes
 # that path to install_cask and status_cask, and brew info would give it too
 APP="$HOME/Applications/Claude.app"
-cask_app_path() { printf '%s\n' "$APP"; }
+replace_fn cask_app_path 'echo "$APP"'
 eval "real_$(declare -f cask_state)"
-cask_state() { real_cask_state "$1" "$APP"; }
+replace_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 assert_eq "$CONFIG" "$CLAUDE_DESKTOP_CONFIG" "config path"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"

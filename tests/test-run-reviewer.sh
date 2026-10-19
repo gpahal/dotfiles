@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # interrogate's run-reviewer.sh stops the reviewer and its watchdog when cancelled, reports the
 # reviewer's status and exits 1 on failure, refuses an out-file in the prompt's directory or the

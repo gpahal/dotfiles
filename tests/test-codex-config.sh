@@ -16,8 +16,7 @@ load_script ai_tools/codex/install.sh
 stub pgrep 'exit 1'
 # Signed in, for the status runs below
 stub codex 'echo "Logged in using ChatGPT" >&2'
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 
 yq --version 2>/dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 
@@ -90,15 +89,14 @@ assert_eq 'null null' "$(get .default_permissions) $(get .permissions)" "profile
 
 # On Ubuntu, the same sandbox, with notifications and MCP tokens set for SSH, and no [desktop]
 # keys, since there's no ChatGPT app. Status doesn't expect them, and leaves ones already there.
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on Ubuntu"
 assert_eq null "$(get .desktop)" "[desktop] on Ubuntu"
 assert_eq '"osc9"' "$(get .tui.notification_method)" "the notification method on Ubuntu"
 assert_eq '"file"' "$(get .mcp_oauth_credentials_store)" "the MCP token store on Ubuntu"
-bwrap_works() { true; }
+replace_fn bwrap_works 'true'
 stub brew 'exit 1'
 set_key .desktop.followUpQueueMode '"queue"'
 run status
@@ -307,13 +305,11 @@ stub brew 'exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
 assert_contains "$RUN_OUTPUT" "ok         Codex's status line (tui.status_line): yours, [\"model\",\"git-branch\"] (the repo's is $repo_line)"
-is_interactive() { true; }
-confirm() {
-    local reply
-    echo "$1"
-    read -r reply
-    [ "$reply" == y ]
-}
+replace_fn is_interactive 'true'
+replace_fn confirm 'local reply
+echo "$1"
+read -r reply
+[ "$reply" == y ]'
 assert_exit 0 configure_codex <<< n
 assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model\",\"git-branch\"], not the repo's $repo_line. Replace it?"
 assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config after no"
@@ -323,8 +319,7 @@ run status
 assert_not_contains "$RUN_OUTPUT" "yours"
 # Reloading brings back the real confirm and is_interactive
 load_script ai_tools/codex/install.sh
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 printf '%s\n' "$mine" > "$CODEX_CONFIG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_ASSUME_YES=1"
@@ -333,7 +328,7 @@ assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_
 # "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. The stubbed
 # codex stands in for the cask's.
 stub brew 'exit 1'
-codex_cask_path() { echo "$STUB_DIR/codex"; }
+replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
 stub codex 'echo "Logged in using ChatGPT" >&2'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Signed in to Codex"
@@ -342,9 +337,8 @@ stub codex 'echo "Not logged in" >&2; exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
-is_macos() { false; }
-is_ubuntu() { true; }
-bwrap_works() { true; }
+as_os ubuntu
+replace_fn bwrap_works 'true'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
 

@@ -38,29 +38,28 @@ check_untouched() {
 # Each loads a step, replaces what decides its path (and any installer, logging it), and runs main
 claude_code() {
     load_script ai_tools/claude-code/install.sh
-    install_claude_code() { echo "install claude" >> "$STUB_LOG"; }
-    claude_code_have_git_wt() { true; }
+    replace_fn install_claude_code 'echo "install claude" >> "$STUB_LOG"'
+    replace_fn claude_code_have_git_wt true
     main
 }
 # Claude Code not yet installed, which the step would install with Anthropic's script
 claude_code_fresh() {
     load_script ai_tools/claude-code/install.sh
-    claude_code_path() { return 1; }
-    claude_code_have_git_wt() { true; }
+    replace_fn claude_code_path 'return 1'
+    replace_fn claude_code_have_git_wt true
     main
 }
 claude_desktop() {
     load_script ai_tools/claude-desktop/install.sh
-    is_macos() { true; }
-    install_cask() { echo "install $1" >> "$STUB_LOG"; }
+    as_os macos
+    replace_fn install_cask 'echo "install $1" >> "$STUB_LOG"'
     main
 }
 codex() {
     load_script ai_tools/codex/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
-    install_cask() { echo "install $1" >> "$STUB_LOG"; }
-    codex_cask_path() { :; }
+    as_os macos
+    replace_fn install_cask 'echo "install $1" >> "$STUB_LOG"'
+    replace_fn codex_cask_path :
     main
 }
 tmux_step() {

@@ -15,7 +15,7 @@ pattern="$(sed -n "s/^T3_MANUAL_SERVE_STATUS='\(.*\)'\$/\1/p" "$REPO_DIR/scripts
 [ -n "$pattern" ] || fail "scripts/test-ubuntu.sh sets no T3_MANUAL_SERVE_STATUS"
 
 load_script ai_tools/t3-code/install.sh
-t3_code_other_servers() { echo "304 manual $HOME/.local/bin/t3 serve --port 3780"; }
+replace_fn t3_code_other_servers 'echo "304 manual $HOME/.local/bin/t3 serve --port 3780"'
 run t3_code_status_other_servers
 grep -qE -- "$pattern" <<< "$RUN_OUTPUT" ||
     fail "T3_MANUAL_SERVE_STATUS doesn't match t3-code's status line: $RUN_OUTPUT"

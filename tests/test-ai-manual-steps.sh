@@ -52,7 +52,7 @@ ok=$((ALLOWED | PERSISTENT))
 apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY)) com.anthropic.claudefordesktop $ok com.openai.codex $ok com.t3tools.t3code $ok
 mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Extensions/$CLAUDE_CHROME_EXTENSION_ID"
 stub open
-is_macos() { true; }
+as_os macos
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on macOS"
 assert_contains "$RUN_OUTPUT" "Notifications for Claude, ChatGPT, and T3 Code are already allowed and Persistent."
@@ -68,7 +68,7 @@ assert_not_contains "$RUN_OUTPUT" "Not opening"
 assert_eq "" "$(cat "$STUB_LOG" | grep -v '^plutil' || true)" "commands run without a yes"
 
 # A yes opens each one's settings, waiting for Enter in between
-confirm() { true; }
+replace_fn confirm 'true'
 run open_manual_steps <<< $'\n\n'
 assert_eq 0 "$RUN_STATUS" "exit status after opening the settings"
 assert_eq "open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.anthropic.claudefordesktop
@@ -87,7 +87,7 @@ assert_not_contains "$RUN_OUTPUT" "notification settings now?"
 assert_eq "" "$(grep '^open' "$STUB_LOG" || true)" "settings opened when they can't be read"
 
 # Ubuntu prints its own section, and --status prints nothing
-is_macos() { false; }
+as_os ubuntu
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on Ubuntu"

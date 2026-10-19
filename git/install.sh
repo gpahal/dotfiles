@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Install the git config, global ignore file, and git-wt, and log in to GitHub with gh. On Ubuntu,

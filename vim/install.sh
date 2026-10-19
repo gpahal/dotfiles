@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the vim config, install the vim-plug the repo vendors in vim/plug.vim, and move the plugins

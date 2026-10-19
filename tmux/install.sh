@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the tmux config and tmux-sessionizer, and install tpm and the plugins into ~/.tmux/plugins,

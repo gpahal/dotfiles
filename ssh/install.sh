@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # macOS: add a Host * block to ~/.ssh/config that loads keys into the agent from the keychain, and

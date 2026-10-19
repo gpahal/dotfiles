@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2119 # items_status and items_apply drive every item when given none
 set -euo pipefail
 
 # Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and

@@ -1,4 +1,7 @@
 # Helpers shared by the runners, their steps, and the repo's other scripts. Source it; don't run it.
+# The APIs a step builds on, each documented where it's defined:
+# - item and its drivers (items_reset, items_status, items_pending, items_apply): what a step sets
+#   up, listed once for its status, its confirm_sudo_changes list, and its fixes
 # shellcheck shell=bash
 
 # A cd to a relative dir would search an exported CDPATH and print the dir it found, so every
@@ -812,6 +815,118 @@ status_check() {
     else
         status_item missing "$text"
     fi
+}
+
+# Items: a step lists each simple thing it sets up once, with item, so its status, its
+# confirm_sudo_changes list, and its fixes can't drift apart.
+#   items_reset
+#   item [--sudo] [--hint <text>] <status text> <pending text> <check-fn> <fix-fn>
+# The check succeeds when the thing is set up, and the fix sets it up. The status text describes
+# the state the check looks for, as status_check's does; the pending text describes the change, as
+# confirm_sudo_changes lists it. --sudo marks a fix that needs sudo. --hint adds what to do to a
+# missing status item, such as a command the step won't run itself.
+# Declare a step's items in one function that starts with items_reset, so a test that loads two
+# steps gets each step's own, and call it from both status and apply. Items are added at run time,
+# so their texts can name paths a test points elsewhere. An item that branches, such as one with
+# two pending texts or a status that can be unverified, stays custom code in its place.
+# The drivers take the check functions of the items to drive, every item when given none, and
+# drive them in the order they were declared:
+#   items_status [check-fn...]   status_item ok "<status text>", or missing "<status text>[; <hint>]"
+#   items_pending [check-fn...]  append the pending text of each failing --sudo item to the caller's
+#                                pending array, for confirm_sudo_changes
+#   items_apply [--no-sudo] [check-fn...]
+#                                run the fix of each item whose check still fails; --no-sudo skips
+#                                the --sudo items, for when confirm_sudo_changes was declined. Every
+#                                fix runs whether or not one before it failed; returns 1 when any did.
+# e.g. items_reset
+#      item --sudo "Linger, so user services start at boot" \
+#          "Start your user services at boot: loginctl enable-linger" lingering enable_linger
+ITEM_STATUS=()
+ITEM_PENDING=()
+ITEM_CHECK=()
+ITEM_FIX=()
+ITEM_SUDO=()
+ITEM_HINT=()
+
+items_reset() {
+    ITEM_STATUS=()
+    ITEM_PENDING=()
+    ITEM_CHECK=()
+    ITEM_FIX=()
+    ITEM_SUDO=()
+    ITEM_HINT=()
+}
+
+item() {
+    local sudo=false hint=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --sudo) sudo=true ;;
+            --hint)
+                hint="$2"
+                shift
+                ;;
+            *) break ;;
+        esac
+        shift
+    done
+    if [ $# -ne 4 ]; then
+        echo "item: expected <status text> <pending text> <check-fn> <fix-fn>, got $# arguments" >&2
+        return 2
+    fi
+    ITEM_STATUS+=("$1")
+    ITEM_PENDING+=("$2")
+    ITEM_CHECK+=("$3")
+    ITEM_FIX+=("$4")
+    ITEM_SUDO+=("$sudo")
+    ITEM_HINT+=("$hint")
+}
+
+items_status() {
+    local i=0
+    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
+        if _item_wanted "$i" "$@"; then
+            if "${ITEM_CHECK[i]}"; then
+                status_item ok "${ITEM_STATUS[i]}"
+            else
+                status_item missing "${ITEM_STATUS[i]}${ITEM_HINT[i]:+; ${ITEM_HINT[i]}}"
+            fi
+        fi
+        i=$((i + 1))
+    done
+}
+
+# e.g. local pending=(); items_pending sleep_masked sleep_conf_written
+items_pending() {
+    local i=0
+    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
+        if "${ITEM_SUDO[i]}" && _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
+            pending+=("${ITEM_PENDING[i]}")
+        fi
+        i=$((i + 1))
+    done
+}
+
+items_apply() {
+    local i=0 result=0 sudo=true
+    if [ "${1:-}" == --no-sudo ]; then
+        sudo=false
+        shift
+    fi
+    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
+        if { "$sudo" || ! "${ITEM_SUDO[i]}"; } && _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
+            "${ITEM_FIX[i]}" || result=1
+        fi
+        i=$((i + 1))
+    done
+    return "$result"
+}
+
+# _item_wanted <index> [check-fn...]: succeeds when the item is among the checks named, or none is
+_item_wanted() {
+    local check="${ITEM_CHECK[$1]}"
+    shift
+    [ $# -eq 0 ] || has_arg "$check" "$@"
 }
 
 # Print an item for whether a file copy_file installs matches its source in the repo, and is

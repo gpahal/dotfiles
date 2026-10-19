@@ -158,7 +158,9 @@ run_runner() {
     shift 2
     echo "=== $runner $mode ==="
     if [ -n "$mode" ]; then
-        in_vm bash "$runner" "$mode" || status=$?
+        # The setup runs below install the health alerts from a git worktree, so status checks
+        # them as installed, rather than reporting that they run a worktree
+        in_vm env DOTFILES_ALLOW_WORKTREE=1 bash "$runner" "$mode" || status=$?
     else
         # orb run reaches the machine without sshd, so no SSH session proves a key logs in, and
         # the opt-in turns password logins off. The repo may be a git worktree, from which the

@@ -35,7 +35,7 @@ sorted() {
 # No file: it's created, world-readable, and the daemon restarted if it runs
 assert_exit 0 configure_daemon
 assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "a new daemon.json"
-assert_eq "-rw-r--r--" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a new daemon.json"
+assert_eq 644 "$(file_mode "$DOCKER_DAEMON_CONFIG")" "mode of a new daemon.json"
 assert_file_contains "$STUB_LOG" "systemctl try-restart docker.service"
 assert_exit 0 daemon_configured
 
@@ -116,7 +116,7 @@ assert_exit 1 daemon_configured
 assert_exit 0 configure_daemon
 merged='{"dns": ["1.1.1.1"], '"$SETTINGS}"
 assert_eq "$(sorted /dev/stdin <<< "$merged")" "$(sorted)" "a merged daemon.json"
-assert_eq "-rw-r-----" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a merged daemon.json"
+assert_eq 640 "$(file_mode "$DOCKER_DAEMON_CONFIG")" "mode of a merged daemon.json"
 
 # An empty file counts as {}
 : > "$DOCKER_DAEMON_CONFIG"

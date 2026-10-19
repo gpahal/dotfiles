@@ -2,12 +2,7 @@
 set -euo pipefail
 
 # Install the Stream Deck plugin, and restart Stream Deck to load it.
-#
-# bin/open-in says what each app key does, and plugin.js describes the stat keys. macOS only, since
-# Stream Deck has no Linux app.
-#
-# A temp HOME doesn't isolate this step, which restarts the Stream Deck you're running when the
-# plugin changed.
+# A temp HOME doesn't isolate it: it restarts the running Stream Deck when the plugin changed.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -17,15 +12,12 @@ STEP_OS=macos
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 
-# Print each file in a plugin dir, the repo's by default, relative to it. A .DS_Store Finder
-# leaves isn't one.
+# Backups aren't plugin files, so never count as stale
 plugin_file_list() {
-    # Backups older runs of this step left aren't plugin files, so they never count as stale
     (cd "${1:-$DOTFILES_DIR/stream-deck/$PLUGIN}" &&
         find . -type f ! -name .DS_Store ! -name '*.bak' ! -name '*.bak.*' | sed 's|^\./||')
 }
 
-# Print each file in the installed plugin that the repo's plugin no longer has
 stale_plugin_list() {
     [ -d "$PLUGIN_DIR" ] || return 0
     LC_ALL=C comm -13 <(plugin_file_list | LC_ALL=C sort) <(plugin_file_list "$PLUGIN_DIR" | LC_ALL=C sort)
@@ -39,9 +31,7 @@ each_plugin_file() {
     return "$status"
 }
 
-# Remove the installed plugin's files that the repo's plugin no longer has, and the folders that
-# leaves empty, only ever inside PLUGIN_DIR. Sets COPIED when it removes one, so Stream Deck
-# restarts without it.
+# Sets COPIED so Stream Deck restarts
 remove_stale_plugin() {
     local file status=0
     while IFS= read -r file; do
@@ -56,9 +46,8 @@ remove_stale_plugin() {
     return "$status"
 }
 
-# SIGTERM quits Stream Deck; it saves profile changes as they're made. open fails with error -600
-# while the old process is still quitting, so wait for it to go first. LaunchServices can still
-# report -600 for a moment after the process is gone, so open is tried a few times.
+# SIGTERM is safe: Stream Deck saves as it goes. open fails with -600 while the old process quits
+# and briefly after, hence the wait and retries.
 restart_stream_deck() {
     local opened=false
     if ! pkill -x "Stream Deck"; then

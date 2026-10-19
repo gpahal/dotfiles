@@ -1,16 +1,10 @@
 #!/bin/bash
-# upsmon's NOTIFYCMD, which the ubuntu step installs as /usr/local/libexec/dotfiles-ups-notify.
-# On each event upsmon.conf flags EXEC, upsmon runs it as the nut user, with the message as its
-# argument and NOTIFYTYPE and UPSNAME set. It pushes the event to ntfy when /etc/dotfiles/ntfy-url
-# holds a topic's URL (bash ubuntu/setup-alerts.sh sets it), urgent for a low battery or a
-# shutdown. It sources the ntfy code the step installs separately, since the nut user may not be
-# able to read the repo. Failures go to the journal under dotfiles-ups. It always exits 0.
+# upsmon's NOTIFYCMD, run as nut; pushes the UPS event to ntfy, always exits 0.
 
-# Fixed paths, not variables a caller could set, since the notifier runs as nut. Tests run a
-# copy with these lines rewritten (ntfy_hook_copy in tests/lib.sh).
+# Fixed paths, since it runs as nut. Tests rewrite these lines (ntfy_hook_copy in tests/lib.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
-# upsmon's PATH starts with /usr/local, so a curl or logger there would run instead of the system's
+# upsmon's PATH starts with /usr/local; use the system's curl and logger
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 [ -s "$NTFY_URL_FILE" ] || exit 0

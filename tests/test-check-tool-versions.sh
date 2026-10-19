@@ -1,16 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# scripts/check-tool-versions.sh passes when every tool is at least its minimum, comparing each
-# dot-separated part as a number, and fails naming a tool that's missing, older, whose version it
-# can't read, or, for yq, that isn't mikefarah's. It checks every tool before failing.
+# scripts/check-tool-versions.sh: minimum versions, compared part by part as numbers.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 
-# Stub each tool to print the version line in $SANDBOX/versions/<tool>
 mkdir -p "$SANDBOX/versions"
 version() {
     printf '%s\n' "$2" > "$SANDBOX/versions/$1"
@@ -34,12 +31,11 @@ assert_contains "$RUN_OUTPUT" "jq 1.8.1 (at least 1.8.1)"
 assert_contains "$RUN_OUTPUT" "git 2.53.0 (at least 2.53)"
 assert_contains "$RUN_OUTPUT" "tmux 3.6 (at least 3.6)"
 
-# Each part compares as a number: 1.10 is newer than 1.8.1, and 2.100 is newer than 2.53
 version jq jq-1.10
 version git "git version 2.100"
 check 0
 
-# An older version, a version it can't read, and another yq each fail, and every tool is checked
+# Every tool is checked before failing
 version jq jq-1.8.0
 version just "just (development build)"
 version yq "yq 3.4.1"
@@ -52,7 +48,6 @@ version jq jq-1.8.1
 version just "just 1.45.0"
 version yq "yq (https://github.com/mikefarah/yq/) version v4.54.1"
 
-# A missing tool
 hide tmux
 check 1
 assert_contains "$RUN_OUTPUT" "tmux isn't installed (needs at least 3.6)"

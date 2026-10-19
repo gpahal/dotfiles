@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# The unverified status state doesn't count as needing attention, and status reads root-only
-# settings with sudo -n only when sudo credentials are cached, never asking.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
@@ -11,11 +8,9 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
 load_script lib/common.sh
-# Status reports read apt's periodic settings
 stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
 echo "APT::Periodic::Unattended-Upgrade \"1\";"'
 
-# status_result: unverified alone exits 0; missing or unknown exit 3
 report() {
     local state
     for state in "$@"; do
@@ -28,10 +23,8 @@ assert_contains "$RUN_OUTPUT" "  unverified item"
 assert_exit 3 report ok unverified unknown
 assert_exit 3 report unverified missing
 
-# sudo stubs: one whose credentials aren't cached, so sudo -n fails, and one whose are. The cached
-# one runs only commands that read; any other it records in $SANDBOX/mutations and fails, since
-# status must write nothing. A test can't make a file only root reads, so for `cat <file>` of an
-# unreadable file it prints <file>.root instead.
+# The cached stub records anything but a read in $SANDBOX/mutations. A test can't make a file
+# only root reads, so `cat <file>` of an unreadable file prints <file>.root.
 sudo_not_cached() {
     stub sudo '[ "$1" != -n ] || exit 1; echo "sudo asked for a password" >&2; exit 1'
 }
@@ -51,7 +44,6 @@ sudo_cached_stub
 assert_exit 0 sudo_cached
 assert_file_contains "$STUB_LOG" "sudo -n true"
 
-# Every sudo a status run made was sudo -n, so none could ask for a password, and none wrote
 no_prompting_sudo() {
     if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
         fail "status ran sudo without -n:"
@@ -65,15 +57,12 @@ no_prompting_sudo() {
     : > "$SANDBOX/mutations"
 }
 
-# The ubuntu step, on a machine where everything else is set up. ufw's and linger's state come
-# from files under /etc and /var, so those two checks are replaced.
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 as_os ubuntu
 replace_fn lingering true
-# test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
-# conffile options, the packages apt holds back, and the health alerts' worktree check, and
-# test-diagnostics-ubuntu.sh SMART health and firmware updates
+# Covered by test-ubuntu-step.sh, test-diagnostics-ubuntu.sh, test-ubuntu-ups.sh, and
+# test-ubuntu-system.sh
 replace_fn smartd_enabled true
 replace_fn smartd_hook_installed true
 replace_fn keep_conffiles_written true
@@ -81,16 +70,12 @@ replace_fn status_held_back :
 replace_fn in_git_worktree false
 replace_fn status_smart :
 replace_fn status_firmware :
-# test-ubuntu-ups.sh covers the UPS
 replace_fn ups_todo :
 replace_fn status_ups :
 replace_fn warn_no_ups :
-# The kernel has the sysctl settings, which test-ubuntu-system.sh covers
 replace_fn sysctl_in_effect true
 replace_fn locale_installed true
 replace_fn unattended_upgrades_running true
-# test-ubuntu-step.sh covers apt's timers, sshd at boot, a pending reboot, and the health alerts'
-# units and their reload
 replace_fn apt_timers_enabled true
 replace_fn health_units_written true
 replace_fn health_units_loaded true
@@ -98,22 +83,18 @@ replace_fn sshd_enabled true
 replace_fn ufw_enabled true
 echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
-# Not a VM
 stub systemd-detect-virt 'exit 1'
 stub dpkg-query 'echo "install ok installed"'
-# Tailscale's apt source is the one the step writes
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
     debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
-# The rest is set up too, through sandbox paths
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
 stub nmcli
-# sshd -T prints the port, and the drop-in's settings as sshd takes them
 stub sshd '[ "$1" != -T ] || { echo "port 22"
     { cat "'"$SANDBOX"'/10-dotfiles.conf" 2> /dev/null || cat "'"$SANDBOX"'/10-dotfiles.conf.root"; } | awk "{ print tolower(\$1), \$2 }"; }'
 ufw_has_rules() {
@@ -122,13 +103,11 @@ ufw_has_rules() {
 }
 ufw_has_rules
 SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
-# Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 mkdir -p "$(dirname "$HOMEBREW_ENV_CONF")"
 cp "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF"
 : > "$STUB_LOG"
 
-# Without cached credentials the ufw rules are unverified, and the report needs no attention
 sudo_not_cached
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules"
@@ -137,7 +116,6 @@ assert_not_contains "$RUN_OUTPUT" "unknown"
 assert_not_contains "$RUN_OUTPUT" "missing"
 no_prompting_sudo
 
-# With cached credentials they're checked: ok when they're there, missing when one isn't
 sudo_cached_stub
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules"
@@ -148,8 +126,7 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw rules"
 no_prompting_sudo
 
-# Without $SSHD_RUN_DIR, sshd -T can't list the ports, and status doesn't create it: the rules are
-# unverified, saying why
+# Without $SSHD_RUN_DIR, sshd -T can't list the ports
 ufw_has_rules
 rmdir "$SSHD_RUN_DIR"
 assert_exit 0 status
@@ -159,7 +136,6 @@ assert_contains "$RUN_OUTPUT" "first SSH connection"
 no_prompting_sudo
 mkdir -p "$SSHD_RUN_DIR"
 
-# Without openssh-server, the rules are missing, and it doesn't say to run sudo -v
 stub dpkg-query 'exit 1'
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    ufw rules"
@@ -168,8 +144,7 @@ assert_not_contains "$RUN_OUTPUT" "sudo -v"
 no_prompting_sudo
 stub dpkg-query 'echo "install ok installed"'
 
-# An sshd drop-in only root can read is unverified without cached credentials, and read with
-# sudo -n with them. Skipped when running as root, which reads any file.
+# Skipped as root, which reads any file
 ufw_has_rules
 cp "$SSHD_DROP_IN" "$SSHD_DROP_IN.root"
 chmod 000 "$SSHD_DROP_IN"
@@ -189,16 +164,12 @@ if [ ! -r "$SSHD_DROP_IN" ]; then
 fi
 chmod 644 "$SSHD_DROP_IN"
 
-# The docker step: a daemon.json only root can read
 load_script docker/install.sh
-# No containerd shim runs, so a stopped daemon runs no containers
 stub pgrep 'exit 1'
 as_os ubuntu
-# Docker's packages are installed
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 stub systemctl 'exit 1'
-# Docker's apt source lists this release
 OS_RELEASE="$SANDBOX/os-release"
 printf '%s\n' ID=ubuntu VERSION_CODENAME=resolute > "$OS_RELEASE"
 APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d"
@@ -228,8 +199,8 @@ if [ ! -r "$DOCKER_DAEMON_CONFIG" ]; then
 fi
 chmod 644 "$DOCKER_DAEMON_CONFIG"
 
-# The macos step: a sandboxed app's default that defaults can't read is unverified, and an
-# unreadable default of any other app is missing
+# An unreadable default is unverified only for a sandboxed app
+
 load_script macos/install.sh
 stub defaults 'exit 1'
 textedit_status() {

@@ -1,11 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Add a block for a host you SSH to, such as the Ubuntu machine, to ~/.ssh/config: keepalives, so
-# idle sessions don't drop, and one shared connection per host, so T3 Code, Zed, and new terminals
-# connect without a new handshake. The block goes above the first Host * or Match all, since ssh
-# uses the first value it finds for each setting. The host is yours to name, so setup doesn't run
-# this.
+# Add a keepalive and connection-sharing block for a host to ~/.ssh/config. Setup doesn't run it.
 # Usage: bash ssh/add-host.sh <alias> [hostname], e.g. bash ssh/add-host.sh box box.tail1234.ts.net
 
 # shellcheck source=../lib/common.sh
@@ -13,7 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=lib/hosts.sh
 source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 
-# Fail when ssh would read the value as more than one pattern, a pattern, or a comment
 check_name() {
     case "$2" in
         *[[:space:]*?!,#\"\'\\]*)
@@ -37,8 +32,7 @@ main() {
     fi
     mkdir -p "$HOME/.ssh"
     chmod 700 "$HOME/.ssh"
-    # While the shared connection is open, anything running as you can open sessions over it
-    # without authenticating, so it closes a minute after the last session
+    # Short ControlPersist: anything running as you can reuse the open connection without auth
     block="Host $alias
   HostName $hostname
   ServerAliveInterval 30

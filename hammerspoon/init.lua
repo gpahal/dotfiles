@@ -1,34 +1,17 @@
--- Global hotkeys. Each opens its app, or brings it to the front when it's running:
---   Ctrl+Opt+Cmd+Space  Claude
---   Ctrl+Opt+Cmd+B      Google Chrome
---   Ctrl+Opt+Cmd+N      a new Chrome tab, with the clipboard's text pasted into the address bar
---                       and selected, so typing or Delete replaces it, as the Stream Deck's New
---                       Tab key does
---   Ctrl+Opt+Cmd+T      Ghostty at the folder in front, as the Stream Deck's Terminal key does
---   Ctrl+Opt+Cmd+C      T3 Code
---   Ctrl+Opt+Cmd+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
--- Ctrl+Opt alone would clash with Rectangle's recommended shortcuts (Ctrl+Opt+C, E, and T), which
--- Rectangle uses with Cmd only on the arrow keys.
--- The hammerspoon step copies this file, and the Stream Deck plugin's bin/open-in, which finds the
--- folder or file and opens the new tab, to ~/.hammerspoon.
--- Hammerspoon needs Accessibility, a manual step, to send the new tab's keystrokes and read Zed's
--- window title and T3 Code's page, and macOS asks it for Automation of Ghostty, Finder, System
--- Events, and Google Chrome.
+-- Needs Accessibility (a manual step) and Automation of Ghostty, Finder, System Events, and Chrome.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
 local T3_CODE = "com.t3tools.t3code"
 local OPEN_IN = hs.configdir .. "/bin/open-in"
+-- Ctrl+Opt alone clashes with Rectangle's shortcuts
 local MODS = { "ctrl", "alt", "cmd" }
 
--- Hammerspoon garbage-collects a timer, watcher, or task nothing refers to, so they're kept here.
--- tasks holds each open-in still running, so a second press can't drop the first.
+-- Hammerspoon garbage-collects a watcher or task nothing refers to
 dotfiles = { tasks = {} }
 
--- Open Hammerspoon at login, so the hotkeys work from the start
 hs.autoLaunch(true)
 
--- Reload when the hammerspoon step replaces this file
 dotfiles.watcher = hs.pathwatcher.new(hs.configdir, function(paths)
     for _, path in ipairs(paths) do
         if path:match("/init%.lua$") then
@@ -46,9 +29,7 @@ local function open(bundleID, name)
     return false
 end
 
--- open-in shows a notification when it fails, so only its log line is left to print. bash exits
--- 127 when open-in is missing and 126 when it can't run it, and then no notification shows, so
--- those get an alert. Returns the task, or nil when it couldn't start.
+-- open-in notifies on its own failures, but not when bash can't run it (126, 127)
 local function openIn(target)
     local task
     task = hs.task.new("/bin/bash", function(exitCode, _, stderr)
@@ -70,8 +51,7 @@ local function openIn(target)
     return task
 end
 
--- A second press while the first's tab is still on its way, as while Chrome starts, would open a
--- second tab and paste twice, so it's dropped
+-- A second press while Chrome starts would open a second tab and paste twice
 local function newTab()
     if dotfiles.newTab and dotfiles.newTab:isRunning() then
         return

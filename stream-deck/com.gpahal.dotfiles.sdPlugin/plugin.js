@@ -1,17 +1,8 @@
-// Runs bin/open-in for each key press of the plugin's actions, shows a warning on the key when it
-// fails, and passes what it printed to Stream Deck's log, which Stream Deck writes to
-// ~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log. Stream Deck starts this with -port,
-// -pluginUUID, and -registerEvent, and Node 24's built-in WebSocket talks to it, so the plugin
-// needs no packages.
-//
-// The stat keys, which stats.js draws, update every 2 seconds while one is on screen. Overview
-// switches to profiles/System, the page of stat keys the plugin bundles for the 15-key model, and
-// Back returns to the profile before it. Pressing a stat key opens Activity Monitor.
+// Uses Node's built-in WebSocket, so the plugin needs no packages.
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const stats = require("./stats.js");
 
-// A flag's value, or undefined when Stream Deck didn't pass the flag
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i === -1 ? undefined : process.argv[i + 1];
@@ -23,13 +14,10 @@ const socket = new WebSocket(`ws://127.0.0.1:${arg("-port")}`);
 const send = (message) => socket.send(JSON.stringify(message));
 const log = (message) => send({ event: "logMessage", payload: { message } });
 
-// The targets whose open-in still runs, of those a second press would repeat: a second New Tab
-// press while the first's tab is on its way, as while Chrome starts, would open a second tab and
-// paste twice, so it's dropped, as the Hammerspoon hotkey drops it
+// A second New Tab press while the first runs would open a second tab and paste twice
 const ONE_AT_A_TIME = new Set(["chrome-tab"]);
 const running = new Set();
 
-// open-in's targets are the actions' names; it fails, so the key shows a warning, for any other
 function runScript(target, context) {
   if (running.has(target)) return;
   if (ONE_AT_A_TIME.has(target)) running.add(target);
@@ -40,19 +28,17 @@ function runScript(target, context) {
   });
 }
 
-// The stat keys on screen, by context, with what each shows, and the image each was last sent.
-// Most keys, such as Disk and Swap, rarely change, so an unchanged image isn't sent again.
+// shown holds each key's last image, so an unchanged one isn't sent again
 const visible = new Map();
 const shown = new Map();
 const sampler = stats.createSampler({ log });
 let timer = null;
 let busy = false;
 
-// The kinds whose last render threw, so each error is logged once rather than every 2 seconds
+// So each render error is logged once
 const failing = new Set();
 
-// A key's SVG, or its placeholder when rendering throws, so one bad stat, such as a field a macmon
-// update renamed, leaves the other keys updating
+// A placeholder on error, so one bad stat leaves the other keys updating
 function renderKey(kind, sample) {
   try {
     const svg = stats.render(kind, sample);
@@ -83,7 +69,7 @@ async function update() {
   }
 }
 
-// The first sample waits a moment, since CPU and network are rates over the time between samples
+// CPU and network are rates, so the first sample waits a moment
 function startUpdates() {
   if (timer) return;
   sampler.reset();
@@ -97,9 +83,7 @@ function stopUpdates() {
   sampler.stop();
 }
 
-// Each connected device's type, from Stream Deck's deviceDidConnect. The bundled System profile is
-// for the 15-key model alone (DeviceType 0 in the manifest), and switching to it on any other
-// device does nothing, so Overview shows a warning there instead.
+// The bundled System profile is for the 15-key model only; switching to it elsewhere does nothing
 const STREAM_DECK_15_KEY = 0;
 const deviceTypes = new Map();
 
@@ -109,7 +93,7 @@ socket.onclose = () => {
   process.exit(0);
 };
 socket.onmessage = ({ data }) => {
-  // An exception here would end the plugin, every key with it
+  // An exception here would end the plugin
   let message;
   try {
     message = JSON.parse(data);
@@ -121,9 +105,8 @@ socket.onmessage = ({ data }) => {
   if (event === "deviceDidConnect") deviceTypes.set(device, message.deviceInfo?.type);
   if (event === "deviceDidDisconnect") deviceTypes.delete(device);
   if (!action) return;
-  // com.gpahal.dotfiles.files is files
   const target = action.slice(action.lastIndexOf(".") + 1);
-  // Stream Deck shows a key's default image when it reappears, so it needs the stat again
+  // A reappearing key shows its default image, so it needs the stat again
   if (event === "willAppear" || event === "willDisappear") shown.delete(context);
   if (event === "willAppear" && stats.isStat(target)) {
     visible.set(context, target);

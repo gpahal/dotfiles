@@ -1,10 +1,5 @@
 # shellcheck shell=bash
-# The UPS for the ubuntu step: once a UPS is plugged in on USB, NUT watches it, pushes its events
-# to ntfy, and shuts the machine down on a low battery, then has the UPS cut its power, so the
-# machine starts again when mains returns. As a fallback for a UPS that keeps its power on, a
-# shutdown hook sets an RTC alarm, which starts the machine only on a board that supports it;
-# status checks the hook, not the board. Physical machines only.
-# ubuntu/install.sh sets the constants it uses.
+# ubuntu/install.sh sets the constants.
 
 nut_installed() {
     local package
@@ -13,10 +8,7 @@ nut_installed() {
     done
 }
 
-# Print the vendor and product IDs, as <vendor>:<product> in lowercase, of each USB device udev
-# tags as a UPS, one per line. upower's hwdb, which Ubuntu Desktop installs, tags each UPS NUT
-# knows with UPOWER_BATTERY_TYPE=ups, and anyone may read udev's database, so this needs neither
-# sudo nor NUT. Fails when udevadm does.
+# Prints <vendor>:<product> per UPS. upower's hwdb tags them, so this needs neither sudo nor NUT.
 ups_plugged() {
     udevadm info --export-db 2>/dev/null | awk '
         function flush() {
@@ -31,15 +23,11 @@ ups_plugged() {
         END { flush() }' | sort -u
 }
 
-# Print a file in $NUT_DIR, with sudo -n when only root can read it (read_root_file)
 nut_read() {
     read_root_file "$NUT_DIR/$1" -n
 }
 
-# Print the value of a key in a section of NUT's ini-style files, read as NUT's parser reads a
-# word: double quotes keep spaces and # in it, a backslash takes the next character as it is, and
-# an unquoted # starts a comment
-# e.g. nut_value ups vendorid < ups.conf
+# nut_value <section> <key> < file, parsing quotes, backslashes, and # as NUT does
 nut_value() {
     awk -v section="[$1]" -v key="$2" '
         /^[[:space:]]*\[/ { header = $0; gsub(/[[:space:]]/, "", header); next }
@@ -70,18 +58,11 @@ nut_value() {
         }'
 }
 
-# Print a value quoted for NUT's files, as nut_value reads it back
 nut_quote() {
     printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
 }
 
-# Print "<driver> <vendor> <product>" for the first UPS in nut-scanner -U's output on stdin, which
-# is in ups.conf's format, e.g.
-# [nutdev-usb1]
-#         driver = "usbhid-ups"
-#         port = "auto"
-#         vendorid = "0764"
-#         productid = "0501"
+# Prints "<driver> <vendor> <product>" for the first UPS in nut-scanner -U's ups.conf output
 ups_scan_parse() {
     awk '
         /^[[:space:]]*\[/ { if (driver != "") exit; next }
@@ -93,7 +74,7 @@ ups_scan_parse() {
             sub(/[[:space:]]*=.*/, "", key)
             value = line
             sub(/^[^=]*=[[:space:]]*/, "", value)
-            # NUT 2.8.2 and later follow the driver with a comment naming others that could serve it
+            # NUT 2.8.2+ appends a comment naming other drivers
             sub(/[ \t]*#.*/, "", value)
             gsub(/"/, "", value)
             v[key] = value
@@ -102,8 +83,8 @@ ups_scan_parse() {
         END { if (driver != "") print driver, tolower(v["vendorid"]), tolower(v["productid"]) }'
 }
 
-# nut_config <file> <driver> <vendor> <product> <password>: print what the step writes to a file in
-# $NUT_DIR. The password is quoted, since one kept from an earlier setup may hold a space or #.
+# nut_config <file> <driver> <vendor> <product> <password>
+# The password is quoted, since one kept from an earlier setup may hold a space or #.
 nut_config() {
     local type password
     password="$(nut_quote "$5")"
@@ -136,13 +117,8 @@ nut_config() {
     esac
 }
 
-# Print the system-shutdown hook that sets the RTC alarm. When the UPS cuts its power, the BIOS's
-# power-on after AC loss starts the machine once mains returns, and the alarm, which needs power,
-# does nothing. When it doesn't, as some don't when mains came back during the shutdown, the alarm
-# starts the machine. A UPS that ignores the command while mains is still out makes a loop: the
-# alarm starts the machine on battery, upsmon sees a low battery and shuts it down again, setting
-# the alarm again, until the battery dies. The hook can't tell that case apart, since the UPS's
-# status is gone by then, so the Power cuts manual step has you check the UPS cuts its power.
+# Fallback for a UPS that keeps its power on. If the UPS ignores the cut while mains is out, this
+# loops until the battery dies, so the Power cuts manual step checks the UPS cuts its power.
 ups_rtc_hook() {
     printf '%s\n' "#!/bin/sh" \
         "# From the dotfiles ubuntu step: after a UPS shutdown, which leaves $UPS_POWERDOWN_FLAG, start the" \
@@ -159,8 +135,7 @@ install_ups_rtc_hook() {
     write_root_file "$UPS_RTC_HOOK" "$(ups_rtc_hook)" 0755
 }
 
-# Print upsmon's password from upsd.users, or a new one when there's none. Fails when the file
-# can't be read, so an existing password isn't replaced.
+# Fails when upsd.users can't be read, so an existing password isn't replaced
 nut_password() {
     local users password
     users="$(nut_read upsd.users)" || return 1
@@ -171,29 +146,23 @@ nut_password() {
     echo "$password"
 }
 
-# Print a file's owner, group, and permission bits in octal, e.g. "root nut 640", following a
-# symlink to its target. GNU stat, as Ubuntu's, takes -c; macOS's, which the tests run, takes -f.
+# GNU stat takes -c; macOS's, which the tests use, takes -f
 owner_group_mode() {
     stat -L -c '%U %G %a' "$1" 2>/dev/null || stat -L -f '%Su %Sg %Lp' "$1"
 }
 
-# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and is
-# root's, in the nut group, with mode 0640, as write_nut_file leaves it: upsd and upsmon read it
-# through the group, and two of the files hold upsmon's password, which no other user may read.
-# Returns 2 when it can't be read without sudo.
+# nut_file_current <file> <content>: returns 2 when it can't be read without sudo
 nut_file_current() {
     local current meta
     current="$(nut_read "$1")" || return 2
     [ "$current" == "$2" ] || return 1
-    # Through sudo -n, as nut_read reads, when $NUT_DIR is closed to you
     meta="$({ owner_group_mode "$NUT_DIR/$1" ||
         sudo -n bash -c "$(declare -f owner_group_mode)"'; owner_group_mode "$1"' _ "$NUT_DIR/$1"; } 2>/dev/null)"
     [ -n "$meta" ] || return 2
     [ "$meta" == "$NUT_OWNER $NUT_GROUP 640" ]
 }
 
-# Succeeds when each file in $NUT_DIR is what the step writes for the configured UPS. Returns 2
-# when they can't be read without sudo.
+# Returns 2 when the files can't be read without sudo
 nut_files_current() {
     local conf users driver vendor product password file
     conf="$(nut_read ups.conf)" && users="$(nut_read upsd.users)" || return 2
@@ -208,12 +177,11 @@ nut_files_current() {
     done
 }
 
-# Print a variable upsd reports for the UPS, such as ups.status. Anyone may read them.
 upsc_value() {
     upsc "$UPS_NAME@localhost" "$1" 2>/dev/null
 }
 
-# Each unit on its own, since systemctl is-active succeeds when any one of several is active
+# One at a time: is-active with several units succeeds when any one is active
 ups_services_active() {
     local unit
     for unit in "${NUT_UNITS[@]}"; do
@@ -221,19 +189,15 @@ ups_services_active() {
     done
 }
 
-# The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
-# installed with it
 ups_notifier_installed() {
     root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && ntfy_lib_installed
 }
 
 install_ups_notifier() {
-    # The ntfy code first, since the notifier sources it as soon as it runs
     install_ntfy_lib && install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755
 }
 
-# Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
-# of them, and the files are current. Returns 2 when they can't be read without sudo.
+# ups_configured_for <plugged IDs>: returns 2 when the files can't be read without sudo
 ups_configured_for() {
     local conf ids
     conf="$(nut_read ups.conf)" || return 2
@@ -242,16 +206,12 @@ ups_configured_for() {
     nut_files_current
 }
 
-# Ubuntu's NUT units are wanted by nut.target, which multi-user.target wants once it's enabled. With
-# it disabled, the services run now but not after a reboot.
+# NUT's units hang off nut.target; disabled, they don't start after a reboot
 nut_target_enabled() {
     systemctl is-enabled -q nut.target 2>/dev/null
 }
 
-# Succeeds when NUT watches a plugged-in UPS: it's set up for it, upsd answers for it, the services
-# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without
-# sudo don't count against it, so a run without cached credentials doesn't ask for sudo only to read
-# them.
+# Unreadable files don't count against it, so a run doesn't ask for sudo just to read them
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?
@@ -259,10 +219,7 @@ ups_ready() {
         ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
 }
 
-# Set UPS_STATE to the UPS part's state: vm, nohwdb (upower's hwdb, which tells a UPS, is
-# missing), noudev (udevadm failed), none (no UPS on USB), or plugged, with UPS_PLUGGED the
-# plugged-in UPSes' IDs. Needs no sudo. apply works it out once and sets UPS_STATE_CACHED for the
-# calls after, since it reads all of udev's database.
+# Sets UPS_STATE and UPS_PLUGGED. UPS_STATE_CACHED skips the udev database read on later calls.
 ups_state() {
     [ "${UPS_STATE_CACHED:-}" != true ] || return 0
     UPS_PLUGGED=""
@@ -279,9 +236,7 @@ ups_state() {
     fi
 }
 
-# Print the change the UPS part needs, for the step's list of sudo changes, or nothing when NUT is
-# set up for the UPS on USB, or there's none, which status reports. NUT is installed only for a
-# UPS, so a machine without one gets none of it. Needs no sudo: upsd says what it watches.
+# Prints the sudo change needed, or nothing. NUT is installed only when a UPS is plugged in.
 ups_todo() {
     local ids what
     ups_state
@@ -295,7 +250,6 @@ ups_todo() {
     fi
 }
 
-# Say why NUT isn't set up, when ups_todo leaves it for a later run
 warn_no_ups() {
     ups_state
     case "$UPS_STATE" in
@@ -305,29 +259,23 @@ warn_no_ups() {
     esac
 }
 
-# Write a file in $NUT_DIR, root's and readable by the nut group, as the packages ship them. The
-# group is set in the same install, so no failure leaves the file without it.
 write_nut_file() {
     write_root_file "$NUT_DIR/$1" "$2" 0640 "$NUT_GROUP"
 }
 
-# The enumerator turns ups.conf's sections into nut-driver@<name> units, so it runs before the
-# driver restarts
+# The enumerator creates nut-driver@<name> from ups.conf, so it goes first
 restart_nut() {
     sudo systemctl restart nut-driver-enumerator.service &&
         sudo systemctl restart "nut-driver@$UPS_NAME.service" "${NUT_UNITS[@]}"
 }
 
-# Install NUT, find the UPS with nut-scanner, and set NUT up for it, replacing only the files that
-# differ
 setup_ups() {
     local scan driver vendor product password file content changed=false notifier=false rtc=false
     local target=false
     if ! nut_installed; then
         apt_get install -y "${NUT_PACKAGES[@]}" || return 1
-        # nut-server's udev rules give the nut group the UPS, but its postinst re-runs udev only
-        # where /etc/init.d/udev exists, which Ubuntu lacks, so a UPS already plugged in keeps
-        # root's
+        # nut-server's postinst re-runs udev only if /etc/init.d/udev exists, which Ubuntu lacks,
+        # so a plugged-in UPS wouldn't get the nut group
         sudo udevadm trigger --settle --subsystem-match=usb --action=change || return 1
     fi
     scan="$(sudo nut-scanner -U -q 2>/dev/null | ups_scan_parse)" || true
@@ -363,7 +311,6 @@ setup_ups() {
     elif ! ups_services_active; then
         sudo systemctl start "${NUT_UNITS[@]}" || return 1
     elif ! upsc_value ups.status > /dev/null; then
-        # The driver isn't running, or lost the UPS
         restart_nut || return 1
         echo "  Restarted NUT's driver for the UPS on USB ($vendor:$product), since upsd didn't answer for it."
     elif "$notifier"; then
@@ -377,13 +324,12 @@ setup_ups() {
     fi
 }
 
-# Print the status items for the UPS. Reads nothing that needs root, but the files, with sudo -n.
 status_ups() {
     local label="UPS monitored by NUT" state charge item configured=0
     ups_state
     case "$UPS_STATE" in
         vm) status_item skipped "$label: this is a VM" ;;
-        # Information: a machine without upower may have no UPS, and the daily alert would nag
+        # info, not unknown: a machine without upower may have no UPS, and the daily alert would nag
         nohwdb) status_item info "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
         noudev) status_item unknown "$label: can't tell whether a UPS is on USB, since udevadm info --export-db failed" ;;
         none) status_item skipped "$label: no UPS on USB; plug in the UPS's USB cable and re-run the ubuntu step" ;;

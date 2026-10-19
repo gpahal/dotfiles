@@ -2,12 +2,6 @@
 set -euo pipefail
 
 # Copy the git config, ignore file, and git wt, and log in to GitHub with gh.
-#
-# On Ubuntu, also send GitHub's SSH remotes over HTTPS. The repo config goes to
-# ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set). ~/.gitconfig, which git reads
-# after it, holds what tools write there: gh's credential helper, Ubuntu's HTTPS rewrite, and, from
-# git/setup-signing.sh, commit signing. The repo config includes ~/.gitconfig.local for any other
-# per-machine settings.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -20,19 +14,15 @@ STEP_NEEDS="homebrew"
 REPO_CONFIG="$DOTFILES_DIR/git/gitconfig"
 XDG_GIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
 
-# Succeeds when GitHub's API answers at all, whatever the answer. curl reads the same proxy
-# variables gh does.
+# Any answer counts; curl reads the same proxy variables gh does
 github_reachable() {
     local code
     code="$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' https://api.github.com/ 2>/dev/null || true)"
     [ -n "$code" ] && [ "$code" != 000 ]
 }
 
-# Print the state of gh's GitHub login: ok when GitHub accepts it, absent when gh has no stored
-# token, invalid when GitHub rejects the stored one, and unknown when GitHub couldn't be reached
-# to check it. gh auth token only reads what gh stored, and gh auth status asks GitHub about the
-# active account, the one git uses. gh says a token is invalid when GitHub can't be reached too,
-# so that's checked apart. Their output, which can hold the token, is never printed.
+# Prints ok, absent, invalid, or unknown. gh calls a token invalid when GitHub is unreachable too,
+# so reachability is checked apart. Output can hold the token, so it's never printed.
 github_auth_state() {
     local output
     if ! gh auth token --hostname github.com &>/dev/null; then
@@ -46,7 +36,7 @@ github_auth_state() {
     fi
 }
 
-# --quick only reads what gh stored, since asking GitHub can take 10 s
+# Asking GitHub can take 10 s
 status_github_login() {
     if status_quick; then
         if gh auth token --hostname github.com &>/dev/null; then
@@ -63,8 +53,7 @@ status_github_login() {
     esac
 }
 
-# Succeeds when the first credential helper git tries for github.com is gh's. Git runs every
-# matching helper in config order, generic or for github.com, and an empty value clears the list.
+# Checks the first helper git tries: helpers run in config order and an empty value clears the list
 gh_credential_helper_set() {
     git_user_config --get-regexp '^credential\.(https://github\.com\.)?helper$' 2>/dev/null |
         awk '{ i = index($0, " "); v = i ? substr($0, i + 1) : "" }
@@ -74,8 +63,7 @@ gh_credential_helper_set() {
 }
 
 setup_github_auth() {
-    # On Ubuntu, gh's keyring is a desktop-session service: over SSH it's missing, or locked and
-    # stalls every gh command. Store the token in ~/.config/gh/hosts.yml instead.
+    # Ubuntu's keyring is missing or locked over SSH, and a locked one stalls every gh command
     local login=(gh auth login)
     if is_ubuntu; then
         login+=(--insecure-storage --git-protocol https)
@@ -83,10 +71,9 @@ setup_github_auth() {
     local state
     state="$(github_auth_state)"
     if [ "$state" == unknown ]; then
-        # A new login would replace one that may well work
         echo "  Couldn't reach GitHub to check the stored login, so it's kept. Check it with gh auth status."
     elif [ "$state" != ok ]; then
-        # A device login still needs a person, even when a VM run assumes yes to installs.
+        # A device login needs a person, even under DOTFILES_ASSUME_YES
         if ! is_interactive || ! confirm "  Log in to GitHub with gh now?"; then
             echo "  Not logged in to GitHub. Run ${login[*]}, then gh auth setup-git."
             return 0
@@ -107,14 +94,11 @@ setup_github_auth() {
     fi
 }
 
-# On Ubuntu, GitHub's SSH remotes go over HTTPS, so git pushes and fetches with gh's token, which
-# sits in ~/.config/gh/hosts.yml. T3 Code's agents and SSH sessions there have no ssh-agent to
-# unlock an SSH key. Only Ubuntu wants it, so it goes in ~/.gitconfig, not the repo config macOS
-# shares.
+# Ubuntu only (so ~/.gitconfig, not the shared repo config): SSH sessions and agents there have
+# no ssh-agent, so git uses gh's token over HTTPS
 GITHUB_HTTPS_KEY=url.https://github.com/.insteadOf
 GITHUB_SSH_PREFIXES=(git@github.com: ssh://git@github.com/)
 
-# Print the SSH prefixes git doesn't rewrite to HTTPS yet, one per line
 github_https_missing() {
     local current prefix
     current="$(git_user_config --get-all "$GITHUB_HTTPS_KEY" 2>/dev/null || true)"
@@ -127,11 +111,9 @@ github_over_https() {
     [ -z "$(github_https_missing)" ]
 }
 
-# What to do when the rewrite is missing because git has no credentials for GitHub over HTTPS
 GITHUB_HTTPS_HINT="a re-run after gh auth login and gh auth setup-git adds it"
 
-# Rewrite the SSH remotes only once gh's credential helper is set: without it, git would have no
-# credentials for GitHub over HTTPS, and SSH remotes that work would stop working
+# Only once gh's credential helper is set, or working SSH remotes would lose credentials
 configure_github_https() {
     local prefix missing
     is_ubuntu || return 0
@@ -164,8 +146,7 @@ user_gitconfig_exists() {
     [ -e "$USER_GITCONFIG" ]
 }
 
-# git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and the
-# next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
+# Without it, git config --global writes to ~/.config/git/config, which the next run overwrites
 create_user_gitconfig() {
     touch "$USER_GITCONFIG"
 }
@@ -203,7 +184,6 @@ apply() {
     git_files copy_file || status=1
     git_items
     items_apply || status=1
-    # The rewrite needs the credential helper the login sets up
     setup_github_auth || status=1
     configure_github_https || status=1
     return "$status"

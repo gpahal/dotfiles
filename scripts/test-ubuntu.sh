@@ -1,33 +1,17 @@
 #!/bin/bash
 set -uo pipefail
 
-# Test a whole Ubuntu setup in a throwaway OrbStack machine: run setup.sh and ai_tools/setup.sh
-# twice, so a second pass over a set-up machine must pass too, restart, then check both --status
-# reports and the machine's services, logins, and T3 Code server (each section below says what).
-# The machine is deleted at the end, even when the run fails or is interrupted. Needs OrbStack on
-# macOS, and takes a while, since everything installs from scratch. The full output goes to a log.
+# Run both setups twice in a throwaway OrbStack Ubuntu machine, restart, and check status and services.
 
 MACHINE=dotfiles-test
-# arm64 by default: OrbStack runs amd64 through Rosetta on Apple Silicon, where T3 Code 0.0.45
-# crashes when systemd starts it. The real Ubuntu machine is x86_64, so TEST_UBUNTU_ARCH=amd64
-# tests its CPU.
+# amd64 runs through Rosetta on Apple Silicon, where T3 Code crashes under systemd.
 ARCH="${TEST_UBUNTU_ARCH:-arm64}"
 REPO="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Steps that can't work in an OrbStack machine, so they may fail, or need attention in --status,
-# without failing the test. Any other step that does fails it.
-# - ghostty: OrbStack machines have no snapd.
+# Steps that can't work in OrbStack (ghostty: no snapd)
 ALLOWED_SETUP=(ghostty)
 ALLOWED_AI=()
-# Status items no OrbStack machine can satisfy, as "<step>: <item>". A step whose --status report
-# needs attention only for these doesn't fail the test.
-# - ubuntu: the machine never logs in to a tailnet. The UPS and smartd items report themselves
-#   skipped in a VM, and linger gives the health alert's units a user manager, so they need none.
-# - git: gh auth login needs a browser and a person. The git step defers it without failing, so
-#   a failed git step still fails the test.
-# - claude-code, codex, t3-code: signing in to Claude Code and Codex, and linking T3 Connect, each
-#   need a browser and a person.
-# - t3-code: t3 browser setup needs root, and the step only prints it for you to run with sudo.
+# Status items that need a person, a tailnet, or root
 ALLOWED_ITEMS=(
     "ubuntu: Tailscale connected (run sudo tailscale up)"
     "git: Logged in to GitHub with gh"
@@ -36,20 +20,14 @@ ALLOWED_ITEMS=(
     "t3-code: T3 Connect linked and publishing agent activity: run t3 connect --headless, then t3 connect publish and t3 service restart (see ai_tools/README.md → Manual steps)"
     "t3-code: T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup"
 )
-# Items allowed only while another item of the same step is missing, as
-# "<step>: <item pattern>|<item it waits for>"
-# - ubuntu: Tailscale doesn't persist preferences set before the first login.
-# - git: gh auth setup-git, which sets the credential helper, runs after the login, and the git
-#   step rewrites GitHub's SSH remotes to HTTPS only once that helper is set.
+# "<step>: <item pattern>|<item it waits for>": allowed only while the other item is missing
 ALLOWED_BEFORE=(
     "ubuntu: Tailscale auto-updates, with * as its operator|Tailscale connected (run sudo tailscale up)"
     "git: git uses gh for GitHub credentials|Logged in to GitHub with gh"
     "git: GitHub SSH remotes go over HTTPS, through gh's credential helper (*)|Logged in to GitHub with gh"
 )
-# t3-code's status line for a t3 serve started by hand, up to the command line it shows in
-# parentheses. tests/test-smoke-patterns.sh checks it against the step's own formatter.
+# tests/test-smoke-patterns.sh checks these against the step's formatter.
 T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
-# t3-code's status line for a service that runs no server, as once that t3 serve stops
 T3_IDLE_SERVICE_STATUS='^  missing +T3 Code service running a server: it runs none'
 
 if ! command -v orb &>/dev/null; then
@@ -61,17 +39,14 @@ if orb list -q | grep -qx "$MACHINE"; then
     exit 1
 fi
 
-# Both files in a dir only you can open, since another user could put a link at a name derived
-# from the log's in a shared /tmp
+# Private dir, so another user can't plant a link in a shared /tmp
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-test-ubuntu.XXXXXX")"
 LOG="$LOG_DIR/log"
 VM_OUT_FILE="$LOG_DIR/step"
 KEY_DIR=""
 echo "Logging to $LOG"
 
-# Whether the machine is this run's to delete: set just before orb create, so an interrupted
-# create still cleans up, and cleared when the create fails, as when another run made the machine
-# since the check above
+# Set before orb create so an interrupted create cleans up; cleared if create fails (another run's machine).
 OWN_MACHINE=false
 
 # shellcheck disable=SC2329 # the EXIT trap runs it
@@ -88,8 +63,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Run a command in the machine as the default user, from the repo, which OrbStack mounts at the
-# same path. Its output goes to the terminal and the log as it comes, and is kept in $VM_OUTPUT.
+# OrbStack mounts the repo at the same path. Output is kept in $VM_OUTPUT.
 in_vm() {
     local status
     echo "+ $*" >> "$LOG"
@@ -102,9 +76,7 @@ in_vm() {
 
 FAILED=0
 
-# Succeeds when a step's --status report in $VM_OUTPUT has missing or unknown items, and all of
-# them are in ALLOWED_ITEMS or ALLOWED_BEFORE. The report runs from its "<step>:" header to the
-# next header.
+# Succeeds when the step's report has missing or unknown items, all of them allowed.
 only_allowed_items() {
     local step="$1" item allowed found=false ok items pattern
     items="$(printf '%s\n' "$VM_OUTPUT" | awk -v header="$step:" '
@@ -129,10 +101,7 @@ only_allowed_items() {
     "$found"
 }
 
-# Check a runner's exit status and the steps its summary lines in $VM_OUTPUT list as failed or
-# needing attention against the allowed ones. A runner that exits non-zero without listing a step
-# fails.
-# e.g. check_runner "setup.sh" "$status" ghostty
+# A runner that exits non-zero without listing a failed step fails.
 check_runner() {
     local what="$1" status="$2" step listed attention
     shift 2
@@ -153,20 +122,15 @@ check_runner() {
     done
 }
 
-# Run a runner in the machine, with --status or to set up, and check it
-# e.g. run_runner setup.sh "" ghostty
 run_runner() {
     local runner="$1" mode="$2" status=0
     shift 2
     echo "=== $runner $mode ==="
     if [ -n "$mode" ]; then
-        # The setup runs below install the health alerts from a git worktree, so status checks
-        # them as installed, rather than reporting that they run a worktree
+        # The health alerts were installed from a worktree
         in_vm env DOTFILES_ALLOW_WORKTREE=1 bash "$runner" "$mode" || status=$?
     else
-        # orb run reaches the machine without sshd, so no SSH session proves a key logs in, and
-        # the opt-in turns password logins off. The repo may be a git worktree, from which the
-        # ubuntu step otherwise won't install the health alerts.
+        # orb run bypasses sshd, so no SSH session proves a key login; the opt-in turns password logins off.
         in_vm env DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 bash "$runner" || status=$?
     fi
     check_runner "$runner $mode" "$status" "$@"
@@ -180,14 +144,13 @@ if ! orb create --arch "$ARCH" ubuntu:resolute "$MACHINE" >> "$LOG" 2>&1; then
     exit 1
 fi
 
-# Ubuntu Desktop ships unattended-upgrades; the machine's image doesn't
+# Ubuntu Desktop ships it; the image doesn't
 echo "=== unattended-upgrades ==="
 in_vm sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades || {
     echo "FAIL: couldn't install unattended-upgrades" | tee -a "$LOG"
     FAILED=1
 }
 
-# The second pass finds everything set up, and must still pass
 for pass in 1 2; do
     echo "=== Setup, pass $pass ==="
     run_runner setup.sh "" ${ALLOWED_SETUP[@]+"${ALLOWED_SETUP[@]}"}
@@ -200,9 +163,7 @@ orb restart "$MACHINE" >> "$LOG" 2>&1 || {
     FAILED=1
 }
 
-# The restart clears /run/sshd, which only an SSH connection makes again, and orb run doesn't make
-# one. Without it, sshd -T fails, so the ubuntu step's status would skip its checks of sshd's
-# settings and the ufw rules for sshd's ports.
+# The restart clears /run/sshd and orb run doesn't recreate it; without it sshd -T fails.
 in_vm sudo mkdir -p /run/sshd > /dev/null || {
     echo "FAIL: couldn't make /run/sshd" | tee -a "$LOG"
     FAILED=1
@@ -210,8 +171,7 @@ in_vm sudo mkdir -p /run/sshd > /dev/null || {
 run_runner setup.sh --status ${ALLOWED_SETUP[@]+"${ALLOWED_SETUP[@]}"}
 run_runner ai_tools/setup.sh --status ${ALLOWED_AI[@]+"${ALLOWED_AI[@]}"}
 
-# Linger starts the service at boot, without a login. orb run starts no login session, so point
-# systemctl at the user manager's runtime directory. Give the service up to a minute to come up.
+# orb run starts no login session, so point systemctl at the user manager.
 echo "=== T3 Code service ==="
 active=false
 for _ in $(seq 1 12); do
@@ -227,18 +187,14 @@ if ! "$active"; then
     FAILED=1
 fi
 
-# Functions for the one-server checks, run in the machine. They come from the t3-code step, so the
-# servers are counted as its status counts them: t3_code_other_servers lists those outside the
-# service, and a listener on the port in t3code.service's cgroup is the service's.
+# Uses the t3-code step's functions, so servers are counted as its status counts them.
 # shellcheck disable=SC2016 # expanded in the machine
 T3_VM_LIB='
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 source ai_tools/t3-code/install.sh
 set +eu +o pipefail
 t3_unit() { systemctl --user show -p "$1" --value t3code.service; }
-# The PIDs listening on the port, one per line
 port_pids() { ss -Htlnp "sport = :$T3_CODE_PORT" | grep -o "pid=[0-9]*" | cut -d= -f2 | sort -u; }
-# Succeeds when the service runs the only T3 Code server, and it listens on the port
 one_server() {
     local pids others
     pids="$(port_pids)"
@@ -247,14 +203,12 @@ one_server() {
     t3_code_service_active && [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] &&
         t3_code_in_service_cgroup "$pids" && [ -z "$others" ]
 }
-# one_server, holding for 3 s with the same listener, and a MainPID other than <old>, if given. A
-# server that crashes on start shows as active between restarts.
+# Holds 3 s, since a server that crashes on start shows active between restarts. $1: old MainPID.
 one_server_stable() {
     local first
     one_server && first="$(port_pids)" && sleep 3 && one_server && [ "$(port_pids)" == "$first" ] &&
         [ "$(t3_unit MainPID)" != "${1:-}" ]
 }
-# Print the PID of a listener on the port outside the service, and succeed, when there is just one
 outside_listener() {
     local pids
     pids="$(port_pids)"
@@ -262,22 +216,17 @@ outside_listener() {
     [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] && ! t3_code_in_service_cgroup "$pids" &&
         echo "outside=$pids"
 }
-# Succeeds while the service, started with a server outside it holding its data, runs no server:
-# T3 (as of 0.1.0) locks the data, and its launcher then stays up without one. <pid> still has the
-# port.
+# T3 locks its data, so the service launcher stays up with no server while another holds it.
 service_shut_out() {
     echo "service $(t3_unit ActiveState)/$(t3_unit SubState), MainPID $(t3_unit MainPID); on $T3_CODE_PORT: $(echo $(port_pids))"
     t3_code_service_serving_nothing && [ "$(port_pids)" == "$1" ]
 }
 '
 
-# Run a command in the machine, in bash with T3_VM_LIB's functions
 in_vm_t3() {
     in_vm bash -c "$T3_VM_LIB"$'\n'"$1"
 }
 
-# Run in_vm_t3 until the command succeeds, up to <tries> times 5 s apart
-# e.g. retry_t3 12 one_server_stable
 retry_t3() {
     local tries="$1" _
     for _ in $(seq 1 "$tries"); do
@@ -287,7 +236,6 @@ retry_t3() {
     return 1
 }
 
-# Print the service's MainPID
 t3_main_pid() {
     in_vm_t3 't3_unit MainPID' > /dev/null
     tail -n 1 <<< "$VM_OUTPUT"
@@ -305,8 +253,7 @@ if ! in_vm_t3 'command -v ss && [ -x "$HOME/.local/bin/t3" ]' > /dev/null; then
 else
     retry_t3 12 one_server_stable || t3_fail "the T3 Code service isn't the one T3 Code server, on port 3773"
 
-    # The README's step after linking T3 Connect. When it fails, systemctl restarts the service, so
-    # the checks after it still run.
+    # On failure, restart with systemctl so the later checks still run.
     old_pid="$(t3_main_pid)"
     # shellcheck disable=SC2016 # expanded in the machine
     if ! in_vm_t3 '"$HOME/.local/bin/t3" service restart'; then
@@ -316,13 +263,12 @@ else
     retry_t3 12 "one_server_stable $old_pid" ||
         t3_fail "after t3 service restart, the restarted service isn't the one T3 Code server, on port 3773"
 
-    # The unit t3 service install writes sets Restart=, so systemd starts a killed server again
     in_vm_t3 't3_unit Restart' > /dev/null
     if [ "$(tail -n 1 <<< "$VM_OUTPUT")" == no ]; then
         t3_fail "t3code.service has Restart=no, so systemd won't restart a server that dies"
     fi
     old_pid="$(t3_main_pid)"
-    # MainPID is 0 when nothing runs, and kill -9 0 would kill orb run's own process group
+    # kill -9 0 would kill orb run's own process group
     if ! [[ "$old_pid" =~ ^[1-9][0-9]*$ ]]; then
         t3_fail "the T3 Code service has no server to kill -9 (MainPID ${old_pid:-unset})"
     elif ! in_vm_t3 "kill -9 $old_pid"; then
@@ -332,8 +278,7 @@ else
             t3_fail "after a kill -9 of its server, the restarted service isn't the one T3 Code server, on port 3773"
     fi
 
-    # A t3 serve started by hand while the service is stopped. setsid -f detaches it, so orb run
-    # returns while it runs; T3CODE_PORT pins it to the service's port, as the drop-in does.
+    # setsid -f detaches it so orb run returns.
     outside=""
     # shellcheck disable=SC2016 # expanded in the machine
     if ! in_vm_t3 'systemctl --user stop t3code.service && ! t3_code_service_active'; then
@@ -350,19 +295,15 @@ else
         in_vm_t3 'systemctl --user start t3code.service' || true
         retry_t3 8 "service_shut_out $outside" ||
             t3_fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
-        # A status report with items missing exits 3
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
         grep -qE "$T3_MANUAL_SERVE_STATUS" <<< "$VM_OUTPUT" ||
             t3_fail "t3-code's status doesn't flag the t3 serve started by hand"
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true
-        # The step leaves the service alone while another server runs
         # shellcheck disable=SC2016 # expanded in the machine
         retry_t3 12 '[ -z "$(t3_code_other_servers)" ]' ||
             t3_fail "the t3 serve started by hand didn't stop"
-        # The service runs no server until it restarts. Status says so, and re-running the step, as
-        # status says to, restarts it.
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
         grep -qE "$T3_IDLE_SERVICE_STATUS" <<< "$VM_OUTPUT" ||
@@ -375,8 +316,7 @@ else
     fi
 fi
 
-# sshd's effective settings for a login by the default user, which the ubuntu step's drop-in sets.
-# Made again, in case socket-activated sshd removed /run/sshd since
+# Socket-activated sshd may have removed /run/sshd again.
 echo "=== sshd settings ==="
 # shellcheck disable=SC2016 # expanded in the machine
 if in_vm bash -c 'sudo mkdir -p /run/sshd && sudo sshd -T -C "user=$(id -un),host=localhost,addr=127.0.0.1"' > /dev/null; then
@@ -402,10 +342,7 @@ if ! in_vm sudo ufw status || ! grep -qx 'Status: active' <<< "$VM_OUTPUT"; then
     FAILED=1
 fi
 
-# A real login from this Mac, through ufw and sshd's settings, so a change that locks you out fails
-# here. orb run doesn't go through sshd. The key is made for the test, and ssh uses it alone, with
-# no config or agent, and fails rather than ask for a password. OrbStack resolves
-# <machine>.orb.local to the machine.
+# A real login through ufw and sshd, so a lockout fails here.
 echo "=== SSH login ==="
 KEY_DIR="$(mktemp -d /tmp/dotfiles-test-ubuntu-key.XXXXXX)"
 vm_user=""
@@ -429,7 +366,6 @@ elif ! ssh -F /dev/null -i "$KEY_DIR/id_ed25519" -o BatchMode=yes -o IdentitiesO
 fi
 rm -rf "$KEY_DIR"
 
-# Linger starts the health alert's timer at boot, as it does the T3 Code service
 echo "=== Health alert timer ==="
 # shellcheck disable=SC2016 # expanded in the machine
 if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-active dotfiles-health.timer'; then
@@ -437,8 +373,7 @@ if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-activ
     FAILED=1
 fi
 
-# The T3 Code service runs under the user manager, with the groups it started with, so a
-# transient unit of the same manager runs docker as an agent in a T3 Code thread would
+# As an agent in a T3 Code thread would, under the user manager's groups
 echo "=== Docker from the user manager ==="
 # shellcheck disable=SC2016 # expanded in the machine
 if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemd-run --user --wait --pipe --quiet docker ps'; then
@@ -446,8 +381,7 @@ if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemd-run --user --wait
     FAILED=1
 fi
 
-# Keep versions with the result before cleanup removes the machine. Missing tools are diagnostic
-# here; the setup and status checks above already determine whether the test passes.
+# Diagnostic only; never fails the test.
 echo "=== Installed versions ==="
 # shellcheck disable=SC2016 # expanded in the machine
 in_vm bash -lc '

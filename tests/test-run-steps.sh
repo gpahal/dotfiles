@@ -2,9 +2,6 @@
 set -euo pipefail
 # serial
 
-# run_steps, which both runners use, with fake steps: failures, interrupts, and --status's
-# attention. Then each runner's real steps, on macOS and on Ubuntu, resolve through step_script.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -13,26 +10,21 @@ load_script lib/common.sh
 
 steps="$SANDBOX/steps"
 mkdir -p "$steps"
-# fake_step <name> <body>: a step script that logs its name and arguments, then runs the body
 fake_step() {
     printf '%s\n' '#!/bin/bash' "echo \"$1\${*:+ \$*}\" >> \"$SANDBOX/ran\"" "$2" > "$steps/$1.sh"
 }
 fake_step first 'echo "first ran"'
 fake_step broken 'echo "broken output" >&2; exit 1'
 fake_step last 'echo "last ran"'
-# Signals itself, as a step does when Ctrl-C reaches it
 fake_step interrupted 'kill -INT $$'
 fake_step attention '[ "${1:-}" != --status ] || { echo "  missing    something"; exit 3; }'
 fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; exit 3; }'
-# Exits 3 with no item needing attention, as a report that set -e cut short at a command that
-# exited 3, such as jq on a filter that doesn't compile
+# A report set -e cut short at a command that exited 3, such as jq
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
-# Reports a missing item, then exits 0, as a report that forgot status_result does
+# A report that forgot status_result
 fake_step quiet-missing '[ "${1:-}" != --status ] || echo "  missing    something"'
-# Exits 141, as one does on SIGPIPE
 fake_step sigpipe 'exit 141'
-# Ctrl-C reaches the runner too, but the step carries on and fails, as one does when brew catches
-# SIGINT and exits 130 under `|| result=1`. Each signal the runner traps.
+# The step carries on after the runner's signal, as brew does under `|| result=1`
 for sig in INT TERM HUP; do
     fake_step "caught-$sig" "kill -$sig \$PPID; echo \"caught-$sig carried on\"; exit 1"
 done
@@ -41,19 +33,16 @@ done
 STEPS=(first last)
 replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
-# Every step passes
 assert_exit 0 run_steps "" first last
 assert_contains "$RUN_OUTPUT" "first ran"
 assert_contains "$RUN_OUTPUT" "last ran"
 assert_not_contains "$RUN_OUTPUT" "Failed steps"
 
-# With no names, every step in STEPS runs, in order
 rm -f "$SANDBOX/ran"
 assert_exit 0 run_steps ""
 assert_eq "first
 last" "$(cat "$SANDBOX/ran")" "steps run with no names"
 
-# A failed step: the rest still run, and the summary names it with the command to re-run it
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first broken last
 assert_contains "$RUN_OUTPUT" "broken output"
@@ -65,8 +54,6 @@ assert_eq "first
 broken
 last" "$(cat "$SANDBOX/ran")" "steps run around a failed one"
 
-# A step whose STEP_OS line names the other OS is skipped without starting it, run or reported,
-# and needs no attention. One for this OS runs.
 if is_macos; then
     this=macos other=ubuntu label="Ubuntu only"
 else
@@ -82,7 +69,6 @@ assert_exit 0 run_steps --status elsewhere
 assert_eq "elsewhere:
   skipped    $label" "$RUN_OUTPUT" "the status of a step for the other OS"
 
-# An interrupted step stops the run with its status, before the next step and the summary
 rm -f "$SANDBOX/ran"
 assert_exit 130 run_steps "" first interrupted last
 assert_contains "$RUN_OUTPUT" "The interrupted step was interrupted; stopping."
@@ -91,8 +77,6 @@ assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 interrupted" "$(cat "$SANDBOX/ran")" "steps run up to an interrupted one"
 
-# A signal the runner got stops it after the step, whatever the step's status, with the status
-# that signal gives
 for sig in INT:130 TERM:143 HUP:129; do
     rm -f "$SANDBOX/ran"
     assert_exit "${sig#*:}" run_steps "" first "caught-${sig%:*}" last
@@ -102,12 +86,10 @@ for sig in INT:130 TERM:143 HUP:129; do
     assert_eq "first
 caught-${sig%:*}" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIG${sig%:*}"
 done
-# With --status too
 rm -f "$SANDBOX/ran"
 assert_exit 130 run_steps --status caught-INT last
 assert_eq "caught-INT --status" "$(cat "$SANDBOX/ran")" "reports run up to one during which the runner got SIGINT"
 
-# Any other status above 128 is a failure, and the rest still run
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" sigpipe last
 assert_contains "$RUN_OUTPUT" "The sigpipe step failed."
@@ -115,24 +97,19 @@ assert_contains "$RUN_OUTPUT" "last ran"
 assert_contains "$RUN_OUTPUT" "Failed steps: sigpipe"
 assert_not_contains "$RUN_OUTPUT" "interrupted"
 
-# --status: each step gets --status, and one that exits 3 needs attention
 rm -f "$SANDBOX/ran"
 assert_exit 3 run_steps --status first attention
 assert_contains "$RUN_OUTPUT" "Needs attention: attention. Run: bash $0 attention"
 assert_eq "first --status
 attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
-# An unknown item needs attention too
 assert_exit 3 run_steps --status unknown
 assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
-# So does a report with a missing item that exits 0
 assert_exit 3 run_steps --status quiet-missing
 assert_contains "$RUN_OUTPUT" "Needs attention: quiet-missing."
-# A report that exits 3 without a missing or unknown item failed
 assert_exit 1 run_steps --status cut-short
 assert_contains "$RUN_OUTPUT" "The cut-short step failed."
 assert_contains "$RUN_OUTPUT" "Failed steps: cut-short"
 assert_not_contains "$RUN_OUTPUT" "Needs attention"
-# A failure outranks needing attention, and the hint to re-run a failed report keeps --status
 assert_exit 1 run_steps --status attention broken
 assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
@@ -140,7 +117,6 @@ assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
 as_os macos
 
-# An Intel Mac fails before any step runs, status included
 stub uname '[ "$1" != -m ] || echo x86_64'
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first
@@ -149,8 +125,6 @@ assert_exit 1 run_steps --status first
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran on an Intel Mac"
 stub uname '[ "$1" != -m ] || echo arm64'
 
-# An unknown step stops the run before any step runs. step_script takes either OS's steps, so the
-# error lists both.
 # shellcheck disable=SC2034 # run_steps reads them
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
 rm -f "$SANDBOX/ran"
@@ -158,10 +132,8 @@ assert_exit 1 run_steps "" first nope
 assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux"
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran despite an unknown step name"
 
-# Ctrl-C reaches the whole process group: a script that runs a runner, the runner, and its step.
-# The runner dies of SIGINT rather than exiting 130, so the script stops too, as bash stops after
-# a command SIGINT killed but carries on after one that exited 130. `just status` runs the AI
-# tools' report after the dotfiles' one this way.
+# The runner must die of SIGINT, not exit 130: bash stops a caller after a command SIGINT killed
+# but carries on after one that exited 130, as `just status` relies on
 runner_dir="$SANDBOX/runner"
 mkdir -p "$runner_dir/slow"
 printf '%s\n' '#!/bin/bash' "touch \"$SANDBOX/slow-started\"" 'sleep 30' > "$runner_dir/slow/install.sh"
@@ -173,15 +145,13 @@ printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?
 stub uname 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac'
 CALLER_PID=""
 on_exit '[ -z "$CALLER_PID" ] || kill -KILL -- "-$CALLER_PID" 2> /dev/null'
-# Succeeds once a process has exited. A child that exited stays a zombie until waited for, and
-# kill -0 still finds it.
+# kill -0 still finds a zombie, so check ps
 exited() {
     case "$(ps -o stat= -p "$1" 2> /dev/null)" in
         '' | Z*) return 0 ;;
     esac
     return 1
 }
-# wait_until <command> [arg...]: succeeds once the command does, failing after 10 s
 wait_until() {
     local i=0
     until "$@"; do
@@ -193,8 +163,7 @@ wait_until() {
 for mode in "" --status; do
     rm -f "$SANDBOX/slow-started"
     status=0
-    # Job control puts the caller in its own process group, as a terminal does, and keeps SIGINT
-    # deliverable: without it, a background job ignores SIGINT
+    # Job control keeps SIGINT deliverable; a background job ignores it
     set -m
     "$BASH" "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
     CALLER_PID=$!
@@ -213,11 +182,10 @@ for mode in "" --status; do
     assert_file_not_contains "$SANDBOX/caller.out" continued
 done
 
-# The real runners' steps, from a fresh lib/common.sh, so step_script is the real one again
+# Reload so step_script is the real one again
 load_script lib/common.sh
 # shellcheck source=../scripts/lib/runners.sh
 source "$REPO_DIR/scripts/lib/runners.sh"
-# Set LISTED to a runner's default steps on an OS (Darwin or Linux)
 listed() {
     LISTED="$(runner_steps "$REPO_DIR/$1" "$2")" || fail "$1 --help failed on $2"
     [ -n "$LISTED" ] || fail "no steps read from $1 --help on $2"

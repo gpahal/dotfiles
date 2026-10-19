@@ -1,11 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# scripts/bump-plugins.sh moves the vim pins in vim/vimrc and the tmux pins in tmux/plugins.lock to
-# each repo's HEAD, and vim/plug.vim and vim/plug.vim.version to vim-plug's highest x.y.z tag. It
-# replaces a file only when its contents change, keeps a pin whose HEAD it can't read, and keeps
-# plug.vim when the download fails or isn't vim-plug, failing the run. It runs on a copy of the
-# repo's files, never the repo, with local repos standing in for GitHub and curl stubbed.
+# scripts/bump-plugins.sh, run on a copy of the repo's files with local repos for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,7 +9,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 
-# The files the script edits, whose copies in the repo must stay as they are
+# The script must never edit the repo's own copies
 real_sums() {
     (cd "$REPO_DIR" && cksum vim/vimrc tmux/plugins.lock vim/plug.vim vim/plug.vim.version)
 }
@@ -30,9 +26,7 @@ LOCK="$COPY/tmux/plugins.lock"
 PLUG_VIM="$COPY/vim/plug.vim"
 PLUG_VERSION="$COPY/vim/plug.vim.version"
 
-# A local repo for each pinned plugin, under $REMOTES, which a git url rewrite makes
-# https://github.com/<repo>. Each copy's pin moves to its repo's one commit, so every pin starts
-# at HEAD.
+# A git url rewrite makes each repo under $REMOTES https://github.com/<repo>
 REMOTES="$SANDBOX/remotes"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$REMOTES/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
 # Each commit names its repo, so no two repos share a sha
@@ -62,7 +56,7 @@ while read -r repo old; do
     done
 done <<< "$start_pins"
 
-# vim-plug's releases: each tag's plug.vim is $SANDBOX/plug-<tag>.vim, which curl serves
+# curl serves $SANDBOX/plug-<tag>.vim for each tag
 git init -q "$REMOTES/junegunn/vim-plug"
 commit junegunn/vim-plug 1 > /dev/null
 for tag in 0.9.10 0.13.0 "$(cat "$PLUG_VERSION")" nightly; do
@@ -79,7 +73,7 @@ case "$url" in
 esac
 tag="${url#https://raw.githubusercontent.com/junegunn/vim-plug/}"
 cp "'"$SANDBOX"'/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
-# The next two minor releases after the repo's, so their tags never match a real one
+# Newer than the repo's, so the tags never match a real one
 IFS=. read -r plug_major plug_minor _ < "$PLUG_VERSION"
 NEXT="$plug_major.$((plug_minor + 1)).0"
 AFTER="$plug_major.$((plug_minor + 2)).0"
@@ -88,7 +82,7 @@ release() {
     printf '%s\n' '" vim-plug: Vim plugin manager' "\" release $1" > "$SANDBOX/plug-$1.vim"
 }
 
-# Print the edited files' inodes and contents, which a replaced file changes
+# A replaced file changes its inode
 snapshot() {
     local f
     for f in "$VIMRC" "$LOCK" "$PLUG_VIM" "$PLUG_VERSION"; do
@@ -100,7 +94,6 @@ bump() {
     assert_exit "$1" "$BASH" "$COPY/scripts/bump-plugins.sh"
 }
 
-# Every pin at HEAD, and vim-plug at its highest release: nothing changes or is replaced
 before="$(snapshot)"
 bump 0
 assert_contains "$RUN_OUTPUT" "tpope/vim-sensible: unchanged"
@@ -109,8 +102,6 @@ assert_contains "$RUN_OUTPUT" "vim-plug: unchanged"
 assert_eq "$before" "$(snapshot)" "the files when nothing moved"
 assert_file_not_contains "$STUB_LOG" curl
 
-# New commits move only their repos' pins, in both files for a repo in both, and a new release
-# replaces plug.vim and its version
 old_version="$(cat "$PLUG_VERSION")"
 old_nerdtree="$(pin_of preservim/nerdtree)"
 old_tpm="$(pin_of tmux-plugins/tpm)"
@@ -132,8 +123,7 @@ assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after the bump"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "an unmoved vim pin"
 assert_eq "$old_tpm" "$(pin_of tmux-plugins/tpm)" "an unmoved tmux pin"
 
-# A HEAD it can't read keeps that pin, and a download that isn't vim-plug, such as an error page,
-# keeps plug.vim. The rest still move, and the run fails.
+# A download that isn't vim-plug, such as an error page, keeps plug.vim
 rm -rf "$REMOTES/preservim/nerdtree"
 surround="$(commit tpope/vim-surround 2)"
 git -C "$REMOTES/junegunn/vim-plug" tag "$AFTER"
@@ -146,7 +136,6 @@ assert_eq "$surround" "$(pin_of tpope/vim-surround)" "a pin that moved beside a 
 assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
 assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
 
-# A failed download keeps plug.vim too, and replaces nothing else
 rm "$SANDBOX/plug-$AFTER.vim"
 before="$(snapshot)"
 bump 1

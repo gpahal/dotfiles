@@ -1,9 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# install_root_file and write_root_file set the file's group in the same install that writes it,
-# so a file such as NUT's, which its daemons read through the group, can't be left root:root by a
-# write that succeeded and a chgrp that didn't.
+# The group is set in the install that writes the file, so a failed chgrp can't leave it root:root.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -39,8 +37,7 @@ assert_exit 0 write_root_file "$SANDBOX/etc/plain.conf" "plain"
 assert_file_contains "$STUB_LOG" "sudo install -m 644 "
 assert_file_not_contains "$STUB_LOG" " -g "
 
-# A destination that is a directory, or a link to one, fails, rather than install moving the new
-# file into it
+# install would move the new file into a directory destination
 for kind in dir link; do
     dest="$SANDBOX/etc/sleep.conf.d/10-$kind.conf"
     if [ "$kind" == dir ]; then
@@ -54,8 +51,7 @@ for kind in dir link; do
     assert_eq "" "$(/bin/ls -A "$dest/")" "files in a $kind destination"
 done
 
-# A symlinked destination keeps its link: the target is replaced, keeping the target's mode, not
-# the 777 stat reads for the link. One that points nowhere fails, and leaves the link.
+# stat reads 777 for the link, so the target's own mode must be kept
 target="$SANDBOX/etc/real/target.conf"
 link="$SANDBOX/etc/linked.conf"
 mkdir -p "$(dirname "$target")"
@@ -72,8 +68,7 @@ assert_exit 1 write_root_file "$SANDBOX/etc/dangling.conf" "new"
 assert_contains "$RUN_OUTPUT" "is a symlink to nothing"
 [ -L "$SANDBOX/etc/dangling.conf" ] || fail "install_root_file replaced a dangling symlink"
 
-# A new directory gets 755 under any umask, so the users hooks run as can read what's in it. An
-# existing one keeps its mode.
+# A new directory gets 755 under any umask, so the users hooks run as can read it
 (
     umask 077
     write_root_file "$SANDBOX/usr/local/lib/dotfiles/ntfy.sh" "lib" > /dev/null
@@ -84,7 +79,6 @@ chmod 750 "$SANDBOX/etc/private"
 assert_exit 0 write_root_file "$SANDBOX/etc/private/file" "x"
 assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directory"
 
-# confirm_sudo_changes says to run the step from a terminal only when there was none to ask in
 assert_exit 1 confirm_sudo_changes "Write /etc/example"
 assert_contains "$RUN_OUTPUT" "    - Write /etc/example"
 assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."

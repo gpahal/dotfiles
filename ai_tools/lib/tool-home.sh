@@ -1,12 +1,7 @@
 # shellcheck shell=bash
-# The check that an AI tool's home is the default, shared by the claude-code and codex steps.
 
 # tool_home_guard [--status <what>] <tool> <variable> <default home>
-# Succeed when the tool's home variable is unset or names the default (tool_home_is). The steps'
-# paths and the docs all assume the default, so otherwise the step fails rather than leave the tool
-# reading files setup never wrote: this prints why, as an error, or under --status as an unknown
-# item for <what>, and fails.
-# e.g. tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$HOME/.codex"
+# Fails unless the home variable is unset or the default, since setup writes only to the default.
 tool_home_guard() {
     local what=""
     if [ "$1" == --status ]; then

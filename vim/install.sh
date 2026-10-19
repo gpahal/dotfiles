@@ -2,9 +2,6 @@
 set -euo pipefail
 
 # Copy the vim config, install vim-plug, and move the plugins to their pins.
-#
-# The repo vendors vim-plug in vim/plug.vim, and the vimrc pins the plugins. When vim starts, the
-# vimrc creates its undo dir, and vim-plug installs any missing plugins at their pins.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -22,8 +19,7 @@ plug_vim_pinned() {
     cmp -s "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM"
 }
 
-# plug.vim stays out of vim_files, since just copy-back would copy one PlugUpgrade wrote back into
-# the repo, over the vendored version
+# Not in vim_files, so just copy-back can't copy a PlugUpgrade'd plug.vim over the vendored one
 install_plug_vim() {
     copy_file "$DOTFILES_DIR/vim/plug.vim" "$PLUG_VIM" || return 1
     echo "  Installed vim-plug $(cat "$DOTFILES_DIR/vim/plug.vim.version") at $PLUG_VIM"
@@ -31,14 +27,11 @@ install_plug_vim() {
 
 PLUGGED_DIR="$HOME/.vim/plugged"
 
-# Print each Plug line's repo and pinned commit, e.g.
-# tpope/vim-sensible 0ce2d843d6f588bb0c8c7eec6449171615dc56d9
 vim_plugins() {
     sed -n "s/^ *Plug '\([^']*\)'.*'commit': '\([0-9a-f]\{40\}\)'.*/\1 \2/p" "$DOTFILES_DIR/vim/vimrc"
 }
 
-# Print each plugin vim-plug has installed whose checkout isn't at its pin, as "<repo> <commit>".
-# One not installed yet isn't listed: vim installs it at its pin when it starts.
+# Skips plugins not yet installed: vim installs them at their pins on start
 vim_plugins_off_pin() {
     local repo sha dir
     while read -r repo sha; do
@@ -52,8 +45,7 @@ vim_plugins_pinned() {
     [ -z "$(vim_plugins_off_pin)" ]
 }
 
-# Move each installed plugin to its pin, as vim-plug's PlugUpdate would, fetching only a commit the
-# clone lacks. vim-plug's clones are shallow, and GitHub serves a single commit by its hash.
+# vim-plug's clones are shallow, so fetch a missing pinned commit by hash
 pin_vim_plugins() {
     local repo sha dir status=0
     while read -r repo sha; do

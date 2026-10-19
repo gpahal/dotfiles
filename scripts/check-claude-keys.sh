@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check that every key in a Claude Code settings file is one scripts/claude-settings-keys.txt
-# lists. With no argument, it checks the settings the claude-code step writes on either OS, made
-# in a temp HOME with the step's own functions. Claude Code ignores unknown keys, so a misspelled
-# one would do nothing without a word. Needs jq.
+# Check settings keys against claude-settings-keys.txt (default: what the claude-code step writes).
 # Usage: check-claude-keys.sh [<settings.json>]
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,7 +18,6 @@ if [ $# -gt 0 ]; then
     what="$1"
 else
     what="the claude-code step"
-    # Build the settings once per OS branch, so a run on either OS checks the keys both write
     for os in macos ubuntu; do
         (
             temp_tool_home "$tmp/$os"
@@ -39,12 +35,11 @@ else
             cp "$CLAUDE_CODE_SETTINGS" "$tmp/settings-$os.json"
         ) < /dev/null
     done
-    # Object keys merge, so the union holds every key either branch writes
     jq -s '.[0] * .[1]' "$tmp/settings-macos.json" "$tmp/settings-ubuntu.json" > "$tmp/settings.json"
     settings="$tmp/settings.json"
 fi
 
-# Every object key's path, not descending into lists, with the model IDs under modelSettings as *
+# Object key paths only, not into lists; model IDs become *
 jq -r '[paths | select(all(.[]; type == "string"))
     | if .[0] == "modelSettings" and length > 1 then .[1] = "*" else . end | join(".")]
     | unique[]' "$settings" > "$tmp/keys"

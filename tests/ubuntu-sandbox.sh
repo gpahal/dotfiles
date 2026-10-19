@@ -1,10 +1,5 @@
-# Point the ubuntu step's system paths into the sandbox, for a test that loads ubuntu/install.sh.
-# Source it after tests/lib.sh, and call ubuntu_sandbox_paths after setup_sandbox and after each
-# load_script ubuntu/install.sh, which sets the constants back. It fails the test when a constant
-# that ubuntu/install.sh or ubuntu/lib/*.sh sets still starts with /etc, /var, /usr, /run, or /dev,
-# outside the repo, so a constant added later can't send a test to the real machine. A test may
-# point one elsewhere in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it
-# calls, print the ufw rules the step adds, for a ufw stub to list. Bash 3.2.
+# Call ubuntu_sandbox_paths after setup_sandbox and after each load_script ubuntu/install.sh,
+# which resets the paths. It fails the test when a step constant still names a system path.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
 
@@ -12,7 +7,6 @@
 UBUNTU_CONTENT_PATHS="UPS_POWERDOWN_FLAG"
 
 ubuntu_sandbox_paths() {
-    # sbin_cmd's system dirs, so sysctl, smartctl, and ufw come from the stubs, or are missing
     SBIN_PATH="$STUB_DIR"
     SSHD_DROP_IN="$SANDBOX/sshd_config.d/10-dotfiles.conf"
     SSHD_CONFIG="$SANDBOX/sshd_config"
@@ -27,7 +21,7 @@ ubuntu_sandbox_paths() {
     SMARTD_CONF="$SANDBOX/smartd.conf"
     NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
     NUT_DIR="$SANDBOX/nut"
-    # The test runs as you, without a nut group, so NUT's files are yours, in your own group
+    # No nut group in a test
     NUT_OWNER="$(id -un)"
     NUT_GROUP="$(id -gn)"
     UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
@@ -45,12 +39,10 @@ ubuntu_sandbox_paths() {
     _ubuntu_system_paths_left
 }
 
-# Fail the test for each constant the step sets that still names a system path
 _ubuntu_system_paths_left() {
     local name value left=""
     while IFS= read -r name; do
         case " $UBUNTU_CONTENT_PATHS " in *" $name "*) continue ;; esac
-        # Every element, so an array such as SYSCTL_SOURCES counts too
         eval "set -- \${${name}[@]+\"\${${name}[@]}\"}"
         for value; do
             case "$value" in
@@ -63,10 +55,7 @@ _ubuntu_system_paths_left() {
     [ -z "$left" ] || fail "ubuntu_sandbox_paths left these on the real machine:$left"
 }
 
-# The ufw rules the ubuntu step adds for SSH on a port, 22 by default, as `ufw status` lists them:
-# ufw_deny_rules denies it on Docker's bridges, ufw_range_rules allows it from the private ranges,
-# and ufw_tailscale_rules lets the tailnet in. ufw_status_listing prints all of `ufw status` with
-# every rule in place for port 22, in the order the step adds them.
+# `ufw status` output for the rules the ubuntu step adds, in its order; $1 is the SSH port
 ufw_header() {
     printf '%s\n' "Status: active" "" "To                         Action      From" \
         "--                         ------      ----"

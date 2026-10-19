@@ -1,9 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# The macos step sets HostName to LocalHostName when it's unset or has characters a URL can't
-# hold, after asking, since Ghostty drops an OSC 7 folder report whose host is such a name. A
-# declined prompt leaves it and doesn't fail the step. Its status reports the hostname.
+# Ghostty drops an OSC 7 report whose host has characters a URL can't hold.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -11,13 +9,11 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script macos/install.sh
 as_os macos
-# Only the hostname: the rest of the step is covered elsewhere
 replace_fn each_default
 replace_fn hotkey_off 'return 0'
 replace_fn status_filevault
 replace_fn status_app_firewall
 
-# HOST_NAME is HostName, unset when empty
 stub scutil 'case "$1 $2" in
     "--get HostName") [ -n "${HOST_NAME:-}" ] && echo "$HOST_NAME" ;;
     "--get LocalHostName") echo Garvits-MacBook-Pro ;;
@@ -25,7 +21,6 @@ stub scutil 'case "$1 $2" in
 esac'
 stub sudo
 
-# Already set: nothing changes
 export HOST_NAME=Garvits-MacBook-Pro.local
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "hostname"
@@ -33,7 +28,6 @@ assert_not_contains "$(cat "$STUB_LOG")" "sudo"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Hostname set"
 
-# Unset or invalid: status reports it, and the step sets it after asking
 answer yes
 for HOST_NAME in "" "Unknown_d6:96:0e:05:c6:0a"; do
     export HOST_NAME
@@ -45,7 +39,6 @@ for HOST_NAME in "" "Unknown_d6:96:0e:05:c6:0a"; do
     assert_file_contains "$STUB_LOG" "sudo scutil --set HostName Garvits-MacBook-Pro"
 done
 
-# Declined: left unset, and the step still succeeds
 answer no
 export HOST_NAME=""
 : > "$STUB_LOG"
@@ -53,7 +46,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged."
 assert_not_contains "$(cat "$STUB_LOG")" "sudo"
 
-# A failed set fails the step
 stub sudo 'exit 1'
 answer yes
 assert_exit 1 main

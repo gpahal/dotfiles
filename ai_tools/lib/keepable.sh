@@ -1,18 +1,10 @@
 # shellcheck shell=bash
-# Values you can change in an AI tool's settings, such as the model, shared by the claude-code and
-# codex steps.
-#
-# Each value is set only when unset, and one of your own is replaced only when
-# replace_custom_value agrees. A step adds its values with keepable, and defines
-# <tool>_keep_current <path>, which prints the setting's value. When the repo's values aren't
-# JSON, it also defines <tool>_keep_wanted <value>, which prints the repo's value the same way, so
-# the two compare equal when they match; keepable_unquote is the default. Each prints nothing for
-# unset. A step whose reads are slow reads them once per phase with keepable_load.
+# Settings a user may override (e.g. the model): set when unset, replaced only if
+# replace_custom_value agrees. A step defines <tool>_keep_current <path>, and
+# <tool>_keep_wanted <value> when its values aren't JSON, printing values in one comparable form
+# (empty for unset).
 
-# One row per value: its tool, its path in the tool's settings, the repo's value in the settings'
-# own syntax, the name prompts and status give it, and whether only Ubuntu gets it.
-# keepable_choose sets KEEP_REPLACE to whether to write each over yours. Sourcing this file again,
-# as for a second step in the same shell, keeps the rows the first step added.
+# Re-sourcing keeps rows another step already added.
 KEEP_TOOLS=(${KEEP_TOOLS[@]+"${KEEP_TOOLS[@]}"})
 KEEP_PATHS=(${KEEP_PATHS[@]+"${KEEP_PATHS[@]}"})
 KEEP_VALUES=(${KEEP_VALUES[@]+"${KEEP_VALUES[@]}"})
@@ -20,11 +12,9 @@ KEEP_NAMES=(${KEEP_NAMES[@]+"${KEEP_NAMES[@]}"})
 KEEP_UBUNTU=(${KEEP_UBUNTU[@]+"${KEEP_UBUNTU[@]}"})
 KEEP_REPLACE=(${KEEP_REPLACE[@]+"${KEEP_REPLACE[@]}"})
 
-# Drop a tool's rows, so a step loaded again adds its values once
-# Usage: keepable_forget <tool>
 keepable_forget() {
     local i tools=() paths=() values=() names=() ubuntu=() replace=()
-    # The loaded values are by index, which this changes
+    # Loaded values are by index, which this changes
     keepable_unload
     for i in ${KEEP_TOOLS[@]+"${!KEEP_TOOLS[@]}"}; do
         [ "${KEEP_TOOLS[i]}" != "$1" ] || continue
@@ -53,7 +43,6 @@ keepable() {
     KEEP_REPLACE+=(false)
 }
 
-# Print the index of each of a tool's values that applies on this OS
 keepable_indexes() {
     local i
     for i in ${KEEP_TOOLS[@]+"${!KEEP_TOOLS[@]}"}; do
@@ -63,17 +52,12 @@ keepable_indexes() {
     done
 }
 
-# The tool keepable_load read the values of, and those values and the repo's, by row index
 KEEP_LOADED=""
 KEEP_LOADED_CURRENT=()
 KEEP_LOADED_WANTED=()
 
-# Read each of a tool's values, and the repo's, once, for keepable_current and keepable_wanted to
-# print until keepable_unload. A tool whose reads are slow, such as yq on a TOML file, defines
-# <tool>_keep_current_all <path>... and <tool>_keep_wanted_all <value>..., which print one line per
-# argument, as <tool>_keep_current and <tool>_keep_wanted print one. Load again after anything else
-# may have written the settings, such as an app that saved them as it quit.
-# Usage: keepable_load <tool>
+# Cache a tool's values until keepable_unload. Uses <tool>_keep_current_all/<tool>_keep_wanted_all
+# (one line per argument) when defined. Reload after anything else may have written the settings.
 keepable_load() {
     local i line n indexes=() paths=() values=()
     keepable_unload
@@ -102,14 +86,12 @@ keepable_load() {
     KEEP_LOADED="$1"
 }
 
-# Forget the values keepable_load read, so they're read afresh
 keepable_unload() {
     KEEP_LOADED=""
     KEEP_LOADED_CURRENT=()
     KEEP_LOADED_WANTED=()
 }
 
-# Print value $2 of tool $1's settings as <tool>_keep_current prints it
 keepable_current() {
     if [ "$KEEP_LOADED" == "$1" ]; then
         printf '%s\n' "${KEEP_LOADED_CURRENT[$2]:-}"
@@ -118,7 +100,6 @@ keepable_current() {
     fi
 }
 
-# Print the repo's value $2 as <tool>_keep_current prints it
 keepable_wanted() {
     if [ "$KEEP_LOADED" == "$1" ]; then
         printf '%s\n' "${KEEP_LOADED_WANTED[$2]:-}"
@@ -129,7 +110,6 @@ keepable_wanted() {
     fi
 }
 
-# Decide, asking with a terminal, whether to replace each of a tool's values of your own
 keepable_choose() {
     local i
     for i in ${KEEP_TOOLS[@]+"${!KEEP_TOOLS[@]}"}; do
@@ -142,7 +122,6 @@ keepable_choose() {
     done
 }
 
-# Status items naming each of a tool's values you set to your own
 keepable_status() {
     local i value wanted
     for i in $(keepable_indexes "$1"); do
@@ -154,7 +133,6 @@ keepable_status() {
     done
 }
 
-# Print one line of JSON without a string's quotes, as the <tool>_keep_* functions print values
 keepable_unquote() {
     local value="${1#\"}"
     printf '%s\n' "${value%\"}"

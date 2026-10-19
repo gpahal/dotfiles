@@ -1,12 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check the skills in ai_tools/skills: each <category>/<skill>/SKILL.md has closed frontmatter that
-# is a YAML mapping, a name equal to its directory's, and a description of at most 1024 characters,
-# and its skill has an agents/openai.yaml. Its invocation agrees across SKILL.md, agents/openai.yaml,
-# and the one heading it's listed under in its category README. Links to local files resolve, and
-# stay inside the skill or point at another skill, and the READMEs' links and anchors resolve.
-# Needs mikefarah's yq.
+# Check each skill's frontmatter, agents/openai.yaml, invocation across files and README, and links.
 
 SKILLS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../ai_tools/skills" && pwd)"
 # shellcheck source=lib/markdown.sh
@@ -24,8 +19,7 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the frontmatter of a SKILL.md: the lines between a first line of --- and the next ---.
-# Fails when the first line isn't --- or nothing closes it.
+# Fails when line 1 isn't --- or nothing closes it.
 frontmatter_text() {
     awk 'NR == 1 { if ($0 !~ /^---[ \t]*$/) exit 1; next }
         /^---[ \t]*$/ { closed = 1; exit }
@@ -33,8 +27,7 @@ frontmatter_text() {
         END { exit !closed }' "$1"
 }
 
-# Print a field from $fields, the frontmatter's key=<JSON value> lines, or nothing when it's
-# missing or null. A string loses its quotes, and its escapes stay.
+# Read a field from $fields (key=<JSON> lines); strips a string's quotes but not its escapes.
 field() {
     local line value=""
     while IFS= read -r line; do
@@ -48,7 +41,7 @@ field() {
     printf '%s\n' "${value%\"}"
 }
 
-# Print a relative path with its . and .. parts resolved, keeping the leading ..s
+# Keeps leading ..s
 normalize_path() {
     local part parts norm=""
     IFS=/ read -ra parts <<<"$1"
@@ -68,7 +61,6 @@ normalize_path() {
     printf '%s\n' "$norm"
 }
 
-# Print the heading of the README section of each link to a skill's SKILL.md, one per link
 readme_headings() {
     awk -v link="](./$2/SKILL.md)" '/^## / { heading = substr($0, 4) }
         { s = $0; while ((i = index(s, link)) > 0) { print heading; s = substr(s, i + length(link)) } }' "$1"
@@ -84,8 +76,7 @@ while IFS= read -r skill_md; do
         fail "$skill_md" "the frontmatter isn't a YAML mapping${yaml_error:+: $yaml_error}"
         continue
     fi
-    # The description's decoded length in characters, then a key=<JSON value> line per field. yq's
-    # length counts bytes, but split("") splits a string into its characters.
+    # yq's length counts bytes; split("") counts characters.
     fields="$(printf '%s\n' "$fm" |
         yq '(.description // "" | tostring | split("") | length), (to_entries | .[] | .key + "=" + (.value | @json))')"
     description_length="${fields%%$'\n'*}"
@@ -100,8 +91,6 @@ while IFS= read -r skill_md; do
         fail "$skill_md" "the description is $description_length characters, over 1024"
     fi
 
-    # The invocation: SKILL.md's disable-model-invocation, openai.yaml's
-    # policy.allow_implicit_invocation, and the category README's heading agree
     if [ "$(field disable-model-invocation)" == true ]; then
         want=User-invoked
     else
@@ -131,8 +120,7 @@ while IFS= read -r skill_md; do
         fi
     fi
 
-    # Markdown links to local files, from every .md file in the skill. Skills are installed side by
-    # side, not in their categories, so a link may leave the skill only for another skill's dir.
+    # Skills install side by side, not in categories, so a link may leave the skill only for another skill.
     while IFS= read -r md; do
         md_dir="$(dirname "$md")"
         while IFS= read -r target; do

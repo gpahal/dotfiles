@@ -1,15 +1,9 @@
 # shellcheck shell=bash
-# Tailscale for the ubuntu step.
-# ubuntu/install.sh sets the constants it uses, but for the fingerprint of Tailscale's key, kept
-# beside the function that adds it.
+# ubuntu/install.sh sets the constants, except TAILSCALE_KEY_FPR.
 
-# Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
-# operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
-# anything else running as you, and `tailscale funnel` too, which puts a port on the internet, when
-# the tailnet policy grants the funnel attribute. It can also run `tailscale set --ssh`, which
-# turns on Tailscale SSH: that skips sshd, with its AllowUsers and key-only settings, and the
-# default tailnet policy lets it log in as root (in check mode). The README's Tailscale manual step
-# says to keep root out of the policy's ssh users.
+# unattended-upgrades doesn't cover Tailscale's repo, so it updates itself. Operator lets
+# `t3 pair --tailscale` run `tailscale serve` without sudo; anything running as you can then also
+# run funnel or `set --ssh`, which bypasses sshd.
 tailscale_configured() {
     local prefs
     prefs="$(tailscale debug prefs 2>/dev/null)" || return 1
@@ -25,29 +19,25 @@ tailscale_running() {
     [ "$(tailscale_state)" == Running ]
 }
 
-# Before the first tailscale up, which resets the auto-update and operator settings, so the step
-# leaves them until after it
+# The first tailscale up resets auto-update and operator, so set them after it
 tailscale_needs_login() {
     [ "$(tailscale_state)" == NeedsLogin ]
 }
 
-# The one-line source Tailscale's install script writes, which its updater rewrites to change track
+# Matches Tailscale's install script, since its updater rewrites this line
 tailscale_list_line() {
     echo "deb [signed-by=$TAILSCALE_KEYRING] $TAILSCALE_REPO $(ubuntu_codename) main"
 }
 
-# Tailscale's Release file for this release, which is a 404 until Tailscale publishes packages for
-# it
+# 404 until Tailscale publishes packages for this release
 tailscale_release_url() {
     echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
 }
 
-# Tailscale's package signing key. Tailscale doesn't publish its fingerprint, so this one is the
-# key pkgs.tailscale.com served in October 2026, the same for every Ubuntu release.
+# Not published by Tailscale; the key pkgs.tailscale.com served in October 2026
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
 
-# Run it once apt_repo_published says Tailscale has packages for this release. The key's URL names
-# the release, as in Tailscale's install script.
+# Only once apt_repo_published says Tailscale has packages for this release
 add_tailscale_repo() {
     add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
         "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$TAILSCALE_KEY_FPR"

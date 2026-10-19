@@ -2,14 +2,7 @@
 set -euo pipefail
 
 # Install Google Chrome from Google's apt repo.
-#
-# On Ubuntu, Google's .deb also adds Google's apt repo, and the step lets unattended-upgrades
-# install its updates, which the ubuntu step turns on. These need sudo, so the step lists what's
-# missing and asks once. It skips when Google has no .deb for this CPU. On macOS, the homebrew step
-# installs Chrome as a cask, which updates itself.
-#
-# A temp HOME doesn't isolate this step, which adds an apt repo and packages with sudo. Test it in
-# an Ubuntu VM.
+# Adds an apt repo and packages with sudo whatever HOME is: test it in an Ubuntu VM.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -20,16 +13,11 @@ STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
-# unattended-upgrades only installs from Ubuntu's own repos unless told otherwise. The origin and
-# suite come from Google's Release file:
-# https://dl.google.com/linux/chrome-stable/deb/dists/stable/Release
+# Origin and suite from https://dl.google.com/linux/chrome-stable/deb/dists/stable/Release
 UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-google-chrome
-# Where Chrome's .deb adds Google's repo. Its postinst writes this file and removes any
-# google-chrome.list.
+# Written by the .deb's postinst
 GOOGLE_SOURCES=/etc/apt/sources.list.d/google-chrome.sources
-# The .deb adds Google's repo on the first install only, and later only when this file sets
-# repo_add_once="true", which its postinst then sets back to false. See Chromium's
-# chrome/installer/linux/common/apt.include.
+# The .deb re-adds its repo only when this sets repo_add_once="true" (Chromium's apt.include)
 CHROME_DEFAULTS=/etc/default/google-chrome
 UNATTENDED_CONTENT='// From the dotfiles chrome step: install Chrome updates with the daily security updates
 Unattended-Upgrade::Origins-Pattern { "origin=Google LLC,suite=stable"; };'
@@ -38,26 +26,22 @@ deb_url() {
     echo "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb"
 }
 
-# Print the HTTP status of Chrome's .deb for this CPU: 200 when Google publishes one, 404 when it
-# doesn't, and 000 when dl.google.com can't be reached
+# 200: a .deb exists for this CPU; 404: none; 000: unreachable
 deb_status() {
     http_status "$(deb_url)"
 }
 
-# Download Chrome's .deb and install it. Extra arguments go to apt-get install, e.g. --reinstall.
-# apply runs it as `install_chrome || ...`, where set -e is off, so each command checks its own
-# failure.
+# Runs under ||, so set -e is off: each command checks its own failure.
 install_chrome() {
     local deb status=0
-    # Without the || return, a failed mktemp would leave deb at /google-chrome-stable.deb, and the
-    # cleanup below would remove /
+    # Without || return, a failed mktemp makes the cleanup below remove /
     deb="$(mktemp -d)" || return 1
     deb="$deb/google-chrome-stable.deb"
     if ! fetch "$(deb_url)" "$deb" "Chrome's .deb"; then
         rm -rf "$(dirname "$deb")"
         return 1
     fi
-    # apt needs a path, and its sandbox user must be able to read the file
+    # apt's sandbox user must be able to read the file
     chmod a+rx "$(dirname "$deb")" && chmod a+r "$deb" &&
         apt_get install -y "$@" "$deb" || status=1
     rm -rf "$(dirname "$deb")"
@@ -72,8 +56,6 @@ write_auto_updates() {
     write_root_file "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
 }
 
-# Set repo_add_once="true" in Chrome's defaults file, keeping its other settings, so the next
-# install of the .deb adds Google's repo again
 allow_repo_readd() {
     local content
     content="$(grep -v '^repo_add_once=' "$CHROME_DEFAULTS" 2>/dev/null || true)"
@@ -81,13 +63,11 @@ allow_repo_readd() {
 }repo_add_once=\"true\""
 }
 
-# Succeeds when the source file Chrome's .deb writes is there and lacks the Enabled: no a release
-# upgrade adds. The .deb owns the file's content, so nothing else is checked.
+# A release upgrade disables third-party sources with Enabled: no
 google_source_exists() {
     [ -r "$GOOGLE_SOURCES" ] && ! grep -qiE '^Enabled:[[:space:]]*no[[:space:]]*$' "$GOOGLE_SOURCES"
 }
 
-# Reinstall the .deb with repo_add_once set, which writes Google's source again
 readd_google_repo() {
     allow_repo_readd && install_chrome --reinstall || return 1
     google_source_exists && return 0
@@ -96,8 +76,7 @@ readd_google_repo() {
     return 1
 }
 
-# Installing Chrome isn't an item: it branches on whether Google has a .deb for this CPU. The
-# source is driven only once Chrome is installed, since installing it writes the source.
+# Installing Chrome isn't an item: it branches on whether a .deb exists for this CPU.
 chrome_items() {
     items_reset
     item --sudo "Google's apt source ($GOOGLE_SOURCES)" \
@@ -111,7 +90,6 @@ status() {
     if apt_installed google-chrome-stable; then
         status_item ok "google-chrome-stable from Google's .deb"
     elif status_require_cmd curl "google-chrome-stable from Google's .deb"; then
-        # A HEAD request, which changes nothing
         case "$(deb_status)" in
             404)
                 status_item skipped "Chrome: Google has no .deb for $(dpkg --print-architecture)"
@@ -143,7 +121,7 @@ apply() {
                 ;;
         esac
     fi
-    # Re-adding Google's repo reinstalls the .deb, which needs a download too
+    # Re-adding the repo reinstalls the .deb, so it needs curl too
     if apt_installed google-chrome-stable && ! google_source_exists; then
         require_cmd curl || return 1
     fi

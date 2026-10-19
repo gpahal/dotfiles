@@ -2,11 +2,6 @@
 set -euo pipefail
 
 # Make ~/.ssh private, and on macOS keep SSH keys in the keychain, loaded at login.
-#
-# macOS: add a Host * block to ~/.ssh/config that loads keys into the agent from the keychain, and
-# a LaunchAgent that does so at login. Ubuntu has no keychain, so it gets neither. Other tools
-# (e.g. OrbStack) add their own lines to that file, so it's never replaced, and a Host * block you
-# wrote is never edited.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -16,21 +11,15 @@ source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 SSH_ADD_LABEL="dotfiles.ssh-add"
 SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
 
-# Keep a blank line between existing content and a block appended next
 start_block() {
     if [ -s "$SSH_CONFIG" ]; then
         end_with_newline "$SSH_CONFIG" && echo "" >> "$SSH_CONFIG"
     fi
 }
 
-# Print, a line each, the settings that apply to every host, and a marker for each of these:
-# ignoreunknown-usekeychain when ssh skips UseKeychain lines, and ignoreunknown-top when it
-# doesn't, and an IgnoreUnknown at the top of the first Host * block wouldn't make it. Lines above
-# the first Host or Match line apply to every host too, so they count as Host *'s. A block that
-# lists other patterns too, such as Host * !bastion, leaves some host out. Only Apple's ssh knows
-# UseKeychain, and any other, such as Homebrew's openssh, stops at it, in any block, unless the
-# IgnoreUnknown in effect names it. That's the first IgnoreUnknown ssh reads, so it must name
-# UseKeychain and come before every UseKeychain line.
+# Prints each setting that applies to every host, plus ignoreunknown-usekeychain or
+# ignoreunknown-top. Non-Apple ssh fails on UseKeychain unless the first IgnoreUnknown it reads,
+# before every UseKeychain line, names it.
 host_star_settings() {
     [ -f "$SSH_CONFIG" ] || return 0
     awk "$SSH_CONFIG_AWK"'
@@ -53,10 +42,7 @@ host_star_settings() {
             if (named) print "ignoreunknown-usekeychain"
         }
         keyword == "usekeychain" && !keychain_line { keychain_line = NR }
-        # ssh ignores a commented-out setting, such as #UseKeychain yes
         star && keyword !~ /^(#|$)/ { print keyword }
-        # An IgnoreUnknown above every Host line comes before the block, as does a UseKeychain line
-        # above its Host line
         END {
             if (!named && (ignore_global || (keychain_line && (!star_line || keychain_line < star_line))))
                 print "ignoreunknown-top"
@@ -64,9 +50,7 @@ host_star_settings() {
     ' "$SSH_CONFIG"
 }
 
-# Print the lines to add to the Host * block, as they'd be written and in the order ssh needs:
-# "IgnoreUnknown UseKeychain", "AddKeysToAgent yes", and "UseKeychain yes", each unless a block
-# for * alone already sets it, as host_star_settings reads the config
+# In the order ssh needs
 host_star_missing() {
     local found
     found="$(host_star_settings)"
@@ -75,15 +59,11 @@ host_star_missing() {
     grep -qx usekeychain <<< "$found" || echo "  UseKeychain yes"
 }
 
-# Succeeds when the IgnoreUnknown line must go at the top of the config, above the first
-# UseKeychain line or IgnoreUnknown ssh reads, rather than at the top of the Host * block
 ignore_unknown_at_top() {
     host_star_settings | grep -qx ignoreunknown-top
 }
 
-# macOS: a Host * block at the end, so every host loads its key into the agent and the agent
-# takes the passphrase from the keychain. ssh uses the first value it finds for each setting, so
-# the blocks above it still win. No IdentityFile: that would replace ssh's default identities.
+# Appended, so earlier blocks win. No IdentityFile: it would replace ssh's default identities.
 add_host_star() {
     local missing top=""
     missing="$(host_star_missing)"
@@ -112,8 +92,6 @@ add_host_star() {
     fi
 }
 
-# Print the Host * item. The step leaves your own Host * block alone, so the item names the lines
-# to add to it by hand, and where.
 status_host_star() {
     local text="The Host * block in ~/.ssh/config has IgnoreUnknown UseKeychain, AddKeysToAgent, and UseKeychain" missing
     local top="" fix
@@ -136,8 +114,7 @@ status_host_star() {
     fi
 }
 
-# Succeeds when HOME is your account's home directory. launchctl loads into your real login
-# session whatever HOME is, so a test with a temp HOME mustn't load its copy of the agent.
+# launchctl loads into the real session whatever HOME is, so a temp HOME mustn't load it
 home_is_real() {
     [ "$HOME" == "$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')" ]
 }
@@ -151,9 +128,7 @@ ssh_files() {
     "$1" "$DOTFILES_DIR/ssh/$SSH_ADD_LABEL.plist" "$SSH_ADD_AGENT"
 }
 
-# macOS: a LaunchAgent that runs ssh-add --apple-load-keychain at login, so the agent holds the
-# key before any ssh command has loaded it. git signs commits through the agent, and agents
-# such as T3 Code's have no terminal to type the passphrase into.
+# git signs through the agent, and agents such as T3 Code's can't type a passphrase
 install_ssh_add_agent() {
     ssh_files copy_file || return 1
     if ssh_add_agent_loaded; then
@@ -169,7 +144,6 @@ install_ssh_add_agent() {
     fi
 }
 
-# Succeeds when only you can read ~/.ssh, as apply sets it
 ssh_dir_private() {
     [ -d "$HOME/.ssh" ] && [ "$(file_mode "$HOME/.ssh/")" == 700 ]
 }
@@ -178,7 +152,6 @@ make_ssh_dir_private() {
     mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 }
 
-# Succeeds when ~/.ssh/config, if there is one, is mode 600, as apply sets it
 ssh_config_private() {
     [ ! -f "$SSH_CONFIG" ] || [ "$(file_mode "$SSH_CONFIG")" == 600 ]
 }
@@ -221,7 +194,7 @@ apply() {
     else
         echo "  Skipping the keychain's Host * block and the LaunchAgent: macOS only"
     fi
-    # Last, since add_host_star may create the file
+    # add_host_star may create the file
     items_apply ssh_config_private || status=1
     return "$status"
 }

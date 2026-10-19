@@ -1,13 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check that every key the t3-code step writes exists in T3 Code's settings schemas, at the
-# release the step installs: the latest, or the tag given as the only argument (e.g. v0.1.0).
-# T3 Code ignores a key it doesn't know, so a renamed or dropped setting would otherwise go
-# unnoticed. It's a smoke test of key names: a name found anywhere in the schema files passes,
-# whatever object it sits in or value it takes. A made-up key must be missing, so the search can
-# fail. It also warns, without failing, when the step writes a key's default: T3 Code drops such
-# a key, so the step never settles. Needs curl and the network. CI runs it; `just check` doesn't.
+# Check the t3-code step's keys appear in T3 Code's settings schemas at the latest release or a given tag.
+# Name-only smoke test. Warns when the step writes a default, which T3 Code drops, so the step never settles.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPSTREAM=pingdotgg/t3code
@@ -21,7 +16,7 @@ command -v curl &>/dev/null || { echo "curl isn't installed" >&2; exit 1; }
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# GITHUB_TOKEN, which CI sets, lifts the API's rate limit for unauthenticated calls
+# GITHUB_TOKEN lifts the API rate limit in CI
 download() {
     local auth=()
     [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
@@ -35,7 +30,6 @@ if [ -z "$tag" ]; then
     [ -n "$tag" ] || { echo "Couldn't read the latest T3 Code release's tag" >&2; exit 1; }
 fi
 echo "T3 Code $tag"
-# get <path>: download a file at the tag, failing when it's missing
 get() {
     download "https://raw.githubusercontent.com/$UPSTREAM/$tag/$1" "$tmp/${1##*/}" 2>/dev/null && return 0
     echo "Couldn't download $1 at $tag. If T3 Code moved it, update this script." >&2
@@ -53,15 +47,13 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the keys a jq filter reads or writes, one per line: .name, and "name": in an object. Its
-# comments go first, so "e.g." in one can't yield a key g.
+# Strip jq comments first, so "e.g." can't yield a key g.
 keys_of() {
     printf '%s\n' "$1" | sed -E 's/(^|[[:space:]])#.*$/\1/' | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*":' |
         sed -E 's/^\.//; s/^"//; s/":$//' | sort -u
 }
 
-# check <what> <filter> <schema file>...: each key of the filter is a property in one of the
-# files, as `key:`, `key?:`, or `"key":`
+# check <what> <filter> <schema file>...; a made-up key must be missing, so the search can fail.
 check() {
     local what="$1" filter="$2" key missing=""
     shift 2
@@ -79,15 +71,12 @@ check() {
     fi
 }
 
-# Print each scalar value a jq filter writes, one "<key> <value>" per line, from `.key = <value>`
 assignments_of() {
     printf '%s\n' "$1" | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]* = ("[^"]*"|true|false|null|-?[0-9]+)' |
         sed -E 's/^\.//; s/ = / /'
 }
 
-# schema_defaults <key> <schema file>...: print each default the files give a key, the argument of
-# a withDecodingDefault(Effect.succeed(...)) in the 3 lines from `key:`, before the next key, with
-# any " as const" dropped. A constant's name is printed as is.
+# Print a key's withDecodingDefault(Effect.succeed(...)) argument found within 3 lines of `key:`.
 schema_defaults() {
     local key="$1"
     shift
@@ -106,14 +95,11 @@ schema_defaults() {
         }' "$@"
 }
 
-# defaults_check <what> <filter> <schema file>...: warn about each value the filter writes that's
-# its key's default
 defaults_check() {
     local what="$1" filter="$2" key value default found=false
     shift 2
     while read -r key value; do
         while IFS= read -r default; do
-            # A constant: look up its value in the files
             if [[ "$default" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
                 default="$(sed -nE "s/^(export )?const $default(: [^=]+)? = (.*);\$/\3/p" "$@" | head -1)"
             fi
@@ -129,7 +115,6 @@ defaults_check() {
 warnings=0
 warn() {
     echo "WARNING: $1" >&2
-    # An annotation on the CI run
     [ -z "${GITHUB_ACTIONS:-}" ] || echo "::warning::$1"
     warnings=$((warnings + 1))
 }

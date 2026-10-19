@@ -2,8 +2,6 @@
 set -euo pipefail
 
 # Copy the Hammerspoon config and the open-in script its hotkeys run.
-#
-# init.lua lists the hotkeys. macOS only, since Hammerspoon has no Linux app.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

@@ -2,27 +2,19 @@
 set -euo pipefail
 
 # Copy the Ghostty config and reload it, and on Ubuntu install the Ghostty snap.
-#
-# The reload happens only when the config changed. snapd keeps the snap updated; the homebrew step
-# installs Ghostty on macOS. Without snapd, the step still copies the config, then fails.
-#
-# A temp HOME doesn't isolate this step, which signals the running Ghostty to reload, and on Ubuntu
-# runs sudo snap install. Test its Ubuntu side in an Ubuntu VM, such as an OrbStack machine. On
-# macOS, a run signals the Ghostty you're running in.
+# A temp HOME doesn't isolate the reload signal or Ubuntu's sudo snap install: test Ubuntu in a VM.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# On macOS, not $XDG_CONFIG_HOME: Ghostty started from the Dock doesn't see one set in the shell.
-# On Ubuntu, Ghostty reads $XDG_CONFIG_HOME/ghostty when that's set.
+# Ghostty started from the Dock doesn't see a shell's XDG_CONFIG_HOME
 if is_macos; then
     GHOSTTY_DIR="$HOME/.config/ghostty"
 else
     GHOSTTY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
 fi
 
-# The snap is built from Ghostty's own repo and snapd moves it to each release, while Ubuntu
-# 26.04's archive keeps 1.3.0 with fixes only.
+# Not apt: 26.04's archive stays on 1.3.0
 ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }
@@ -60,8 +52,7 @@ ghostty_files() {
     "$1" "$DOTFILES_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty"
 }
 
-# Print the settings a Ghostty config file sets, sorted, one per line: each key, or for a keybind,
-# "keybind <trigger>", since another trigger adds a binding rather than replacing one
+# Keybinds are keyed by trigger, since another trigger adds a binding rather than replacing one
 ghostty_settings() {
     [ -r "$1" ] || return 0
     awk '
@@ -77,9 +68,7 @@ ghostty_settings() {
     ' "$1" | LC_ALL=C sort -u
 }
 
-# On macOS, Ghostty 1.3 loads the config files in Application Support after config.ghostty
-# (checked with ghostty +show-config), so a setting there that the repo's config also sets
-# overrides it. Print an item for each such file.
+# Ghostty loads Application Support's configs after config.ghostty, so they override it
 ghostty_overrides_status() {
     local file overrides
     local support="$HOME/Library/Application Support/com.mitchellh.ghostty"

@@ -1,12 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check that the packages the homebrew step installs still exist: brew must know each formula in
-# homebrew/Brewfile and each cask in homebrew/install.sh's CASKS and UBUNTU_CASKS, and none may be
-# deprecated or disabled. Each formula outside the Brewfile's `if OS.mac?` blocks must also have an
-# x86_64_linux bottle, or one for all platforms, so Ubuntu doesn't build it from source. brew info
-# lists only the bottles for the platform it runs on, so those come from formulae.brew.sh's API.
-# Needs brew, jq, curl, and the network. CI runs it on macOS; `just check` doesn't.
+# Check the homebrew step's formulae and casks exist, aren't deprecated, and non-mac formulae have Linux bottles.
+# brew info lists only the current platform's bottles, so those come from formulae.brew.sh.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/brew.sh
@@ -32,8 +28,7 @@ done | sort -u > "$tmp/casks"
 [ -s "$tmp/formulae" ] && [ -s "$tmp/casks" ] ||
     { echo "Couldn't read the formulae from homebrew/Brewfile or the casks from homebrew/install.sh" >&2; exit 1; }
 
-# brew_info <--formula|--cask> <name>...: print brew info's JSON for the names. One unknown name
-# fails the whole call, so then each name is looked up alone, and an unknown one fails the check.
+# One unknown name fails the whole call, so retry each name alone.
 brew_info() {
     local kind="$1" name known=()
     shift
@@ -62,7 +57,6 @@ done < <(jq -rs '.[] | ((.formulae // [] | .[] | . + {kind: "formula", id: .name
       elif .deprecated then "The \(.kind) \(.id) is deprecated: \(.deprecation_reason // "no reason given")"
       else empty end' "$tmp/formulae.json" "$tmp/casks.json")
 
-# The Linux bottles of the formulae Ubuntu gets, by the names brew resolved
 jq -r '.formulae[].name' "$tmp/formulae.json" > "$tmp/known"
 while read -r name os; do
     if [ "$os" != any ] || ! grep -qxF -- "$name" "$tmp/known"; then

@@ -1,10 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Shells whose output a tool reads (T3 Code's `$SHELL -ilc` PATH probe, Claude Code's shell
-# snapshot) don't print the reminders, use up the oneshot ones, or get the correct, nocaseglob,
-# rcexpandparam, and autocd options. A shell in a terminal gets all of them. Runs zsh with a sandbox
-# ZDOTDIR whose .zshrc sources the repo's files.
+# Shells a tool reads (T3 Code's PATH probe, Claude Code's snapshot) get no reminders or options.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -18,12 +15,10 @@ mkdir -p "$ZDOTDIR"
 for file in options reminders; do
     echo "source '$REPO_DIR/zsh/$file.zsh'"
 done > "$ZDOTDIR/.zshrc"
-# /etc/zprofile's path_helper puts the system's dirs, /opt/homebrew/bin among them on macOS, ahead
-# of the stubs, so a sentinel the config ran would find the real command
+# macOS's path_helper would put real commands ahead of the stubs
 printf 'path=(%q $path)\n' "$STUB_DIR" > "$ZDOTDIR/.zprofile"
 stub mise
 
-# What the shell sets up, printed after any reminders, and the mise it finds
 PROBE='echo probed; setopt | grep -xE "nocaseglob|correct|rcexpandparam|autocd" | sed "s/^/opt=/"
 print -r -- "mise=$(whence -p mise)"; true'
 
@@ -32,7 +27,6 @@ reminders() {
     echo "just once" > "$HOME/.remind-oneshot"
 }
 
-# Run an interactive login zsh in a pseudo-terminal, printing its output without carriage returns
 in_terminal() {
     if [[ "$OSTYPE" == darwin* ]]; then
         script -q /dev/null "$@"
@@ -59,13 +53,11 @@ assert_not_contains "$output" "opt=" "snapshot output"
 
 command -v script &>/dev/null || skip "script isn't installed, so the terminal checks can't run"
 
-# CLAUDECODE alone keeps them out, even with a terminal
 output="$(CLAUDECODE=1 in_terminal zsh -ilc "$PROBE")"
 assert_not_contains "$output" "just once" "output under CLAUDECODE"
 assert_not_contains "$output" "opt=" "output under CLAUDECODE"
 [ -f "$HOME/.remind-oneshot" ] || fail "a shell under CLAUDECODE removed ~/.remind-oneshot"
 
-# A terminal gets everything
 output="$(in_terminal zsh -ilc "$PROBE")"
 assert_contains "$output" "every time" "terminal output"
 assert_contains "$output" "just once" "terminal output"

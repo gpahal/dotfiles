@@ -1,11 +1,7 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
+# The step's functions call the replaced ones
 # shellcheck disable=SC2329
 set -euo pipefail
-
-# ai_tools/manual-steps.sh prints the README's manual steps for the OS. On macOS it reads each
-# app's notification flags, counting only Allowed with the Persistent style, and offers to open
-# the settings for the apps still to do, and only those.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,15 +9,13 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ai_tools/manual-steps.sh
 
-# plutil -extract apps xml1 prints $SANDBOX/ncprefs, the apps list as macOS's plutil prints it.
-# With no file, it fails, as it does without Full Disk Access.
+# plutil prints $SANDBOX/ncprefs; with no file it fails, as without Full Disk Access
 NCPREFS="$SANDBOX/ncprefs"
 stub plutil '[ "$*" == "-extract apps xml1 -o - $NOTIFICATION_SETTINGS" ] && [ -f "'"$NCPREFS"'" ] || exit 1
 cat "'"$NCPREFS"'"'
 export NOTIFICATION_SETTINGS
 ALLOWED=$((1 << 25)) TEMPORARY=$((1 << 3)) PERSISTENT=$((1 << 4))
-# Usage: apps <bundle id> <flags> ... After its own keys, each app holds a nested dict whose keys of
-# the same names, with flags that would pass, don't count.
+# Usage: apps <bundle id> <flags> ... Each app's nested dict reuses its keys, which mustn't count.
 apps() {
     {
         printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<array>\n'
@@ -35,7 +29,6 @@ apps() {
     } > "$NCPREFS"
 }
 
-# notifications_pending
 assert_exit 1 notifications_pending com.mitchellh.ghostty
 apps com.other.app $((ALLOWED | PERSISTENT)) com.mitchellh.ghostty $((ALLOWED | PERSISTENT | 7))
 assert_eq "com.openai.codex" "$(notifications_pending com.mitchellh.ghostty com.openai.codex)" "persistent, and no entry"
@@ -46,8 +39,7 @@ assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty
 apps com.mitchellh.ghostty $((ALLOWED | PERSISTENT | TEMPORARY))
 assert_eq "com.mitchellh.ghostty" "$(notifications_pending com.mitchellh.ghostty)" "both styles"
 
-# Everything done: nothing to offer. The extension is installed, so the real Chrome doesn't count.
-# Ghostty's notifications are the main README's manual step, so they don't count here.
+# Ghostty's notifications are the main README's manual step, so they don't count here
 ok=$((ALLOWED | PERSISTENT))
 apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY)) com.anthropic.claudefordesktop $ok com.openai.codex $ok com.t3tools.t3code $ok
 mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Extensions/$CLAUDE_CHROME_EXTENSION_ID"
@@ -59,7 +51,6 @@ assert_contains "$RUN_OUTPUT" "Notifications for Claude, ChatGPT, and T3 Code ar
 assert_contains "$RUN_OUTPUT" "Claude in Chrome extension already installed."
 assert_not_contains "$RUN_OUTPUT" "Open "
 
-# Two apps still to do. DOTFILES_ASSUME_YES doesn't open anything, nor does a no.
 apps com.mitchellh.ghostty $ok com.anthropic.claudefordesktop $((ALLOWED | TEMPORARY)) com.t3tools.t3code $ok
 DOTFILES_ASSUME_YES=1 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Not opening the notification settings: DOTFILES_ASSUME_YES is set."
@@ -67,7 +58,6 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Not opening"
 assert_eq "" "$(cat "$STUB_LOG" | grep -v '^plutil' || true)" "commands run without a yes"
 
-# A yes opens each one's settings, waiting for Enter in between
 replace_fn confirm 'true'
 run open_manual_steps <<< $'\n\n'
 assert_eq 0 "$RUN_STATUS" "exit status after opening the settings"
@@ -76,8 +66,6 @@ open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com
     "$(grep '^open' "$STUB_LOG")" "settings opened"
 assert_contains "$RUN_OUTPUT" "scripts/test-notification.sh"
 
-# Settings it can't read, as without Full Disk Access: it prints the instruction without asking
-# to open them
 rm "$NCPREFS"
 : > "$STUB_LOG"
 run open_manual_steps < /dev/null
@@ -86,7 +74,6 @@ assert_contains "$RUN_OUTPUT" "Couldn't read the notification settings"
 assert_not_contains "$RUN_OUTPUT" "notification settings now?"
 assert_eq "" "$(grep '^open' "$STUB_LOG" || true)" "settings opened when they can't be read"
 
-# Ubuntu prints its own section, and --status prints nothing
 as_os ubuntu
 : > "$STUB_LOG"
 assert_exit 0 main

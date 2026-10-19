@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# Claude Code's status line script prints the fields Claude Code sends, and says when jq is
-# missing instead of printing an empty line.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -22,7 +19,6 @@ assert_eq "Opus 5.5 · medium · ctx 43% · 5h 24% · feat" \
 assert_eq "Opus 5.5" "$(echo '{"model":{"display_name":"Opus 5.5"}}' | /bin/bash "$script")" \
     "status line with only the model"
 
-# Without jq on PATH: only git and cat
 mkdir -p "$SANDBOX/nojq"
 for cmd in git cat; do
     ln -s "$(command -v "$cmd")" "$SANDBOX/nojq/$cmd"

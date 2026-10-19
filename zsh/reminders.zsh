@@ -1,5 +1,4 @@
-# Only in a terminal you're looking at, which options.zsh sets _human_tty for. Tools that read a
-# shell's output would print the reminders into it and use up the oneshot ones.
+# A tool reading the output would use up the oneshot reminders
 if [[ -o interactive && -n ${_human_tty:-} ]]; then
     if [ -f $HOME/.remind ]; then
         command cat $HOME/.remind

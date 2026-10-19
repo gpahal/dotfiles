@@ -1,15 +1,8 @@
-# Helpers for Homebrew casks. The homebrew, claude-desktop, codex, and t3-code steps and
-# scripts/upgrade.sh source it right after lib/common.sh, whose helpers it uses; don't run it.
-# - cask_state says how a cask is installed (brew, gone, other, or missing) and where its app is.
-# - install_cask installs a cask unless cask_state finds it there, and status_cask reports it.
-# - cask_app_path, recorded_cask_app, and cask_receipt read brew's metadata for a cask's app.
+# Helpers for Homebrew casks. Source after lib/common.sh; don't run it.
 # shellcheck shell=bash
 
-# Install a Homebrew cask unless it, or the path it installs, is already there. Fails, saying
-# how to get brew, when it's missing. Exits with brew's status when interrupted_status says a
-# signal stopped it: brew catches Ctrl-C and exits 130, so the step's bash never sees the signal,
-# and a caller's `|| result=1` would carry on. A third argument, cask_state's first field when
-# the caller already has it, saves the brew calls cask_state makes.
+# install_cask <cask> [app] [state]: [state] is cask_state's first field, if the caller has it.
+# Exits on interrupt: brew catches Ctrl-C and exits 130, which a caller's || would swallow.
 install_cask() {
     local cask="$1" from="${3:-}" status=0
     require_cmd brew || return 1
@@ -20,8 +13,8 @@ install_cask() {
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
             brew reinstall --cask "$cask" || status=$?
             ;;
-        # brew install would fail on an existing app, or rerun a pkg cask's installer over it, and
-        # `upgrade` skips casks brew doesn't list
+# brew install would fail on an existing app, or rerun a pkg cask's installer, and upgrade skips
+# casks brew doesn't list
         other) echo "  $cask already installed, but not by Homebrew, so upgrade won't update it." ;;
         *)
             echo "  Installing $cask..."
@@ -32,29 +25,24 @@ install_cask() {
     return "$status"
 }
 
-# jq for the path of the app each cask in brew info --json=v2's output installs, or "" for a cask
-# with no app, such as a font or one that runs an installer
+# "" for a cask with no app, such as a font or a pkg installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app, or nothing
-# without jq, so a caller falls back to where the app usually is
+# Prints nothing without jq, so a caller falls back to where the app usually is
 cask_app_path() {
     command -v jq &>/dev/null || return 0
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
 }
 
-# The app each cask that runs an installer puts in place, as <cask>=<path>. brew's metadata lists
-# no app for them.
+# Pkg casks, whose metadata names no app
 CASK_PKG_APPS=("tailscale-app=/Applications/Tailscale.app" "logi-options+=/Applications/logioptionsplus.app"
     "elgato-stream-deck=/Applications/Elgato Stream Deck.app")
 
-# Print the path of brew's install receipt for cask $1, which records what brew installed for it
 cask_receipt() {
     echo "$(brew --caskroom 2>/dev/null)/$1/.metadata/INSTALL_RECEIPT.json"
 }
 
-# recorded_cask_app <cask> <app>: print the app path brew recorded when it installed <cask>, in
-# the dir of <app>, the path the cask now gives. Fails when the install receipt names no app.
+# recorded_cask_app <cask> <app>: the app path in brew's install receipt, relative to <app>'s dir
 recorded_cask_app() {
     local name
     name="$(jq -er '[.uninstall_artifacts[] | objects | select(has("app"))
@@ -65,14 +53,9 @@ recorded_cask_app() {
     esac
 }
 
-# cask_state <cask> [<app>] [<listing>]: print how a Homebrew cask is installed, a tab, and the
-# path of the app it installs: "brew" when brew lists it, "gone" when brew lists it but its app was
-# deleted (macOS only), "other" when brew doesn't list it but the app is there, as when an app
-# that auto-updates was installed outside brew, or "missing". <app> is the path the caller expects
-# the app at, used when brew names none. <listing> is installed_cask_apps's output, which saves a
-# brew call per cask; without it, brew is asked about this cask. Off macOS brew names no path, so
-# a listed cask is never gone.
-# e.g. IFS=$'\t' read -r state app <<< "$(cask_state raycast "" "$apps")"
+# cask_state <cask> [app] [listing]: prints "<state>\t<app path>", state being brew, gone (listed
+# but app deleted, macOS only), other (app present, not listed), or missing. [app] is the
+# fallback path; [listing] is installed_cask_apps's output, saving a brew call per cask.
 cask_state() {
     local cask="$1" app="" listed=false entry state recorded
     if [ $# -ge 3 ]; then
@@ -99,9 +82,8 @@ cask_state() {
     fi
     if "$listed"; then
         state=brew
-        # The cask's current definition can name the app differently from the one brew installed,
-        # as when T3 Code (Alpha) became T3 Code (Beta), so the app is gone only when the one the
-        # install receipt recorded is gone too
+# The current cask can name the app differently from the installed one (T3 Code Alpha to Beta),
+# so it's gone only when the receipt's app is gone too
         if [ -n "$app" ] && [ ! -e "$app" ]; then
             if recorded="$(recorded_cask_app "$cask" "$app")" && [ -e "$recorded" ]; then
                 app="$recorded"
@@ -117,8 +99,6 @@ cask_state() {
     printf '%s\t%s\n' "$state" "$app"
 }
 
-# Print an item for whether a Homebrew cask, or the path it installs, is there, given cask_state's
-# arguments. Without brew, say so rather than report the cask missing.
 status_cask() {
     local state
     status_require_cmd brew "$1 (cask)" || return 0

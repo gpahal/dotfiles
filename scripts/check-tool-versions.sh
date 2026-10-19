@@ -1,17 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check that the tools `just check` and `just test` run are at least the versions the repo declares.
-# Each minimum is the tested floor from Ubuntu 26.04's apt, not a version known to be required: an
-# older one may work, but nothing tests it. GitHub's Ubuntu runners ship a newer git than apt's, so
-# CI doesn't test git's floor; the version this prints for each tool is what the run tested. yq's is
-# a real requirement, YQ_MIN_VERSION in lib/common.sh, which the codex step checks too. CI pins
-# the shellcheck version instead, since each release reports different warnings.
+# Check the tools `just check` and `just test` run meet the minimum versions.
+# Minimums are Ubuntu 26.04 apt's tested floors, not known requirements, except yq's.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# tool, minimum, and the command that prints its version
 TOOLS="jq 1.8.1 jq --version
 yq $YQ_MIN_VERSION yq --version
 just 1.45 just --version

@@ -1,10 +1,6 @@
 # shellcheck shell=bash
-# The readers of the runners' default steps that scripts/check-docs.sh and tests/test-run-steps.sh
-# share. It only defines functions.
 
-# Write a uname into dir $1 that reports OS $2 (Darwin or Linux) for -s and runs the real one
-# otherwise, so a script run with the dir first on PATH acts as on that OS
-# e.g. os_uname_shim "$tmp/Linux" Linux
+# Write a uname into dir $1 whose -s reports $2 (Darwin or Linux).
 os_uname_shim() {
     mkdir -p "$1"
     # shellcheck disable=SC2016 # expanded by the shim
@@ -12,9 +8,7 @@ os_uname_shim() {
     chmod +x "$1/uname"
 }
 
-# Print a runner's default steps on an OS (Darwin or Linux), one per line, from its --help, and
-# fail when --help does. Both OSes' lists come from one machine, through os_uname_shim.
-# e.g. runner_steps "$REPO_DIR/setup.sh" Linux
+# Print a runner's default steps on OS $2, one per line, from its --help.
 runner_steps() {
     local dir status=0
     dir="$(mktemp -d)" || return 1

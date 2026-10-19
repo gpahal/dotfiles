@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # Claude Code status line: model, effort, context used, 5-hour rate limit, and git branch.
-# Claude Code pipes session JSON on stdin and shows what this prints. Any field missing from
-# the JSON is left out. See https://code.claude.com/docs/en/statusline
+# See https://code.claude.com/docs/en/statusline
 
 if ! command -v jq > /dev/null 2>&1; then
     echo "statusline: jq missing"
     exit 0
 fi
 
-# One jq call for every field. The unit separator keeps empty fields in place, which a tab
-# wouldn't, since read collapses runs of whitespace separators.
+# Unit separator, not tab: read collapses runs of whitespace separators, losing empty fields.
 IFS=$'\x1f' read -r model effort context five_hour dir < <(
     jq -r '[
         .model.display_name // "",

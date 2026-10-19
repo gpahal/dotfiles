@@ -1,9 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# scripts/check-t3-settings.sh, with GitHub stubbed, reads the latest release's tag, or the one
-# given, downloads T3 Code's schemas at it, and fails naming each key the t3-code step writes that
-# they lack.
+# scripts/check-t3-settings.sh, with GitHub stubbed.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -11,8 +9,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 unset GITHUB_TOKEN
 
-# GitHub: the latest release is v9.9.9, and a raw file is the one of the same name in
-# $SANDBOX/upstream, or missing
+# The latest release is v9.9.9; a raw file comes from $SANDBOX/upstream
 mkdir -p "$SANDBOX/upstream"
 stub curl 'out="" url="${!#}"
 while [ $# -gt 0 ]; do
@@ -32,7 +29,6 @@ check() {
     assert_exit "$1" "$BASH" "$REPO_DIR/scripts/check-t3-settings.sh" "${@:2}"
 }
 
-# Empty schemas lack every key, and the made-up one isn't reported
 check 1
 assert_contains "$RUN_OUTPUT" "T3 Code v9.9.9"
 assert_file_contains "$STUB_LOG" "https://api.github.com/repos/pingdotgg/t3code/releases/latest"
@@ -44,7 +40,6 @@ for what in server client; do
     assert_contains "$RUN_OUTPUT" "schema lacks these $what settings keys" "the report of $what keys"
 done
 
-# A schema with every key passes
 for key in $keys; do
     echo "  $key: Schema.String,"
 done | sort -u > "$schema"
@@ -54,7 +49,7 @@ assert_contains "$RUN_OUTPUT" "client settings: every key is in the schema"
 assert_contains "$RUN_OUTPUT" "All checks passed"
 assert_not_contains "$RUN_OUTPUT" "WARNING"
 
-# A key whose default, a constant here, is the value the step writes, warns without failing
+# A key whose default is the value the step writes warns without failing
 assignment="$(
     source "$REPO_DIR/ai_tools/t3-code/install.sh"
     t3_code_server_filter | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]* = "[^"]*"' | head -n 1
@@ -76,7 +71,6 @@ check 1
 assert_contains "$RUN_OUTPUT" "found a made-up key"
 sed -i.bak '/dotfilesNoSuchT3Setting/d' "$schema"
 
-# A tag given is used without asking for the latest, and a schema missing at it fails
 rm "$SANDBOX/upstream/project.ts"
 check 1 v1.2.3
 assert_file_not_contains "$STUB_LOG" "releases/latest"

@@ -1,11 +1,6 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
-
-# The git config turns core.fsmonitor on only for repos under ~/Dev/ and their linked worktrees,
-# through an include the git step installs beside it. Elsewhere, such as a throwaway repo under
-# /tmp, it stays off, so git starts no daemon there.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,7 +8,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
     GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
-# Logged in to GitHub; gh auth setup-git does nothing
 stub gh
 load_script git/install.sh
 # Ubuntu's HTTPS rewrites don't matter here

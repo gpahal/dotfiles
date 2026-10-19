@@ -2,18 +2,10 @@
 # shellcheck disable=SC2016 # backquotes and $ in sed and grep patterns
 set -euo pipefail
 
-# Check that the docs list each runner's steps as its STEPS has them, on macOS and on Ubuntu:
-# - README.md "How setup works": the step table, which holds both OSes' steps in order, and marks
-#   a step "macOS only" or "Ubuntu only" when the other OS's STEPS lacks it
-# - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
-# Also check that:
-# - each of those steps has a header line, the one sentence after the shebang that --help lists
-# - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
-#   the manual-steps scripts print
-# - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
+# Check the READMEs' step lists match the runners' STEPS on both OSes, step header lines,
+# the Manual steps sections, and local links.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# For step_header_line
 # shellcheck source=../lib/common.sh
 source "$REPO_DIR/lib/common.sh"
 # shellcheck source=lib/markdown.sh
@@ -29,14 +21,12 @@ fail() {
     errors=$((errors + 1))
 }
 
-# Print the section of a Markdown file under a heading, given with its #s, as md_section does. A
-# missing section prints nothing, which the check that reads it reports.
+# A missing section prints nothing, which the caller reports.
 section() {
     md_section "$@" || true
 }
 
-# Print the words in list file $1, or, when it's empty, the text the check looked for in the doc
-# ($2), so a rewording that hides the list says what to restore
+# When the list is empty, say what the check looked for, so a rewording says what to restore.
 doc_words() {
     if [ -s "$1" ]; then
         tr '\n' ' ' < "$1"
@@ -45,17 +35,15 @@ doc_words() {
     fi
 }
 
-# Print the backquoted words in a line of text, one per line
 backquoted() {
     printf '%s\n' "$1" | { grep -o '`[^`]*`' || true; } | tr -d '`'
 }
 
-# Print the lines of the first list that are in the second, in the first's order
 in_both() {
     grep -Fxf "$2" "$1" || true
 }
 
-# compare <what> <expected file> <actual file> <the text the check looks for in the doc>
+# compare <what> <expected file> <actual file> <what the check looks for>
 compare() {
     if ! cmp -s "$2" "$3"; then
         fail "$1 doesn't match STEPS. STEPS: $(tr '\n' ' ' < "$2")
@@ -72,7 +60,6 @@ for list in setup-macos setup-ubuntu ai-macos ai-ubuntu; do
     [ -s "$tmp/$list" ] || fail "Couldn't read the steps for $list from the runner's --help"
 done
 
-# Each step's header line, which the runners' --help lists, is one sentence of at most 90 characters
 check_header_line() {
     local script="$1" line
     line="$(step_header_line "$script")"
@@ -92,7 +79,6 @@ done < <({
     sed "s|^|$REPO_DIR/ai_tools/|" "$tmp/ai-macos" "$tmp/ai-ubuntu"
 } | sort -u)
 
-# README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"
 section "$readme" "## How setup works" | { grep '^| `' || true; } > "$tmp/table-rows"
 sed 's/^| `\([^`]*\)`.*/\1/' "$tmp/table-rows" > "$tmp/table"
@@ -105,8 +91,6 @@ cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"
-# Each row says "macOS only" or "Ubuntu only" when one OS's STEPS lacks the step, which is how an
-# Ubuntu user learns which steps run there
 while IFS= read -r row; do
     step="${row#'| `'}"
     step="${step%%'`'*}"
@@ -127,7 +111,6 @@ while IFS= read -r row; do
     esac
 done < "$tmp/table-rows"
 
-# ai_tools/README.md: one sentence lists every step, and the next says which Ubuntu skips
 ai_readme="$REPO_DIR/ai_tools/README.md"
 line="$(grep -m1 '^The steps, in order, are ' "$ai_readme" || true)"
 sentence="${line#The steps, in order, are }"
@@ -141,8 +124,7 @@ grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
 compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
     '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
 
-# The manual-steps scripts print these sections with print_doc_section, which fails when one is
-# missing or empty
+# The manual-steps scripts print these sections
 for doc in README.md ai_tools/README.md; do
     for os in macOS Ubuntu; do
         md_section "$REPO_DIR/$doc" "## Manual steps" "### $os" > /dev/null ||

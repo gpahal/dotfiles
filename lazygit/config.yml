@@ -1,4 +1,4 @@
-# Render diffs with delta, which takes the rest of its settings from [delta] in the git config.
+# delta reads the rest of its settings from [delta] in the git config
 git:
   diffRenderers:
     - command: delta --dark --paging=never

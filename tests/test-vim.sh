@@ -2,10 +2,6 @@
 set -euo pipefail
 # serial
 
-# The vim step's status flags a vim-plug copy that differs from the vendored one until a re-run
-# restores it. The vimrc downloads nothing, pins every plugin to a commit, and starts without
-# errors without vim-plug. Inside tmux, Vim uses SGR mouse codes.
-
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -16,13 +12,13 @@ PLUG="$HOME/.vim/autoload/plug.vim"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 assert_eq 644 "$(file_mode "$PLUG")" "plug.vim's mode"
 
-# A copy that differs, such as one vim-plug's PlugUpgrade wrote, is missing until a re-run
+# A copy that differs, as PlugUpgrade writes, is missing until a re-run
 echo '" changed' >> "$PLUG"
 assert_exit 3 bash "$REPO_DIR/vim/install.sh" --status
 assert_contains "$RUN_OUTPUT" "missing    vim-plug at the pinned version (~/.vim/autoload/plug.vim)"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 cmp -s "$REPO_DIR/vim/plug.vim" "$PLUG" || fail "a re-run didn't restore $PLUG"
-# One that can't be written, in a dir you can't write to, fails the step. root writes it anyway.
+# root can write to the read-only dir, so the failure is checked only when it can't
 rm "$PLUG"
 chmod 555 "$HOME/.vim/autoload"
 if [ ! -w "$HOME/.vim/autoload" ]; then
@@ -32,8 +28,7 @@ fi
 chmod 755 "$HOME/.vim/autoload"
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 
-# An installed plugin whose checkout isn't at its pin, as after just bump-plugins, is missing until
-# a re-run moves it there; a plugin vim hasn't installed yet isn't
+# A plugin off its pin is missing until a re-run; one not installed yet isn't
 plugin_pins() {
     local origin="$SANDBOX/vim-plugin" plug="$HOME/.vim/plugged/vim-plugin" old new
     git init -q -b main "$origin"
@@ -56,43 +51,34 @@ plugin_pins() {
     rm -rf "$HOME/.vim/plugged"
 }
 subtest plugin_pins
-# The repo's own pins, with no plugin installed
 assert_exit 0 bash "$REPO_DIR/vim/install.sh" --status
 
-# vim-plug ships with the repo, so the vimrc never downloads it, and vims starting at once can't
-# race to write it
+# Vendored vim-plug: vims starting at once can't race to download it
 assert_file_not_contains "$REPO_DIR/vim/vimrc" "curl"
 assert_file_not_contains "$REPO_DIR/vim/vimrc" "raw.githubusercontent.com"
-# Every plugin is pinned to a full commit
 unpinned="$(grep -E "^ *Plug '" "$REPO_DIR/vim/vimrc" | grep -vE "'commit': '[0-9a-f]{40}'" || true)"
 assert_eq "" "$unpinned" "Plug lines without a pinned commit"
 
 command -v vim &> /dev/null || skip "vim isn't installed"
 
-# Start vim on the vimrc and quit. -es skips the vimrc unless -u names it, and exits 1 when a
-# command in it fails.
+# -es skips the vimrc unless -u names it, and exits 1 when a command in it fails
 start_vim() {
     vim -Nes -u "$HOME/.vimrc" -c 'qa!' 2>&1
 }
 
-# Sourcing the vimrc again keeps one plugin-install autocmd. -c commands run before VimEnter, so
-# vim quits without installing anything.
+# -c commands run before VimEnter, so vim quits without installing anything
 vim -Nes -u "$HOME/.vimrc" -c "source $HOME/.vimrc" \
     -c "redir! > $SANDBOX/autocmds | autocmd dotfiles_plug_install VimEnter | redir END" -c 'qa!' || true
 assert_eq 1 "$(grep -c PlugInstall "$SANDBOX/autocmds" 2> /dev/null)" "plugin-install autocmds after sourcing the vimrc twice"
 
-# Without vim-plug, vim starts without plugins and without errors
 rm "$PLUG"
 assert_exit 0 start_vim
 assert_not_contains "$RUN_OUTPUT" "E117" "vim output without vim-plug"
-# It still highlights syntax, which vim-sensible would otherwise turn on
+# Syntax still on, which vim-sensible would otherwise turn on
 vim -Nes -u "$HOME/.vimrc" -c "call writefile([exists('g:syntax_on')], '$SANDBOX/syntax')" -c 'qa!' || true
 assert_eq 1 "$(cat "$SANDBOX/syntax" 2> /dev/null)" "syntax highlighting without vim-plug"
 
-# Inside tmux, the mouse works past column 223 and reports drags: Vim uses SGR mouse codes there.
-# Vim 9.2 leaves ttymouse at xterm under tmux's TERM, so the vimrc sets it. A tmux server on the
-# sandbox's TMUX_TMPDIR runs vim in a pane, which waits for the terminal's replies, then saves
-# ttymouse and quits.
+# Vim 9.2 leaves ttymouse at xterm under tmux's TERM, so the vimrc sets sgr
 if command -v tmux &> /dev/null; then
     out="$SANDBOX/ttymouse"
     cat > "$SANDBOX/probe.vim" << EOF_PROBE

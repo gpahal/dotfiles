@@ -42,6 +42,7 @@ source "$UBUNTU_LIB_DIR/ups.sh"
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
 
+STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
@@ -292,10 +293,6 @@ enable_linger() {
 status() {
     local uuid name wired=false item packages overrides
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS=""
-    if ! is_ubuntu; then
-        status_item skipped "Running around the clock: Ubuntu only"
-        return 0
-    fi
     cache_checks
     ubuntu_sudo_items
     items_status sleep_masked sleep_conf_written
@@ -367,10 +364,6 @@ status() {
 
 apply() {
     echo "Setting up Ubuntu to run around the clock..."
-    if ! is_ubuntu; then
-        echo "  Not Ubuntu; skipping."
-        return 0
-    fi
     local pending=() wol_pending=()
     local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""

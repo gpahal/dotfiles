@@ -18,6 +18,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=../lib/system.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
+STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
@@ -308,10 +309,6 @@ status_docker_ports() {
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
-    if is_macos; then
-        status_item skipped "Docker: OrbStack, from the homebrew step, provides it on macOS"
-        return 0
-    fi
     local installed=false
     docker_installed && installed=true
     docker_items
@@ -399,11 +396,6 @@ configure_daemon() {
 
 apply() {
     echo "Setting up Docker..."
-    if is_macos; then
-        echo "  OrbStack, from the homebrew step, provides Docker; skipping."
-        return 0
-    fi
-    require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
     # add_apt_repo needs it, after other changes

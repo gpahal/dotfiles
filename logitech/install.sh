@@ -11,23 +11,15 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+STEP_OS=ubuntu
+
 status() {
-    if is_macos; then
-        status_item skipped "Solaar: the homebrew step installs Logi Options+ on macOS"
-        return 0
-    fi
     status_check "Solaar" apt_installed solaar
     status_result
 }
 
 apply() {
     echo "Setting up Logitech devices..."
-    if is_macos; then
-        echo "  The homebrew step installs Logi Options+ on macOS; skipping."
-        return 0
-    fi
-    require_supported_os || return 1
-
     if apt_installed solaar; then
         echo "  Solaar is already installed."
         return 0

@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Builds features and fixes bugs test-first, one red-green slice at a time. Use when the user asks for TDD, test-first work, or red-green-refactor.
+description: Builds features and fixes bugs test-first, one red-green slice at a time. Use when the user asks for TDD or test-first work.
 ---
 
 # Test-driven development
@@ -17,7 +17,7 @@ See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking g
 
 A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
 
-**Test only at pre-agreed seams.** Before writing any test, write down the seams under test. If a spec from `to-spec` records them under Testing decisions, those are the agreed seams: start from them without asking. Otherwise, confirm them with the user. This check-in is a deliberate exception to any instruction against check-ins, since tests at the wrong seam are costly to unwind. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
+**Test only at pre-agreed seams.** Before writing any test, write down the seams under test. If a spec from `to-spec` records them under Testing decisions, or the `implement` skill passes you seams the user agreed, those are the agreed seams: start from them without asking. Otherwise, confirm them with the user. This check-in is a deliberate exception to any instruction against check-ins, since tests at the wrong seam are costly to unwind. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
 
 Ask: "What's the public interface, and which seams should we test?"
 

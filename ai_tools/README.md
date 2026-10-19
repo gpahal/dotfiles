@@ -228,7 +228,7 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
-- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
+- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. The script and `--status` check with `ss` that nothing listens on that port beyond loopback. Check the service with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
 - **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.

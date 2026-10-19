@@ -363,6 +363,12 @@ The `macos` step sets these:
 
 `just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
 
+If a module `sudo_local` loads goes missing and `sudo` stops working, `just touch-id` can't fix it, since it needs `sudo`. Remove the file with an admin password instead, then re-run `just touch-id`:
+
+```sh
+osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'
+```
+
 ## Manual steps
 
 Scripts can't do these. `bash setup.sh manual-steps` prints the list for its OS from this section, so edit the steps here. The AI tools' steps are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).

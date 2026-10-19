@@ -192,6 +192,8 @@ rm -rf "$SANDBOX/brew" "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $MODULE, which doesn't exist"
 assert_contains "$RUN_OUTPUT" "brew install pam-reattach, then just touch-id"
+# just touch-id needs sudo, which the missing module can break, so status gives a fix without it
+assert_contains "$RUN_OUTPUT" "If sudo fails, remove the file without it: osascript -e 'do shell script \"rm $SUDO_LOCAL\" with administrator privileges'"
 assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after uninstalling pam-reattach"

@@ -294,7 +294,9 @@ status() {
     else
         status_check "$bundle" bundle_installed
     fi
-    if is_macos; then
+    # Without mas, which the Brewfile installs, every app would read as missing for want of an App
+    # Store sign-in
+    if is_macos && status_require_cmd mas "App Store apps"; then
         mas_missing="$(missing_mas_apps)"
         if grep -q '^required ' <<< "$mas_missing"; then
             status_item missing "App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
@@ -305,7 +307,7 @@ status() {
             [ "$kind" != optional ] ||
                 status_item info "$app (App Store) isn't installed. It's optional: to add it, buy it in the App Store, then re-run the homebrew step"
         done <<< "$mas_missing"
-    else
+    elif ! is_macos; then
         status_item skipped "App Store apps: macOS only"
     fi
     # One brew call for every cask, rather than one each, which took seconds

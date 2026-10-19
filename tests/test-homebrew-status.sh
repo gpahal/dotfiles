@@ -80,6 +80,13 @@ run status
 assert_contains "$RUN_OUTPUT" "ok         App Store apps"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
+# Without mas, as when the bundle that installs it failed, the App Store apps can't be checked:
+# unknown, naming what's missing, rather than missing for want of a sign-in
+subtest eval 'hide mas; run status
+assert_contains "$RUN_OUTPUT" "unknown    App Store apps: mas"
+assert_not_contains "$RUN_OUTPUT" "sign in to the App Store"
+assert_not_contains "$RUN_OUTPUT" "Dato"'
+
 # brew info fails for a cask it doesn't list when offline with no API cache, or when the cask was
 # removed upstream. The report still lists every cask.
 cask_app_path() { real_cask_app_path "$1"; }

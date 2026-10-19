@@ -8,11 +8,23 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
+openssh_installed() {
+    apt_installed openssh-server
+}
+
+install_openssh() {
+    apt_get install -y openssh-server
+}
+
 # Either unit starts sshd at boot: a machine switched back to ssh.service, as Ubuntu's docs
 # describe, has ssh.socket off, and enabling it then couldn't bind sshd's port
 sshd_enabled() {
     [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ] ||
         [ "$(systemctl is-enabled ssh.service 2>/dev/null)" == enabled ]
+}
+
+enable_sshd() {
+    sudo systemctl enable --now "$SSH_UNIT"
 }
 
 # Print the SHA256 fingerprint of each public key in ~/.ssh/authorized_keys, one per line
@@ -322,8 +334,7 @@ configure_sshd() {
     sshd_settings_problems "$new" || checked=false
     problems="$SSHD_PROBLEMS"
     # sshd has reloaded, so the warning holds unless another file keeps password logins on
-    if key_only_in "$new" && ! key_only_in "$old" &&
-        ! grep -qE '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems"; then
+    if key_only_in "$new" && ! key_only_in "$old" && ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         # -S none skips the shared connection, which logged in before password logins went off.
         # ssh -O exit would close this session too, since it may run through that connection.
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
@@ -341,19 +352,18 @@ configure_sshd() {
     fi
 }
 
+# The lines of sshd_settings_problems' output about password logins, which status_sshd reports
+# under its own item
+PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
+
 # Print the status items for OpenSSH: the package, the unit that starts sshd, the drop-in, whether
-# sshd takes its settings, and password logins. Reads what only root can with sudo -n.
+# sshd takes its settings, and password logins, each problem once. Reads what only root can with
+# sudo -n. status declares the items first (ubuntu_items).
 status_sshd() {
-    local installed=false item problems="" todo
-    apt_installed openssh-server && installed=true
-    status_check "openssh-server" "$installed"
-    if ! "$installed"; then
-        :
-    elif sshd_enabled; then
-        status_item ok "sshd starts at boot"
-    else
-        status_item missing "sshd starts at boot (run sudo systemctl enable --now $SSH_UNIT)"
-    fi
+    local installed=false item problems="" others todo
+    openssh_installed && installed=true
+    items_status openssh_installed
+    ! "$installed" || items_status sshd_enabled
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_cached; then
         status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
     else
@@ -368,10 +378,15 @@ status_sshd() {
             status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
         elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
             status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"
-        elif problems="$SSHD_PROBLEMS" && [ -z "$problems" ]; then
-            status_item ok "$item"
         else
-            status_item missing "$item ($(join_lines '; ' <<< "$problems"); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+            problems="$SSHD_PROBLEMS"
+            # Password logins get their own item below
+            others="$(grep -vE "$PASSWORD_PROBLEMS" <<< "$problems" || true)"
+            if [ -z "$others" ]; then
+                status_item ok "$item"
+            else
+                status_item missing "$item ($(join_lines '; ' <<< "$others"); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+            fi
         fi
     fi
     item="Password and keyboard-interactive SSH logins off"
@@ -379,8 +394,8 @@ status_sshd() {
         status_item skipped "$item: the step leaves them to root"
     elif ! todo="$(key_only_todo)"; then
         status_item unverified "$item (only root can read $SSHD_DROP_IN; run sudo -v, then status, to check it)"
-    elif [ -z "$todo" ] && grep -qE '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems"; then
-        status_item missing "$item ($(grep -E '^(PasswordAuthentication|KbdInteractiveAuthentication) ' <<< "$problems" | join_lines '; '))"
+    elif [ -z "$todo" ] && grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
+        status_item missing "$item ($(grep -E "$PASSWORD_PROBLEMS" <<< "$problems" | join_lines '; '); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
     elif [ -z "$todo" ]; then
         status_item ok "$item"
     else

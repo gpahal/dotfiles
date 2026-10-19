@@ -198,10 +198,9 @@ install_root_copy() {
     root_copy_current "$@" || install_root_file "$@"
 }
 
-# Add the step's simple sudo items, which status and apply drive by their check functions. The
-# rest branch, so they stay in status and apply. Added at run time, since their texts name paths
-# tests point elsewhere.
-ubuntu_sudo_items() {
+# The step's simple items, which status and apply drive by their check functions. The rest branch,
+# so they stay in status and apply.
+ubuntu_items() {
     items_reset
     item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
     item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
@@ -219,8 +218,12 @@ ubuntu_sudo_items() {
     item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
-    item --sudo "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
-        apt_timers_enabled enable_apt_timers
+    item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
+        "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
+    item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
+    # Driven only once openssh-server is installed, which enables it
+    item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
+        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
 }
 
 # status and apply run in_vm and key_login many times, some in subshells, so they declare
@@ -294,7 +297,7 @@ status() {
     local uuid name wired=false item packages overrides
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS=""
     cache_checks
-    ubuntu_sudo_items
+    ubuntu_items
     items_status sleep_masked sleep_conf_written
     item="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
     if ! sysctl_file_written; then
@@ -320,12 +323,7 @@ status() {
     status_unattended_upgrades
     items_status keep_conffiles_written
     status_held_back
-    # The item's text, with the command that turns them on
-    if apt_timers_enabled; then
-        status_item ok "apt's daily timers enabled and running"
-    else
-        status_item missing "apt's daily timers enabled and running (run sudo systemctl enable --now ${APT_TIMERS[*]})"
-    fi
+    items_status apt_timers_enabled
     if [ -e "$REBOOT_REQUIRED" ]; then
         packages="$(reboot_packages)"
         status_item missing "Reboot pending for updates${packages:+: $packages}; reboot when no agent runs"
@@ -382,7 +380,7 @@ apply() {
     fi
     cache_checks
     ups_state
-    ubuntu_sudo_items
+    ubuntu_items
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
@@ -411,12 +409,8 @@ apply() {
     else
         items_pending unattended_upgrades_running
     fi
-    items_pending keep_conffiles_written apt_timers_enabled
-    if ! apt_installed openssh-server; then
-        pending+=("Install openssh-server")
-    elif ! sshd_enabled; then
-        pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
-    fi
+    items_pending keep_conffiles_written apt_timers_enabled openssh_installed
+    ! openssh_installed || items_pending sshd_enabled
     # Unreadable, the drop-in may already turn them off, which configure_sshd keeps. Turning them
     # off is a change to the drop-in, so the item for it names why.
     local key_only_todo="" key_only_why="" drop_in_lines
@@ -479,14 +473,9 @@ apply() {
         items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
         items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
-            apt_timers_enabled || result=1
-        if ! apt_installed openssh-server; then
-            apt_get install -y openssh-server || result=1
-        fi
+            apt_timers_enabled openssh_installed || result=1
         # Installing the package enables sshd, so this catches one turned off since
-        if apt_installed openssh-server && ! sshd_enabled; then
-            sudo systemctl enable --now "$SSH_UNIT" || result=1
-        fi
+        ! openssh_installed || items_apply sshd_enabled || result=1
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
             if add_tailscale_repo; then

@@ -160,7 +160,7 @@ rm "$REBOOT_REQUIRED"
 # apt's daily timers off: status says so, and how to turn them on
 echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running (run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer)"
+assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running; run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
 rm "$SANDBOX/units/apt-daily-upgrade.timer"
 # Enabled but stopped: a yes enables and starts both
 touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"
@@ -181,7 +181,7 @@ rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 # sshd starts at boot through ssh.socket, 26.04's default
 echo disabled > "$SANDBOX/units/ssh.socket"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot (run sudo systemctl enable --now ssh.socket)"
+assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot; run sudo systemctl enable --now ssh.socket"
 # The step enables it
 : > "$STUB_LOG"
 assert_exit 0 main

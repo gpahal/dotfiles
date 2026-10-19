@@ -130,10 +130,12 @@ assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
 printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd_config.d/00-local.conf"
 # A later file loses to the drop-in, so it isn't named
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
-problems="AllowUsers is someone $me; PasswordAuthentication is yes"
+# Each problem is reported once: password logins under their own item
+first="another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item ($problems; another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
-assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes)"
+assert_contains "$RUN_OUTPUT" "missing    $item (AllowUsers is someone $me; $first)"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes; $first)"
+assert_eq 1 "$(grep -c "PasswordAuthentication is yes" <<< "$RUN_OUTPUT")" "items naming PasswordAuthentication"
 # The step checks them once it writes the drop-in
 rm "$SSHD_DROP_IN"
 : > "$STUB_LOG"
@@ -153,7 +155,8 @@ assert_contains "$RUN_OUTPUT" "ok         $item"
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes;"
+assert_contains "$RUN_OUTPUT" "ok         $item"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes;"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
@@ -170,8 +173,7 @@ for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.
     printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
     : > "$STUB_LOG"
     assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for $addr;"
-    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr)"
+    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr;"
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
 assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
@@ -180,8 +182,7 @@ assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
 printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
-assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1)"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \

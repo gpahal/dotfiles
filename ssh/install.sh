@@ -175,8 +175,14 @@ ssh_dir_private() {
     [ -d "$HOME/.ssh" ] && [ "$(file_mode "$HOME/.ssh/")" == 700 ]
 }
 
+# Succeeds when ~/.ssh/config, if there is one, is mode 600, as main sets it
+ssh_config_private() {
+    [ ! -f "$SSH_CONFIG" ] || [ "$(file_mode "$SSH_CONFIG")" == 600 ]
+}
+
 status() {
     status_check "Only you can read ~/.ssh (mode 700)" ssh_dir_private
+    status_check "Only you can read ~/.ssh/config (mode 600)" ssh_config_private
     if is_macos; then
         status_host_star
         ssh_files status_file

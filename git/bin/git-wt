@@ -51,6 +51,11 @@ usage() {
 
 root="${WORKTREES_DIR:-$HOME/.worktrees}"
 root="${root%/}"
+# prune_empty climbs to $root, so a relative path or / would let it climb to /
+case "$root" in
+    /?*) ;;
+    *) die "WORKTREES_DIR must be an absolute path other than /, not '${WORKTREES_DIR:-}'" ;;
+esac
 
 common="$(git rev-parse --path-format=absolute --git-common-dir 2> /dev/null)" ||
     die "not in a git repository"

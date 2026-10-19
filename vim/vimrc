@@ -3,9 +3,13 @@
 " plugins.
 let s:plug = expand('~/.vim/autoload/plug.vim')
 if filereadable(s:plug)
-    autocmd VimEnter * if len(filter(values(g:plugs), '!isdirectory(v:val.dir)'))
-        \| PlugInstall --sync | source $MYVIMRC
-    \| endif
+    " In a group cleared first, so sourcing the vimrc again doesn't add it twice
+    augroup dotfiles_plug_install
+        autocmd!
+        autocmd VimEnter * if len(filter(values(g:plugs), '!isdirectory(v:val.dir)'))
+            \| PlugInstall --sync | source $MYVIMRC
+        \| endif
+    augroup END
 
     " Plugins are pinned to commits; just bump-plugins moves the pins
     call plug#begin('~/.vim/plugged')
@@ -45,7 +49,8 @@ if filereadable(s:plug)
     Plug 'vim-airline/vim-airline-themes', { 'commit': '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab' }
 
     " Language support
-    " Its Go tools (gopls and others) take minutes to install, so run :GoInstallBinaries once by hand
+    " Its Go tools (gopls and others) take minutes to install, so run :GoInstallBinaries
+    " once by hand
     Plug 'fatih/vim-go', { 'commit': '47694979496d4bf2e90ce75d95f1dec3f41cbefb' }
     Plug 'rust-lang/rust.vim', { 'commit': '889b9a7515db477f4cb6808bef1769e53493c578' }
     call plug#end()

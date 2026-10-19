@@ -74,6 +74,12 @@ start_vim() {
     vim -Nes -u "$HOME/.vimrc" -c 'qa!' 2>&1
 }
 
+# Sourcing the vimrc again keeps one plugin-install autocmd. -c commands run before VimEnter, so
+# vim quits without installing anything.
+vim -Nes -u "$HOME/.vimrc" -c "source $HOME/.vimrc" \
+    -c "redir! > $SANDBOX/autocmds | autocmd dotfiles_plug_install VimEnter | redir END" -c 'qa!' || true
+assert_eq 1 "$(grep -c PlugInstall "$SANDBOX/autocmds" 2> /dev/null)" "plugin-install autocmds after sourcing the vimrc twice"
+
 # Without vim-plug, vim starts without plugins and without errors
 rm "$PLUG"
 assert_exit 0 start_vim

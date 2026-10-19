@@ -39,10 +39,16 @@ plugin_installed() {
 }
 
 # Check out a plugin at a commit, fetching only that commit, and only when the checkout lacks it,
-# so a re-run works offline. A missing dir or a plain one becomes a new checkout, and an existing
-# checkout moves to the commit, whatever branch it was on.
+# so a re-run works offline. A missing or empty dir becomes a new checkout, and an existing
+# checkout moves to the commit, whatever branch it was on. A plain dir with files in it, which the
+# checkout could overwrite, is left for you to move.
 install_tmux_plugin() {
     local repo="$1" sha="$2" dir="$PLUGIN_DIR/${1##*/}"
+    if [ ! -d "$dir/.git" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+        echo "  Couldn't install tmux plugin $repo: $dir isn't a git checkout, and isn't empty. Move it" >&2
+        echo "  aside and re-run." >&2
+        return 1
+    fi
     if { [ -d "$dir/.git" ] || git init -q "$dir"; } &&
         { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
             GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha"; } &&

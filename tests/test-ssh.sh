@@ -209,6 +209,13 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh (mode 700)"
 assert_exit 0 main
 assert_exit 0 status
+# So is ~/.ssh/config
+chmod 644 "$SSH_CONFIG"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh/config (mode 600)"
+assert_exit 0 main
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
 # A symlinked ~/.ssh is judged by the directory it points to
 mv "$HOME/.ssh" "$SANDBOX/ssh-real"
 ln -s "$SANDBOX/ssh-real" "$HOME/.ssh"

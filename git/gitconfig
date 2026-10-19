@@ -65,7 +65,8 @@
 [transfer]
     fsckObjects = true
 
-# Old repos, such as some vim and tmux plugins, carry these harmless defects. fetch.fsck covers clone too.
+# Old repos, such as some vim and tmux plugins, carry these harmless defects. fetch.fsck covers
+# clone too.
 [fetch "fsck"]
     zeroPaddedFilemode = ignore
     badTimezone = ignore
@@ -104,8 +105,9 @@
     dd = -c diff.external=difft diff
     co = switch
     cob = "!f() { b=$(git branch --format='%(refname:lstrip=2)' | fzf --reverse) && git switch \"$b\"; }; f"
-    # Tracks the remote branch picked, even when another remote has one of the same name. Full ref
-    # names keep a local branch named like a remote one, such as origin/x, from being picked instead.
+    # Tracks the remote branch picked, even when another remote has one of the same name. Full
+    # ref names keep a local branch named like a remote one, such as origin/x, from being picked
+    # instead.
     cobr = "!f() { b=$(git for-each-ref --format='%(refname:lstrip=2)' refs/remotes | grep -v '/HEAD$' | fzf --reverse) || return; l=${b#*/}; if git show-ref --verify --quiet \"refs/heads/$l\"; then git switch \"$l\" || return; u=$(git for-each-ref --format='%(upstream)' \"refs/heads/$l\"); u=${u#refs/remotes/}; [ \"$u\" = \"$b\" ] || echo \"$l already exists and tracks ${u:-no remote branch}, not $b\" >&2; else git switch -c \"$l\" --track \"refs/remotes/$b\"; fi; }; f"
     del = branch -d
     br = branch --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) - %(contents:subject) %(color:green)(%(committerdate:relative)) [%(authorname)]' --sort=-committerdate

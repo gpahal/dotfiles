@@ -303,4 +303,10 @@ WORKTREES_DIR="$SANDBOX/linked-worktrees" git -C "$HOME/Dev/x/s" wt prune 2> /de
     fail "git wt prune behind a symlink failed"
 [ ! -e "$SANDBOX/real-worktrees/x" ] || fail "git wt prune behind a symlink left $SANDBOX/real-worktrees/x"
 [ -d "$SANDBOX/real-worktrees" ] || fail "git wt prune behind a symlink removed \$WORKTREES_DIR"
+
+# A relative $WORKTREES_DIR, or /, would let rm and prune remove empty directories up to /
+for bad in worktrees / //; do
+    WORKTREES_DIR="$bad" assert_exit 1 git -C "$HOME/Dev/x/s" wt path
+    assert_contains "$RUN_OUTPUT" "WORKTREES_DIR must be an absolute path other than /"
+done
 test_done

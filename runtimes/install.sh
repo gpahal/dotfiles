@@ -15,9 +15,10 @@ mise_global_config() {
 }
 
 # Print a tool's version from the global mise config, or nothing when the file or the key is
-# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on stderr, when mise can't read the file. The file is named,
-# since --global could read another one. Every mise command here runs from $HOME: mise refuses to
-# run in a project with an untrusted mise.toml, and would add a trusted one's tools.
+# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on
+# stderr, when mise can't read the file. The file is named, since --global could read another one.
+# Every mise command here runs from $HOME: mise refuses to run in a project with an untrusted
+# mise.toml, and would add a trusted one's tools.
 global_tool_version() {
     local file errors value
     file="$(mise_global_config)"

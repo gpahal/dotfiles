@@ -1,13 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# ubuntu/health-alert.sh, which the ubuntu step's user units run: status pushes the problems
-# setup.sh --status --quick and ai_tools/setup.sh --status --quick report to ntfy when one exits
-# 1 or 3, and that one couldn't run when it exits otherwise, and again only when the message
-# changed or a week passed, with one all-clear when nothing needs attention any more; boot pushes that the machine started, once per boot. With no URL
-# saved, neither pushes.
-# The ubuntu step's status reports a failed last run of either service. curl, sleep, systemctl,
-# and the two runners are stubs.
+# ubuntu/health-alert.sh's status and boot pushes, which the ubuntu step's user units run, and the
+# step's status of their last runs. curl, sleep, systemctl, and the two runners are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -20,8 +15,9 @@ export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBO
 # A copy of the script in a repo whose runners print $SANDBOX/out/<runner> and exit with
 # $SANDBOX/exit/<runner>, 0 by default, logging how they were called
 REPO="$SANDBOX/repo"
-mkdir -p "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
+mkdir -p "$REPO/lib" "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
 cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO/ubuntu/"
+cp "$REPO_DIR/lib/common.sh" "$REPO/lib/"
 cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" "$REPO/ubuntu/lib/"
 for runner in setup ai_tools; do
     script="$REPO/setup.sh"
@@ -179,6 +175,19 @@ assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 137
 assert_file_not_contains "$STUB_LOG" "last output"
 echo 0 > "$SANDBOX/exit/setup"
 mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
+
+# A syntax error in lib/common.sh, which the script sources, is pushed as one the runners hit, and
+# fails the service
+cp "$REPO/lib/common.sh" "$SANDBOX/common.sh"
+echo 'if then' >> "$REPO/lib/common.sh"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "lib/common.sh has a syntax error"
+assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
+assert_file_contains "$STUB_LOG" "Health check couldn't run: lib/common.sh has a syntax error"
+assert_file_contains "$STUB_LOG" "bash -n's last output: "
+assert_file_not_contains "$STUB_LOG" "setup --status"
+cp "$SANDBOX/common.sh" "$REPO/lib/common.sh"
 
 # A failed push fails the service, the output leaves the topic out, and the state stays as it was.
 # A changed message is pushed though the last push was recent.

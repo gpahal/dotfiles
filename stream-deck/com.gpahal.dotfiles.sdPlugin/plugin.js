@@ -5,13 +5,17 @@
 // needs no packages.
 //
 // The stat keys, which stats.js draws, update every 2 seconds while one is on screen. Overview
-// switches to profiles/System, the page of stat keys the plugin bundles, and Back returns to the
-// profile before it. Pressing a stat key opens Activity Monitor.
+// switches to profiles/System, the page of stat keys the plugin bundles for the 15-key model, and
+// Back returns to the profile before it. Pressing a stat key opens Activity Monitor.
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const stats = require("./stats.js");
 
-const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
+// A flag's value, or undefined when Stream Deck didn't pass the flag
+const arg = (name) => {
+  const i = process.argv.indexOf(name);
+  return i === -1 ? undefined : process.argv[i + 1];
+};
 const pluginUUID = arg("-pluginUUID");
 const OPEN_IN = path.join(__dirname, "bin", "open-in");
 const INTERVAL_MS = 2000;
@@ -44,13 +48,30 @@ const sampler = stats.createSampler({ log });
 let timer = null;
 let busy = false;
 
+// The kinds whose last render threw, so each error is logged once rather than every 2 seconds
+const failing = new Set();
+
+// A key's SVG, or its placeholder when rendering throws, so one bad stat, such as a field a macmon
+// update renamed, leaves the other keys updating
+function renderKey(kind, sample) {
+  try {
+    const svg = stats.render(kind, sample);
+    failing.delete(kind);
+    return svg;
+  } catch (error) {
+    if (!failing.has(kind)) log(`ERROR couldn't draw the ${kind} key: ${error.message}`);
+    failing.add(kind);
+    return stats.placeholder(kind);
+  }
+}
+
 async function update() {
   if (busy || visible.size === 0) return;
   busy = true;
   try {
     const sample = await sampler.sample([...new Set(visible.values())]);
     for (const [context, kind] of visible) {
-      const image = `data:image/svg+xml;charset=utf8,${encodeURIComponent(stats.render(kind, sample))}`;
+      const image = `data:image/svg+xml;charset=utf8,${encodeURIComponent(renderKey(kind, sample))}`;
       if (shown.get(context) === image) continue;
       shown.set(context, image);
       send({ event: "setImage", context, payload: { image } });
@@ -76,6 +97,12 @@ function stopUpdates() {
   sampler.stop();
 }
 
+// Each connected device's type, from Stream Deck's deviceDidConnect. The bundled System profile is
+// for the 15-key model alone (DeviceType 0 in the manifest), and switching to it on any other
+// device does nothing, so Overview shows a warning there instead.
+const STREAM_DECK_15_KEY = 0;
+const deviceTypes = new Map();
+
 socket.onopen = () => send({ event: arg("-registerEvent"), uuid: pluginUUID });
 socket.onclose = () => {
   sampler.stop();
@@ -91,6 +118,8 @@ socket.onmessage = ({ data }) => {
     return;
   }
   const { event, action, context, device } = message;
+  if (event === "deviceDidConnect") deviceTypes.set(device, message.deviceInfo?.type);
+  if (event === "deviceDidDisconnect") deviceTypes.delete(device);
   if (!action) return;
   // com.gpahal.dotfiles.files is files
   const target = action.slice(action.lastIndexOf(".") + 1);
@@ -102,7 +131,10 @@ socket.onmessage = ({ data }) => {
   } else if (event === "willDisappear" && visible.delete(context) && visible.size === 0) {
     stopUpdates();
   } else if (event === "keyDown") {
-    if (target === "overview") {
+    if (target === "overview" && deviceTypes.has(device) && deviceTypes.get(device) !== STREAM_DECK_15_KEY) {
+      log(`Overview's System page is laid out for the 15-key Stream Deck, not device type ${deviceTypes.get(device)}`);
+      send({ event: "showAlert", context });
+    } else if (target === "overview") {
       send({ event: "switchToProfile", context: pluginUUID, device, payload: { profile: "profiles/System" } });
     } else if (target === "back") {
       // With no profile named, Stream Deck returns to the one before

@@ -12,6 +12,5 @@ _title_preexec() {
     [[ $TERM == dumb ]] || print -rn -- $'\e]2;'"${${1//[[:cntrl:]]/ }[1,100]}"$'\a'
 }
 
-autoload -U add-zsh-hook
 add-zsh-hook precmd _title_precmd
 add-zsh-hook preexec _title_preexec

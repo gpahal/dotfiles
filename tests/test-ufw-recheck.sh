@@ -1,12 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
-# sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves
-# rules you added by hand alone. While a logged-in SSH session comes from outside the private ranges
-# and the tailnet, it doesn't turn ufw on, and fails; with ufw on, it adds the missing rules, which
-# can't cut anyone off. A connection that hasn't logged in doesn't count. The SSH ports include
-# ssh.socket's.
+# The ubuntu step's firewall: when it checks the ufw rules without asking for sudo, the rules it
+# adds, and the SSH sessions that keep it from turning ufw on.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,10 +12,10 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
+as_os ubuntu
 # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
-status_smart() { :; }
-status_firmware() { :; }
+replace_fn status_smart :
+replace_fn status_firmware :
 # ufw is on when its sandbox config says ENABLED=yes and ufw.service is enabled and active, which
 # it is unless $SANDBOX/ufw-unit-inactive exists (the systemctl stub below). Linger comes from a
 # file under /var, so its check is replaced: it's on when $SANDBOX/linger exists, and loginctl
@@ -30,26 +26,27 @@ ufw_off() { echo ENABLED=no > "$UFW_CONF"; }
 ufw_defaults() { printf '%s\n' 'DEFAULT_INPUT_POLICY="DROP"' "IPV6=$1" > "$UFW_DEFAULTS"; }
 ufw_on
 ufw_defaults yes
-lingering() { [ -e "$SANDBOX/linger" ]; }
+replace_fn lingering '[ -e "$SANDBOX/linger" ]'
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check and reload
-smartd_enabled() { true; }
-smartd_hook_installed() { true; }
-keep_conffiles_written() { true; }
-status_held_back() { :; }
-in_git_worktree() { false; }
-health_units_loaded() { true; }
+replace_fn smartd_enabled true
+replace_fn smartd_hook_installed true
+echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
+replace_fn keep_conffiles_written true
+replace_fn status_held_back :
+replace_fn in_git_worktree false
+replace_fn health_units_loaded true
 # test-ubuntu-ups.sh covers the UPS
-ups_todo() { :; }
-status_ups() { :; }
-warn_no_ups() { :; }
+replace_fn ups_todo :
+replace_fn status_ups :
+replace_fn warn_no_ups :
 # The kernel has the sysctl settings, which test-ubuntu-system.sh covers
-sysctl_in_effect() { true; }
-locale_installed() { true; }
-unattended_upgrades_running() { true; }
+replace_fn sysctl_in_effect true
+replace_fn locale_installed true
+replace_fn unattended_upgrades_running true
 # test-ubuntu-step.sh covers apt's timers, sshd at boot, and a pending reboot
-apt_timers_enabled() { true; }
-sshd_enabled() { true; }
+replace_fn apt_timers_enabled true
+replace_fn sshd_enabled true
 touch "$SANDBOX/linger"
 
 # sudo without -n runs the command, as if you typed your password, and refuses a path outside the
@@ -88,6 +85,8 @@ stub ss
 stub loginctl 'touch "'"$SANDBOX"'/linger"'
 stub nmcli
 stub lsblk
+# Not a VM
+stub systemd-detect-virt 'exit 1'
 SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
 # Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"

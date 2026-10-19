@@ -78,13 +78,15 @@ jobs:
       - name: Install tools (Ubuntu)
         if: runner.os == 'Linux'
         # Ubuntu has no mise package, and its fd package names the command fdfind, while brew's,
-        # which setup installs, is fd
+        # which setup installs, is fd. test-ubuntu-sshd-real.sh runs the real sshd -T, which needs
+        # /run/sshd, and ssh.socket creates it only on the first connection.
         env:
           MISE_VERSION: v2026.10.5
           MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
         run: |
           sudo apt-get update
-          sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4
+          sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4 openssh-server
+          sudo install -d -m 0755 /run/sshd
           sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
           f="$RUNNER_TEMP/shellcheck.tar.xz"
           curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
@@ -181,10 +183,13 @@ jobs:
           fi
           bwrap --unshare-all --ro-bind / / true
 
-      # Claude Code from the native installer, as the claude-code step installs it
+      # Claude Code from the native installer, as the claude-code step installs it. Downloaded
+      # first, so a truncated download fails here rather than running part of the script.
       - name: Install the latest Claude Code and Codex
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash
+          f="$RUNNER_TEMP/claude-install.sh"
+          curl -fsSL -o "$f" https://claude.ai/install.sh
+          bash "$f"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           npm install -g @openai/codex@latest
 

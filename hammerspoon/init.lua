@@ -9,8 +9,8 @@
 --   Ctrl+Opt+Cmd+E      Zed at the folder or file in front, as the Stream Deck's Editor key does
 -- Ctrl+Opt alone would clash with Rectangle's recommended shortcuts (Ctrl+Opt+C, E, and T), which
 -- Rectangle uses with Cmd only on the arrow keys.
--- The hammerspoon step copies this file to ~/.hammerspoon/init.lua, and the Stream Deck plugin's
--- bin/open-in, which finds the folder or file and opens the new tab, to ~/.hammerspoon/bin/open-in.
+-- The hammerspoon step copies this file, and the Stream Deck plugin's bin/open-in, which finds the
+-- folder or file and opens the new tab, to ~/.hammerspoon.
 -- Hammerspoon needs Accessibility, a manual step, to send the new tab's keystrokes and read Zed's
 -- window title and T3 Code's page, and macOS asks it for Automation of Ghostty, Finder, System
 -- Events, and Google Chrome.
@@ -46,13 +46,17 @@ local function open(bundleID, name)
     return false
 end
 
--- open-in shows a notification when it fails, so only its log line is left to print. Returns the
--- task, or nil when it couldn't start.
+-- open-in shows a notification when it fails, so only its log line is left to print. bash exits
+-- 127 when open-in is missing and 126 when it can't run it, and then no notification shows, so
+-- those get an alert. Returns the task, or nil when it couldn't start.
 local function openIn(target)
     local task
-    task = hs.task.new("/bin/bash", function(_, _, stderr)
+    task = hs.task.new("/bin/bash", function(exitCode, _, stderr)
         dotfiles.tasks[task] = nil
         print("open-in: " .. stderr)
+        if exitCode == 126 or exitCode == 127 then
+            hs.alert.show("Couldn't run " .. OPEN_IN .. "; re-run the hammerspoon step")
+        end
     end, { OPEN_IN, target })
     local env = task:environment()
     env.OPEN_IN_CALLER = "Hammerspoon"

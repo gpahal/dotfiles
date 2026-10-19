@@ -11,10 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script ssh/install.sh
-# shellcheck disable=SC2329 # main and status call them
-is_macos() { true; }
-# shellcheck disable=SC2329
-is_ubuntu() { false; }
+as_os macos
 # launchctl print fails: nothing is loaded
 stub launchctl '[ "$1" != print ] || exit 113'
 
@@ -150,7 +147,7 @@ assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.ssh-ad
 assert_contains "$RUN_OUTPUT" "missing    The dotfiles.ssh-add LaunchAgent is loaded"
 
 # In your real home, it's loaded, and a failed load fails the step
-home_is_real() { true; }
+replace_fn home_is_real 'return 0'
 stub launchctl 'case "$1" in print) exit 113 ;; bootstrap) exit 5 ;; esac'
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "launchctl bootstrap gui/$(id -u) $AGENT"
@@ -177,17 +174,13 @@ assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
 
 # A failed copy must fail even when launchctl reports an already loaded agent.
 copy_failure() {
-    # shellcheck disable=SC2329
-    copy_file() { return 1; }
+    replace_fn copy_file 'return 1'
     install_ssh_add_agent || return 1
 }
 assert_exit 1 copy_failure
 
 # Ubuntu gets no Host * block and no LaunchAgent, and an existing config keeps its lines
-# shellcheck disable=SC2329 # main and status call them
-is_macos() { false; }
-# shellcheck disable=SC2329
-is_ubuntu() { true; }
+as_os ubuntu
 rm -rf "$HOME/.ssh" "$HOME/Library"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -209,6 +202,13 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh (mode 700)"
 assert_exit 0 main
 assert_exit 0 status
+# So is ~/.ssh/config
+chmod 644 "$SSH_CONFIG"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh/config (mode 600)"
+assert_exit 0 main
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
 # A symlinked ~/.ssh is judged by the directory it points to
 mv "$HOME/.ssh" "$SANDBOX/ssh-real"
 ln -s "$SANDBOX/ssh-real" "$HOME/.ssh"
@@ -216,6 +216,13 @@ assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
 rm "$HOME/.ssh"
 mv "$SANDBOX/ssh-real" "$HOME/.ssh"
+# So is a symlinked ~/.ssh/config, by the file it points to
+mv "$SSH_CONFIG" "$SANDBOX/ssh-config"
+ln -s "$SANDBOX/ssh-config" "$SSH_CONFIG"
+assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
+rm "$SSH_CONFIG"
+mv "$SANDBOX/ssh-config" "$SSH_CONFIG"
 
 # A Host line counts when it lists the pattern itself, before any comment, and case matters
 host_line_case() {

@@ -1,12 +1,10 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # --status --quick (DOTFILES_STATUS_QUICK=1) skips the slowest checks. This covers two of them: the
 # homebrew step reports the Brewfile as unverified instead of running brew bundle check, and the
 # Ubuntu t3-code step checks once whether the service is active instead of watching it for up to
-# 10 s.
+# 10 s, and doesn't run t3 browser setup.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -15,9 +13,9 @@ setup_sandbox
 
 # homebrew, on Ubuntu with Homebrew and its casks installed
 load_script homebrew/install.sh
-is_macos() { false; }
-missing_ubuntu_commands() { :; }
-locale_installed() { true; }
+as_os ubuntu
+replace_fn missing_ubuntu_commands :
+replace_fn locale_installed true
 # brew lists the Ubuntu casks as installed
 stub brew "[ \"\$1 \$2\" != 'list --cask' ] || printf '%s\n' ${UBUNTU_CASKS[*]}"
 
@@ -37,26 +35,35 @@ assert_exit 0 status
 # t3-code on Ubuntu, with the service installed and active
 unset DOTFILES_STATUS_QUICK
 load_script ai_tools/t3-code/install.sh
-is_macos() { false; }
-apt_installed() { false; }
+as_os ubuntu
+replace_fn apt_installed false
 mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT"
 stub systemctl 'case "$2" in is-active | is-enabled) exit 0 ;; show) echo 4242 ;; esac'
 stub sleep
-# No t3 serve started by hand
-stub pgrep 'exit 1'
+# No t3 serve started by hand, the service's launcher runs a server, and it listens on loopback
+stub pgrep 'case "$1" in -P) echo 4243 ;; *) exit 1 ;; esac'
+stub ss 'echo "LISTEN 0 511 127.0.0.1:3773 0.0.0.0:*"'
+# The t3 CLI, whose browser is set up
+mkdir -p "$HOME/.local/bin"
+printf '%s\n' '#!/bin/bash' 'printf "%s\n" "t3 $*" >> "$STUB_LOG"' > "$HOME/.local/bin/t3"
+chmod +x "$HOME/.local/bin/t3"
 : > "$STUB_LOG"
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
 assert_file_contains "$STUB_LOG" "systemctl --user show -p MainPID"
+assert_file_contains "$STUB_LOG" "t3 browser setup"
 
 : > "$STUB_LOG"
 export DOTFILES_STATUS_QUICK=1
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
 assert_eq 1 "$(grep -c 'is-active' "$STUB_LOG")" "is-active checks with --quick"
-assert_file_not_contains "$STUB_LOG" "systemctl --user show"
+# One look at whether the launcher runs a server, instead of watching the service for 10 s
+assert_eq 1 "$(grep -c 'systemctl --user show -p MainPID' "$STUB_LOG")" "MainPID checks with --quick"
 assert_file_not_contains "$STUB_LOG" "sleep"
+assert_file_not_contains "$STUB_LOG" "t3 browser setup"
+assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --quick"
 
 # An inactive service is still reported as not running
 stub systemctl 'case "$2" in is-active) exit 3 ;; is-enabled) exit 0 ;; show) echo 0 ;; esac'

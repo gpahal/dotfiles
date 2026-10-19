@@ -3,32 +3,26 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The Ubuntu side of the t3-code step. Another T3 Code server keeps setup from changing the
-# server's settings or installing the service. An existing service is enabled and started without
-# asking, and left alone when it's already both. The step warns when the service lacks the docker
-# group you're in. A running service is restarted, after asking once, when its settings or its
-# drop-in change, and the settings change only once it has stopped. A declined restart still writes
-# the drop-in, and is offered again.
-# The drop-in holds only the telemetry, port, and host settings, and the step installs no desktop
-# app. Settings it can't apply fail the step, after the service and browser setup still run. A
-# drop-in it can't write or load fails the step and keeps the service from starting.
-# Stubs stand in for systemctl, pgrep, id, getent, sleep, and the t3 CLI, and the functions that
-# read /proc and /var, and run the installer, are replaced.
+# The Ubuntu side of the t3-code step: the server's settings, its service and drop-in, other
+# servers, listeners, the browser setup, and T3 Connect. Stubs stand in for systemctl, pgrep, ss,
+# id, getent, sleep, and the t3 CLI, and the functions that read /proc and /var, and run the
+# installer, are replaced.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script ai_tools/t3-code/install.sh
-is_macos() { false; }
+as_os ubuntu
 # Questions show in the output, and get no, unless a test says yes
-confirm() { echo "$1"; false; }
+answer no
 
 MANUAL_SERVER="304|t3|t3 serve"
 MANUAL_MESSAGE="PID 304, a t3 serve started by hand"
 
 # The service's state lives in files: active and enabled. Its main PID is 4242 while active.
-# start-limit-hit refuses a start until reset-failed.
+# start-limit-hit fails the unit and refuses a start until reset-failed. idle is a launcher that
+# runs no server, which a start clears.
 # systemd's loaded drop-in is loaded-drop-in, whose Environment= lines it shows.
 STATE="$SANDBOX/state"
 mkdir -p "$STATE"
@@ -37,10 +31,11 @@ state="$(dirname "$STUB_LOG")/state"
 case "$2" in
     is-active) [ -f "$state/active" ] ;;
     is-enabled) [ -f "$state/enabled" ] ;;
+    is-failed) [ -e "$state/start-limit-hit" ] ;;
     start | restart)
         [ ! -e "$state/start-limit-hit" ] || exit 1
         touch "$state/active"
-        rm -f "$state/old-env" "$state/old-env-host"
+        rm -f "$state/old-env" "$state/old-env-host" "$state/idle"
         ;;
     daemon-reload)
         rm -f "$state/reload-needed"
@@ -59,7 +54,6 @@ case "$2" in
                     echo no
                 fi
                 ;;
-            *Result*) if [ -e "$state/start-limit-hit" ]; then echo start-limit-hit; else echo success; fi ;;
             *Environment*) sed -n "s/^Environment=//p" "$state/loaded-drop-in" 2> /dev/null | tr "\n" " " ;;
             *) if [ -f "$state/active" ]; then echo 4242; else echo 0; fi ;;
         esac
@@ -85,6 +79,12 @@ while IFS="|" read -r pid name cmd; do
 done < "$procs"
 exit "$found"'
 stub sleep
+# The listeners: the service's server on loopback while it's active, plus the lines of
+# $SANDBOX/state/listeners
+stub ss '
+state="$(dirname "$STUB_LOG")/state"
+[ ! -f "$state/active" ] || echo "LISTEN 0      511        127.0.0.1:3773      0.0.0.0:*"
+[ ! -f "$state/listeners" ] || cat "$state/listeners"'
 # The t3 CLI: `t3 service install` starts the service
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/t3" << 'EOF'
@@ -99,14 +99,19 @@ EOF
 chmod +x "$HOME/.local/bin/t3"
 
 # No process is in the service's cgroup unless a test says so, and linger is on
-t3_code_in_service_cgroup() { false; }
-t3_code_lingering() { true; }
+replace_fn t3_code_in_service_cgroup 'false'
+replace_fn t3_code_lingering 'true'
+# The launcher runs a server unless it's idle, or always-idle, which no start clears
+replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] && [ ! -e "$STATE/always-idle" ]'
 # The service's running environment: old-env predates the telemetry line, old-env-host the host
-t3_code_process_environ() {
-    if [ -e "$STATE/old-env" ]; then echo T3CODE_TELEMETRY_ENABLED=true
-    elif [ -e "$STATE/old-env-host" ]; then printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773
-    else printf '%s\n' T3CODE_TELEMETRY_ENABLED=false T3CODE_PORT=3773 T3CODE_HOST=127.0.0.1; fi
-}
+replace_fn t3_code_process_environ '
+if [ -e "$STATE/old-env" ]; then
+    echo T3CODE_TELEMETRY_ENABLED=true
+    return
+fi
+echo T3CODE_TELEMETRY_ENABLED=false
+echo T3CODE_PORT=3773
+[ -e "$STATE/old-env-host" ] || echo T3CODE_HOST=127.0.0.1'
 
 # A drop-in whose content differs from what the step writes, which systemd has loaded
 different_drop_in() {
@@ -162,9 +167,9 @@ assert_contains "$RUN_OUTPUT" "Wrote the drop-in; it applies at the next restart
 # A t3 serve inside the service's cgroup is the service's own
 reset
 echo "$MANUAL_SERVER" > "$SANDBOX/procs"
-t3_code_in_service_cgroup() { true; }
+replace_fn t3_code_in_service_cgroup 'true'
 assert_eq "" "$(t3_code_other_servers)" "a server in the service's cgroup"
-t3_code_in_service_cgroup() { false; }
+replace_fn t3_code_in_service_cgroup 'false'
 
 # A server the Mac started over SSH, which runs the t3 its runner downloaded to ~/.t3/runtime, also
 # skips both
@@ -177,8 +182,24 @@ assert_contains "$RUN_OUTPUT" "PID 302, a server the Mac started over SSH"
 [ ! -f "$T3_CODE_SETTINGS" ] || fail "server settings were written while another server ran"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
 
+# A HOME with characters an extended regex treats as special matches only itself, so a server under
+# another HOME isn't one the Mac started over SSH
+special_home() {
+    HOME="$SANDBOX/a+b"
+    load_script ai_tools/t3-code/install.sh
+    replace_fn t3_code_in_service_cgroup 'false'
+    echo "302|t3|$SANDBOX/a+b/.t3/runtime/versions/0.0.45/t3 serve" > "$SANDBOX/procs"
+    assert_eq "302 ssh" "$(t3_code_other_servers | cut -d' ' -f1-2)" "a server under a HOME with a +"
+    echo "302|t3|$SANDBOX/aab/.t3/runtime/versions/0.0.45/t3 serve" > "$SANDBOX/procs"
+    assert_eq "302 manual" "$(t3_code_other_servers | cut -d" " -f1-2)" "a server under another HOME"
+}
+reset
+subtest special_home
+reset
+
 # Status names each T3 Code server outside the service, with its PID, kind, and command line, as
-# missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own server, in its cgroup, isn't one, nor is another program that runs serve.
+# missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own
+# server, in its cgroup, isn't one, nor is another program that runs serve.
 reset
 installed_unit
 touch "$STATE/active" "$STATE/enabled"
@@ -187,7 +208,7 @@ printf '%s\n' "302|t3|$HOME/.t3/runtime/versions/0.0.45/t3 serve --host 127.0.0.
     "305|t3|$HOME/.t3/runtime/versions/0.0.45/t3 serve" \
     "306|vim|vim notes.txt" \
     "307|python3|python3 manage.py serve --port 8000" > "$SANDBOX/procs"
-t3_code_in_service_cgroup() { [ "$1" == 305 ]; }
+replace_fn t3_code_in_service_cgroup '[ "$1" == 305 ]'
 assert_eq "302 ssh
 304 manual" "$(t3_code_other_servers | cut -d' ' -f1-2)" "the other servers"
 run status
@@ -203,7 +224,7 @@ assert_contains "$RUN_OUTPUT" "to fix it, remove this host's SSH connection in T
 rm -f "$SANDBOX/procs"
 run status
 assert_contains "$RUN_OUTPUT" "ok         No T3 Code server outside t3code.service"
-t3_code_in_service_cgroup() { false; }
+replace_fn t3_code_in_service_cgroup 'false'
 
 # No other server and no unit: the service is installed
 reset
@@ -221,8 +242,8 @@ assert_contains "$RUN_OUTPUT" "Enabled the T3 Code service"
 assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_file_not_contains "$STUB_LOG" "reset-failed"
 
-# A unit that hit its start limit, as when another server held the port, is reset before it starts,
-# since systemd would otherwise refuse the start for 5 minutes
+# A unit that hit its start limit, as when another program held the port, is reset before it
+# starts, since systemd would otherwise refuse the start for 5 minutes
 reset
 installed_unit
 touch "$STATE/enabled" "$STATE/start-limit-hit"
@@ -240,6 +261,39 @@ assert_contains "$RUN_OUTPUT" "already installed and running"
 for action in enable start stop restart daemon-reload; do
     assert_file_not_contains "$STUB_LOG" "systemctl --user $action"
 done
+
+# A running service whose launcher runs no server, as after another server had its data when it
+# started, is restarted without asking. Status reports it until then.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/idle"
+run status
+assert_contains "$RUN_OUTPUT" "missing    T3 Code service running a server: it runs none"
+assert_not_contains "$RUN_OUTPUT" "ok         T3 Code service running"
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "systemctl --user restart t3code.service"
+assert_contains "$RUN_OUTPUT" "Restarted the T3 Code service, which ran no server"
+[ ! -e "$STATE/idle" ] || fail "the idle service wasn't restarted"
+run status
+assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
+assert_not_contains "$RUN_OUTPUT" "running a server"
+
+# A launcher that runs no server only for a moment, as while it swaps servers in an update, isn't
+# restarted. The server comes back during the 1 s wait between checks, not the step's other waits.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/idle"
+stub sleep '[ "$1" != 1 ] || rm -f "$(dirname "$STUB_LOG")/state/idle"'
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_not_contains "$STUB_LOG" "systemctl --user restart"
+stub sleep
+
+# Still running no server after the restart, the step fails, saying where to look
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled" "$STATE/always-idle"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "The T3 Code service runs no server. Check ~/.t3/userdata/logs/boot-service.log"
 
 # A service that won't stay up fails the step, saying where to look
 reset
@@ -263,23 +317,23 @@ stub systemctl "$SYSTEMCTL_STUB"
 # Linger off with an existing unit: say so, still repair the service, and don't fail
 reset
 installed_unit
-t3_code_lingering() { false; }
+replace_fn t3_code_lingering 'false'
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Linger is off"
 assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
-t3_code_lingering() { true; }
+replace_fn t3_code_lingering 'true'
 
 # Linger off with no unit: the service isn't installed, since it would start only at login, and
 # the step fails, saying how to turn linger on. Status says the same.
 reset
-t3_code_lingering() { false; }
+replace_fn t3_code_lingering 'false'
 assert_exit 1 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Linger is off"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
 run status
 assert_contains "$RUN_OUTPUT" 'missing    T3 Code service: turn on linger: `bash setup.sh ubuntu`'
-t3_code_lingering() { true; }
+replace_fn t3_code_lingering 'true'
 
 # Status reports whether the service starts at boot
 reset
@@ -303,12 +357,12 @@ installed_unit
 touch "$STATE/active" "$STATE/enabled"
 stub id "case \"\$*\" in -nG*) echo 'me adm docker' ;; -u) echo 1000 ;; *) echo me ;; esac"
 stub getent '[ "$*" != "group docker" ] || echo "docker:x:998:me"'
-t3_code_process_groups() { echo "4 24 27"; }
+replace_fn t3_code_process_groups 'echo "4 24 27"'
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "still has the groups it had before you joined the docker group"
 assert_contains "$RUN_OUTPUT" "sudo systemctl restart user@1000"
 # The service has the group: no warning
-t3_code_process_groups() { echo "4 24 27 998"; }
+replace_fn t3_code_process_groups 'echo "4 24 27 998"'
 assert_exit 0 configure_t3_code_ubuntu
 assert_not_contains "$RUN_OUTPUT" "docker group"
 rm -f "$STUB_DIR/id" "$STUB_DIR/getent"
@@ -319,7 +373,7 @@ reset
 installed_unit
 echo '{}' > "$T3_CODE_SETTINGS"
 touch "$STATE/active" "$STATE/enabled"
-confirm() { echo "$1"; }
+answer yes
 stub systemctl "[ \"\$2\" != stop ] || exit 1
 $SYSTEMCTL_STUB"
 assert_exit 1 configure_t3_code_ubuntu
@@ -342,7 +396,7 @@ assert_contains "$RUN_OUTPUT" "Restarted the T3 Code service"
 assert_eq 1 "$(grep -c 'Restart the T3 Code service' <<< "$RUN_OUTPUT")" "restart questions"
 assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
 assert_file_contains "$T3_CODE_SETTINGS" "claude-opus-5-5"
-confirm() { echo "$1"; false; }
+answer no
 
 # A changed drop-in and settings on a running service are one question. Declined, the drop-in is
 # still written and loaded, so the service gets it at its next restart, even a reboot, but the
@@ -371,14 +425,14 @@ run status
 assert_contains "$RUN_OUTPUT" "ok         Telemetry off, port 3773, and host 127.0.0.1 in the service drop-in"
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in: systemctl --user restart t3code"
 # Accepted, the service stops, the settings change, and it starts again. Then nothing is pending.
-confirm() { echo "$1"; }
+answer yes
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq "systemctl --user stop t3code.service
 systemctl --user start t3code.service" "$(grep -E 'systemctl --user (stop|start|restart|daemon-reload)' "$STUB_LOG")" "the restart"
 t3_code_drop_in_current || fail "the drop-in wasn't written"
 assert_file_contains "$T3_CODE_SETTINGS" "claude-opus-5-5"
-confirm() { echo "$1"; false; }
+answer no
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "already set"
@@ -419,7 +473,7 @@ assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its dro
 assert_not_contains "$RUN_OUTPUT" "Wrote the drop-in"
 
 # A restart whose start fails fails the step, and the next run starts the service
-confirm() { echo "$1"; }
+answer yes
 stub systemctl '[ "$2" != start ] || exit 1
 '"$SYSTEMCTL_STUB"
 # As main runs it: under ||, where set -e is off
@@ -442,7 +496,7 @@ stub systemctl "$SYSTEMCTL_STUB"
 assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" 'systemctl --user daemon-reload'
 assert_exit 1 t3_code_restart_pending
-confirm() { echo "$1"; false; }
+answer no
 
 # The drop-in sets only telemetry, the port, and the loopback host, in [Service]. The start limit
 # and oomd's preference are left to T3's unit.
@@ -467,18 +521,44 @@ touch "$STATE/old-env-host"
 assert_exit 0 t3_code_restart_pending
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in"
-confirm() { echo "$1"; }
+answer yes
 assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
 assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_exit 1 t3_code_restart_pending
-confirm() { echo "$1"; false; }
+answer no
+
+# Every listener on the server's port must be on loopback, whatever the drop-in says: status
+# names any other, and the step fails once the service runs, without stopping it. Other ports,
+# and loopback in its other forms, don't count. ss failing is unknown.
+reset
+installed_unit
+touch "$STATE/active" "$STATE/enabled"
+printf '%s\n' "LISTEN 0 511 [::1]:3773 [::]:*" "LISTEN 0 511 127.0.0.1%lo:3773 0.0.0.0:*" \
+    "LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*" "LISTEN 0 511 *:37730 *:*" > "$STATE/listeners"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Port 3773 open only on loopback"
+assert_exit 0 configure_t3_code_ubuntu
+printf '%s\n' "LISTEN 0 511 0.0.0.0:3773 0.0.0.0:*" "LISTEN 0 511 [::]:3773 [::]:*" >> "$STATE/listeners"
+run status
+assert_eq 3 "$RUN_STATUS" "status's exit with the port open beyond loopback"
+assert_contains "$RUN_OUTPUT" "missing    Port 3773 open only on loopback: also on 0.0.0.0:3773, [::]:3773, which the tailnet can reach"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "Port 3773 is open beyond loopback, where the tailnet can reach it: 0.0.0.0:3773, [::]:3773."
+[ -f "$STATE/active" ] || fail "the step stopped the service"
+stub ss 'exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Port 3773 open only on loopback: ss couldn't list the listeners"
+assert_exit 1 configure_t3_code_ubuntu
+assert_contains "$RUN_OUTPUT" "ss couldn't list the listeners on port 3773"
+rm "$STATE/listeners"
+stub ss '[ ! -f "$(dirname "$STUB_LOG")/state/active" ] || echo "LISTEN 0 511 127.0.0.1:3773 0.0.0.0:*"'
 
 # An enabled unit without linger doesn't start at boot until login.
-t3_code_lingering() { false; }
+replace_fn t3_code_lingering 'false'
 run status
 assert_contains "$RUN_OUTPUT" 'missing    Linger enabled for T3 Code to start without login'
-t3_code_lingering() { true; }
+replace_fn t3_code_lingering 'true'
 
 # On Ubuntu, main sets up the server and its service, and nothing else: no desktop app, and no
 # telemetry line in ~/.profile
@@ -514,11 +594,11 @@ different_drop_in
 touch "$STATE/active" "$STATE/enabled"
 stub systemctl '[ "$2" != daemon-reload ] || exit 1
 '"$SYSTEMCTL_STUB"
-confirm() { echo "$1"; }
+answer yes
 assert_exit 1 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Left the T3 Code service stopped, since it would start without its drop-in"
 assert_file_not_contains "$STUB_LOG" "systemctl --user start"
-confirm() { echo "$1"; false; }
+answer no
 stub systemctl "$SYSTEMCTL_STUB"
 # A write cut short, as by a full disk, leaves the old drop-in whole, so the enabled unit can't
 # start at boot with a drop-in that lacks the host line
@@ -555,7 +635,7 @@ assert_exit 1 t3_code_browser_ready
 # Needing root, the step prints the command for you to run and doesn't fail. ~/.local/bin/t3 is
 # yours to write and updates itself, so the step never runs it under sudo, even when you'd agree.
 stub_sudo_exec
-confirm() { echo "$1"; }
+answer yes
 : > "$STUB_LOG"
 assert_exit 0 setup_t3_code_browser
 assert_contains "$RUN_OUTPUT" 'sudo ~/.local/bin/t3 browser setup'
@@ -563,7 +643,7 @@ assert_file_not_contains "$STUB_LOG" 'sudo'
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup"
 stub sudo 'exit 1'
-confirm() { echo "$1"; false; }
+answer no
 echo ready > "$STATE/browser-mode"
 assert_exit 0 t3_code_browser_ready
 
@@ -599,11 +679,10 @@ mv "$SANDBOX/t3" "$HOME/.local/bin/t3"
 # fails, and no service is installed. Only declining the sudo for libatomic1 doesn't fail it.
 reset
 rm -f "$HOME/.local/bin/t3"
-apt_installed() { [ "$1" != libatomic1 ] || [ -e "$STATE/libatomic1" ]; }
-run_installer() {
-    echo "run_installer $*" >> "$STUB_LOG"
-    return "$(cat "$STATE/installer-status")"
-}
+replace_fn apt_installed '[ "$1" != libatomic1 ] || [ -e "$STATE/libatomic1" ]'
+replace_fn run_installer '
+echo "run_installer $*" >> "$STUB_LOG"
+return "$(cat "$STATE/installer-status")"'
 touch "$STATE/libatomic1"
 for code in 2 3 0; do
     echo "$code" > "$STATE/installer-status"
@@ -619,4 +698,14 @@ rm "$STATE/libatomic1"
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Install libatomic1"
 assert_file_not_contains "$STUB_LOG" "run_installer"
+# Agreed, apt's lists are updated before libatomic1 installs, since stale ones can 404
+answer yes
+stub sudo
+echo 0 > "$STATE/installer-status"
+: > "$STUB_LOG"
+assert_exit 1 install_t3_cli
+assert_eq "update
+install -y libatomic1" "$(sed -n 's/^sudo .* apt-get -o [^ ]* //p' "$STUB_LOG")" "apt-get's commands"
+assert_file_contains "$STUB_LOG" "run_installer sh https://t3.codes/install.sh"
+stub sudo 'exit 1'
 test_done

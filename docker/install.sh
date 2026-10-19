@@ -1,13 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Docker Engine on Ubuntu from Docker's apt repo, the Linux counterpart of OrbStack on the
-# Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
-# rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,
-# networks stay out of the SSH ranges, and Docker updates install with the daily security updates.
-# These need sudo, so the step lists what's missing and asks once. The run that installs Docker
-# then asks on its own whether to add you to the docker group, which lets `docker` run without sudo
-# but is root-equivalent; without it, use sudo docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides Docker.
+# Install Docker Engine from Docker's apt repo, started at boot.
+#
+# Docker Engine is the Linux counterpart of OrbStack on the Mac. The daemon starts at boot, so
+# containers with a restart policy come back, container logs rotate, containers keep running across
+# daemon restarts, published ports listen on 127.0.0.1, networks stay out of the SSH ranges, and
+# Docker updates install with the daily security updates. These need sudo, so the step lists what's
+# missing and asks once. The run that installs Docker then asks on its own whether to add you to the
+# docker group, which lets `docker` run without sudo but is root-equivalent; without it, use sudo
+# docker. Status says how to join it later. On macOS, OrbStack (from the homebrew step) provides
+# Docker.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo and systemctl. Test it
 # in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -16,6 +19,10 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+
+STEP_OS=ubuntu
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
@@ -31,23 +38,16 @@ DOCKER_UNATTENDED_CONTENT='// From the dotfiles docker step: install Docker upda
 Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
 DOCKER_DAEMON_CONFIG=/etc/docker/daemon.json
 DOCKER_DAEMON_KEYS="log-driver, live-restore, localhost-only published ports, and address pools"
-# The local log driver rotates each container's logs (5 files of 20 MB); json-file, the default,
-# grows without limit. It applies to containers created after the change. live-restore keeps
-# containers running while the daemon restarts, e.g. for an upgrade. Published ports listen on
-# 127.0.0.1 unless given an address, since they bypass ufw: ip covers the default bridge, and
-# default-network-opts the user-defined networks, such as Compose's, created after the change.
-# Docker's default address pools are 172.17.0.0/16 to 172.31.0.0/16, then 192.168.0.0/16 in /20s,
-# and the ubuntu step's ufw lets SSH in from 192.168.0.0/16. default-address-pools keeps the same
-# 172.17.0.0 to 172.31.255.255, split into /24s, so a network created after the change stays out
-# of the SSH ranges, with room for thousands of networks, where 15 /16s would run out with a
-# Compose project per worktree. docker0 keeps the subnet Docker's network store has for it, through
-# a reboot or a deleted docker0: 172.17.0.0/16 where Docker ran before the change, and
-# 172.17.0.0/24 on a fresh install.
-# ufw blocks containers from reaching ports on the host. The ubuntu step's SSH ranges leave out
-# 172.16.0.0/12, and it denies SSH on docker0 and br-+ ahead of them, for a network with IPv6 or
-# a subnet in the SSH ranges. `sudo ufw allow in on docker0` lets the default bridge reach the
-# other ports, and each user-defined network's bridge, br-<first 12 characters of the network ID>,
-# needs its own rule. The step adds neither.
+# The local log driver rotates the logs of containers created from now on (5 files of 20 MB);
+# json-file, the default, grows without limit. live-restore keeps containers running while the
+# daemon restarts. Published ports listen on 127.0.0.1 unless given an address, since they bypass
+# ufw: ip covers the default bridge, and default-network-opts networks created from now on.
+# Docker's default pools end in 192.168.0.0/16, which the ubuntu step's ufw lets SSH in from, so
+# default-address-pools keeps new networks in 172.17.0.0 to 172.31.255.255, in /24s, since 15 /16s
+# would run out with a Compose project per worktree. docker0 keeps the 172.17.0.0/16 it got when
+# the packages first started Docker, even through a reboot or a deleted docker0.
+# ufw blocks containers from the host's ports; `sudo ufw allow in on docker0`, and one rule per
+# br-<network ID prefix>, opens them, which the step leaves to you.
 DOCKER_DAEMON_SETTINGS='
     .["log-driver"] = "local" | .["live-restore"] = true | .ip = "127.0.0.1"
     | .["default-network-opts"].bridge["com.docker.network.bridge.host_binding_ipv4"] = "127.0.0.1"
@@ -95,7 +95,7 @@ add_docker_repo() {
     add_apt_repo Docker "$DOCKER_SOURCES" "$(docker_sources)" "$DOCKER_KEY_URL" "$DOCKER_KEYRING" "$DOCKER_KEY_FPR"
 }
 
-# apply runs it as `install_docker || ...`, where set -e is off, so each command checks its own failure
+# items_apply runs it where set -e is off, so each command checks its own failure
 install_docker() {
     add_docker_repo || return 1
     # The packages' dependencies come from Ubuntu's sources
@@ -106,8 +106,10 @@ install_docker() {
     apt_get install -y "${DOCKER_PACKAGES[@]}"
 }
 
+# From the group database, so it's true once you've joined, before a new login gives your
+# processes the group
 in_docker_group() {
-    id -nG "$(id -un)" | tr ' ' '\n' | grep -qx docker
+    case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
 }
 
 # docker.service wants containerd.service, so it starts containerd too
@@ -134,15 +136,22 @@ write_docker_auto_updates() {
     write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
 }
 
-# Add the step's simple sudo items, which status and apply drive by their check functions. Added
-# at run time, since their texts name paths tests point elsewhere.
-docker_sudo_items() {
-    sudo_items_reset
-    sudo_item "Docker starts at boot (docker.service enabled)" \
+# In the order apply fixes them: the packages first, since the rest needs them, then the socket,
+# then the daemon config before enabling the service, so a daemon started at boot reads the config
+# rather than restarting for it.
+docker_items() {
+    local daemon_pending="Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
+    daemon_config_unreadable && daemon_pending="Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it"
+    items_reset
+    item --sudo "Docker Engine from Docker's apt repo" "Install ${DOCKER_PACKAGES[*]} from Docker's apt repo" \
+        docker_installed install_docker
+    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    item --sudo "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "$daemon_pending$(daemon_restart_note)" \
+        daemon_configured configure_daemon
+    item --sudo "Docker starts at boot (docker.service enabled)" \
         "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
         starts_at_boot enable_docker_service
-    sudo_item "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
-    sudo_item "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
+    item --sudo "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
         "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
         docker_auto_updates_configured write_docker_auto_updates
 }
@@ -184,7 +193,7 @@ docker_status_run() {
     DOCKER_OUT=""
     DOCKER_STATUS=0
     if ! in_docker_group; then
-        if ! sudo_cached; then
+        if ! sudo_ready; then
             status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
             return 1
         fi
@@ -295,14 +304,11 @@ status_docker_ports() {
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
-    if is_macos; then
-        status_item skipped "Docker: OrbStack, from the homebrew step, provides it on macOS"
-        return 0
-    fi
-    local installed=false
+    local installed=false SUDO_CACHED_CACHE=no
+    ! sudo_cached || SUDO_CACHED_CACHE=yes
     docker_installed && installed=true
-    docker_sudo_items
-    status_check "Docker Engine from Docker's apt repo" "$installed"
+    docker_items
+    items_status docker_installed
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
     # The step asks about the group once, and you may say no, so its absence isn't missing
     if in_docker_group; then
@@ -310,20 +316,13 @@ status() {
     else
         status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
     fi
-    if "$installed"; then
-        sudo_items_status starts_at_boot socket_ready
-    else
-        status_item missing "Docker starts at boot (docker.service enabled)"
-        status_item missing "docker.socket enabled and listening"
-    fi
-    if ! "$installed" || [ ! -e "$DOCKER_DAEMON_CONFIG" ]; then
-        status_item missing "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
-    elif daemon_config_unreadable && ! sudo_cached; then
+    items_status socket_ready starts_at_boot
+    if daemon_config_unreadable && ! sudo_ready; then
         status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
-        status_check "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" daemon_configured
+        items_status daemon_configured
     fi
-    sudo_items_status docker_auto_updates_configured
+    items_status docker_auto_updates_configured
     ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
     status_result
@@ -361,8 +360,8 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    # A failed write leaves the old file whole. apply runs this as `configure_daemon || ...`, where
-    # set -e is off, so each command checks its own failure.
+    # A failed write leaves the old file whole. items_apply runs this where set -e is off, so each
+    # command checks its own failure.
     if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
         rm -f "$tmp"
         return 1
@@ -392,11 +391,6 @@ configure_daemon() {
 
 apply() {
     echo "Setting up Docker..."
-    if is_macos; then
-        echo "  OrbStack, from the homebrew step, provides Docker; skipping."
-        return 0
-    fi
-    require_supported_os || return 1
     require_cmd jq || return 1
     require_cmd curl || return 1
     # add_apt_repo needs it, after other changes
@@ -414,46 +408,35 @@ apply() {
         repair_source=true
     fi
     local pending=()
-    docker_sudo_items
-    "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
+    docker_items
+    items_pending docker_installed
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    # Freshly installed packages enable and start both units
-    ! "$installed" || sudo_items_pending starts_at_boot socket_ready
-    if ! "$installed" || ! daemon_configured; then
-        if daemon_config_unreadable; then
-            pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
-        else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
-        fi
+    if "$installed"; then
+        items_pending socket_ready daemon_configured starts_at_boot docker_auto_updates_configured
+    else
+        # Freshly installed packages enable and start both units
+        items_pending daemon_configured docker_auto_updates_configured
     fi
-    sudo_items_pending docker_auto_updates_configured
 
     local result=0 fresh=false
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Docker is already installed and set up."
         return 0
     elif confirm_sudo_changes "${pending[@]}"; then
-        if ! "$installed"; then
-            # The rest needs Docker's packages, and the docker group they add
-            install_docker || return 1
-            fresh=true
-        elif "$repair_source"; then
-            add_docker_repo || result=1
-        fi
-        # Each part from here on runs whether or not the one before it failed
-        sudo_items_apply socket_ready || result=1
-        daemon_configured || configure_daemon || result=1
-        # After the config, so a daemon this starts reads it rather than restarting for it
-        sudo_items_apply starts_at_boot docker_auto_updates_configured || result=1
+        # The rest needs Docker's packages, and the docker group they add
+        items_apply docker_installed || return 1
+        "$installed" || fresh=true
+        ! "$repair_source" || add_docker_repo || result=1
+        items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
         if [ "$result" -ne 0 ]; then
             echo "  Applied the rest. Some changes failed; see the errors above." >&2
         else
             echo "  Applied."
         fi
     fi
-    # Asked only once, in the run that installs Docker, whose packages add the group. A no then lasts,
-    # and status's info item says how to join later.
+    # Asked only once, in the run that installs Docker, whose packages add the group. A no then
+    # lasts, and status's info item says how to join later.
     if "$fresh" && ! in_docker_group; then
         add_to_docker_group || result=1
     fi

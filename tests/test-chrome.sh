@@ -3,20 +3,14 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The chrome step on Ubuntu (amd64): it installs Chrome from Google's .deb, readable by apt's
-# sandbox user, removes the download, and writes the unattended-upgrades file once. A missing
-# Google apt source is re-added by setting repo_add_once in /etc/default/google-chrome and
-# reinstalling the .deb. A failed download fails the step, as does dl.google.com being
-# unreachable. It leaves enabling daily unattended upgrades to the ubuntu step.
-# test-unattended-upgrades.sh covers the step's status.
+# The chrome step on Ubuntu (amd64). test-unattended-upgrades.sh covers the step's status.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script chrome/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 stub_sudo_exec
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
@@ -47,11 +41,9 @@ touch "'"$SANDBOX"'/installed"'
 # curl answers the HEAD request with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 echo 200 > "$SANDBOX/http-status"
-fetch() {
-    echo "fetch $1" >> "$STUB_LOG"
-    [ ! -e "$SANDBOX/fetch-fails" ] || return 1
-    echo deb > "$2"
-}
+replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+[ ! -e "$SANDBOX/fetch-fails" ] || return 1
+echo deb > "$2"'
 
 # Declined: nothing downloaded or written
 assert_exit 0 main
@@ -81,7 +73,7 @@ rm "$SANDBOX/fetch-fails"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $URL"
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
 [ -e "$SANDBOX/installed" ] || fail "Chrome wasn't installed"
 deb="$(cat "$SANDBOX/deb-path")"
 assert_eq google-chrome-stable.deb "${deb##*/}" "the .deb apt-get installed"
@@ -133,4 +125,13 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "curl"
 [ ! -e "$CHROME_DEFAULTS" ] || fail "Chrome's defaults file was written without curl"
 assert_file_not_contains "$STUB_LOG" "sudo"
+
+# On macOS, STEP_OS=ubuntu skips the step, run or reported, without running any of it
+as_os macos
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_eq "chrome: skipped, Ubuntu only" "$RUN_OUTPUT" "the step on macOS"
+assert_exit 0 main --status
+assert_eq "  skipped    Ubuntu only" "$RUN_OUTPUT" "the step's status on macOS"
+assert_eq "" "$(cat "$STUB_LOG")" "commands the skipped step ran"
 test_done

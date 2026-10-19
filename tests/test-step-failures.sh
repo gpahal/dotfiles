@@ -1,6 +1,4 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # A step that didn't do its job fails, after doing what else it can; a declined confirm doesn't, and
@@ -39,9 +37,9 @@ fail_defaults() {
 }
 
 load_script macos/install.sh
-is_macos() { true; }
+as_os macos
 # test-macos-shortcuts.sh covers the shortcuts the step turns off
-hotkey_off() { true; }
+replace_fn hotkey_off true
 
 # A failed write fails the step, after the other writes and the restarts
 fail_defaults com.apple.finder
@@ -78,8 +76,8 @@ assert_exit 1 sudo env DEST=/etc/by-sudo true
 assert_contains "$RUN_OUTPUT" "refused: DEST=/etc/by-sudo is outside the sandbox"
 stub chsh
 load_script zsh/install.sh
-current_login_shell() { echo /bin/bash; }
-login_zsh_path() { echo "$SANDBOX/bin/zsh"; }
+replace_fn current_login_shell 'echo /bin/bash'
+replace_fn login_zsh_path 'echo "$SANDBOX/bin/zsh"'
 
 # Declined: the files are set up, the login shell isn't, and the step succeeds
 assert_exit 0 main
@@ -108,8 +106,8 @@ stub chsh
 unset DOTFILES_ASSUME_YES
 
 # Already the system zsh: nothing to do
-current_login_shell() { echo /bin/zsh; }
-login_zsh_path() { echo /bin/zsh; }
+replace_fn current_login_shell 'echo /bin/zsh'
+replace_fn login_zsh_path 'echo /bin/zsh'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "zsh is already the login shell."
 run status
@@ -119,14 +117,14 @@ assert_contains "$RUN_OUTPUT" "ok         /bin/zsh as the login shell"
 mkdir -p "$SANDBOX/usr/bin"
 touch "$SANDBOX/usr/bin/zsh"
 ln -s usr/bin "$SANDBOX/merged-bin"
-current_login_shell() { echo "$SANDBOX/merged-bin/zsh"; }
-login_zsh_path() { echo "$SANDBOX/usr/bin/zsh"; }
+replace_fn current_login_shell 'echo "$SANDBOX/merged-bin/zsh"'
+replace_fn login_zsh_path 'echo "$SANDBOX/usr/bin/zsh"'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "zsh is already the login shell."
-login_zsh_path() { echo /bin/zsh; }
+replace_fn login_zsh_path 'echo /bin/zsh'
 
 # Another zsh, such as Homebrew's, isn't the system one, so status reports it
-current_login_shell() { echo /opt/homebrew/bin/zsh; }
+replace_fn current_login_shell 'echo /opt/homebrew/bin/zsh'
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt/homebrew/bin/zsh"
 
@@ -134,8 +132,7 @@ assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt
 # On Ubuntu. pkill is stubbed, so no running Ghostty gets a signal.
 stub pkill 'exit 1'
 load_script ghostty/install.sh
-is_ubuntu() { true; }
-is_macos() { false; }
+as_os ubuntu
 
 # No snap command: the config is still copied, and the step fails
 hide snap
@@ -158,7 +155,7 @@ unset DOTFILES_ASSUME_YES
 if [ "$(id -u)" -ne 0 ]; then
     stub chsh
     load_script zsh/install.sh
-    current_login_shell() { echo /bin/zsh; }
+    replace_fn current_login_shell 'echo /bin/zsh'
     rm -rf "$HOME/.zsh" "$HOME/.zshrc" "$HOME/.config/starship.toml"
     mkdir -p "$HOME/.zsh"
     printf 'mine\n' > "$HOME/.zsh/aliases.zsh"

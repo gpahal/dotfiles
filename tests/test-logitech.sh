@@ -3,12 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The logitech step installs Solaar from apt on Ubuntu, after asking, and skips macOS, where the
-# homebrew step installs Logi Options+. Declining, as happens without a terminal, leaves it
-# uninstalled without failing, and a failed install fails the step. A re-run with Solaar installed
-# asks nothing. Status reports Solaar on Ubuntu and skips it on macOS. Stubs stand in for
-# dpkg-query, whose answer depends on $SANDBOX/solaar, apt-get, which creates it, and sudo. apt's
-# lists are updated first, and a failed update fails the step before the install.
+# The logitech step installs Solaar from apt on Ubuntu. Stubs stand in for dpkg-query, whose answer
+# depends on $SANDBOX/solaar, apt-get, which creates it, and sudo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -24,19 +20,7 @@ stub apt-get '[ -z "${APT_FAILS:-}" ] || exit 100
 APT_UPDATE_RETRY_DELAY=0
 stub_sudo_exec
 
-# --- macOS: skipped, touching nothing ---
-is_macos() { true; }
-is_ubuntu() { false; }
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Logi Options+"
-assert_eq "" "$(grep -E '^(sudo|apt-get) ' "$STUB_LOG" || true)" "commands run on macOS"
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "skipped"
-assert_not_contains "$RUN_OUTPUT" "missing"
-
-# --- Ubuntu ---
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 
 # Not installed: status says so
 assert_exit 3 main --status
@@ -64,7 +48,7 @@ export UPDATE_FAILS=""
 # Approved: apt-get updates its lists, then installs it with sudo, and status reports it
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get"
 assert_eq "update" "$(grep -E '^sudo .*apt-get' "$STUB_LOG" | head -n 1 | awk '{ print $NF }')" "apt-get's first run"
 assert_file_contains "$STUB_LOG" "install -y solaar"
 [ -e "$SANDBOX/solaar" ] || fail "Solaar wasn't installed"

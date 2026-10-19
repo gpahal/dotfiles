@@ -1,14 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which /etc/pam.d/sudo includes, and
-# which OS updates keep. Each run rebuilds the file from scratch (desired_sudo_local in
-# macos/pam.sh): pam_tid, after pam_reattach when the homebrew step has installed pam-reattach, so
-# Touch ID works inside tmux too. sudo loads a root-owned copy of pam-reattach's module in
-# /usr/local/lib/pam, which this script installs from Homebrew's and updates when it changes.
-# Any other line in sudo_local goes: unlike the files AGENTS.md says are never replaced, macOS
-# reserves sudo_local for local sudo changes such as this one, and rebuilding it keeps status and
-# setup in agreement.
+# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
+#
+# Each run rebuilds the file from scratch (desired_sudo_local in macos/pam.sh), dropping any other
+# line, which keeps status and setup in agreement. sudo loads a root-owned copy of pam-reattach's
+# module in /usr/local/lib/pam, which this script installs from Homebrew's and updates.
 # setup.sh doesn't run it, since it changes /etc with sudo. --status reports, changing nothing.
 
 # shellcheck source=../lib/common.sh
@@ -18,10 +15,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 
-usage() {
-    echo "Usage: bash macos/setup-touch-id-sudo.sh [--status] (or: just touch-id)"
-    echo "Turns on Touch ID for sudo in $SUDO_LOCAL, and in tmux with pam-reattach. macOS only."
-}
+STEP_OS=macos
 
 # Copy Homebrew's module to the root-owned dir, read-only like the modules macOS ships. It goes in
 # under a temp name that mv then renames over the copy, so between the sudo runs sudo_local never
@@ -35,40 +29,16 @@ install_reattach_module() {
 }
 
 status() {
-    if is_macos; then
-        status_touch_id missing
-    else
-        status_item skipped "Touch ID for sudo: macOS only"
-    fi
+    status_touch_id missing
     status_result
 }
 
-main() {
-    local desired copy=false write=false
-    case "${1:-}" in
-        --status)
-            status
-            return $?
-            ;;
-        -h | --help)
-            usage
-            return 0
-            ;;
-        "") ;;
-        *)
-            usage >&2
-            return 2
-            ;;
-    esac
-    if ! is_macos; then
-        echo "Touch ID for sudo is macOS only. Nothing to do here."
-        return 0
-    fi
+apply() {
+    local desired copy=false write=false blocker reason pending=()
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         echo "Can't read $SUDO_LOCAL. Make it readable with: sudo chmod 444 $SUDO_LOCAL" >&2
         return 1
     fi
-    local blocker reason
     if blocker="$(reattach_blocker)"; then
         echo "Touch ID in tmux: $blocker." >&2
         return 1
@@ -87,16 +57,14 @@ main() {
         return 0
     fi
     if "$copy"; then
-        echo "  pam-reattach's module will be copied, root-owned and read-only, to $REATTACH_MODULE."
+        pending+=("Copy pam-reattach's module, root-owned and read-only, to $REATTACH_MODULE")
     fi
     if "$write"; then
         echo "  $SUDO_LOCAL will read:"
         printf '%s\n' "$desired" | sed 's/^/    /'
+        pending+=("Write $SUDO_LOCAL as shown above")
     fi
-    if ! confirm "  Do it with sudo?"; then
-        echo "  Left unchanged. Run this script from a terminal to do it."
-        return 0
-    fi
+    confirm_sudo_changes "${pending[@]}" || return 0
     # The copy goes first, so sudo_local never loads a module that isn't there
     if "$copy"; then
         if ! install_reattach_module; then

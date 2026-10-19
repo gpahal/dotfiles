@@ -1,6 +1,4 @@
 #!/bin/bash
-# The sourced script calls the OS functions this test replaces.
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # git/setup-signing.sh signs on Ubuntu with a separate passphrase-less key, since the T3 Code
@@ -14,8 +12,7 @@ setup_sandbox
 # The GitHub key title names the Mac
 stub scutil 'echo Test-Mac'
 load_script git/setup-signing.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 unset SSH_AUTH_SOCK
 SIGNING="$HOME/.ssh/id_ed25519_signing"
 ALLOWED="$HOME/.config/git/allowed_signers"
@@ -58,8 +55,7 @@ unset DOTFILES_ASSUME_YES
 
 # macOS signs with ~/.ssh/id_ed25519. The agent doesn't hold it, so without a terminal the step
 # prints the ssh-add command that stores its passphrase in the keychain.
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 stub ssh-add 'exit 1'
 LOGIN="$HOME/.ssh/id_ed25519"
 ssh-keygen -q -t ed25519 -N secret -f "$LOGIN"
@@ -88,8 +84,7 @@ assert_contains "$RUN_OUTPUT" "The agent already holds $LOGIN"
 assert_contains "$RUN_OUTPUT" "ssh-add --apple-use-keychain $LOGIN"
 assert_file_not_contains "$STUB_LOG" "ssh-add --apple-use-keychain"
 
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 
 # An existing default signing key with a passphrase, which user.signingkey names: agents can't
 # unlock it, so the step fails before it reports signing ready, and leaves the key and config as
@@ -124,11 +119,9 @@ stub ssh-keygen 'exit 1'
 hash -r
 for os in ubuntu macos; do
     if [ "$os" == ubuntu ]; then
-        is_macos() { false; }
-        is_ubuntu() { true; }
+        as_os ubuntu
     else
-        is_macos() { true; }
-        is_ubuntu() { false; }
+        as_os macos
     fi
     DOTFILES_ASSUME_YES=1 assert_exit 1 main
     assert_not_contains "$RUN_OUTPUT" "Generated"

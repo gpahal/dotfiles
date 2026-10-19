@@ -1,15 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Each of its app
-# actions runs bin/open-in, which says what each does: Editor, Terminal, and Files open the folder
-# or file in front in Zed, Ghostty, or Finder, and Chrome, New Tab, Gmail, T3 Code, and Claude do
-# what the matching Hammerspoon hotkeys do. The hammerspoon step copies bin/open-in too, for its
-# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU, memory,
-# and other stats, and its Overview key opens a page of them. A file the repo's plugin no longer
-# has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
-# that changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no
-# Linux app. The homebrew step installs Stream Deck.
+# Install the Stream Deck plugin, and restart Stream Deck to load it.
+#
+# bin/open-in says what each app key does, and plugin.js describes the stat keys. macOS only, since
+# Stream Deck has no Linux app.
 #
 # A temp HOME doesn't isolate this step, which restarts the Stream Deck you're running when the
 # plugin changed.
@@ -17,25 +12,25 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+STEP_OS=macos
+
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 
 # Print each file in a plugin dir, the repo's by default, relative to it. A .DS_Store Finder
 # leaves isn't one.
 plugin_file_list() {
-    # Backups copy_file makes of edited files aren't plugin files, so they never count as stale
+    # Backups older runs of this step left aren't plugin files, so they never count as stale
     (cd "${1:-$DOTFILES_DIR/stream-deck/$PLUGIN}" &&
         find . -type f ! -name .DS_Store ! -name '*.bak' ! -name '*.bak.*' | sed 's|^\./||')
 }
 
 # Print each file in the installed plugin that the repo's plugin no longer has
-stale_plugin_files() {
+stale_plugin_list() {
     [ -d "$PLUGIN_DIR" ] || return 0
     LC_ALL=C comm -13 <(plugin_file_list | LC_ALL=C sort) <(plugin_file_list "$PLUGIN_DIR" | LC_ALL=C sort)
 }
 
-# Pass each plugin file, as source and destination, to a function: copy_file to copy it, or
-# status_file to report it
 each_plugin_file() {
     local action="$1" file status=0
     while IFS= read -r file; do
@@ -47,7 +42,7 @@ each_plugin_file() {
 # Remove the installed plugin's files that the repo's plugin no longer has, and the folders that
 # leaves empty, only ever inside PLUGIN_DIR. Sets COPIED when it removes one, so Stream Deck
 # restarts without it.
-remove_stale_plugin_files() {
+remove_stale_plugin() {
     local file status=0
     while IFS= read -r file; do
         if rm -f "$PLUGIN_DIR/$file"; then
@@ -56,7 +51,7 @@ remove_stale_plugin_files() {
         else
             status=1
         fi
-    done < <(stale_plugin_files)
+    done < <(stale_plugin_list)
     find "$PLUGIN_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     return "$status"
 }
@@ -90,27 +85,19 @@ restart_stream_deck() {
 
 status() {
     local file
-    if ! is_macos; then
-        status_item skipped "Stream Deck plugin: Stream Deck has no Linux app"
-        return 0
-    fi
     each_plugin_file status_file
     while IFS= read -r file; do
         status_item missing "$file in the installed plugin: the repo's plugin no longer has it; re-run the stream-deck step to remove it"
-    done < <(stale_plugin_files)
+    done < <(stale_plugin_list)
     status_result
 }
 
 apply() {
     echo "Installing the Stream Deck plugin..."
-    if ! is_macos; then
-        echo "  Stream Deck has no Linux app; skipping."
-        return 0
-    fi
     local status=0
     COPIED=false
     each_plugin_file copy_file || status=1
-    remove_stale_plugin_files || status=1
+    remove_stale_plugin || status=1
     if "$COPIED"; then
         restart_stream_deck || status=1
     fi

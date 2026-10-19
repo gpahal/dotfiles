@@ -1,13 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# smartd's warning hook (ubuntu/smartd-notify.sh) pushes the warning to ntfy when a URL is set,
-# through the installed ntfy code it sources, logging what fails and always exiting 0. It runs as
-# root, so it reads only the installed paths, and a copy points them into the sandbox. ntfy_push
-# sends the message as is, even one starting with @. And ubuntu/setup-alerts.sh, which reads a
-# topic or URL without showing it, saves the URL, names the four alerts that go there, and runs the
-# hook with a test warning and the UPS notifier, when installed, with a test event. The ubuntu step
-# installs the hooks with fixed modes. curl, logger, sudo, and id are stubs.
+# smartd's warning hook (ubuntu/smartd-notify.sh), ubuntu/setup-alerts.sh, and the ubuntu step's
+# installs of the hooks. The hook runs as root, so it reads only the installed paths, and a copy
+# points them into the sandbox. curl, logger, sudo, and id are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -40,7 +36,7 @@ assert_file_not_contains "$STUB_LOG" "logger"
 # a process's arguments, and the topic is its secret.
 echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
@@ -75,8 +71,7 @@ ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh
 
 # --- setup-alerts.sh ---
 load_script ubuntu/setup-alerts.sh
-# shellcheck disable=SC2329 # main calls it
-is_ubuntu() { true; }
+as_os ubuntu
 NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
 # sudo runs the command, and refuses any path under /etc. Not stub_sudo_exec, which would refuse
@@ -120,7 +115,7 @@ assert_not_contains "$RUN_OUTPUT" "my-topic"
 assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-raw Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 assert_eq 644 "$(file_mode "$NTFY_URL_FILE")" "the URL file's mode"
-assert_file_contains "$STUB_LOG" "curl -fsS --max-time 10"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
 if grep '^curl -' "$STUB_LOG" | grep -q my-topic; then
     fail "the test push's curl arguments name the ntfy topic"
@@ -149,7 +144,7 @@ chmod 755 "$SMARTD_HOOK"
 : > "$STUB_LOG"
 assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo env SMARTD_SUBJECT=Test: SMART warning on"
-assert_file_contains "$STUB_LOG" "curl -fsS"
+assert_file_contains "$STUB_LOG" "curl -q -fsS"
 
 # The UPS notifier: skipped without it or the nut user, else run as nut with a test event.
 # id nut succeeds once $SANDBOX/nut-user exists. The notifier logs its environment and argument.
@@ -172,8 +167,7 @@ assert_contains "$RUN_OUTPUT" "Done. The UPS test shows on your phone if a ntfy 
 assert_contains "$RUN_OUTPUT" "When one doesn't arrive, journalctl -t dotfiles-ups says why."
 
 # Not Ubuntu: nothing to do
-# shellcheck disable=SC2329 # main calls it
-is_ubuntu() { false; }
+as_os macos
 assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "The alerts are Ubuntu only"
 
@@ -195,6 +189,13 @@ chmod 644 "$checkout"/*
     NTFY_LIB_SRC="$checkout/ntfy.sh"
 }
 assert_exit 1 smartd_hook_installed
+# Each hook goes in only after the ntfy code it sources, so it never runs without it
+rm -f "$SMARTD_HOOK" "$UPS_NOTIFY" "$NTFY_LIB"
+mkdir -p "$NTFY_LIB"
+assert_exit 1 install_smartd_hook
+assert_exit 1 install_ups_notifier
+[ ! -e "$SMARTD_HOOK" ] && [ ! -e "$UPS_NOTIFY" ] || fail "a hook went in without the ntfy code"
+rmdir "$NTFY_LIB"
 assert_exit 0 install_smartd_hook
 assert_exit 0 install_ups_notifier
 assert_eq 755 "$(file_mode "$SMARTD_HOOK")" "smartd's hook's mode"

@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Homebrew, the formulae in homebrew/Brewfile, and the App Store apps and casks listed
-# below. On macOS, also the Xcode Command Line Tools. On Ubuntu, also the apt packages Homebrew
-# needs, and only the casks with Linux builds.
+# Install Homebrew and the formulae, casks, and App Store apps the step lists.
+#
+# Also the Xcode Command Line Tools on macOS, and on Ubuntu the apt packages Homebrew needs.
 #
 # A temp HOME doesn't isolate this step, which installs into the real Homebrew prefix and
 # /Applications, and on Ubuntu installs apt packages with sudo. Test it in a macOS VM or on a
@@ -15,18 +15,18 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/casks.sh
+source "$DOTFILES_DIR/lib/casks.sh"
 
 BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
 # The App Store apps macOS gets, as "<id> <name>", and "optional" after a paid app you may not
 # buy. An optional app that isn't installed is information in status and the step's output, not
-# something to fix. Once you're signed in to the App Store, mas get takes a free app the Apple
-# Account doesn't have yet, and mas install one it has, such as a paid app bought once.
-# scripts/check-docs.sh reads the list, one app per line.
+# something to fix.
 MAS_APPS=(
-    "937984704 Amphetamine"
-    "1470584107 Dato optional"
-    "1295203466 Windows App"
+    "937984704 Amphetamine"       # Keeps the Mac awake
+    "1470584107 Dato optional"    # Menu bar calendar
+    "1295203466 Windows App"      # Microsoft's RDP client, for the Ubuntu desktop's GNOME Remote Login
 )
 
 # Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
@@ -44,21 +44,22 @@ installed_cask_apps() {
 # fontconfig for fc-cache, which lets apps find the Monaspace cask's fonts. Minimal images lack them.
 UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
 
+# The casks macOS gets, one per line, which scripts/check-brew-packages.sh reads
 CASKS=(
-    font-monaspace
-    ghostty
-    zed
-    google-chrome
-    orbstack
-    tailscale-app
-    raycast
-    rectangle
-    stats
-    appcleaner
-    the-unarchiver
-    logi-options+
-    elgato-stream-deck
-    hammerspoon
+    font-monaspace      # Monaspace, the terminal and editor font
+    ghostty             # Terminal; Ubuntu gets its snap from the ghostty step
+    zed                 # Editor
+    google-chrome       # Browser, which the AI tools also control; Ubuntu gets it from the chrome step
+    orbstack            # Docker containers and Linux machines
+    tailscale-app       # Private network to reach the Ubuntu machine from anywhere
+    raycast             # Launcher
+    rectangle           # Window management
+    stats               # Menu bar memory pressure, CPU, GPU, network, and sensors
+    appcleaner          # App uninstaller
+    the-unarchiver      # Opens any archive format
+    logi-options+       # Logitech device settings; Ubuntu gets Solaar from the logitech step
+    elgato-stream-deck  # Stream Deck keys, with the stream-deck step's plugin
+    hammerspoon         # The hotkeys the hammerspoon step sets
 )
 
 # Casks with Linux builds that Ubuntu gets too. Fonts install into $XDG_DATA_HOME/fonts, or
@@ -103,7 +104,6 @@ install_ubuntu_packages() {
     else
         # Printed before asking, since confirm prints nothing without a terminal
         echo "Missing commands:$missing"
-        # Declining fails the step (see the header)
         if ! confirm "Install them with: $install?"; then
             echo "Install them with: $install"
             echo "Then re-run this script."
@@ -176,11 +176,10 @@ missing_mas_apps() {
 }
 
 # Install the App Store apps that aren't, as brew bundle would: mas install for an app the Apple
-# Account has, then, for a required one, mas get for a free one it doesn't. A new Mac isn't signed
-# in to the App Store yet, so a required app that fails only warns (see the header), and an
-# optional one that fails, as when it's never been bought, is only a note. An optional app that
-# isn't installed gets one mas install every run, even after setup, so it installs once an Apple
-# Account that owns it signs in. Returns the status of an interrupted mas, so main stops.
+# Account has, then, for a required one, mas get for a free one it doesn't. A required app that
+# fails only warns (see the header), and an optional one is only a note. An optional app gets one
+# mas install every run, so it installs once an Apple Account that owns it signs in. Returns the
+# status of an interrupted mas, so apply stops.
 install_mas_apps() {
     local missing kind id name status failed=() optional=()
     missing="$(missing_mas_apps)"
@@ -219,20 +218,6 @@ install_mas_apps() {
     fi
 }
 
-# try_install_cask <cask> <app> <state>: install a cask, adding it to the caller's failed array
-# when that fails. The state is cask_state's, which spares install_cask asking brew again.
-try_install_cask() {
-    install_cask "$@" || failed+=("$1")
-}
-
-# Fail after trying every cask, naming the ones that failed, so one failure doesn't skip the rest
-report_failed_casks() {
-    [ $# -gt 0 ] || return 0
-    echo "  These casks failed to install: $*. Fix the errors above and re-run." >&2
-    return 1
-}
-
-# Print the casks this OS gets: CASKS on macOS, UBUNTU_CASKS on Ubuntu
 os_casks() {
     if is_macos; then
         printf '%s\n' "${CASKS[@]}"
@@ -246,14 +231,14 @@ os_casks() {
 # too, for casks added since setup ran.
 install_casks() {
     local cask state app apps installing=false failed=()
-    # One brew call for every cask: each lookup takes a moment
     apps="$(installed_cask_apps || true)"
     for cask in $(os_casks); do
         IFS=$'\t' read -r state app <<< "$(cask_state "$cask" "" "$apps")"
         case "$state" in brew | other) continue ;; esac
         "$installing" || echo "Installing brew casks..."
         installing=true
-        try_install_cask "$cask" "$app" "$state"
+        # The state spares install_cask asking brew again
+        install_cask "$cask" "$app" "$state" || failed+=("$cask")
     done
     if ! "$installing"; then
         echo "Brew casks already installed."
@@ -261,7 +246,9 @@ install_casks() {
         # Homebrew copies fonts in but doesn't refresh fontconfig's cache, so apps wouldn't see them
         fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
     fi
-    report_failed_casks ${failed[@]+"${failed[@]}"}
+    [ ${#failed[@]} -eq 0 ] && return 0
+    echo "  These casks failed to install: ${failed[*]}. Fix the errors above and re-run." >&2
+    return 1
 }
 
 status() {
@@ -292,7 +279,9 @@ status() {
     else
         status_check "$bundle" bundle_installed
     fi
-    if is_macos; then
+    # Without mas, which the Brewfile installs, every app would read as missing for want of an App
+    # Store sign-in
+    if is_macos && status_require_cmd mas "App Store apps"; then
         mas_missing="$(missing_mas_apps)"
         if grep -q '^required ' <<< "$mas_missing"; then
             status_item missing "App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
@@ -303,10 +292,9 @@ status() {
             [ "$kind" != optional ] ||
                 status_item info "$app (App Store) isn't installed. It's optional: to add it, buy it in the App Store, then re-run the homebrew step"
         done <<< "$mas_missing"
-    else
+    elif ! is_macos; then
         status_item skipped "App Store apps: macOS only"
     fi
-    # One brew call for every cask, rather than one each, which took seconds
     apps="$(installed_cask_apps || true)"
     for cask in $(os_casks); do
         status_cask "$cask" "" "$apps"
@@ -323,19 +311,20 @@ apply() {
         install_ubuntu_packages
     fi
     install_homebrew
-    # Install the App Store apps and casks even when the bundle fails
-    local bundle_status=0 mas_status=0 casks_status=0
-    install_bundle || bundle_status=$?
-    # Ctrl-C, which brew catches
-    [ "$bundle_status" -le 128 ] || return "$bundle_status"
+    # Install the App Store apps and casks even when the bundle fails, but stop at Ctrl-C, which
+    # brew and mas catch, exiting above 128. The step fails with the first failure's status.
+    local parts=(install_bundle) part result status=0
     if is_macos; then
-        install_mas_apps || mas_status=$?
-        [ "$mas_status" -le 128 ] || return "$mas_status"
+        parts+=(install_mas_apps)
     fi
-    install_casks || casks_status=$?
-    [ "$bundle_status" -eq 0 ] || return "$bundle_status"
-    [ "$mas_status" -eq 0 ] || return "$mas_status"
-    return "$casks_status"
+    parts+=(install_casks)
+    for part in "${parts[@]}"; do
+        result=0
+        "$part" || result=$?
+        [ "$result" -le 128 ] || return "$result"
+        [ "$status" -ne 0 ] || status="$result"
+    done
+    return "$status"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

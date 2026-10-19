@@ -8,11 +8,12 @@ set -euo pipefail
 #           when one exits 1 (a step failed) or 3 (something needs attention), push its "Needs
 #           attention" and "Failed steps" lines and its missing and unknown items, and when one
 #           exits with any other status, as on a syntax error or a kill, push that it couldn't run
-#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the message changes (ignoring
-#           digits) or a week has passed, and pushes "All clear" once when nothing needs attention;
-#           $HEALTH_STATE_FILE records the last push. sudo's cached credentials don't reach a user
-#           service, so the checks only root can make come back unverified here, which needs no
-#           attention; a push that has them ends with $ROOT_ONLY_NOTE.
+#           and its last line of output (dotfiles-health.timer, daily). It pushes again when the
+#           message changes (ignoring digits) or a week has passed, and pushes "All clear" once when
+#           nothing needs attention; $HEALTH_STATE_FILE records the last push. sudo's cached
+#           credentials don't reach a user service, so the checks only root can make come back
+#           unverified here, which needs no attention; a push that has them ends with
+#           $ROOT_ONLY_NOTE.
 #   boot    push "<host> started at <time>", so an unexpected reboot gets noticed
 #           (dotfiles-boot-notice.service), once per boot: the user manager also starts it when
 #           it restarts, as after the first login before linger is on, or a restart of
@@ -27,10 +28,31 @@ source "$HEALTH_REPO_DIR/ubuntu/lib/paths.sh"
 
 # Tests point this into their sandbox
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
+
+# A syntax error in lib/common.sh, as after a pull, would stop this script when it sources the
+# file, before it could push that the check couldn't run, as it does for a runner that crashes on
+# one. So status checks it first, with only what ntfy.sh gives.
+if [ "${1:-}" == status ] && ! syntax="$("$BASH" -n "$HEALTH_REPO_DIR/lib/common.sh" 2>&1)"; then
+    echo "lib/common.sh has a syntax error:" >&2
+    printf '%s\n' "$syntax" >&2
+    [ -r "$NTFY_URL_FILE" ] || exit 1
+    url="$(head -n 1 "$NTFY_URL_FILE")"
+    [ -n "$url" ] || exit 1
+    message="Health check couldn't run: lib/common.sh has a syntax error"
+    last="$(grep -v '^[[:space:]]*$' <<< "$syntax" | tail -n 1)" || last=""
+    [ -z "$last" ] || message="$message"$'\n\n'"bash -n's last output: $last"
+    ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning" ||
+        echo "Couldn't push the health alert to ntfy." >&2
+    exit 1
+fi
+
+# For status_parse_line and status_summary_line, which read the runners' reports
+# shellcheck source=../lib/common.sh
+source "$HEALTH_REPO_DIR/lib/common.sh"
 # ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 # How a status item only root could check says so, and the line a push then ends with
-ROOT_ONLY_PATTERN='^  unverified .*run sudo -v, then status'
+ROOT_ONLY_TEXT='run sudo -v, then status'
 ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 # "<epoch seconds of the last push> <cksum of the message pushed, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
@@ -65,12 +87,30 @@ ntfy_url() {
 # Print the lines of a runner's --status output that need attention: the summary lines, then each
 # missing or unknown item as "<step>: <item>", from run_steps' "<step>:" headers
 attention_lines() {
-    awk '
-        /^(Needs attention|Failed steps):/ { summary = summary $0 "\n"; next }
-        /^[^ ].*:$/ { step = substr($0, 1, length($0) - 1); next }
-        /^  (missing|unknown) / { sub(/^  [a-z]+ +/, ""); items = items (step == "" ? "" : step ": ") $0 "\n" }
-        END { printf "%s%s", summary, items }
-    '
+    local line step="" summary="" items=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        if status_summary_line "$line"; then
+            summary="$summary$line"$'\n'
+        elif status_parse_line "$line"; then
+            ! status_state_needs_attention "$STATUS_LINE_STATE" ||
+                items="$items${step:+$step: }$STATUS_LINE_TEXT"$'\n'
+        elif [[ "$line" == [!\ ]*: ]]; then
+            step="${line%:}"
+        fi
+    done
+    printf '%s%s' "$summary" "$items"
+}
+
+# Succeeds when a runner's --status output on stdin has an item only root could check
+has_root_only_items() {
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        if status_parse_line "$line" && [ "$STATUS_LINE_STATE" == unverified ] &&
+            [[ "$STATUS_LINE_TEXT" == *"$ROOT_ONLY_TEXT"* ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Print the first lines of stdin that fit in MESSAGE_MAX_BYTES, and a note when some didn't
@@ -106,7 +146,7 @@ status_alert() {
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
         out="$("$BASH" "$HEALTH_REPO_DIR/$runner" --status --quick < /dev/null 2>&1)" || status=$?
-        ! grep -qE "$ROOT_ONLY_PATTERN" <<< "$out" || root_only=true
+        ! has_root_only_items <<< "$out" || root_only=true
         case "$status" in
             0) ;;
             1 | 3) message="$message$(attention_lines <<< "$out")"$'\n' ;;
@@ -129,7 +169,6 @@ status_alert() {
     read -r last_time last_hash 2>/dev/null < "$HEALTH_STATE_FILE" || true
     case "$last_time" in '' | *[!0-9]*) last_time="" last_hash="" ;; esac
     if [ -z "$message" ]; then
-        [ "$result" -eq 0 ] || return "$result"
         # Never pushed, or the last push was the all-clear: nothing to clear
         if [ -z "$last_hash" ] || [ "$last_hash" == clear ]; then
             echo "Nothing needs attention."

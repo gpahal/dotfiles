@@ -1,22 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the git config, global ignore file, and git-wt, and log in to GitHub with gh. On Ubuntu,
-# also send GitHub's SSH remotes over HTTPS.
+# Copy the git config, ignore file, and git wt, and log in to GitHub with gh.
 #
-# The repo config goes to ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set).
-# ~/.gitconfig, which git reads after it, holds what tools write there: gh's credential helper,
-# Ubuntu's HTTPS rewrite of GitHub's SSH remotes, and, from git/setup-signing.sh, commit signing.
-# The repo config includes ~/.gitconfig.local for any other per-machine settings.
+# On Ubuntu, also send GitHub's SSH remotes over HTTPS. The repo config goes to
+# ~/.config/git/config ($XDG_CONFIG_HOME/git/config when that's set). ~/.gitconfig, which git reads
+# after it, holds what tools write there: gh's credential helper, Ubuntu's HTTPS rewrite, and, from
+# git/setup-signing.sh, commit signing. The repo config includes ~/.gitconfig.local for any other
+# per-machine settings.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=lib/config.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 REPO_CONFIG="$DOTFILES_DIR/git/gitconfig"
 XDG_GIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
-LOCAL_CONFIG="$HOME/.gitconfig"
 
 # Succeeds when GitHub's API answers at all, whatever the answer. curl reads the same proxy
 # variables gh does.
@@ -44,7 +46,16 @@ github_auth_state() {
     fi
 }
 
+# --quick only reads what gh stored, since asking GitHub can take 10 s
 status_github_login() {
+    if status_quick; then
+        if gh auth token --hostname github.com &>/dev/null; then
+            status_item unverified "Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --quick"
+        else
+            status_item missing "Logged in to GitHub with gh"
+        fi
+        return 0
+    fi
     case "$(github_auth_state)" in
         ok) status_item ok "Logged in to GitHub with gh" ;;
         unknown) status_item unknown "Logged in to GitHub with gh: credentials are stored, but GitHub couldn't be reached to check them" ;;
@@ -135,13 +146,11 @@ configure_github_https() {
         return 0
     fi
     while IFS= read -r prefix; do
-        git_file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
+        git_file "$USER_GITCONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
     done <<< "$missing"
     echo "  GitHub SSH remotes now go over HTTPS, through gh's credential helper"
 }
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 git_files() {
     local status=0
     "$1" "$REPO_CONFIG" "$XDG_GIT_DIR/config" || status=1
@@ -151,9 +160,26 @@ git_files() {
     return "$status"
 }
 
+user_gitconfig_exists() {
+    [ -e "$USER_GITCONFIG" ]
+}
+
+# git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and the
+# next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
+create_user_gitconfig() {
+    touch "$USER_GITCONFIG"
+}
+
+git_items() {
+    items_reset
+    item "A ~/.gitconfig for per-machine settings" "Create ~/.gitconfig" \
+        user_gitconfig_exists create_user_gitconfig
+}
+
 status() {
     git_files status_file
-    status_check "A ~/.gitconfig for per-machine settings" test -e "$LOCAL_CONFIG"
+    git_items
+    items_status
     if status_require_cmd gh "GitHub login"; then
         status_github_login
         status_check "git uses gh for GitHub credentials" gh_credential_helper_set
@@ -175,9 +201,8 @@ apply() {
     local status=0
     echo "Copying git config..."
     git_files copy_file || status=1
-    # git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and
-    # the next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
-    [ -e "$LOCAL_CONFIG" ] || touch "$LOCAL_CONFIG" || status=1
+    git_items
+    items_apply || status=1
     # The rewrite needs the credential helper the login sets up
     setup_github_auth || status=1
     configure_github_https || status=1

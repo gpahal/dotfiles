@@ -3,12 +3,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind
-# to, and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
-# keeping the file's other keys and mode, restarts a running daemon only when the file changed,
-# and leaves invalid JSON alone. A file of several JSON values isn't configured. A failed write leaves the old
-# file whole, and a failed restart puts it back and keeps a backup, which goes once Docker takes
-# the new file.
+# The docker step's merge of its settings into /etc/docker/daemon.json (configure_daemon).
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,8 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 stub_sudo_exec
 stub systemctl
 stub dockerd
@@ -27,7 +21,8 @@ SETTINGS='"log-driver": "local", "live-restore": true, "ip": "127.0.0.1",
     "default-address-pools": [
         {"base": "172.17.0.0/16", "size": 24}, {"base": "172.18.0.0/15", "size": 24},
         {"base": "172.20.0.0/14", "size": 24}, {"base": "172.24.0.0/13", "size": 24}]'
-# Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file given.
+# Compact, with sorted keys, to compare with the expected JSON. Reads daemon.json, or the file
+# given.
 sorted() {
     jq -S -c . "${1:-$DOCKER_DAEMON_CONFIG}"
 }
@@ -35,7 +30,7 @@ sorted() {
 # No file: it's created, world-readable, and the daemon restarted if it runs
 assert_exit 0 configure_daemon
 assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "a new daemon.json"
-assert_eq "-rw-r--r--" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a new daemon.json"
+assert_eq 644 "$(file_mode "$DOCKER_DAEMON_CONFIG")" "mode of a new daemon.json"
 assert_file_contains "$STUB_LOG" "systemctl try-restart docker.service"
 assert_exit 0 daemon_configured
 
@@ -97,7 +92,7 @@ assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed restart"
 # When it can't go back either, the step prints it, to write back by hand
 eval "real_$(declare -f write_root_file)"
-write_root_file() { return 1; }
+replace_fn write_root_file 'return 1'
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "putting the previous configuration back failed too"
 assert_contains "$RUN_OUTPUT" '{"log-driver":"json-file"}'
@@ -116,7 +111,7 @@ assert_exit 1 daemon_configured
 assert_exit 0 configure_daemon
 merged='{"dns": ["1.1.1.1"], '"$SETTINGS}"
 assert_eq "$(sorted /dev/stdin <<< "$merged")" "$(sorted)" "a merged daemon.json"
-assert_eq "-rw-r-----" "$(/bin/ls -l "$DOCKER_DAEMON_CONFIG" | cut -c1-10)" "mode of a merged daemon.json"
+assert_eq 640 "$(file_mode "$DOCKER_DAEMON_CONFIG")" "mode of a merged daemon.json"
 
 # An empty file counts as {}
 : > "$DOCKER_DAEMON_CONFIG"

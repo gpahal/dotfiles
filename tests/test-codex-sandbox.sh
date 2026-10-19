@@ -13,8 +13,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script ai_tools/codex/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 stub_sudo_exec
 S="$SANDBOX/state"
 USERNS_RESTRICT_SYSCTL="$S/userns"
@@ -86,8 +85,8 @@ touch "$BWRAP_PROFILE"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
-assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with the profile loaded at boot"
+assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
+sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with the profile loaded at boot"
 
 # No bubblewrap, restricted, and the profile in apparmor.d but not loaded: one run installs
 # bubblewrap and loads the profile, so bwrap works
@@ -97,8 +96,8 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Install bubblewrap"
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
-assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap
+assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
+sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap
 sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(sudo_calls)" "sudo calls for bubblewrap with the profile in apparmor.d"
 
 # No bubblewrap, restricted, and the profile file missing: bubblewrap is installed, then the step
@@ -107,8 +106,8 @@ reset 1
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
-assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
+assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
+sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
 
 # bwrap still fails after loading the profile: the step fails
 reset 1 bwrap-broken

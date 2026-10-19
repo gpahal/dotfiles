@@ -11,8 +11,8 @@ skip_global_compinit=1
 # interactive ones. On Ubuntu, ~/.zshenv sources it too, for commands run directly over SSH (`ssh
 # host codex`), which read no other file. Each run moves the same dirs to the front in the same
 # order, and typeset -U keeps the first copy, so running it again, or in a nested shell, changes
-# nothing.
-typeset -U path
+# nothing. The same goes for fpath, which a nested shell or tmux pane inherits through FPATH.
+typeset -U path fpath
 
 # A shell that's neither login nor interactive, which only ~/.zshenv sources this for, keeps the
 # PATH it inherits from one that set up Homebrew, such as a script run from an activated venv
@@ -34,8 +34,6 @@ if [[ -z ${HOMEBREW_PREFIX:-} ]]; then
             else
                 export HOMEBREW_REPOSITORY=$prefix/Homebrew
             fi
-            fpath[1,0]=$prefix/share/zsh/site-functions
-            export FPATH
             # A leading colon has man search its default path too, which finds Homebrew's pages
             # from PATH
             [[ -z ${MANPATH-} ]] || export MANPATH=":${${MANPATH%%:##}##:##}"
@@ -44,7 +42,14 @@ if [[ -z ${HOMEBREW_PREFIX:-} ]]; then
         done
     }
 fi
-[[ -n ${HOMEBREW_PREFIX:-} ]] && path=("$HOMEBREW_PREFIX/bin" "$HOMEBREW_PREFIX/sbin" $path)
+# Homebrew's dirs, and its completions for brew-installed tools, which neither macOS's zsh nor
+# Ubuntu's has built in. HOMEBREW_PREFIX may come from a shell that added neither, such as sh
+# reading ~/.profile.
+if [[ -n ${HOMEBREW_PREFIX:-} ]]; then
+    path=("$HOMEBREW_PREFIX/bin" "$HOMEBREW_PREFIX/sbin" $path)
+    fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
+    export FPATH
+fi
 path=("$HOME/.cargo/bin" "$HOME/go/bin" $path)
 # The shims dir is static, so this runs nothing
 path=("$HOME/.local/bin" "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims" $path)

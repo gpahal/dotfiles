@@ -6,9 +6,8 @@ set -euo pipefail
 # a message. Make a lightweight tag with git tag --no-sign.
 # macOS signs with ~/.ssh/id_ed25519 and offers to load it into the agent from the keychain.
 # Ubuntu signs with a separate key without a passphrase, ~/.ssh/id_ed25519_signing, since the
-# T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets user.signingkey,
-# gpg.format, gpg.ssh.allowedSignersFile, commit.gpgsign, and tag.gpgsign in ~/.gitconfig, which
-# holds per-machine git settings (see git/install.sh), and leaves its other settings as they are.
+# T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets only the signing
+# settings (user.signingkey, gpg.*, commit/tag.gpgsign) in ~/.gitconfig, and leaves the rest.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -17,7 +16,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh
 
 LOGIN_KEY="$HOME/.ssh/id_ed25519"
 SIGNING_KEY="$HOME/.ssh/id_ed25519_signing"
-LOCAL_CONFIG="$HOME/.gitconfig"
 ALLOWED_SIGNERS="${XDG_CONFIG_HOME:-$HOME/.config}/git/allowed_signers"
 # The email commits are made as, set by main. GitHub shows a signed commit as Verified only when
 # it matches a verified email on the account.
@@ -44,10 +42,10 @@ commit_email() {
 
 # Set a key in ~/.gitconfig, saying whether it changed
 set_local() {
-    if [ "$(git_file "$LOCAL_CONFIG" --get "$1" || true)" == "$2" ]; then
+    if [ "$(git_file "$USER_GITCONFIG" --get "$1" || true)" == "$2" ]; then
         echo "  $1 is already $2"
     else
-        git_file "$LOCAL_CONFIG" "$1" "$2"
+        git_file "$USER_GITCONFIG" "$1" "$2"
         echo "  Set $1 = $2"
     fi
 }
@@ -167,8 +165,8 @@ main() {
     # Dropping the public key's comment
     allow_signer "$(awk '{print $1, $2}' "$PUB")" "this key" || incomplete=true
 
-    echo "git config ($LOCAL_CONFIG):"
-    touch "$LOCAL_CONFIG"
+    echo "git config ($USER_GITCONFIG):"
+    touch "$USER_GITCONFIG"
     set_local user.signingkey "$PUB"
     set_local gpg.format ssh
     set_local gpg.ssh.allowedSignersFile "$ALLOWED_SIGNERS"

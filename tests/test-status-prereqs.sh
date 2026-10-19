@@ -15,10 +15,7 @@ echo "APT::Periodic::Unattended-Upgrade \"1\";"'
 
 # chrome on Ubuntu, without Chrome or curl
 load_script chrome/install.sh
-# shellcheck disable=SC2329 # status calls them
-is_macos() { false; }
-# shellcheck disable=SC2329
-is_ubuntu() { true; }
+as_os ubuntu
 stub dpkg-query 'exit 1'
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 hide curl
@@ -29,10 +26,10 @@ assert_contains "$RUN_OUTPUT" "Chrome origins allowed in unattended-upgrades"
 
 # codex without brew, and no codex installed another way
 load_script ai_tools/codex/install.sh
-# shellcheck disable=SC2329 # status calls them
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 hide brew codex
+# Codex's sandbox works
+stub bwrap
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "unknown    codex: brew isn't installed"
 assert_not_contains "$RUN_OUTPUT" "missing    codex (cask)"

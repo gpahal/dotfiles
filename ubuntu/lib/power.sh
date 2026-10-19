@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Power and recovery for the ubuntu step: the sleep targets, sleep.conf, and the sysctl settings.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 sleep_masked() {
     local target
@@ -93,12 +93,13 @@ sysctl_overrides() {
 }
 
 # Write $SYSCTL_CONF and put it in effect. --system loads every file in boot order, so a later
-# file's value still wins, where -p on the step's file would override it until the next reboot. A
-# failed sysctl --system leaves the file written, so the next run applies it.
+# file's value still wins, where -p on the step's file would override it until the next reboot.
+# It fails when any key in any file does, such as one a VM's kernel lacks, after setting the rest,
+# so the step judges it by sysctl_in_effect instead.
 apply_sysctl() {
     local overrides line
     sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT" || return 1
-    sudo sysctl --system > /dev/null || return 1
+    sudo sysctl --system > /dev/null || true
     sysctl_in_effect && return 0
     overrides="$(sysctl_overrides)"
     if [ -n "$overrides" ]; then

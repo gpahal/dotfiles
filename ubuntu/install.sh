@@ -1,18 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set up Ubuntu to run unattended around the clock: never sleep, watch a UPS on USB with NUT once
-# one is plugged in, which shuts down on a dying battery and has the UPS cut and restore power,
-# reboot after a kernel panic, raise the inotify limits for agents' file watchers, add the
-# en_US.UTF-8 locale, watch disk health and push its warnings to ntfy, install security
-# updates daily and keep edited conffiles through them, start user services (the T3 Code server)
-# at boot without a login, start sshd at boot and take SSH logins only for you, and with keys only
-# once a session shows your key logs in, install Tailscale, turn on the firewall, letting SSH in
-# only from the private ranges and anything in from the tailnet (tailscale0), which Tailscale's
-# ACLs limit, once no SSH session comes from elsewhere, and wake on LAN. These need sudo, so the
-# step lists what's missing and asks once. When one part fails, the step still does the others,
-# then fails. It also puts Homebrew on PATH for user services, and turns on a daily health alert
-# and a boot notice pushed to ntfy, which need no sudo.
+# Set Ubuntu up to run unattended around the clock.
+#
+# That means: never sleep, watch a UPS on USB with NUT once one is plugged in, which shuts down on a
+# dying battery and has the UPS cut and restore power, reboot after a kernel panic, raise the
+# inotify limits for agents' file watchers, add the en_US.UTF-8 locale, watch disk health and push
+# its warnings to ntfy, install security updates daily and keep edited conffiles through them, start
+# user services (the T3 Code server) at boot without a login, start sshd at boot and take SSH logins
+# only for you, and with keys only once a session shows your key logs in, install Tailscale, turn on
+# the firewall, letting SSH in only from the private ranges and anything in from the tailnet
+# (tailscale0), which Tailscale's ACLs limit, once no SSH session comes from elsewhere, and wake on
+# LAN. These need sudo, so the step lists what's missing and asks once. When one part fails, the
+# step still does the others, then fails. It also puts Homebrew on PATH for user services, and turns
+# on a daily health alert and a boot notice pushed to ntfy, which need no sudo.
 #
 # A temp HOME doesn't isolate this step, which changes the system with sudo, systemctl, and
 # loginctl. Test it in an Ubuntu VM that runs systemd, such as an OrbStack machine.
@@ -41,6 +42,10 @@ source "$UBUNTU_LIB_DIR/ups.sh"
 # SMARTD_HOOK, UPS_NOTIFY, and NTFY_URL_FILE
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
+
+STEP_OS=ubuntu
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 # Masking these stops every suspend, whether GNOME's idle timer, the login screen's, or a command
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
@@ -87,6 +92,8 @@ fs.inotify.max_user_watches = 1048576'
 SMARTD_UNIT=smartmontools.service
 # smartd's warning hook, installed as $SMARTD_HOOK
 SMARTD_HOOK_SRC="$DOTFILES_DIR/ubuntu/smartd-notify.sh"
+# smartd's config, whose -M exec smartd-runner, in Ubuntu's default DEVICESCAN line, runs the hook
+SMARTD_CONF=/etc/smartd.conf
 # NUT, which watches a UPS on USB. nut-server ships the drivers, upsd, nut-scanner, the udev rules
 # that name the UPSes it knows, and the system-shutdown hook that has the UPS cut its power when
 # upsmon left POWERDOWNFLAG. nut-client ships upsmon and upsc.
@@ -95,6 +102,7 @@ NUT_UNITS=(nut-server.service nut-monitor.service)
 NUT_DIR=/etc/nut
 # The files the step writes in $NUT_DIR, all readable only by root and the nut group
 NUT_FILES=(nut.conf ups.conf upsd.conf upsd.users upsmon.conf)
+NUT_OWNER=root
 NUT_GROUP=nut
 # upower's hwdb, whose UPOWER_BATTERY_TYPE=ups tag tells a UPS on USB (ups_plugged)
 UPOWER_HWDB=/usr/lib/udev/hwdb.d/95-upower-hid.hwdb
@@ -161,15 +169,14 @@ TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 # shell, so the file goes in ~/.config.
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
+# The disks unlocked at boot, whose tpm2-device option binds one to the TPM (warn_disk_encryption)
+CRYPTTAB=/etc/crypttab
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 ubuntu_files() {
     "$1" "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF"
 }
 
-# The same for the files the step installs as root. Nothing in the step calls it:
-# scripts/check-docs.sh does, to check README "Maintenance" copies each one back.
+# The files the step installs as root. Only scripts/copy-back.sh calls it, to copy them back.
 ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"
@@ -189,40 +196,54 @@ install_root_copy() {
     root_copy_current "$@" || install_root_file "$@"
 }
 
-# Add the step's simple sudo items, which status and apply drive by their check functions. The
-# rest branch, so they stay in status and apply. Added at run time, since their texts name paths
-# tests point elsewhere.
-ubuntu_sudo_items() {
-    sudo_items_reset
-    sudo_item "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
-    sudo_item "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
-        "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
-    sudo_item "Linger, so user services start at boot" \
-        "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
-    # status_smartd_hook reports it, skipped in a VM and out of date apart
-    sudo_item "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
-        smartd_hook_ready install_smartd_hook
-    sudo_item "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
-        locale_installed install_locale
-    sudo_item "unattended-upgrades runs daily" \
-        "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
-        unattended_upgrades_running turn_on_unattended_upgrades
-    sudo_item "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
-        "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
-        keep_conffiles_written write_keep_conffiles
-    sudo_item "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
-        apt_timers_enabled enable_apt_timers
+# The ntfy code smartd's hook and the UPS notifier source. They run away from the repo, the
+# notifier as the nut user, who may not be able to read it, so it's installed with each of them.
+ntfy_lib_installed() {
+    root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
-# status and apply run in_vm and key_login many times, some in subshells, so they declare
-# IN_VM_CACHE, KEY_LOGIN_CACHE, and KEY_LOGIN_STATUS local and call this first to set them once
+install_ntfy_lib() {
+    install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+}
+
+ubuntu_items() {
+    items_reset
+    item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
+    item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
+        "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
+    item --sudo "Linger, so user services start at boot" \
+        "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
+    # status_smartd_hook reports it, skipped in a VM and out of date apart
+    item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
+        smartd_hook_ready install_smartd_hook
+    item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
+        locale_installed install_locale
+    item --sudo "unattended-upgrades runs daily" \
+        "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
+        unattended_upgrades_running turn_on_unattended_upgrades
+    item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
+        "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
+        keep_conffiles_written write_keep_conffiles
+    item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
+        "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
+    item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
+    # Driven only once openssh-server is installed, which enables it
+    item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
+        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
+}
+
+# status and apply run in_vm, key_login, and sudo_ready many times, some in subshells, so they
+# declare IN_VM_CACHE, KEY_LOGIN_CACHE, KEY_LOGIN_STATUS, and SUDO_CACHED_CACHE local and call this
+# first to set them once
 cache_checks() {
-    local vm=no status=0
+    local vm=no status=0 cached=no
     ! in_vm || vm=yes
     KEY_LOGIN_CACHE="$(key_login)" || status=$?
-    # Set last, since in_vm and key_login read them once set
+    ! sudo_cached || cached=yes
+    # Set last, since in_vm, key_login, and sudo_ready read them once set
     IN_VM_CACHE="$vm"
     KEY_LOGIN_STATUS="$status"
+    SUDO_CACHED_CACHE="$cached"
 }
 
 # Copy the environment.d file. When it changes, reload the user manager, which reads environment.d
@@ -279,18 +300,14 @@ enable_linger() {
     sudo loginctl enable-linger "$(id -un)"
 }
 
-# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
-# credentials are cached, and is otherwise unverified.
+# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when
+# sudo credentials are cached, and is otherwise unverified.
 status() {
     local uuid name wired=false item packages overrides
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS=""
-    if ! is_ubuntu; then
-        status_item skipped "Running around the clock: Ubuntu only"
-        return 0
-    fi
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE=""
     cache_checks
-    ubuntu_sudo_items
-    sudo_items_status sleep_masked sleep_conf_written
+    ubuntu_items
+    items_status sleep_masked sleep_conf_written
     item="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
     if ! sysctl_file_written; then
         status_item missing "$item"
@@ -300,7 +317,7 @@ status() {
     else
         status_item ok "$item"
     fi
-    sudo_items_status lingering
+    items_status lingering
     status_check "smartmontools, with smartd enabled at boot" smartd_enabled
     if in_vm; then
         status_item skipped "smartd running: this is a VM, whose host manages the disks"
@@ -311,16 +328,11 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    sudo_items_status locale_installed
+    items_status locale_installed
     status_unattended_upgrades
-    sudo_items_status keep_conffiles_written
+    items_status keep_conffiles_written
     status_held_back
-    # The sudo_item's text, with the command that turns them on
-    if apt_timers_enabled; then
-        status_item ok "apt's daily timers enabled and running"
-    else
-        status_item missing "apt's daily timers enabled and running (run sudo systemctl enable --now ${APT_TIMERS[*]})"
-    fi
+    items_status apt_timers_enabled
     if [ -e "$REBOOT_REQUIRED" ]; then
         packages="$(reboot_packages)"
         status_item missing "Reboot pending for updates${packages:+: $packages}; reboot when no agent runs"
@@ -359,13 +371,9 @@ status() {
 
 apply() {
     echo "Setting up Ubuntu to run around the clock..."
-    if ! is_ubuntu; then
-        echo "  Not Ubuntu; skipping."
-        return 0
-    fi
     local pending=() wol_pending=()
     local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
     # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
@@ -381,41 +389,37 @@ apply() {
     fi
     cache_checks
     ups_state
-    ubuntu_sudo_items
+    ubuntu_items
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
-    sudo_items_pending sleep_masked sleep_conf_written
+    items_pending sleep_masked sleep_conf_written
     if ! sysctl_file_written; then
         pending+=("Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF")
     elif ! sysctl_in_effect; then
         pending+=("Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system")
     fi
-    sudo_items_pending lingering
+    items_pending lingering
     if ! smartd_enabled; then
         pending+=("Watch disk health: enable smartd, installing smartmontools without its recommends")
     elif ! smartd_ready; then
         pending+=("Watch disk health: start smartd, which is enabled but not running")
     fi
-    sudo_items_pending smartd_hook_ready
+    items_pending smartd_hook_ready
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
     # Only root can read the settings, and apt-config skips them as you: checked with sudo only
     # when other changes need it, as the ufw rules are
     local auto_upgrades_unchecked=false
-    sudo_items_pending locale_installed
-    if auto_upgrades_unreadable && ! sudo_cached; then
+    items_pending locale_installed
+    if auto_upgrades_unreadable && ! sudo_ready; then
         auto_upgrades_unchecked=true
     else
-        sudo_items_pending unattended_upgrades_running
+        items_pending unattended_upgrades_running
     fi
-    sudo_items_pending keep_conffiles_written apt_timers_enabled
-    if ! apt_installed openssh-server; then
-        pending+=("Install openssh-server")
-    elif ! sshd_enabled; then
-        pending+=("Start sshd at boot: systemctl enable --now $SSH_UNIT")
-    fi
+    items_pending keep_conffiles_written apt_timers_enabled openssh_installed
+    ! openssh_installed || items_pending sshd_enabled
     # Unreadable, the drop-in may already turn them off, which configure_sshd keeps. Turning them
     # off is a change to the drop-in, so the item for it names why.
     local key_only_todo="" key_only_why="" drop_in_lines
@@ -470,22 +474,16 @@ apply() {
         ! "$auto_upgrades_unchecked" ||
             echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
-        # Each part runs whether or not the one before it failed
-        sudo_items_apply sleep_masked sleep_conf_written || result=1
+        items_apply sleep_masked sleep_conf_written || result=1
         sysctl_written || apply_sysctl || result=1
-        sudo_items_apply lingering || result=1
+        items_apply lingering || result=1
         smartd_ready || install_smartd || result=1
-        sudo_items_apply smartd_hook_ready || result=1
+        items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
-        sudo_items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
-            apt_timers_enabled || result=1
-        if ! apt_installed openssh-server; then
-            apt_get install -y openssh-server || result=1
-        fi
+        items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
+            apt_timers_enabled openssh_installed || result=1
         # Installing the package enables sshd, so this catches one turned off since
-        if apt_installed openssh-server && ! sshd_enabled; then
-            sudo systemctl enable --now "$SSH_UNIT" || result=1
-        fi
+        ! openssh_installed || items_apply sshd_enabled || result=1
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
             if add_tailscale_repo; then
@@ -561,7 +559,6 @@ warn_wifi_needs_login() {
 # TPM-backed encryption that also asks for a PIN gets no warning: only snapd's API tells it apart.
 # Neither does a disk bound to the TPM with systemd-cryptenroll, which keeps its label, so a
 # tpm2-device option in crypttab counts as bound.
-CRYPTTAB=/etc/crypttab
 warn_disk_encryption() {
     lsblk -rno TYPE 2>/dev/null | grep -qx crypt || return 0
     lsblk -rno FSTYPE,LABEL 2>/dev/null |

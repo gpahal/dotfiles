@@ -17,9 +17,8 @@ REAL_TMUX="$(command -v tmux || true)"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 load_script tmux/install.sh
-is_ubuntu() { true; }
-is_macos() { false; }
-sync_tmux_plugins() { :; }
+as_os ubuntu
+replace_fn sync_tmux_plugins
 
 # The unit is enabled once the enabled file exists. No user manager without the manager file.
 touch "$SANDBOX/manager"

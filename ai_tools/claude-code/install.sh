@@ -1,24 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Claude Code, configure ~/.claude/settings.json, copy the status line script to
-# ~/.claude/statusline.sh and the worktree hook to ~/.claude/hooks/worktree-hook.sh, and copy the
-# user-level instructions to ~/.claude/CLAUDE.md.
+# Install Claude Code and set its settings, status line, worktree hook, and instructions.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/keepable.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/tool-home.sh
+source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck source=../lib/user-instructions.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
+source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
+
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
 CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
-# The paths above and the docs all assume ~/.claude, so another CLAUDE_CONFIG_DIR fails the step
-# rather than leaving Claude Code reading files setup never wrote
-CLAUDE_CODE_HOME_POLICY="setup assumes Claude Code's default home (~/.claude); unset CLAUDE_CONFIG_DIR or move it"
 # The worktree hook runs git wt, which the git step installs. Registered without it, every
 # `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
@@ -95,7 +95,11 @@ install_claude_code() {
         echo "  Claude Code already installed ($("$claude" --version))."
     else
         echo "  Installing Claude Code..."
-        run_installer bash https://claude.ai/install.sh "the Claude Code installer"
+        run_installer bash https://claude.ai/install.sh "the Claude Code installer" || return 1
+        if ! claude_code_path > /dev/null; then
+            echo "  The Claude Code installer finished, but there's no claude on PATH or in ~/.local/bin." >&2
+            return 1
+        fi
     fi
 }
 
@@ -104,30 +108,18 @@ install_claude_code() {
 # Usage: claude_code_settings [<register the worktree hook: true|false>]
 claude_code_settings() {
     local register_hook="${1:-true}"
-    # /config → Push when actions required, Push when Claude decides
-    #   (mobile push notifications through the Claude app while Remote Control is active). Enable
-    #   Remote Control for all sessions stays off, since a connected session takes prompts from
-    #   claude.ai and the phone app, so only a session /remote-control connects can push
-    # Start new sessions in auto mode. Only user or managed settings can make auto the default.
-    # Turn off auto memory. Keep transcripts 90 days instead of 30, so /resume reaches further back.
-    # Default to Opus 5.5 with medium effort, the fullscreen TUI, and normal key bindings.
-    #   Switch models instead of pausing when safeguards flag a message.
-    # Worktrees: ~/.claude/hooks/worktree-hook.sh creates them, branching from origin's default
-    #   branch, and removes them under ~/.worktrees/<group>/<repo>/<name>, through git wt, and at
-    #   SessionEnd removes the session's subagent worktrees that hold nothing to lose. It's added
-    #   only once git wt is installed, and one already there gets its type and timeout back.
-    #   While another command holds WorktreeCreate or
-    #   WorktreeRemove, it's removed from all three events. Its 120 s timeout stops a stuck
-    #   git wt from holding up claude -w for the default 10 minutes.
-    # Status line: ~/.claude/statusline.sh (model, effort, context, 5-hour limit, git branch).
-    #   Refresh every five seconds, including while idle. Other keys, such as padding, stay.
-    # Send Anthropic less: no error reports, session quality surveys (they can attach the
-    #   transcript), /feedback, or feedback drafts. Training on your chats is an account
-    #   setting (see ai_tools/README.md → Privacy). Telemetry stays on: DO_NOT_TRACK and
-    #   DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns off
-    #   /advisor, /skill-doctor, skill and plugin sync, and more. Leave
-    #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so
-    #   mobile pushes stop.
+    # inputNeededNotifEnabled and agentPushNotifEnabled are /config's "Push when actions required"
+    #   and "Push when Claude decides". Remote Control at startup stays off, since a connected
+    #   session takes prompts from claude.ai and the phone app. Only user or managed settings can
+    #   make auto mode the default. Transcripts are kept 90 days, so /resume reaches further back.
+    # The worktree hook is added only once git wt is installed, and removed from all three events
+    #   while another command holds WorktreeCreate or WorktreeRemove. Its 120 s timeout stops a
+    #   stuck git wt from holding up claude -w for the default 10 minutes.
+    # Session quality surveys are off because they can attach the transcript. Telemetry stays on:
+    #   DO_NOT_TRACK and DISABLE_TELEMETRY also stop Claude Code fetching feature flags, which turns
+    #   off /advisor, /skill-doctor, skill and plugin sync, and more. Leave
+    #   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC unset: it also turns off Remote Control, so mobile
+    #   pushes stop.
     # Each value you can change, with = to write over yours or //= to set it only when unset
     local i op keepable=""
     for i in $(keepable_indexes claude_code); do
@@ -204,8 +196,6 @@ configure_claude_code() {
     echo "  and opted out of error reports, surveys, and feedback"
 }
 
-# Pass the status line script and the worktree hook, each as source and destination, to a
-# function: copy_file to copy them, or status_file to report them
 script_files() {
     local status=0
     "$1" "$DOTFILES_DIR/ai_tools/claude-code/statusline.sh" "$CLAUDE_CODE_STATUSLINE" || status=1
@@ -213,7 +203,6 @@ script_files() {
     return "$status"
 }
 
-# See user_instructions_to
 user_instructions_files() {
     user_instructions_to "$CLAUDE_CODE_INSTRUCTIONS" "$@"
 }
@@ -238,8 +227,8 @@ status() {
         status_item missing "Claude Code"
         status_item unknown "Signed in to Claude Code: Claude Code isn't installed"
     fi
-    if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then
-        status_item unknown "Claude Code settings, status line, and instructions: $CLAUDE_CODE_HOME_POLICY"
+    if ! tool_home_guard --status "Claude Code settings, status line, and instructions" \
+        "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude"; then
         status_result
         return
     fi
@@ -252,17 +241,14 @@ status() {
         [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered; remove it from ~/.claude/settings.json and re-run the step"
     done <<< "$(claude_code_other_worktree_hooks)"
     script_files status_file
-    user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+    user_instructions_files status_file
     status_result
 }
 
 apply() {
     # Anthropic's installer prints "Setting up Claude Code..." itself
     echo "Claude Code:"
-    if ! tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"; then
-        echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but $CLAUDE_CODE_HOME_POLICY" >&2
-        return 1
-    fi
+    tool_home_guard "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude" || return 1
     require_cmd jq || return 1
     # Anthropic's installer downloads with curl
     if ! claude_code_path > /dev/null; then

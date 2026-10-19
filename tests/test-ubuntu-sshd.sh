@@ -3,10 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's sshd drop-in on a set-up machine (tests/ubuntu-step-fixture.sh): replacing it
-# without removing a working one, rolling it back when sshd rejects it or won't reload, not blaming
-# the config for a missing sshd, carrying on when one part fails, and checking sshd takes its
-# settings, which another file can override, with sudo -n in status.
+# The ubuntu step's sshd drop-in on a set-up machine (tests/ubuntu-step-fixture.sh): replacing and
+# rolling it back, and checking that sshd takes its settings.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -63,7 +61,7 @@ assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 rm "$SANDBOX/sshd_config.d/50-other.conf"
 
 # A new drop-in sshd rejects: the old one goes back
-sshd_drop_in() { echo "Bogus new"; }
+replace_fn sshd_drop_in 'echo "Bogus new"'
 : > "$STUB_LOG"
 assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in after sshd rejected the new one"
@@ -71,7 +69,7 @@ assert_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
 assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 # When the old one can't go back, the step says the broken one is still in place
 eval "real_write_root_file() $(declare -f write_root_file | tail -n +2)"
-write_root_file() { [ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"; }
+replace_fn write_root_file '[ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "the broken drop-in is still in place: $SSHD_DROP_IN"
 assert_not_contains "$RUN_OUTPUT" "the old one is back"
@@ -126,14 +124,27 @@ item="sshd's effective settings match $SSHD_DROP_IN"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
-assert_file_contains "$STUB_LOG" "sudo -n sshd -T"
+assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
 printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd_config.d/00-local.conf"
 # A later file loses to the drop-in, so it isn't named
 echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
-problems="AllowUsers is someone $me; PasswordAuthentication is yes"
+# Each problem is reported once: password logins under their own item
+first="another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item ($problems; another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
-assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes)"
+assert_contains "$RUN_OUTPUT" "missing    $item (AllowUsers is someone $me; $first)"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes; $first)"
+assert_eq 1 "$(grep -c "PasswordAuthentication is yes" <<< "$RUN_OUTPUT")" "items naming PasswordAuthentication"
+# As root, the password item is skipped, so the settings item names password logins instead. Root's
+# drop-in keeps them off once they are, and has no AllowUsers.
+stub id 'if [ "$*" == -u ]; then echo 0; else exec /usr/bin/id "$@"; fi'
+cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-as-you"
+sshd_drop_in > "$SANDBOX/drop-in-as-root"
+mv "$SANDBOX/drop-in-as-root" "$SSHD_DROP_IN"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "skipped    Password and keyboard-interactive SSH logins off: the step leaves them to root"
+assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes; $first)"
+rm "$STUB_DIR/id"
+mv "$SANDBOX/drop-in-as-you" "$SSHD_DROP_IN"
 # The step checks them once it writes the drop-in
 rm "$SSHD_DROP_IN"
 : > "$STUB_LOG"
@@ -141,7 +152,7 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:
     AllowUsers is someone $me
     PasswordAuthentication is yes"
-assert_file_contains "$STUB_LOG" "sudo sshd -T"
+assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
 assert_eq "PasswordAuthentication yes
 AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 # Password logins stay on, so the step doesn't say they're off
@@ -153,7 +164,8 @@ assert_contains "$RUN_OUTPUT" "ok         $item"
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes;"
+assert_contains "$RUN_OUTPUT" "ok         $item"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes;"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
@@ -170,15 +182,16 @@ for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.
     printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
     : > "$STUB_LOG"
     assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for $addr;"
-    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr)"
+    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr;"
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
 assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
-# A wildcard pattern samples an address sshd parses; an IPv6 one short of 8 groups gets a ::
+# A wildcard pattern samples an address sshd parses; an IPv6 one short of 8 groups gets a ::. sshd
+# matches the pattern as a string, so fd00:* takes in the sample of fd00::/8 too.
 printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
-assert_exit 0 status
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \

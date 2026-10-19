@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # The homebrew step's main: the Command Line Tools on macOS and the apt packages on Ubuntu come
@@ -20,7 +18,7 @@ load_script homebrew/install.sh
 # No app path for a cask brew doesn't list, so nothing asks brew info or finds the real Mac's apps
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
-cask_app_path() { :; }
+replace_fn cask_app_path
 FONTS="$HOME/.local/share/fonts"
 
 # brew: the bundle is installed when $SANDBOX/bundle-ok exists. bundle install exits with
@@ -89,8 +87,7 @@ installs() {
     grep -E '^(brew (bundle install|install|reinstall)|mas (install|get))' "$STUB_LOG" | sed 's/ --file=[^ ]*//' || true
 }
 
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 # An Apple Silicon Mac, even on an x86_64 CI runner: setup refuses Intel
 stub uname 'if [ "$1" == -m ]; then echo arm64; else exec /usr/bin/uname "$@"; fi'
 
@@ -216,13 +213,12 @@ assert_exit 130 main
 assert_eq "brew bundle install --no-upgrade" "$(installs)" "installs after Ctrl-C in the bundle"
 
 # Ubuntu
-is_macos() { false; }
-is_ubuntu() { true; }
-locale_installed() { true; }
+as_os ubuntu
+replace_fn locale_installed 'return 0'
 
 # Missing apt packages, declined: the step stops and prints the command
 reset
-missing_ubuntu_commands() { echo " jq"; }
+replace_fn missing_ubuntu_commands 'echo " jq"'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Missing commands: jq"
 assert_contains "$RUN_OUTPUT" "Install them with: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $UBUNTU_PACKAGES"
@@ -250,10 +246,10 @@ exit 100'
 # shellcheck disable=SC2034 # apt_get_update reads them
 APT_UPDATE_RETRY_DELAY=0 APT_UPDATE_TRIES=4
 updates() { grep -c "^apt-get .* update$" "$STUB_LOG" || true; }
-missing_ubuntu_commands() { echo " jq"; }
+replace_fn missing_ubuntu_commands 'echo " jq"'
 reset
 echo 2 > "$SANDBOX/locked"
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main
 assert_eq 3 "$(updates)" "apt-get updates after two lock failures"
 assert_contains "$RUN_OUTPUT" "apt's lists lock is held"
@@ -273,22 +269,22 @@ assert_eq 1 "$(updates)" "apt-get updates after another error"
 assert_contains "$RUN_OUTPUT" "does not have a Release file"
 rm "$SANDBOX/apt-broken"
 stub sudo 'exit 0'
-unset DOTFILES_ASSUME_YES
+answer no
 
 # Approved: apt installs them, and the Ubuntu casks install, refreshing the font cache
 reset
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update"
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y $UBUNTU_PACKAGES"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y $UBUNTU_PACKAGES"
 assert_contains "$RUN_OUTPUT" "Installing brew formulae..." "Ubuntu output"
 assert_eq "$(printf 'brew bundle install --no-upgrade\n'; printf 'brew install --cask %s\n' "${UBUNTU_CASKS[@]}")" "$(installs)" "installs on Ubuntu"
 assert_file_contains "$STUB_LOG" "fc-cache -f $FONTS"
 
-unset DOTFILES_ASSUME_YES
+answer no
 
 # Re-run: no cask installs, so no cache refresh
-missing_ubuntu_commands() { :; }
+replace_fn missing_ubuntu_commands
 : > "$STUB_LOG"
 touch "$SANDBOX/bundle-ok"
 assert_exit 0 main
@@ -306,7 +302,7 @@ unset XDG_DATA_HOME
 
 # Installer casks have pkg artifacts but no app artifact, so CASK_PKG_APPS names their apps: a
 # deleted one is reinstalled, and cask_state reports it gone
-is_macos() { true; }
+as_os macos
 CASKS=(tailscale-app logi-options+)
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=("tailscale-app=$SANDBOX/apps/tailscale-app.app" "logi-options+=$SANDBOX/apps/logi-options+.app")

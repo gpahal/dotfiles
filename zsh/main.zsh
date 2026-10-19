@@ -1,10 +1,7 @@
-# Drop duplicate entries, e.g. when a nested shell or tmux pane inherits FPATH with Homebrew's dir
-# and adds it again. path.zsh does the same for path.
-typeset -U fpath
-
 ZSH_DIR=${${(%):-%x}:A:h}
 
-# A shell started without ~/.zprofile, such as `zsh -i` from an app, still gets the full PATH
+# A shell started without ~/.zprofile, such as `zsh -i` from an app, still gets the full PATH, and
+# Homebrew's completions on fpath
 source "$ZSH_DIR/path.zsh"
 
 # Source a tool's shell init script, cached in ~/.cache/zsh to save running the tool on every
@@ -43,13 +40,16 @@ _cached_init() {
     source $cache
 }
 
+# functions.zsh, title.zsh, and hooks.zsh register their hooks with it
+autoload -U add-zsh-hook
+
 # command-not-found comes before plugins, whose mise activation wraps the handler it defines.
 # Defined after, it would replace mise's, which installs a missing tool from the mise config.
 for _f in basic-settings functions aliases options history key-bindings completions title hooks \
     reminders command-not-found plugins; do
     source "$ZSH_DIR/$_f.zsh"
 done
-unset _f
+unset _f _human_tty
 
 # zoxide and starship both ask to be initialized at the end of .zshrc; zoxide after compinit
 _cached_init zoxide init zsh

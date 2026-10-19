@@ -17,8 +17,7 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
 stub gh
 load_script git/install.sh
 # Ubuntu's HTTPS rewrites don't matter here
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 
 assert_exit 0 main
 

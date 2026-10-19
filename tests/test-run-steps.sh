@@ -1,18 +1,9 @@
 #!/bin/bash
-# run_steps calls the step_script this test defines
-# shellcheck disable=SC2329
 set -euo pipefail
+# serial
 
-# run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
-# "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,
-# Ctrl-C, or SIGTERM, stops the run, and so does one of those signals reaching the runner while a
-# step that carries on runs. A real runner stopped that way dies of the signal, so the script
-# that ran it stops too. With --status, a step whose report has a missing or unknown item needs
-# attention, whether it exits 0 or 3, and one that exits 3 without such an item failed. Fake steps
-# stand in for the real ones. Then every step in each runner's real STEPS, on
-# macOS and on Ubuntu, resolves through step_script to a script that exists, and a name outside
-# both lists doesn't resolve. Those steps come from each runner's --help, with uname stubbed to
-# report the OS.
+# run_steps, which both runners use, with fake steps: failures, interrupts, and --status's
+# attention. Then each runner's real steps, on macOS and on Ubuntu, resolve through step_script.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -48,10 +39,7 @@ done
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
-step_script() {
-    [ -f "$steps/$1.sh" ] || return 1
-    echo "$steps/$1.sh"
-}
+replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
 # Every step passes
 assert_exit 0 run_steps "" first last
@@ -76,6 +64,23 @@ Fix the errors above, then re-run them with: bash $0 broken"
 assert_eq "first
 broken
 last" "$(cat "$SANDBOX/ran")" "steps run around a failed one"
+
+# A step whose STEP_OS line names the other OS is skipped without starting it, run or reported,
+# and needs no attention. One for this OS runs.
+if is_macos; then
+    this=macos other=ubuntu label="Ubuntu only"
+else
+    this=ubuntu other=macos label="macOS only"
+fi
+fake_step elsewhere "STEP_OS=$other"
+fake_step here "STEP_OS=\"$this\""
+rm -f "$SANDBOX/ran"
+assert_exit 0 run_steps "" elsewhere here
+assert_eq "elsewhere: skipped, $label" "$RUN_OUTPUT" "a run with a step for the other OS"
+assert_eq "here" "$(cat "$SANDBOX/ran")" "steps run beside one for the other OS"
+assert_exit 0 run_steps --status elsewhere
+assert_eq "elsewhere:
+  skipped    $label" "$RUN_OUTPUT" "the status of a step for the other OS"
 
 # An interrupted step stops the run with its status, before the next step and the summary
 rm -f "$SANDBOX/ran"
@@ -133,8 +138,7 @@ assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 
 # An Intel Mac fails before any step runs, status included
 stub uname '[ "$1" != -m ] || echo x86_64'

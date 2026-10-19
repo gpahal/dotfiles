@@ -1,9 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# DOTFILES_ASSUME_YES=1 makes confirm say yes without a terminal, for throwaway test machines, and
-# confirm asks whenever stdin is a terminal, even with stdout piped. test-ai-manual-steps.sh covers
-# manual-steps opening nothing with DOTFILES_ASSUME_YES=1.
+# DOTFILES_ASSUME_YES=1 makes confirm say yes without a terminal, for throwaway test machines.
+# test-ai-manual-steps.sh covers manual-steps opening nothing with DOTFILES_ASSUME_YES=1.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

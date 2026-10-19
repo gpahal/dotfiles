@@ -4,17 +4,10 @@ set -euo pipefail
 # Check that every key the t3-code step writes exists in T3 Code's settings schemas, at the
 # release the step installs: the latest, or the tag given as the only argument (e.g. v0.1.0).
 # T3 Code ignores a key it doesn't know, so a renamed or dropped setting would otherwise go
-# unnoticed. The keys come from the step's jq filters: each field after a "." and each object
-# key. They're checked as properties in these files:
-# - server settings (settings.json): packages/contracts/src/settings.ts, and for the project script
-#   actions project.ts
-# - client settings (client-settings.json): packages/contracts/src/settings.ts
-# A made-up key must be missing, so the search can fail. It's a smoke test of key names: a name
-# found anywhere in the files passes, so it doesn't check which object a key sits in, and it
-# doesn't check values against the schemas' allowed literals. It also warns, without failing, when
-# the step writes a key's default (withDecodingDefault(Effect.succeed(<value>))): T3 Code drops
-# such a key, so the step never settles. Needs curl and the network. CI runs it in the ai-settings
-# job (.github/workflows/check.yml); `just check` doesn't.
+# unnoticed. It's a smoke test of key names: a name found anywhere in the schema files passes,
+# whatever object it sits in or value it takes. A made-up key must be missing, so the search can
+# fail. It also warns, without failing, when the step writes a key's default: T3 Code drops such
+# a key, so the step never settles. Needs curl and the network. CI runs it; `just check` doesn't.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPSTREAM=pingdotgg/t3code

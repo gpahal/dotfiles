@@ -1,14 +1,8 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
-# A step missing a command it needs fails before it changes anything: claude-code and claude-desktop
-# without jq, claude-code without curl when Claude Code is missing, codex without yq, tmux without
-# tmux or git, git without gh, ubuntu and docker without jq, docker without gpg, ubuntu without
-# curl or gpg when Tailscale is missing, t3-code without brew on macOS and without curl on Ubuntu
-# when it would download the t3 CLI, runtimes without mise, and without curl when rustup is
-# missing, and zsh without its login zsh. chrome without curl is in test-chrome.sh.
+# A step missing a command it needs fails before it changes anything. chrome without curl is in
+# test-chrome.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -38,29 +32,28 @@ check_untouched() {
 # Each loads a step, replaces what decides its path (and any installer, logging it), and runs main
 claude_code() {
     load_script ai_tools/claude-code/install.sh
-    install_claude_code() { echo "install claude" >> "$STUB_LOG"; }
-    claude_code_have_git_wt() { true; }
+    replace_fn install_claude_code 'echo "install claude" >> "$STUB_LOG"'
+    replace_fn claude_code_have_git_wt true
     main
 }
 # Claude Code not yet installed, which the step would install with Anthropic's script
 claude_code_fresh() {
     load_script ai_tools/claude-code/install.sh
-    claude_code_path() { return 1; }
-    claude_code_have_git_wt() { true; }
+    replace_fn claude_code_path 'return 1'
+    replace_fn claude_code_have_git_wt true
     main
 }
 claude_desktop() {
     load_script ai_tools/claude-desktop/install.sh
-    is_macos() { true; }
-    install_cask() { echo "install $1" >> "$STUB_LOG"; }
+    as_os macos
+    replace_fn install_cask 'echo "install $1" >> "$STUB_LOG"'
     main
 }
 codex() {
     load_script ai_tools/codex/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
-    install_cask() { echo "install $1" >> "$STUB_LOG"; }
-    codex_cask_path() { :; }
+    as_os macos
+    replace_fn install_cask 'echo "install $1" >> "$STUB_LOG"'
+    replace_fn codex_cask_path :
     main
 }
 tmux_step() {
@@ -69,20 +62,18 @@ tmux_step() {
 }
 git_step() {
     load_script git/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
+    as_os macos
     main
 }
 ubuntu_step() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
-    is_ubuntu() { true; }
+    as_os ubuntu
     main
 }
 docker_step() {
     load_script docker/install.sh
-    is_macos() { false; }
-    is_ubuntu() { true; }
+    as_os ubuntu
     main
 }
 # The ubuntu step without Tailscale, whose apt key it would download to install it
@@ -91,27 +82,25 @@ ubuntu_no_tailscale() {
 }
 t3_code_macos() {
     load_script ai_tools/t3-code/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
+    as_os macos
     main
 }
 # T3 Code on Ubuntu without the t3 CLI, which it would download
 t3_code_ubuntu() {
     load_script ai_tools/t3-code/install.sh
-    is_macos() { false; }
-    is_ubuntu() { true; }
-    apt_installed() { false; }
+    as_os ubuntu
+    replace_fn apt_installed false
     main
 }
 runtimes_step() {
     load_script runtimes/install.sh
     stub mise
-    rustup_installed() { false; }
+    replace_fn rustup_installed false
     main
 }
 runtimes_no_mise() {
     load_script runtimes/install.sh
-    rustup_installed() { false; }
+    replace_fn rustup_installed false
     main
 }
 
@@ -139,10 +128,9 @@ for os in macos ubuntu; do
     mkdir -p "$HOME"
     load_script zsh/install.sh
     if [ "$os" == ubuntu ]; then
-        is_macos() { false; }
-        is_ubuntu() { true; }
+        as_os ubuntu
     fi
-    login_zsh_path() { return 1; }
+    replace_fn login_zsh_path 'return 1'
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "zsh is missing" "the zsh step's output on $os"
     check_untouched "zsh on $os"

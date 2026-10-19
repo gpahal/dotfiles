@@ -1,9 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the Ghostty config and, when it changed, reload it in running Ghostty windows. On Ubuntu,
-# also install Ghostty from its snap, which snapd keeps updated; the homebrew step installs it on
-# macOS. Without snapd, the step still copies the config, then fails.
+# Copy the Ghostty config and reload it, and on Ubuntu install the Ghostty snap.
+#
+# The reload happens only when the config changed. snapd keeps the snap updated; the homebrew step
+# installs Ghostty on macOS. Without snapd, the step still copies the config, then fails.
 #
 # A temp HOME doesn't isolate this step, which signals the running Ghostty to reload, and on Ubuntu
 # runs sudo snap install. Test its Ubuntu side in an Ubuntu VM, such as an OrbStack machine. On
@@ -26,8 +27,24 @@ ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }
 
+install_ghostty_snap() {
+    if ! sudo snap install ghostty --classic; then
+        echo "  Couldn't install the Ghostty snap." >&2
+        return 1
+    fi
+}
+
+ghostty_items() {
+    items_reset
+    item --sudo "Ghostty snap installed" "Install Ghostty from its snap (classic confinement)" \
+        ghostty_snap_installed install_ghostty_snap
+}
+
 install_ghostty() {
-    if ghostty_snap_installed; then
+    local pending=()
+    ghostty_items
+    items_pending
+    if [ ${#pending[@]} -eq 0 ]; then
         echo "  Ghostty already installed."
         return 0
     fi
@@ -35,15 +52,10 @@ install_ghostty() {
         echo "  Installing Ghostty needs snapd. Install it with: sudo apt-get install snapd" >&2
         return 1
     fi
-    confirm_sudo_changes "Install Ghostty from its snap (classic confinement)" || return 0
-    if ! sudo snap install ghostty --classic; then
-        echo "  Couldn't install the Ghostty snap." >&2
-        return 1
-    fi
+    confirm_sudo_changes "${pending[@]}" || return 0
+    items_apply
 }
 
-# Pass the file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 ghostty_files() {
     "$1" "$DOTFILES_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty"
 }
@@ -83,7 +95,8 @@ ghostty_overrides_status() {
 
 status() {
     if is_ubuntu; then
-        status_check "Ghostty snap installed" ghostty_snap_installed
+        ghostty_items
+        items_status
     else
         status_item skipped "Ghostty snap: the homebrew step installs Ghostty on macOS"
     fi
@@ -94,7 +107,6 @@ status() {
 
 apply() {
     echo "Setting up Ghostty..."
-    # A failed install or copy fails the step, after the rest has run
     local installed=0
     if is_ubuntu; then
         install_ghostty || installed=$?

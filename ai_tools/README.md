@@ -22,7 +22,7 @@ How to set up the AI tools on macOS, and on an [Ubuntu](#ubuntu-1) machine used 
 
 ### macOS
 
-1. Run the main [`setup.sh`](../README.md#first-run) first. The steps here need its `jq`, `yq`, and Node.
+1. Run the main [`setup.sh`](../README.md#first-run) first. The steps here need its `jq` and `yq`.
 2. In a new Ghostty window, run `bash ai_tools/setup.sh`, and let it quit the apps it asks about. Use Ghostty rather than T3 Code's terminal, since the script quits T3 Code.
 3. Do the macOS [manual steps](#macos-1): the logins, the notifications, and the phone apps.
 4. Run the [checks](#check-it-works).
@@ -53,10 +53,9 @@ Steps marked **(script)** below are done for you. The script adds no MCP servers
 The `upgrade` shell function updates the AI tools with everything else, through `upgrade-ai-tools`, which you can also run on its own. It updates only what's installed, and lists the failed stages at the end:
 
 - **Claude Code native install:** `claude update`.
-- **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
-- **Desktop apps installed with brew:** Claude, ChatGPT, and T3 Code, each skipped while it runs.
-- **Codex CLI installed with brew**, even while it runs.
+- **AI casks:** the Claude, ChatGPT, and T3 Code apps installed with brew, each skipped while it runs, and the Codex CLI, even while it runs.
 - **Claude Code plugins:** `claude plugin marketplace update`, then `claude plugin update` for each user plugin in `claude plugin list`. Plugins can add hooks that run as you, so it prints each marketplace's commit and each plugin's version before and after, for you to review. A running session keeps the old version until `/reload-plugins`.
+- **t3 CLI and the T3 Code service:** `t3 update`, for the `~/.local/bin/t3` that Ubuntu gets. It asks before restarting a running service. On macOS the app updates itself and its own `~/.t3/bin/t3`.
 - **Codex plugins:** `codex plugin marketplace upgrade`, for a Git marketplace you added.
 
 ## Claude Code
@@ -96,7 +95,7 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 - **Model (script).** Opus 5.5 at medium effort, and Sonnet 5.5 at high. To switch for one session, press `s` in the `/model` picker.
 - **Interface (script).** The fullscreen TUI with normal (not vim) key bindings. When safeguards flag a message, Claude Code switches models instead of pausing.
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh) shows the model, effort, context used, the 5-hour rate limit, and the branch: `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
-- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts the worktrees of `--worktree`, subagents, and background sessions under `~/.worktrees` through [`git wt`](../README.md#git) (see [Code layout](../README.md#code-layout)). When a session ends, the hook removes its subagents' worktrees that have no changes; remove the rest with `git wt rm`.
+- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts the worktrees of `--worktree`, subagents, and background sessions under `~/.worktrees` through [`git wt`](../README.md#git) (see [Code layout](../AGENTS.md#code-layout)). When a session ends, the hook removes its subagents' worktrees that have no changes; remove the rest with `git wt rm`.
 - **`.worktreeinclude`.** The hook copies the gitignored files and directories it lists into a new worktree. Naming an ignored directory, such as `node_modules/`, copies it whole. A pattern inside an ignored directory, such as `build/config.json` when `build/` is ignored, copies nothing, so name the directory instead.
 
 ### Desktop app settings
@@ -138,7 +137,7 @@ In `~/.codex/config.toml` **(script)**:
 
 - **Model.** `gpt-6.1-sol` at high effort, with short answers and concise reasoning summaries. The script sets the model, effort, and footer when they're unset, and a run with a terminal asks before replacing your own. The interrogate skill's Codex reviewer uses the same model, so update its table in `ai_tools/skills/engineering/interrogate/SKILL.md` with the script's.
 - **Permissions.** Codex works in the workspace without asking, and sends anything else, network access included, to a reviewer agent instead of to you. The sandbox has no network unless you turn it on under `[sandbox_workspace_write]`, which the script leaves alone.
-- **Rewritten file.** The step rewrites `config.toml` with yq, which must be 4.54.1 or later, though the step doesn't check. End-of-line comments may go, and when yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
+- **Rewritten file.** The step rewrites `config.toml` with yq, which must be 4.54.1 or later: the step checks, and fails on an older one. End-of-line comments may go, and when yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
 
 Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
@@ -201,15 +200,16 @@ Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Cha
 
 ## User-level instructions
 
-[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A copy you edited stays until you agree to replace it, which backs it up first.
+[`ai_tools/user-instructions.md`](./user-instructions.md) holds instructions for every Claude Code and Codex session, T3 Code's included. The `claude-code` and `codex` steps copy it to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. To change it, edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`. A run replaces a copy that differs, so run `just copy-back` first to keep edits made there.
 
 ## Skills
 
 [`ai_tools/skills`](./skills/README.md) holds agent skills, grouped into `engineering` and `productivity`. Most are modified copies of [mattpocock/skills](https://github.com/mattpocock/skills) and [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack), each with its source's `LICENSE`.
 
-The `skills` step installs them with a pinned version of the [skills CLI](https://skills.sh), which needs Node.js 24 or newer from the `runtimes` step **(script)**. Each skill is copied into `~/.agents/skills`, which Codex reads, and linked into `~/.claude/skills`. Type `/` in Claude Code or T3 Code, or `$` in Codex, to list them.
+The `skills` step copies each skill into `~/.agents/skills`, which Codex reads, and links it into `~/.claude/skills` **(script)**. Type `/` in Claude Code or T3 Code, or `$` in Codex, to list them.
 
-- **Changes need a re-run** of `bash ai_tools/setup.sh skills`, which backs up an edited copy before replacing it. It offers to remove each skill it installed that the repo no longer has, and leaves skills from elsewhere alone.
+- **Changes need a re-run** of `bash ai_tools/setup.sh skills`. It replaces a copy that differs from the repo, so make your edits in the repo.
+- **The repo owns both directories.** The step deletes every entry in them that isn't a skill in `ai_tools/skills`, including skills you installed from elsewhere. It keeps what Claude Code writes to `~/.claude/skills`: `synced`, for skills synced from claude.ai, and entries whose names start with a dot, such as `.trash`. `--status` lists what it would delete.
 - **`code-review`** replaces Claude Code's bundled `/code-review`. In Codex, run it as `$code-review`.
 - **`interrogate`** runs reviewers through `claude -p` and `codex exec`, so sign in to both.
 
@@ -217,7 +217,7 @@ The `skills` step installs them with a pinned version of the [skills CLI](https:
 
 Run `bash ai_tools/setup.sh` on the Ubuntu machine too, after its `setup.sh`. Its [steps](#automated-setup) set up the same as on macOS, without desktop apps or computer use. The `codex` step also installs `bubblewrap` for Codex's sandbox, with an AppArmor profile when needed **(script)**; test it with `codex sandbox -- /bin/true`.
 
-Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file, and `--status` flags it when anyone else can.
+Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json` there **(script)**, since the login keyring stays locked over SSH. Any process running as you can read that file. The step makes it readable only by you, and `--status` flags it when anyone else can read it.
 
 ### Notifications over SSH
 
@@ -227,8 +227,8 @@ Claude Code and Codex send notifications as escape sequences, which travel over 
 
 The machine runs one T3 Code server all the time, as a service, so the Mac and the phone can both reach it. Two servers on the same data conflict, so nothing else may start one. The Ubuntu [manual steps](#ubuntu-2) connect the Mac and the phone to it.
 
-- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. Check it with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
-- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script.
+- **Service (script).** The script installs the `t3` CLI and its service, which starts at boot on port 3773, listening only on loopback, with telemetry off. The script and `--status` check with `ss` that nothing listens on that port beyond loopback. Check the service with `systemctl --user status t3code`; its log is `~/.t3/userdata/logs/boot-service.log`.
+- **Another server.** While another T3 Code server runs, such as one the Mac started over SSH, the script changes neither the settings nor the service, and `--status` reports it. Stop it and re-run the script. A service that started while another server ran stays up without a server of its own, which `--status` also reports and the re-run fixes by restarting it.
 - **Settings (script).** The server gets the same [app settings](#app-settings). When they change, the script asks once to restart the service, which stops the threads running on it.
 - **Docker access.** The service's agents get the `docker` group only after the reboot in the main README's [First run](../README.md#ubuntu). The group is root-equivalent, so an agent can get root through a container.
 - **Browser.** When T3 Code's browser needs an AppArmor profile or libraries, the script prints the command that adds them, and `--status` reports it missing until you run it. The script doesn't run that command, because `~/.local/bin/t3` updates itself and you can write to it. Check it before you run it as root.
@@ -300,7 +300,7 @@ Run these over SSH from the Mac.
 
 ## Maintenance
 
-**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step records the skills it installed in `${XDG_STATE_HOME:-~/.local/state}/dotfiles/installed-skills`, and backs up edited skills to `skills-backup/` beside it.
+**Where the steps write.** The `claude-code` and `codex` steps write config only to `~/.claude` and `~/.codex`, so a `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere fails them. The `t3-code` step writes to `~/.t3/userdata`, plus a LaunchAgent on macOS and a systemd drop-in for `t3code.service` on Ubuntu. The `skills` step writes to `~/.agents/skills`, and to `~/.claude/skills` unless `CLAUDE_CONFIG_DIR` points elsewhere.
 
 **When an app updates.** These apps don't document every key the steps write, so each was checked against one version:
 
@@ -317,5 +317,3 @@ After an update, check the keys against the app's settings file or schema, fix t
 - **Notifications.** For each app, start a short task, switch away, and wait for the notification.
 - **Keep-awake.** While the Claude app or ChatGPT runs a task, `pmset -g assertions` lists a `PreventUserIdleSystemSleep` assertion from it.
 - **T3 Code at login.** On macOS, after a login T3 Code is running and `launchctl getenv T3CODE_TELEMETRY_ENABLED` prints `false`. On Ubuntu, `systemctl --user is-enabled t3code` prints `enabled`.
-
-**A newer skills CLI.** Check its flags, Node.js version, and copy exclusions, then update `SKILLS_CLI` and the related values in [`skills/install.sh`](./skills/install.sh) and its tests.

@@ -3,8 +3,8 @@
 # load_script ubuntu/install.sh, which sets the constants back. It fails the test when a constant
 # that ubuntu/install.sh or ubuntu/lib/*.sh sets still starts with /etc, /var, /usr, /run, or /dev,
 # outside the repo, so a constant added later can't send a test to the real machine. A test may
-# point one elsewhere in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it calls, print the
-# ufw rules the step adds, for a ufw stub to list. Bash 3.2.
+# point one elsewhere in the sandbox after it. ufw_status_listing, and the ufw_*_rules functions it
+# calls, print the ufw rules the step adds, for a ufw stub to list. Bash 3.2.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
 
@@ -24,9 +24,11 @@ ubuntu_sandbox_paths() {
     SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
     SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
     SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
+    SMARTD_CONF="$SANDBOX/smartd.conf"
     NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
     NUT_DIR="$SANDBOX/nut"
-    # The test runs as you, without a nut group, so NUT's files get your own
+    # The test runs as you, without a nut group, so NUT's files are yours, in your own group
+    NUT_OWNER="$(id -un)"
     NUT_GROUP="$(id -gn)"
     UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
     UPS_RTC_HOOK="$SANDBOX/system-shutdown/dotfiles-rtc-wake"

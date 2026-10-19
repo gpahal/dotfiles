@@ -18,6 +18,7 @@ stub sudo
 # then reads ~/.zsh_history, as at a terminal. -d skips the system's startup files.
 mkdir -p "$SANDBOX/zdot"
 printf '%s\n' 'PS1= PS2= PROMPT_EOL_MARK=' 'unset HOMEBREW_PREFIX' 'compdef() { :; }' \
+    'autoload -U add-zsh-hook' \
     "source '$REPO_DIR/zsh/options.zsh'" "source '$REPO_DIR/zsh/history.zsh'" \
     "source '$REPO_DIR/zsh/aliases.zsh'" \
     "source '$REPO_DIR/zsh/functions.zsh'" > "$SANDBOX/zdot/.zshrc"
@@ -73,6 +74,7 @@ probe_alias() {
         unset HOMEBREW_PREFIX
         compdef() { :; }
         alias please='\''sudo zsh -c "$(fc -ln -1)"'\''
+        autoload -U add-zsh-hook
         source "$1/zsh/functions.zsh"
         unalias please
         whence -w please g

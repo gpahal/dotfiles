@@ -15,8 +15,7 @@ stub_sudo_exec
 
 # --- chrome ---
 load_script chrome/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 printf '%s\n' "$UNATTENDED_CONTENT" > "$UNATTENDED_CONF"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"

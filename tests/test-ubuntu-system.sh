@@ -3,11 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale waiting for its
-# first login, its apt source for an older release or a release it has no packages for, and its
-# install; smartd enabled but failed; sysctl settings written but not in effect, raised further by
-# another file, or lowered by one; the disk encryption warning; packages installed before they're
-# used; and unattended-upgrades' keys merged into 20auto-upgrades.
+# The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale, smartd, sysctl,
+# the disk encryption warning, packages installed before they're used, and unattended-upgrades.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -41,10 +38,8 @@ rm "$SANDBOX/tailscale-reset"
 # a yes writes the key and the one-line tailscale.list for this release, and updates from it alone.
 # test-apt-sources.sh covers the other states apt_source_state reports.
 mkdir -p "$SANDBOX/keyrings"
-fetch() {
-    echo "fetch $1" >> "$STUB_LOG"
-    echo key > "$2"
-}
+replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+echo key > "$2"'
 # The key has the fingerprint the step pins
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $TAILSCALE_KEY_FPR"
 # curl answers the HEAD request for Tailscale's Release file with $SANDBOX/http-status
@@ -142,6 +137,14 @@ assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_not_contains "$STUB_LOG" "tee $SYSCTL_CONF"
 assert_exit 0 status
 assert_not_contains "$RUN_OUTPUT" "missing"
+# sysctl --system fails on a bad key in any file, such as one a VM's kernel lacks, after setting the
+# rest: the step's own settings took, so it succeeds
+rm -f "$SYSCTL_CONF" "$SANDBOX/sysctl-live"
+touch "$SANDBOX/sysctl-key-fails"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo sysctl --system"
+rm "$SANDBOX/sysctl-key-fails"
+assert_exit 0 status
 
 # Another file raising an inotify limit further, as an IDE's does, leaves it in effect: status is
 # ok, and a run has nothing to apply

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Tailscale for the ubuntu step.
-# ubuntu/install.sh sources this file and sets the constants it uses. It defines functions, and
-# the fingerprint of Tailscale's key beside the one that adds it.
+# ubuntu/install.sh sets the constants it uses, but for the fingerprint of Tailscale's key, kept
+# beside the function that adds it.
 
 # Tailscale's apt repo isn't one unattended-upgrades updates, so Tailscale updates itself. As
 # operator, you can run `tailscale serve` without sudo, which `t3 pair --tailscale` does. So can
@@ -36,7 +36,8 @@ tailscale_list_line() {
     echo "deb [signed-by=$TAILSCALE_KEYRING] $TAILSCALE_REPO $(ubuntu_codename) main"
 }
 
-# Tailscale's Release file for this release, which is a 404 until Tailscale publishes packages for it
+# Tailscale's Release file for this release, which is a 404 until Tailscale publishes packages for
+# it
 tailscale_release_url() {
     echo "$TAILSCALE_REPO/dists/$(ubuntu_codename)/Release"
 }

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Updates for the ubuntu step: unattended-upgrades, apt's daily timers, the dpkg options that keep
 # edited conffiles, and the packages apt holds back.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # Succeeds for an APT::Periodic interval that makes apt.systemd.daily run a job at least daily:
 # always, or a number of s, m, h, or d, which a bare number means, from 1 s to a day
@@ -47,7 +47,7 @@ unattended_upgrades_running() {
 # Print the status item for unattended-upgrades. Never asks for sudo.
 status_unattended_upgrades() {
     local item="unattended-upgrades runs daily"
-    if auto_upgrades_unreadable && ! sudo_cached; then
+    if auto_upgrades_unreadable && ! sudo_ready; then
         status_item unverified "$item (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
     else
         status_check "$item" unattended_upgrades_running

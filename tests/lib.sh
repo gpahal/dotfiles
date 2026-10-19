@@ -7,7 +7,12 @@
 # command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
 # runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
 # test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
-# calls skip. tests/run.sh runs each test and says how skips and timeouts count.
+# calls skip. tests/run.sh runs each test and says how skips, timeouts, and the "# serial" mark
+# work.
+#
+# To change a function a loaded script defines, use replace_fn, which fails the test when there's
+# no such function, rather than redefining it bare. as_os macos|ubuntu sets is_macos and is_ubuntu,
+# and answer yes|no sets confirm's answer.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,13 +26,11 @@ TEST_DONE=false
 source "$TESTS_DIR/sentinels.sh"
 
 # Point HOME, TMUX_TMPDIR, WORKTREES_DIR, and TMPDIR at a new temp dir, unset the variables that
-# would send a step elsewhere (XDG_*, GIT_*, CODEX_HOME, CDPATH, ...), limit git to local repos,
-# put $STUB_DIR first on PATH, and read stdin from /dev/null, so confirm says no.
-# sudo is stubbed to fail, as it does when not cached, so no test runs it for real, even on a CI
-# runner with passwordless sudo. A test may stub its own. Every command in SENTINELS gets a
-# failing sentinel (see _sentinels). Sets an EXIT trap that removes the
-# temp dir and makes the test exit 1 when an assertion failed or a sentinel ran, so a test mustn't
-# set its own; on_exit adds to it.
+# would send a step elsewhere, limit git to local repos, put $STUB_DIR first on PATH, give each
+# SENTINELS command a sentinel, and read stdin from /dev/null, so confirm says no. sudo is stubbed
+# to fail, as when not cached, so no test runs it for real even on a CI runner with passwordless
+# sudo; a test may stub its own. Sets the EXIT trap, so a test mustn't set its own; on_exit adds
+# to it.
 setup_sandbox() {
     local var
     # /tmp, not $TMPDIR, keeps tmux's socket path under its length limit on macOS. -P resolves
@@ -42,10 +45,8 @@ setup_sandbox() {
     for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_|GIT_)' || true); do
         unset "$var"
     done
-    # SSH_AUTH_SOCK would let ssh-add and ssh reach the real agent and its keys, and the ubuntu
-    # step reads the real SSH session's login from SSH_USER_AUTH.
-    # BASH_ENV would run a file in every bash a step starts, and MISE_* would point mise at the
-    # real config and state.
+    # SSH_AUTH_SOCK would reach the real agent's keys, SSH_USER_AUTH the real session's login,
+    # BASH_ENV would run a file in every bash a step starts, and MISE_* the real mise state
     unset CDPATH BASH_ENV TMUX TMUX_PANE ZDOTDIR CODEX_HOME CLAUDE_CONFIG_DIR SSH_AUTH_SOCK \
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
@@ -60,9 +61,8 @@ setup_sandbox() {
     # Set, so zsh/path.zsh doesn't set the real Homebrew's environment, and pointing nowhere, so
     # it puts no real Homebrew dir ahead of the stubs
     export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
-    # The apt sources directory, where tests point the steps' apt sources, and the release
-    # ubuntu_codename reads, so no test sees the host's. A step that sets its own paths needs the
-    # test to override them.
+    # The apt sources dir and the release ubuntu_codename reads, so no test sees the host's. A step
+    # that sets its own paths needs the test to override them.
     export APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d" OS_RELEASE="$SANDBOX/os-release"
     mkdir -p "$APT_SOURCES_DIR"
     printf '%s\n' ID=ubuntu VERSION_ID='"26.04"' VERSION_CODENAME=resolute UBUNTU_CODENAME=resolute > "$OS_RELEASE"
@@ -124,11 +124,10 @@ _sandbox_exit() {
     exit "$status"
 }
 
-# Run a command when the test exits, before the sandbox goes: after test_done, when set -e stops
-# it, or on the SIGTERM tests/run.sh sends on a timeout or Ctrl-C. It's for what the test starts in
-# another process group, which those signals don't reach. The command is a string evaluated then,
-# so its variables have their values at exit. Commands run in the order added; failures are
-# ignored.
+# Run a command when the test exits, however it exits (test_done, set -e, or tests/run.sh's
+# SIGTERM), before the sandbox goes. It's for what the test starts in another process group, which
+# those signals don't reach. The string is evaluated at exit; commands run in the order added, and
+# failures are ignored.
 # e.g. on_exit 'kill -- "-$SERVER_PID" 2> /dev/null'
 _ON_EXIT=()
 on_exit() {
@@ -178,19 +177,49 @@ stub() {
 }
 
 # Stub sudo to run its command as you, as sudo with cached credentials would, after dropping a
-# leading -n. It refuses a command with an absolute path, alone or after an =, outside the sandbox
-# (which holds $STUB_DIR), other than /dev/null and the repo's files. So a system path the test
-# didn't point into the sandbox fails the command, rather than being written to as you. The
-# optional body runs first, with sudo's arguments as "$@", as a stub's does, and may change them
-# with set --, as to drop options that need root.
+# leading -n. It refuses an absolute path, alone or after an =, outside the sandbox other than
+# /dev/null and the repo's files, so a system path the test didn't point into the sandbox fails
+# rather than being written to as you. A repo file passes only where the command reads it: before
+# the last argument, as cp's source, or anywhere for a read-only command such as cat or bash;
+# never for a command that changes each file it's given, such as rm or tee. The optional body runs
+# first with sudo's arguments as "$@", and may change them with set --, as to drop options that
+# need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
+# The command, after any VAR=value words, and which of its files it reads: all, all but the last,
+# or none, as install -d makes each dir it is given
+cmd=""
 for arg in "$@"; do
     case "$arg" in
-        /dev/null | "$sandbox" | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/* | *="$repo"/*) ;;
+        *=*) ;;
+        *)
+            cmd="${arg##*/}"
+            break
+            ;;
+    esac
+done
+case "$cmd" in
+    cat | bash | sh | head | tail | grep | diff | cmp | stat | test | \[) reads=all ;;
+    rm | rmdir | mv | chmod | chown | chgrp | touch | tee | truncate | mkdir | unlink | sed) reads=none ;;
+    *) reads=all-but-last ;;
+esac
+case " $* " in *" -d "*) [ "$cmd" != install ] || reads=none ;; esac
+i=0
+for arg in "$@"; do
+    i=$((i + 1))
+    case "$arg" in
+        /dev/null | "$sandbox" | "$sandbox"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/*) ;;
+        "$repo"/* | *="$repo"/*)
+            case "$reads" in
+                all) continue ;;
+                all-but-last) [ "$i" -eq $# ] || continue ;;
+            esac
+            echo "refused: $cmd would change $arg, in the repo" >&2
+            exit 1
+            ;;
         /* | *=/*)
             echo "refused: $arg is outside the sandbox" >&2
             exit 1
@@ -224,9 +253,9 @@ EOF
 }
 
 # Write a sentinel for each command to $STUB_DIR: it logs "<cmd> <args>" to $SANDBOX/unstubbed.log,
-# says so on stderr, and exits 127, as a missing command would. The log is outside $STUB_DIR, so
-# a step that runs a sentinel with HOME or the environment changed still logs it. stub replaces a
-# sentinel. Every test writes about 60, so printf writes them and one chmod marks them all.
+# says so on stderr, and exits 127, as a missing command would. The log is outside $STUB_DIR, so a
+# step that changes HOME or the environment still logs it. Every test writes about 60, hence one
+# chmod for all.
 _sentinels() {
     local cmd body
     body="$(printf '#!/bin/bash\nlog=%q\n' "$SANDBOX/unstubbed.log")"'
@@ -301,6 +330,45 @@ subtest() {
     TEST_FAILURES=$((TEST_FAILURES + failed))
 }
 
+# Replace function <name>, which a loaded script defines, with <body>. It fails the test when no
+# such function exists, as when a step renamed it, since the override would then change nothing
+# and the test could pass without testing what it meant to. It redefines the function anyway.
+# e.g. replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+replace_fn() {
+    declare -F "$1" > /dev/null || fail "replace_fn: no function $1 to replace"
+    eval "$1() {
+${2:-:}
+}"
+}
+
+# Make the loaded scripts' is_macos and is_ubuntu say the test runs on macOS or on Ubuntu. Only
+# this shell's functions change; a step run as its own process needs a uname stub instead.
+# e.g. as_os ubuntu
+as_os() {
+    case "$1" in
+        macos)
+            replace_fn is_macos 'return 0'
+            replace_fn is_ubuntu 'return 1'
+            ;;
+        ubuntu)
+            replace_fn is_macos 'return 1'
+            replace_fn is_ubuntu 'return 0'
+            ;;
+        *) fail "as_os: '$1' isn't macos or ubuntu" ;;
+    esac
+}
+
+# Make the loaded scripts' confirm print its question and answer yes or no, as a person at a
+# terminal would
+# e.g. answer yes
+answer() {
+    case "$1" in
+        yes) replace_fn confirm 'echo "$1"' ;;
+        no) replace_fn confirm 'echo "$1"; return 1' ;;
+        *) fail "answer: '$1' isn't yes or no" ;;
+    esac
+}
+
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).
 test_done() {
     TEST_DONE=true
@@ -348,10 +416,9 @@ fake_tmux_plugins() {
 }
 
 # Source lib/common.sh, lib/system.sh, or a step script, given relative to the repo, so the test
-# can call its functions. Remaining arguments become the script's "$@". A step runs main only when
-# run directly, so this runs none of it. A step's set -euo pipefail carries over to the test.
-# A syntax error in the script or in lib/common.sh or lib/system.sh, which steps source, ends the
-# test with status 2: sourced, it would end it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
+# can call its functions. Remaining arguments become the script's "$@". A step's set -euo pipefail
+# carries over to the test. A syntax error ends the test with status 2 first: sourced, it would end
+# it with 0, since bash 3.2 gives the EXIT trap a $? of 0.
 # e.g. load_script vim/install.sh
 load_script() {
     local script="$REPO_DIR/$1" f
@@ -369,6 +436,8 @@ load_script() {
         "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
         *) unset -f main ;;
     esac
+    # A step sets STEP_OS only when it's one-OS, so one loaded earlier would gate this one.
+    unset STEP_OS STEP_NEEDS
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first

@@ -1,7 +1,5 @@
-# Helpers for the steps and scripts that change the system with sudo: root-owned files, the
-# sudo_item list, and third-party apt repos. The ubuntu, docker, and chrome steps,
-# macos/setup-touch-id-sudo.sh, and ubuntu/setup-alerts.sh source it. Source it after
-# lib/common.sh, whose helpers it uses; don't run it.
+# Helpers for the steps and scripts that change the system with sudo: root-owned files and
+# third-party apt repos. Source it after lib/common.sh, whose helpers it uses; don't run it.
 # shellcheck shell=bash
 
 # Replace a root-owned file with a copy of a local file, with sudo, creating its directory. The
@@ -9,16 +7,29 @@
 # write leaves the old file whole: sudo tee would cut it short, and a drop-in cut short can lose a
 # setting such as PasswordAuthentication no. The temp file's leading dot keeps run-parts and
 # *.conf globs from reading it. The file keeps its mode unless one is given; a new one gets 644.
-# A group, when given, is set by the same install, so no write can leave the file without it.
+# A group, when given, is set by the same install, so no write can leave the file without it. A
+# symlink's target is replaced, as replace_file does, and a dangling one fails: stat reads a
+# link's own mode as 777, and mv would replace the link with a file of that mode. A missing
+# directory gets 755 whatever the umask, so the users the hooks run as, such as nut, can read
+# what's in it; an existing one keeps its mode, since install -d would reset it.
 # Usage: install_root_file <src> <dest> [mode] [group]
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts
+    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts target
     dir="$(dirname "$dest")"
-    sudo mkdir -p "$dir" || return 1
+    sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
     # mv would move the new file into a directory, and succeed
     if sudo test -d "$dest"; then
         echo "  $dest is a directory; remove it and re-run." >&2
         return 1
+    fi
+    if sudo test -L "$dest"; then
+        if ! target="$(sudo readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
+            ! sudo test -e "$target"; then
+            echo "  $dest is a symlink to nothing; remove it and re-run." >&2
+            return 1
+        fi
+        dest="$target"
+        dir="$(dirname "$dest")"
     fi
     # Through sudo, since the file or its directory may be root-only
     if [ -z "$mode" ]; then
@@ -58,84 +69,6 @@ read_root_file() {
     else
         sudo cat "$1"
     fi
-}
-
-# A step that changes the system with sudo lists each simple item once, with sudo_item, so its
-# confirm_sudo_changes list, its fixes, and its status can't drift apart. An item that branches,
-# such as one with two pending texts, stays custom code. Add the items in a function that status
-# and apply both call, starting with sudo_items_reset, so a test that loads two steps gets each
-# step's own.
-SUDO_ITEM_STATUS=()
-SUDO_ITEM_PENDING=()
-SUDO_ITEM_CHECK=()
-SUDO_ITEM_FIX=()
-
-# sudo_item <status text> <pending text> <check function> <fix function>
-# Add an item. The check succeeds when it's set up, and the fix sets it up, with sudo. The status
-# text describes the state the check looks for, as status_check's does, and the pending text the
-# change, as confirm_sudo_changes lists it.
-# e.g. sudo_item "Linger, so user services start at boot" \
-#     "Start your user services at boot: loginctl enable-linger" lingering enable_linger
-sudo_item() {
-    SUDO_ITEM_STATUS+=("$1")
-    SUDO_ITEM_PENDING+=("$2")
-    SUDO_ITEM_CHECK+=("$3")
-    SUDO_ITEM_FIX+=("$4")
-}
-
-sudo_items_reset() {
-    SUDO_ITEM_STATUS=()
-    SUDO_ITEM_PENDING=()
-    SUDO_ITEM_CHECK=()
-    SUDO_ITEM_FIX=()
-}
-
-# The drivers below take the check functions of the items to drive, so a step can keep its custom
-# items in their place among the rest. They drive the items in the order they were added, every
-# item when given none.
-
-# Append the pending text of each item whose check fails to the caller's pending array, for
-# confirm_sudo_changes
-# e.g. local pending=(); sudo_items_pending sleep_masked sleep_conf_written
-sudo_items_pending() {
-    local i=0
-    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
-        if _sudo_item_wanted "$i" "$@" && ! "${SUDO_ITEM_CHECK[i]}"; then
-            pending+=("${SUDO_ITEM_PENDING[i]}")
-        fi
-        i=$((i + 1))
-    done
-}
-
-# Run the fix of each item whose check still fails. Each runs whether or not the one before it
-# failed; returns 1 when any did.
-sudo_items_apply() {
-    local i=0 result=0
-    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
-        if _sudo_item_wanted "$i" "$@" && ! "${SUDO_ITEM_CHECK[i]}"; then
-            "${SUDO_ITEM_FIX[i]}" || result=1
-        fi
-        i=$((i + 1))
-    done
-    return "$result"
-}
-
-# Print a status_check item for each item
-sudo_items_status() {
-    local i=0
-    while [ "$i" -lt ${#SUDO_ITEM_CHECK[@]} ]; do
-        if _sudo_item_wanted "$i" "$@"; then
-            status_check "${SUDO_ITEM_STATUS[i]}" "${SUDO_ITEM_CHECK[i]}"
-        fi
-        i=$((i + 1))
-    done
-}
-
-# _sudo_item_wanted <index> [check...]: succeeds when the item is among the checks named, or none is
-_sudo_item_wanted() {
-    local check="${SUDO_ITEM_CHECK[$1]}"
-    shift
-    [ $# -eq 0 ] || has_arg "$check" "$@"
 }
 
 # Print the HTTP status of a HEAD request for a URL: 200 when it's there, 404 when it isn't, and
@@ -276,7 +209,6 @@ add_apt_repo() {
         else
             echo "  $reason, and removing it failed too. Delete $file by hand, then re-run." >&2
         fi
-        # Put the old key back, or remove the new one when there was none to keep
         if [ -n "$old_key" ]; then
             install_root_file "$old_key" "$keyring" 0644
         else

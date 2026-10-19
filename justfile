@@ -8,14 +8,24 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Lint shell scripts (including */bin/*), and check they use no bash 4 features, since they target /bin/bash 3.2, syntax-check zsh files, check the docs against the code they describe, check the skills' metadata, links, and paths, and check the keys the claude-code step writes against the known Claude Code settings
+# Lint shell scripts (including */bin/*), and check they use no bash 4 features, since they target /bin/bash 3.2, and on macOS that its /bin/bash 3.2 parses them, syntax-check zsh files, check the docs against the code they describe, check the skills' metadata and links, check the keys the claude-code step writes against the known Claude Code settings, and check the tests replace repo functions only through replace_fn, as_os, and answer
 check:
-    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done | xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck
-    bad="$(git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done | xargs -0 grep -nE 'mapfile|declare -A|\$\{[^}]*,,|\[\[ -v' /dev/null)" || true; [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
+    #!/bin/bash
+    set -euo pipefail
+    # The shell scripts, including */bin/*, NUL-separated, listed once for shellcheck, the bash 4
+    # grep, and bash -n. A file deleted but not yet staged is still listed by git, so it's skipped.
+    files="$(mktemp)"
+    trap 'rm -f "$files"' EXIT
+    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done > "$files"
+    xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck < "$files"
+    bad="$(xargs -0 grep -nE '\b(mapfile|readarray|coproc)\b|\b(declare|local|typeset) +-[a-zA-Z]*[An]|\[\[ -v |\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^|,)|\$\{[A-Za-z_][A-Za-z0-9_]*\[-[0-9]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?@[QEPAaUuLK]\}|&>>|;;&|\|&|\bwait +-n\b|\bEPOCH(SECONDS|REALTIME)\b' /dev/null < "$files")" || true
+    [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
+    [ "$(uname -s)" != Darwin ] || xargs -0 -n 1 /bin/bash -n < "$files"
     for f in zsh/*.zsh; do zsh -n "$f"; done
     bash scripts/check-docs.sh
     bash scripts/check-skills.sh
     bash scripts/check-claude-keys.sh > /dev/null
+    bash scripts/check-test-overrides.sh
 
 # Run the tests in tests/: every one, or only the named ones (e.g. just test vim), in parallel. The scripts target /bin/bash 3.2 on macOS, so the tests run under it.
 [positional-arguments]
@@ -29,6 +39,10 @@ test-ubuntu:
 # Move the pinned vim and tmux plugins, and the vendored vim-plug, to their latest versions in this repo, for review
 bump-plugins:
     bash scripts/bump-plugins.sh
+
+# Copy the installed configs that differ from the repo's back into the repo, printing each diff, for review with git diff. With dry-run, only list them.
+copy-back mode="":
+    @case {{quote(mode)}} in "") bash scripts/copy-back.sh ;; dry-run) bash scripts/copy-back.sh --dry-run ;; *) echo "Usage: just copy-back [dry-run]" >&2; exit 2 ;; esac
 
 # Run setup.sh: every step, or only the named ones (e.g. just setup git zsh)
 [positional-arguments]

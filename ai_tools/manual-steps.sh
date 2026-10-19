@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Print the AI tool steps scripts can't do on this OS, from ai_tools/README.md's Manual steps
-# section, so the list has one copy. On macOS, also offer to open the settings still to do.
+# Print the AI tool steps scripts can't do on this OS.
+#
+# The list comes from ai_tools/README.md's Manual steps section, so it has one copy. On macOS, also
+# offer to open the settings still to do.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -108,7 +110,6 @@ print_section() {
     print_doc_section "$DOTFILES_DIR/ai_tools/README.md" "## Manual steps" "### $1"
 }
 
-# Nothing to check: the list is what scripts can't do
 status() { return 0; }
 
 apply() {

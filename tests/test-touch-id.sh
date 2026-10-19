@@ -1,6 +1,4 @@
 #!/bin/bash
-# The script's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 # os: macos
 
@@ -19,7 +17,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d" HOMEBREW_PREFIX="$SANDBOX/brew"
 load_script macos/setup-touch-id-sudo.sh
-is_macos() { true; }
+as_os macos
 # The sandbox's files are yours, so "root-owned" means owned by you here, and the parent dirs the
 # check walks stop at the sandbox
 # shellcheck disable=SC2034 # macos/pam.sh reads them
@@ -42,7 +40,7 @@ done
 set -- "${args[@]}"'
 
 # reset: a pam.d whose sudo includes sudo_local, macOS's pam_tid, no sudo_local, no pam-reattach
-# and no copy of it, an empty log, and no DOTFILES_ASSUME_YES
+# and no copy of it, an empty log, and confirm answering no
 reset() {
     rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR" "$SANDBOX/brew"
     mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
@@ -50,7 +48,7 @@ reset() {
     printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
         "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
     : > "$STUB_LOG"
-    unset DOTFILES_ASSUME_YES
+    answer no
 }
 
 # put_reattach [content]: Homebrew's pam-reattach module
@@ -59,23 +57,29 @@ put_reattach() {
     echo "${1:-reattach 1.0}" > "$SOURCE"
 }
 
-# Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
-# nothing, and doesn't fail.
+# Arguments are checked as a step's are: a typo, or an extra one after --status, changes nothing
 reset
 put_reattach
+assert_exit 2 main --stauts
+assert_exit 2 main --status extra
+assert_contains "$RUN_OUTPUT" "Usage: bash macos/setup-touch-id-sudo.sh"
+assert_eq "" "$(cat "$STUB_LOG")" "commands run for bad arguments"
+
+# Not set up: status needs attention. Without a terminal, main shows the copy and the file, changes
+# nothing, and doesn't fail.
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: off"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "$MODULE"
 assert_contains "$RUN_OUTPUT" "$TID_LINE"
-assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written without asking"
 [ ! -e "$MODULE" ] || fail "the module was copied without asking"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
 # Approved: the module is copied read-only into the root-owned dir, and sudo_local loads that copy
 # before pam_tid. brew installs nothing.
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo install -d -o root -g wheel -m 755 $DOTFILES_PAM_LOCAL_MODULES_DIR"
 assert_file_contains "$STUB_LOG" "sudo install -o root -g wheel -m 444 $SOURCE $MODULE.new"
@@ -102,7 +106,7 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 chmod 644 "$SOURCE"
 put_reattach "reattach 1.1"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "reattach 1.1" "$(cat "$MODULE")" "the copy after the upgrade"
@@ -166,7 +170,7 @@ chmod 444 "$MODULE"
 
 # Without pam-reattach: pam_tid alone, and the homebrew step is named as what installs it
 reset
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local without pam-reattach"
@@ -192,6 +196,8 @@ rm -rf "$SANDBOX/brew" "$MODULE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $MODULE, which doesn't exist"
 assert_contains "$RUN_OUTPUT" "brew install pam-reattach, then just touch-id"
+# just touch-id needs sudo, which the missing module can break, so status gives a fix without it
+assert_contains "$RUN_OUTPUT" "If sudo fails, remove the file without it: osascript -e 'do shell script \"rm $SUDO_LOCAL\" with administrator privileges'"
 assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after uninstalling pam-reattach"
@@ -200,7 +206,7 @@ $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after uninstalling pam-reattach"
 # pam_tid, with other options, or naming Homebrew's copy all go
 reset
 put_reattach
-export DOTFILES_ASSUME_YES=1
+answer yes
 printf '%s\n' "$HEADER" "auth       optional       $SOURCE ignore_ssh" "#auth       sufficient     pam_tid.so" \
     "auth       sufficient     pam_watchid.so" "$TID_LINE" "auth optional $MODULE debug" > "$SUDO_LOCAL"
 assert_exit 3 main --status
@@ -229,7 +235,7 @@ assert_contains "$RUN_OUTPUT" "$DOTFILES_PAM_MODULES_DIR/pam_reattach.so, which 
 set_up() {
     reset
     put_reattach
-    export DOTFILES_ASSUME_YES=1
+    answer yes
     assert_exit 0 main
     : > "$STUB_LOG"
 }
@@ -240,7 +246,7 @@ set_up
 rm -f "$MODULE"
 ln -s "$SOURCE" "$MODULE"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is a symlink; re-run just touch-id"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo mv -fh $MODULE.new $MODULE"
 [ ! -L "$MODULE" ] && [ -f "$MODULE" ] || fail "the linked module wasn't replaced with a copy"
@@ -296,7 +302,7 @@ linked_parent() {
     mkdir -p "$SANDBOX/real-lib"
     ln -s "$SANDBOX/real-lib" "$SANDBOX/lib"
     put_reattach
-    export DOTFILES_ASSUME_YES=1
+    answer yes
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "sudo can't safely load $MODULE: $SANDBOX/lib is a symlink"
     assert_file_not_contains "$STUB_LOG" "sudo"
@@ -360,12 +366,10 @@ rm "$MODULE.2"
 unsafe_copy() {
     reset
     put_reattach
-    export DOTFILES_ASSUME_YES=1
-    install_reattach_module() {
-        mkdir -p "$DOTFILES_PAM_LOCAL_MODULES_DIR"
-        cp "$SOURCE" "$MODULE"
-        chmod 666 "$MODULE"
-    }
+    answer yes
+    replace_fn install_reattach_module 'mkdir -p "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+cp "$SOURCE" "$MODULE"
+chmod 666 "$MODULE"'
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "sudo can't safely load $MODULE: $MODULE isn't root's alone to write"
     [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy was unsafe"
@@ -374,7 +378,7 @@ subtest unsafe_copy
 
 # A failed write fails the run
 reset
-export DOTFILES_ASSUME_YES=1
+answer yes
 stub sudo 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't write $SUDO_LOCAL"
@@ -382,7 +386,7 @@ assert_contains "$RUN_OUTPUT" "Couldn't write $SUDO_LOCAL"
 # A failed copy fails the run before sudo_local is written, so it never names a missing module
 reset
 put_reattach
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't install $MODULE"
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy failed"

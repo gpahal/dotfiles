@@ -6,15 +6,19 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 # The global config file, which mise use --global writes to
 mise_global_config() {
     echo "${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}/config.toml}"
 }
 
 # Print a tool's version from the global mise config, or nothing when the file or the key is
-# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on stderr, when mise can't read the file. The file is named,
-# since --global could read another one. Every mise command here runs from $HOME: mise refuses to
-# run in a project with an untrusted mise.toml, and would add a trusted one's tools.
+# missing. A table prints its version key, or "(a table)" without one. Fails, with mise's error on
+# stderr, when mise can't read the file. The file is named, since --global could read another one.
+# Every mise command here runs from $HOME: mise refuses to run in a project with an untrusted
+# mise.toml, and would add a trusted one's tools.
 global_tool_version() {
     local file errors value
     file="$(mise_global_config)"
@@ -99,7 +103,6 @@ apply() {
     require_cmd mise || return 1
     # The rustup installer is downloaded with curl
     rustup_installed || require_cmd curl || return 1
-    # A failed mise command fails the step, after Rust is set up too
     local status=0 tool current set=() already=() unread=false
     for tool in "${MISE_GLOBALS[@]}"; do
         if ! current="$(global_tool_version "${tool%@*}")"; then

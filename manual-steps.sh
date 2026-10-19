@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Print the setup steps scripts can't do on this OS. The list is the README's Manual steps
-# section, read at run time, so it has one copy.
+# Print the setup steps scripts can't do on this OS.
+#
+# The list is the README's Manual steps section, read at run time, so it has one copy.
 
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"

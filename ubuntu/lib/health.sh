@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Disk and machine health for the ubuntu step: smartd and SMART, fwupd, and the packages whose
 # updates need a reboot.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # smartmontools enables smartd when it installs, but it may have been turned off since
 smartd_enabled() {
@@ -90,7 +90,7 @@ status_smart() {
         status_item unknown "$label: smartctl isn't installed; the ubuntu step installs smartmontools"
         return 0
     fi
-    if ! sudo_cached; then
+    if ! sudo_ready; then
         status_item unverified "$label: reading it needs root; run sudo -v, then status, to check it"
         return 0
     fi
@@ -185,15 +185,14 @@ install_smartd() {
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
 }
 
-# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources. The
-# hook runs away from the repo, as the UPS notifier does, whose nut user may not be able to read
-# it, so the ntfy code is installed for both.
+# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources
 smartd_hook_installed() {
-    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && ntfy_lib_installed
 }
 
 install_smartd_hook() {
-    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    # The ntfy code first, since the hook sources it as soon as it runs
+    install_ntfy_lib && install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755
 }
 
 # In a VM smartd doesn't run, so its hook doesn't matter there
@@ -201,20 +200,31 @@ smartd_hook_ready() {
     in_vm || smartd_hook_installed
 }
 
-# The hook that pushes smartd's warnings, and the ntfy code it sources. In a VM smartd doesn't run,
-# so it doesn't matter there. status_health_alerts reports the ntfy URL.
+# Succeeds when smartd's config runs smartd-runner on a warning, which runs the hook: an
+# uncommented line names it. The step leaves the file to you.
+smartd_runs_hooks() {
+    grep -qE '^[^#]*smartd-runner' "$SMARTD_CONF" 2>/dev/null
+}
+
+# The hook that pushes smartd's warnings, the ntfy code it sources, and the smartd-runner line that
+# runs it. In a VM smartd doesn't run, so it doesn't matter there. status_health_alerts reports
+# the ntfy URL.
 status_smartd_hook() {
     local label="smartd's warnings pushed to ntfy ($SMARTD_HOOK)"
     if in_vm; then
         status_item skipped "smartd's warning hook: this is a VM, whose host manages the disks"
         return 0
     fi
-    if smartd_hook_installed; then
-        status_item ok "$label"
-    elif [ -e "$SMARTD_HOOK" ]; then
-        status_item missing "$label: out of date (re-run the ubuntu step)"
+    if ! smartd_hook_installed; then
+        if [ -e "$SMARTD_HOOK" ]; then
+            status_item missing "$label: out of date (re-run the ubuntu step)"
+        else
+            status_item missing "$label"
+        fi
+    elif apt_installed smartmontools && ! smartd_runs_hooks; then
+        status_item missing "$label: $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner, which runs the hook; put it back on the DEVICESCAN line"
     else
-        status_item missing "$label"
+        status_item ok "$label"
     fi
 }
 

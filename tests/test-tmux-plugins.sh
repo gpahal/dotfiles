@@ -22,8 +22,7 @@ assert_eq "" "$(grep -v '^#' "$REPO_DIR/tmux/plugins.lock" | grep -vE '^[^ ]+/[^
 
 fake_tmux_plugins
 load_script tmux/install.sh
-is_ubuntu() { false; }
-is_macos() { true; }
+as_os macos
 stub tmux
 
 # Print each plugin's checkout as "<name> <HEAD>"
@@ -77,6 +76,17 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-yank"
 assert_eq "$(cat "$SANDBOX/head")" "$(git -C "$yank" rev-parse HEAD)" "a checkout without its pin, offline"
 mv "$SANDBOX/yank" "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
+
+# A plain dir with files in it is left alone and fails the step; an empty one becomes the checkout
+rm -rf "$yank"
+mkdir -p "$yank"
+echo mine > "$yank/README"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$yank isn't a git checkout, and isn't empty. Move it"
+assert_eq mine "$(cat "$yank/README")" "a file in a plain plugin dir"
+rm "$yank/README"
+assert_exit 0 main
+assert_eq "$pinned" "$(installed)" "the checkouts after an empty plugin dir"
 
 # A plugin that can't be fetched fails the step, and the others still install
 rm -rf "$HOME/.tmux/plugins"

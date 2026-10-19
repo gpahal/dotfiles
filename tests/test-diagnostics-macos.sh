@@ -1,6 +1,4 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 # os: macos
 
@@ -89,7 +87,7 @@ stub scutil 'echo Garvits-MacBook-Pro'
 # --- the macos step ---
 export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/install.sh
-is_macos() { true; }
+as_os macos
 # Only the macos step's own functions: none of the Touch ID script's, such as usage and
 # install_reattach_module
 assert_eq "" "$(declare -F usage install_reattach_module || true)" "the Touch ID script's functions"
@@ -212,8 +210,8 @@ subtest firewall_off_path
 read_only
 
 # The whole report: the diagnostics are in it, and none needs attention
-default_matches() { true; }
-hotkey_off() { true; }
+replace_fn default_matches 'return 0'
+replace_fn hotkey_off 'return 0'
 mkdir -p "$HOME/Screenshots"
 rm "$SUDO_LOCAL"
 filevault 'FileVault is Off.\n'

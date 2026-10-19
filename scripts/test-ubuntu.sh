@@ -1,17 +1,11 @@
 #!/bin/bash
 set -uo pipefail
 
-# Test a whole Ubuntu setup in a throwaway OrbStack machine: create it, install unattended-upgrades,
-# run setup.sh and then ai_tools/setup.sh in it with DOTFILES_ASSUME_YES=1, DOTFILES_SSH_KEY_ONLY=1,
-# and DOTFILES_ALLOW_WORKTREE=1, twice, so a second pass over a set-up machine must pass too. Then
-# restart it, run both --status reports, and check sshd's effective settings (sshd -T), that ufw is
-# active, that a key logs in over SSH from this Mac, that the health alert's timer is active, that
-# the T3 Code service is active, and that docker ps works from the user manager the service runs
-# under. Then check the service stays the one T3 Code server on its port: after t3 service restart,
-# after a kill -9 of its server, and against a t3 serve started by hand while it's stopped, which it
-# must wait out, retrying, while status flags the extra server. The machine is deleted at the end,
-# even when the run fails or is interrupted. Needs OrbStack on macOS, and takes a while: Homebrew,
-# apt packages, and the AI tools all install from scratch. The full output goes to a log file.
+# Test a whole Ubuntu setup in a throwaway OrbStack machine: run setup.sh and ai_tools/setup.sh
+# twice, so a second pass over a set-up machine must pass too, restart, then check both --status
+# reports and the machine's services, logins, and T3 Code server (each section below says what).
+# The machine is deleted at the end, even when the run fails or is interrupted. Needs OrbStack on
+# macOS, and takes a while, since everything installs from scratch. The full output goes to a log.
 
 MACHINE=dotfiles-test
 # arm64 by default: OrbStack runs amd64 through Rosetta on Apple Silicon, where T3 Code 0.0.45
@@ -55,6 +49,8 @@ ALLOWED_BEFORE=(
 # t3-code's status line for a t3 serve started by hand, up to the command line it shows in
 # parentheses. tests/test-smoke-patterns.sh checks it against the step's own formatter.
 T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
+# t3-code's status line for a service that runs no server, as once that t3 serve stops
+T3_IDLE_SERVICE_STATUS='^  missing +T3 Code service running a server: it runs none'
 
 if ! command -v orb &>/dev/null; then
     echo "OrbStack's orb command isn't installed. Install OrbStack (brew install --cask orbstack)." >&2
@@ -73,9 +69,14 @@ VM_OUT_FILE="$LOG_DIR/step"
 KEY_DIR=""
 echo "Logging to $LOG"
 
+# Whether the machine is this run's to delete: set just before orb create, so an interrupted
+# create still cleans up, and cleared when the create fails, as when another run made the machine
+# since the check above
+OWN_MACHINE=false
+
 # shellcheck disable=SC2329 # the EXIT trap runs it
 cleanup() {
-    if orb list -q | grep -qx "$MACHINE"; then
+    if "$OWN_MACHINE" && orb list -q | grep -qx "$MACHINE"; then
         echo "Deleting the $MACHINE machine..."
         orb delete -f "$MACHINE" >> "$LOG" 2>&1 || echo "Couldn't delete it. Run: orb delete -f $MACHINE" >&2
     fi
@@ -84,7 +85,8 @@ cleanup() {
     echo "Log: $LOG"
 }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Run a command in the machine as the default user, from the repo, which OrbStack mounts at the
 # same path. Its output goes to the terminal and the log as it comes, and is kept in $VM_OUTPUT.
@@ -127,11 +129,9 @@ only_allowed_items() {
     "$found"
 }
 
-# Check a runner's exit status and the steps it lists as failed or needing attention against the
-# allowed ones. A line such as "Failed steps: git ghostty" or "Needs attention: git. Run: ..." in
-# $VM_OUTPUT gives the steps. A step that needs attention only for items only_allowed_items
-# accepts, from ALLOWED_ITEMS or ALLOWED_BEFORE, passes. A runner that exits non-zero without
-# listing a step fails too.
+# Check a runner's exit status and the steps its summary lines in $VM_OUTPUT list as failed or
+# needing attention against the allowed ones. A runner that exits non-zero without listing a step
+# fails.
 # e.g. check_runner "setup.sh" "$status" ghostty
 check_runner() {
     local what="$1" status="$2" step listed attention
@@ -160,7 +160,9 @@ run_runner() {
     shift 2
     echo "=== $runner $mode ==="
     if [ -n "$mode" ]; then
-        in_vm bash "$runner" "$mode" || status=$?
+        # The setup runs below install the health alerts from a git worktree, so status checks
+        # them as installed, rather than reporting that they run a worktree
+        in_vm env DOTFILES_ALLOW_WORKTREE=1 bash "$runner" "$mode" || status=$?
     else
         # orb run reaches the machine without sshd, so no SSH session proves a key logs in, and
         # the opt-in turns password logins off. The repo may be a git worktree, from which the
@@ -171,7 +173,9 @@ run_runner() {
 }
 
 echo "Creating the $MACHINE machine (Ubuntu 26.04, $ARCH)..."
+OWN_MACHINE=true
 if ! orb create --arch "$ARCH" ubuntu:resolute "$MACHINE" >> "$LOG" 2>&1; then
+    OWN_MACHINE=false
     echo "Couldn't create the machine. See $LOG." >&2
     exit 1
 fi
@@ -258,15 +262,12 @@ outside_listener() {
     [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] && ! t3_code_in_service_cgroup "$pids" &&
         echo "outside=$pids"
 }
-# Succeeds while the service, started with a server outside it on the port, fails its bind and
-# retries: systemd has restarted it, it is neither stopped nor failed, and <pid> still has the port
-service_locked_out() {
-    local state restarts
-    state="$(t3_unit ActiveState)/$(t3_unit SubState)"
-    restarts="$(t3_unit NRestarts)"
-    echo "service $state, NRestarts $restarts; on $T3_CODE_PORT: $(echo $(port_pids))"
-    case "$state" in inactive/* | failed/*) return 1 ;; esac
-    [ "${restarts:-0}" -ge 1 ] && [ "$(port_pids)" == "$1" ]
+# Succeeds while the service, started with a server outside it holding its data, runs no server:
+# T3 (as of 0.1.0) locks the data, and its launcher then stays up without one. <pid> still has the
+# port.
+service_shut_out() {
+    echo "service $(t3_unit ActiveState)/$(t3_unit SubState), MainPID $(t3_unit MainPID); on $T3_CODE_PORT: $(echo $(port_pids))"
+    t3_code_service_serving_nothing && [ "$(port_pids)" == "$1" ]
 }
 '
 
@@ -347,8 +348,8 @@ else
     fi
     if [ -n "$outside" ]; then
         in_vm_t3 'systemctl --user start t3code.service' || true
-        retry_t3 8 "service_locked_out $outside" ||
-            t3_fail "the T3 Code service didn't fail its bind and retry while a t3 serve started by hand had port 3773"
+        retry_t3 8 "service_shut_out $outside" ||
+            t3_fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
         # A status report with items missing exits 3
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
@@ -356,11 +357,21 @@ else
             t3_fail "t3-code's status doesn't flag the t3 serve started by hand"
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true
-        # T3's unit stops retrying after 5 failed starts in 300 s, and refuses a start until then
-        # unless its failure is reset
-        in_vm_t3 'systemctl --user reset-failed t3code.service; systemctl --user start t3code.service' || true
+        # The step leaves the service alone while another server runs
+        # shellcheck disable=SC2016 # expanded in the machine
+        retry_t3 12 '[ -z "$(t3_code_other_servers)" ]' ||
+            t3_fail "the t3 serve started by hand didn't stop"
+        # The service runs no server until it restarts. Status says so, and re-running the step, as
+        # status says to, restarts it.
+        # shellcheck disable=SC2016 # expanded in the machine
+        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
+        grep -qE "$T3_IDLE_SERVICE_STATUS" <<< "$VM_OUTPUT" ||
+            t3_fail "once the t3 serve started by hand stopped, t3-code's status doesn't flag the service that runs no server"
+        # shellcheck disable=SC2016 # expanded in the machine
+        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh t3-code' > /dev/null ||
+            t3_fail "once the t3 serve started by hand stopped, the t3-code step failed"
         retry_t3 12 one_server_stable ||
-            t3_fail "once the t3 serve started by hand stopped, the T3 Code service didn't become the one T3 Code server, on port 3773"
+            t3_fail "once the t3 serve started by hand stopped and the t3-code step ran, the T3 Code service isn't the one T3 Code server, on port 3773"
     fi
 fi
 

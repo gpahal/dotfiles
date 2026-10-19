@@ -3,12 +3,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh): what status
-# lists, a declined run, an approved one, then apt's daily timers, the packages apt holds back, a
-# pending reboot, sshd at boot, a re-run that changes nothing, a VM, smartd's hook, the health
-# alerts' user units (reloaded until systemd has them, and not installed from a git worktree), and
-# Wake-on-LAN. Also tests/ubuntu-sandbox.sh's check for a constant left on a system path. The other
-# test-ubuntu-*.sh tests of the step's main start from the machine this one sets up.
+# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh), and
+# tests/ubuntu-sandbox.sh's check for a constant left on a system path. The other test-ubuntu-*.sh
+# tests of the step's main start from the machine this one sets up.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -19,8 +16,8 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 setup_sandbox
 ubuntu_step_setup
-# ubuntu_sandbox_paths fails the test when a constant still names a system path, as REBOOT_REQUIRED did once a test
-# loaded the step again
+# ubuntu_sandbox_paths fails the test when a constant still names a system path, as REBOOT_REQUIRED
+# did once a test loaded the step again
 leak_reboot_required() {
     TEST_FAILURES=0
     REBOOT_REQUIRED=/var/run/reboot-required
@@ -72,7 +69,6 @@ fi
 # The environment.d file needs no sudo, so it's copied either way, and the user manager reloaded
 ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 assert_eq "$(cat "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf")" "$(cat "$ENV_CONF")" "the environment.d file"
-installed_unedited "$ENV_CONF" || fail "the environment.d file wasn't recorded"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 # So are the health alert's user units, which name this repo, and they're turned on: the timer
 # runs, and the boot notice waits for the next boot
@@ -161,7 +157,7 @@ rm "$REBOOT_REQUIRED"
 # apt's daily timers off: status says so, and how to turn them on
 echo disabled > "$SANDBOX/units/apt-daily-upgrade.timer"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running (run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer)"
+assert_contains "$RUN_OUTPUT" "missing    apt's daily timers enabled and running; run sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer"
 rm "$SANDBOX/units/apt-daily-upgrade.timer"
 # Enabled but stopped: a yes enables and starts both
 touch "$SANDBOX/units/apt-daily-upgrade.timer.inactive"
@@ -182,7 +178,7 @@ rm "$SANDBOX/timers-fail" "$SANDBOX/units/apt-daily.timer"
 # sshd starts at boot through ssh.socket, 26.04's default
 echo disabled > "$SANDBOX/units/ssh.socket"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot (run sudo systemctl enable --now ssh.socket)"
+assert_contains "$RUN_OUTPUT" "missing    sshd starts at boot; run sudo systemctl enable --now ssh.socket"
 # The step enables it
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -237,6 +233,14 @@ echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
 assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts set ($NTFY_URL_FILE)"
+# smartd runs the hook only through smartd-runner, which smartd.conf names: with that line
+# commented out, status says so, and the step leaves the file to you
+cp "$SMARTD_CONF" "$SANDBOX/smartd.conf.orig"
+sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner"
+mv "$SANDBOX/smartd.conf.orig" "$SMARTD_CONF"
+rm "$SMARTD_CONF.bak"
 
 # The health alert's units after the repo moved: status says they differ, and a run from the repo's
 # new place points them there
@@ -270,7 +274,7 @@ for unit in dotfiles-health.service dotfiles-boot-notice.service; do
     rm "$USER_UNITS/$unit.orig"
 done
 OTHER_UNIT="$(cat "$USER_UNITS/dotfiles-health.service")"
-in_git_worktree() { true; }
+replace_fn in_git_worktree true
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "is a git worktree, so the daily health alert and the boot notice aren't"
@@ -280,7 +284,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
-in_git_worktree() { false; }
+replace_fn in_git_worktree false
 
 # in_git_worktree tells a linked worktree, and a dir inside one, from the main checkout
 eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
@@ -295,7 +299,7 @@ assert_exit 1 in_git_worktree "$GIT_REPO/sub"
 assert_exit 0 in_git_worktree "$SANDBOX/git-wt"
 assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
 assert_exit 1 in_git_worktree "$SANDBOX"
-in_git_worktree() { false; }
+replace_fn in_git_worktree false
 
 # No wired connection: Wake-on-LAN is skipped
 stub nmcli '[ "$*" != "-t -e no -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'

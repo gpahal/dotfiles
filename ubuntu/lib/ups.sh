@@ -4,7 +4,7 @@
 # machine starts again when mains returns. As a fallback for a UPS that keeps its power on, a
 # shutdown hook sets an RTC alarm, which starts the machine only on a board that supports it;
 # status checks the hook, not the board. Physical machines only.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 nut_installed() {
     local package
@@ -36,7 +36,9 @@ nut_read() {
     read_root_file "$NUT_DIR/$1" -n
 }
 
-# Print the value of a key in a section of NUT's ini-style files, without its quotes
+# Print the value of a key in a section of NUT's ini-style files, read as NUT's parser reads a
+# word: double quotes keep spaces and # in it, a backslash takes the next character as it is, and
+# an unquoted # starts a comment
 # e.g. nut_value ups vendorid < ups.conf
 nut_value() {
     awk -v section="[$1]" -v key="$2" '
@@ -48,10 +50,29 @@ nut_value() {
             rest = substr(line, length(key) + 1)
             if (rest !~ /^[[:space:]]*=/) next
             sub(/^[[:space:]]*=[[:space:]]*/, "", rest)
-            gsub(/^"|"[[:space:]]*$/, "", rest)
-            print rest
+            value = ""
+            quoted = 0
+            for (i = 1; i <= length(rest); i++) {
+                c = substr(rest, i, 1)
+                if (c == "\\") {
+                    i++
+                    value = value substr(rest, i, 1)
+                } else if (c == "\"") {
+                    quoted = !quoted
+                } else if (!quoted && (c == "#" || c == " " || c == "\t")) {
+                    break
+                } else {
+                    value = value c
+                }
+            }
+            print value
             exit
         }'
+}
+
+# Print a value quoted for NUT's files, as nut_value reads it back
+nut_quote() {
+    printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
 }
 
 # Print "<driver> <vendor> <product>" for the first UPS in nut-scanner -U's output on stdin, which
@@ -82,9 +103,10 @@ ups_scan_parse() {
 }
 
 # nut_config <file> <driver> <vendor> <product> <password>: print what the step writes to a file in
-# $NUT_DIR
+# $NUT_DIR. The password is quoted, since one kept from an earlier setup may hold a space or #.
 nut_config() {
-    local type
+    local type password
+    password="$(nut_quote "$5")"
     case "$1" in
         nut.conf)
             printf '%s\n' "# From the dotfiles ubuntu step: upsd and upsmon run here, for this machine's own UPS" \
@@ -99,11 +121,11 @@ nut_config() {
             ;;
         upsd.users)
             printf '%s\n' "# From the dotfiles ubuntu step: upsmon's login to upsd" "[upsmon]" \
-                "	password = $5" "	upsmon primary"
+                "	password = $password" "	upsmon primary"
             ;;
         upsmon.conf)
             printf '%s\n' "# From the dotfiles ubuntu step: watch the UPS, push its events, and shut down on a low battery" \
-                "MONITOR $UPS_NAME@localhost 1 upsmon $5 primary" \
+                "MONITOR $UPS_NAME@localhost 1 upsmon $password primary" \
                 'SHUTDOWNCMD "/sbin/shutdown -h +0"' \
                 "POWERDOWNFLAG $UPS_POWERDOWN_FLAG" \
                 "NOTIFYCMD $UPS_NOTIFY"
@@ -149,16 +171,25 @@ nut_password() {
     echo "$password"
 }
 
-# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and the nut
-# group, which upsd and upsmon read it through. Returns 2 when it can't be read without sudo.
+# Print a file's owner, group, and permission bits in octal, e.g. "root nut 640", following a
+# symlink to its target. GNU stat, as Ubuntu's, takes -c; macOS's, which the tests run, takes -f.
+owner_group_mode() {
+    stat -L -c '%U %G %a' "$1" 2>/dev/null || stat -L -f '%Su %Sg %Lp' "$1"
+}
+
+# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and is
+# root's, in the nut group, with mode 0640, as write_nut_file leaves it: upsd and upsmon read it
+# through the group, and two of the files hold upsmon's password, which no other user may read.
+# Returns 2 when it can't be read without sudo.
 nut_file_current() {
-    local current group
+    local current meta
     current="$(nut_read "$1")" || return 2
     [ "$current" == "$2" ] || return 1
     # Through sudo -n, as nut_read reads, when $NUT_DIR is closed to you
-    group="$({ ls -ld "$NUT_DIR/$1" || sudo -n ls -ld "$NUT_DIR/$1"; } 2>/dev/null | awk '{ print $4 }')"
-    [ -n "$group" ] || return 2
-    [ "$group" == "$NUT_GROUP" ]
+    meta="$({ owner_group_mode "$NUT_DIR/$1" ||
+        sudo -n bash -c "$(declare -f owner_group_mode)"'; owner_group_mode "$1"' _ "$NUT_DIR/$1"; } 2>/dev/null)"
+    [ -n "$meta" ] || return 2
+    [ "$meta" == "$NUT_OWNER $NUT_GROUP 640" ]
 }
 
 # Succeeds when each file in $NUT_DIR is what the step writes for the configured UPS. Returns 2
@@ -193,11 +224,12 @@ ups_services_active() {
 # The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
 # installed with it
 ups_notifier_installed() {
-    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && ntfy_lib_installed
 }
 
 install_ups_notifier() {
-    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    # The ntfy code first, since the notifier sources it as soon as it runs
+    install_ntfy_lib && install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one
@@ -217,8 +249,9 @@ nut_target_enabled() {
 }
 
 # Succeeds when NUT watches a plugged-in UPS: it's set up for it, upsd answers for it, the services
-# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without sudo don't count
-# against it, so a run without cached credentials doesn't ask for sudo only to read them.
+# run and start at boot, and the notifier and the RTC hook are current. Files it can't read without
+# sudo don't count against it, so a run without cached credentials doesn't ask for sudo only to read
+# them.
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?

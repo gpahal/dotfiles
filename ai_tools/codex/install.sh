@@ -1,10 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Codex CLI and the ChatGPT desktop app, configure ~/.codex/config.toml (shared by
-# both), and copy the user-level instructions to ~/.codex/AGENTS.md. The ChatGPT app writes to
-# config.toml too, so it must be quit first; when run interactively the script offers to quit
-# it, otherwise it skips the settings. On Ubuntu, also set up what Codex's sandbox needs.
+# Install the Codex CLI and the ChatGPT app, and set Codex's config and instructions.
+#
+# The CLI and the app share ~/.codex/config.toml. On Ubuntu, also set up Codex's sandbox.
 #
 # A temp HOME doesn't isolate this step. On macOS it installs the chatgpt and codex casks, and on
 # Ubuntu it installs packages and loads an AppArmor profile with sudo. Test the casks in a macOS VM
@@ -12,23 +11,47 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../../lib/casks.sh
+source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/keepable.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepable.sh"
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/tool-home.sh
+source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck source=../lib/user-instructions.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
+source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
+
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
 # Where Ubuntu keeps MCP OAuth tokens in plain text (mcp_oauth_credentials_store below)
 CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
-# The config path, the instructions, and the docs all assume ~/.codex, so another CODEX_HOME fails
-# the step rather than leaving Codex reading files setup never wrote
-CODEX_HOME_POLICY="setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
 # Ubuntu's apparmor package installs this profile, which loads at boot
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+# Print yq's version, such as 4.54.1, from mikefarah's yq's "yq (...) version v4.54.1", or nothing
+# for another yq
+codex_yq_version() {
+    yq --version 2>/dev/null | sed -nE 's/^yq .*version v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1
+}
+
+# Succeeds when yq is YQ_MIN_VERSION or newer
+codex_yq_new_enough() {
+    local have
+    have="$(codex_yq_version)"
+    [ -n "$have" ] && version_at_least "$have" "$YQ_MIN_VERSION"
+}
+
+# Print why yq is too old, and how to update it
+codex_yq_too_old() {
+    local version
+    version="$(codex_yq_version)"
+    echo "yq ${version:-on PATH} isn't mikefarah's yq $YQ_MIN_VERSION or newer, which the Codex config edit needs; run brew upgrade yq"
+}
 
 # Settings you may keep your own values of (ai_tools/lib/keepable.sh), each with a yq path and
 # the repo's value as TOML (see codex_set)
@@ -63,6 +86,30 @@ codex_keep_wanted() {
     keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
 }
 
+# Print the config's value at each yq path given, one line each, as codex_keep_current does, with
+# one yq. Each value is one line of JSON, so the lines line up with the paths.
+codex_keep_current_all() {
+    local filter values value
+    filter="$(printf '%s, ' "$@")"
+    values="$(yq -p toml -o json -I=0 "[${filter%, }] | .[]" "$CODEX_CONFIG" 2>/dev/null)" || return 0
+    while IFS= read -r value; do
+        if [ "$value" == null ]; then echo; else keepable_unquote "$value"; fi
+    done <<< "$values"
+}
+
+# Print each TOML value given, one line each, as codex_keep_wanted does, with one yq
+codex_keep_wanted_all() {
+    local i=0 toml="" filter="" value
+    for value; do
+        toml+="v$i = $value"$'\n'
+        filter+="${filter:+, }.v$i"
+        i=$((i + 1))
+    done
+    printf '%s' "$toml" | yq -p toml -o json -I=0 "[$filter] | .[]" | while IFS= read -r value; do
+        keepable_unquote "$value"
+    done
+}
+
 # Add `<yq path> = <value>` to the settings codex_settings collects. Each value is written as
 # TOML, which for the strings, booleans, and arrays of strings set here is also a yq literal.
 codex_set() {
@@ -81,7 +128,6 @@ codex_settings() {
             codex_set "${KEEP_PATHS[i]}" "${KEEP_VALUES[i]}"
         fi
     done
-    # Short answers and reasoning summaries
     codex_set .model_verbosity '"low"'
     codex_set .model_reasoning_summary '"concise"'
     # Edit and run commands in the workspace without network access. Anything else, including
@@ -91,9 +137,7 @@ codex_settings() {
     # Codex's built-in workspace-write sandbox, which keeps the network off unless
     # [sandbox_workspace_write] turns it on. Your settings there stay.
     codex_set .sandbox_mode '"workspace-write"'
-    # Send OpenAI less: no usage metrics or product events (CLI and desktop app), and no
-    # /feedback log uploads. Training on your chats is an account setting (see
-    # ai_tools/README.md → Privacy).
+    # No usage metrics or product events (CLI and desktop app), and no /feedback log uploads
     codex_set .analytics.enabled 'false'
     codex_set .feedback.enabled 'false'
     if is_ubuntu; then
@@ -106,32 +150,27 @@ codex_settings() {
     # The ChatGPT desktop app is macOS-only, so Ubuntu gets no [desktop] keys. Its keys have
     # dashes, which yq reads as minus outside brackets.
     if is_macos; then
-        # Desktop app: Settings → Git → Pull request merge method → Squash
+        # Settings → Git → Pull request merge method → Squash
         codex_set '.desktop["git-pull-request-merge-method"]' '"squash"'
-        # Desktop app: don't refresh worktrees from their upstream branch
         codex_set '.desktop["worktree-upstream-refresh-mode"]' '"never"'
-        # Desktop app: Settings → Notifications
+        # Settings → Notifications
         codex_set '.desktop["notifications-turn-mode"]' '"unfocused"'
         codex_set '.desktop["notifications-permissions-enabled"]' 'true'
         codex_set '.desktop["notifications-questions-enabled"]' 'true'
-        # Desktop app: Settings → General → Prevent sleep while running
+        # Settings → General → Prevent sleep while running
         codex_set '.desktop["preventSleepWhileRunning"]' 'true'
-        # Desktop app: Settings → General → Show in menu bar (keeps ChatGPT in the menu bar, and
+        # Settings → General → Show in menu bar (keeps ChatGPT in the menu bar, and
         # running, after the main window is closed)
         codex_set '.desktop["mac-menu-bar-enabled"]' 'false'
-        # Desktop app: Settings → Connections → Keep this Mac awake (plugged in, remote access on)
+        # Settings → Connections → Keep this Mac awake (plugged in, remote access on)
         codex_set '.desktop["keepRemoteControlAwakeWhilePluggedIn"]' 'true'
-        # Desktop app: a message sent mid-turn steers the running turn instead of queueing, and
-        # threads show steps and commands
+        # A message sent mid-turn steers the running turn instead of queueing
         codex_set '.desktop["followUpQueueMode"]' '"steer"'
         codex_set '.desktop["conversationDetailMode"]' '"STEPS_COMMANDS"'
-        # Desktop app: show context window usage and ambient suggestions
         codex_set '.desktop["show-context-window-usage"]' 'true'
         codex_set '.desktop["ambient-suggestions-enabled"]' 'true'
-        # Desktop app: open links and local URLs in your browser, not the built-in one
         codex_set '.desktop["open-link-in-target-preference"]' '"external-browser"'
         codex_set '.desktop["open-local-url-in-target-preference"]' '"external-browser"'
-        # Desktop app: offer every reasoning effort in the picker
         codex_set '.desktop["enabled-reasoning-efforts"]' \
             '["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]'
     fi
@@ -245,11 +284,10 @@ codex_add_tail() {
 # whole file: values and full-line comments stay, but end-of-line comments may move or go,
 # multi-line strings become one-line strings with \n, and dotted keys such as profile.fast = {...}
 # may become tables. yq 4.54.1 drops the comments after the last key, such as a commented-out
-# table at the end, so they're added back, and the copy must keep every full-line comment the source
-# has. It also
-# moves values in two shapes, a top-level inline table after a top-level dotted key, and top-level
-# keys after a top-level array of inline tables, so the copy is checked against the edit's own
-# result before use.
+# table at the end, so they're added back, and the copy must keep every full-line comment the
+# source has. It also moves values in two shapes, a top-level inline table after a top-level dotted
+# key, and top-level keys after a top-level array of inline tables, so the copy is checked against
+# the edit's own result before use.
 codex_config_edited() {
     local edited filter source=/dev/null
     codex_settings
@@ -292,7 +330,17 @@ codex_config_matches() {
         [ "$got" == "$want" ]
 }
 
+# Read the values you can change once for each phase, then forget them, since the config changes
+# under them: once here, and again once ChatGPT quits, since it can save the config as it quits
 configure_codex() {
+    local result=0
+    keepable_load codex
+    configure_codex_settings || result=$?
+    keepable_unload
+    return "$result"
+}
+
+configure_codex_settings() {
     echo "Configuring Codex..."
     local edited
     keepable_choose codex
@@ -311,6 +359,7 @@ configure_codex() {
     edited="$(codex_config_edited)" || return 1
     rm -f "$edited"
     ensure_app_quit "ChatGPT" || return 0
+    keepable_load codex
     edited="$(codex_config_edited)" || return 1
     if ! maybe_backup "$CODEX_CONFIG"; then
         rm -f "$edited"
@@ -321,7 +370,6 @@ configure_codex() {
     echo "  Set the $settings in $CODEX_CONFIG"
 }
 
-# See user_instructions_to
 user_instructions_files() {
     user_instructions_to "$CODEX_INSTRUCTIONS" "$@"
 }
@@ -358,19 +406,27 @@ codex_status_signed_in() {
     fi
 }
 
-# Print an item for whether only you can read the MCP tokens Codex keeps in plain text on Ubuntu.
-# Prints nothing when there are no tokens yet.
-codex_status_credentials() {
-    local mode name="Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
-    [ -e "$CODEX_CREDENTIALS" ] || return 0
-    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
-    if [ "$mode" == 600 ]; then
-        status_item ok "$name"
-    elif [ -z "$mode" ]; then
-        status_item unknown "$name: couldn't read its mode"
-    else
-        status_item missing "$name: its mode is $mode; run chmod 600 ~/.codex/.credentials.json"
+# The step's items. Only Ubuntu keeps the MCP tokens in a file, and there's nothing to say of them
+# before there are any.
+codex_items() {
+    items_reset
+    if is_ubuntu && [ -e "$CODEX_CREDENTIALS" ]; then
+        item "Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you" \
+            "Make ~/.codex/.credentials.json readable only by you" \
+            codex_credentials_private secure_codex_credentials
     fi
+}
+
+codex_credentials_private() {
+    [ "$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" == 600 ]
+}
+
+secure_codex_credentials() {
+    if ! chmod 600 "$CODEX_CREDENTIALS"; then
+        echo "  Couldn't make $CODEX_CREDENTIALS readable only by you." >&2
+        return 1
+    fi
+    echo "  Made Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 }
 
 bwrap_works() {
@@ -448,15 +504,20 @@ status() {
         status_cask codex "$(codex_cask_path)"
     fi
     codex_status_signed_in
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
-    else
-        if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+    if tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$CODEX_DIR"; then
+        if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+            :
+        elif ! codex_yq_new_enough; then
+            status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
+        else
+            keepable_load codex
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             keepable_status codex
+            keepable_unload
         fi
-        user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
-        ! is_ubuntu || codex_status_credentials
+        user_instructions_files status_file
+        codex_items
+        items_status codex_credentials_private
     fi
     if is_ubuntu; then
         status_check "Codex's sandbox: bwrap can create one" bwrap_works
@@ -468,11 +529,12 @@ status() {
 
 apply() {
     echo "Setting up Codex..."
-    if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
-        echo "  CODEX_HOME is $CODEX_HOME, but $CODEX_HOME_POLICY" >&2
+    tool_home_guard Codex CODEX_HOME "$CODEX_DIR" || return 1
+    require_cmd yq || return 1
+    if ! codex_yq_new_enough; then
+        echo "  $(codex_yq_too_old)" >&2
         return 1
     fi
-    require_cmd yq || return 1
     require_cmd brew || return 1
     local result=0
     if is_macos; then
@@ -482,6 +544,8 @@ apply() {
     configure_codex || result=1
     install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
     if is_ubuntu; then
+        codex_items
+        items_apply codex_credentials_private || result=1
         setup_codex_sandbox || result=1
     fi
     return "$result"

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Make ~/.ssh private, and on macOS keep SSH keys in the keychain, loaded at login.
+#
 # macOS: add a Host * block to ~/.ssh/config that loads keys into the agent from the keychain, and
 # a LaunchAgent that does so at login. Ubuntu has no keychain, so it gets neither. Other tools
 # (e.g. OrbStack) add their own lines to that file, so it's never replaced, and a Host * block you
@@ -11,7 +13,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=lib/hosts.sh
 source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 
-SSH_CONFIG="$HOME/.ssh/config"
 SSH_ADD_LABEL="dotfiles.ssh-add"
 SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
 
@@ -145,8 +146,6 @@ ssh_add_agent_loaded() {
     launchctl print "gui/$(id -u)/$SSH_ADD_LABEL" &>/dev/null
 }
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it. Only macOS gets the LaunchAgent.
 ssh_files() {
     is_macos || return 0
     "$1" "$DOTFILES_DIR/ssh/$SSH_ADD_LABEL.plist" "$SSH_ADD_AGENT"
@@ -170,13 +169,34 @@ install_ssh_add_agent() {
     fi
 }
 
-# Succeeds when only you can read ~/.ssh, as main sets it
+# Succeeds when only you can read ~/.ssh, as apply sets it
 ssh_dir_private() {
     [ -d "$HOME/.ssh" ] && [ "$(file_mode "$HOME/.ssh/")" == 700 ]
 }
 
+make_ssh_dir_private() {
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+}
+
+# Succeeds when ~/.ssh/config, if there is one, is mode 600, as apply sets it
+ssh_config_private() {
+    [ ! -f "$SSH_CONFIG" ] || [ "$(file_mode "$SSH_CONFIG")" == 600 ]
+}
+
+make_ssh_config_private() {
+    chmod 600 "$SSH_CONFIG"
+}
+
+ssh_items() {
+    items_reset
+    item "Only you can read ~/.ssh (mode 700)" "Set ~/.ssh to mode 700" ssh_dir_private make_ssh_dir_private
+    item "Only you can read ~/.ssh/config (mode 600)" "Set ~/.ssh/config to mode 600" \
+        ssh_config_private make_ssh_config_private
+}
+
 status() {
-    status_check "Only you can read ~/.ssh (mode 700)" ssh_dir_private
+    ssh_items
+    items_status
     if is_macos; then
         status_host_star
         ssh_files status_file
@@ -192,15 +212,17 @@ status() {
 apply() {
     echo "Configuring SSH..."
     local status=0
-    mkdir -p "$HOME/.ssh" || return 1
-    chmod 700 "$HOME/.ssh" || status=1
+    ssh_items
+    items_apply ssh_dir_private || status=1
+    [ -d "$HOME/.ssh" ] || return 1
     if is_macos; then
         add_host_star || status=1
         install_ssh_add_agent || status=1
     else
         echo "  Skipping the keychain's Host * block and the LaunchAgent: macOS only"
     fi
-    [ ! -f "$SSH_CONFIG" ] || chmod 600 "$SSH_CONFIG" || status=1
+    # Last, since add_host_star may create the file
+    items_apply ssh_config_private || status=1
     return "$status"
 }
 

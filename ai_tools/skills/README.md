@@ -7,9 +7,9 @@ Agent skills for Claude Code and Codex, grouped by category:
 
 ## Installation
 
-`bash ai_tools/setup.sh skills` installs every skill globally for Claude Code and Codex with the
-[skills CLI](https://skills.sh). When `CLAUDE_CONFIG_DIR` points anywhere but `~/.claude`, it
-installs them for Codex only. Re-run it after changing a skill. See
+`bash ai_tools/setup.sh skills` installs every skill globally for Claude Code and Codex. When
+`CLAUDE_CONFIG_DIR` points anywhere but `~/.claude`, it installs them for Codex only. Re-run it
+after changing a skill. See
 [ai_tools/README.md](../README.md#skills) for details.
 
 ## Scratch files
@@ -37,7 +37,7 @@ that repo's `.gitignore`. The skills work either way.
 
 `implement` keeps its worktrees outside the repo, under `~/.worktrees/<group>/<repo>/`: one per
 parallel ticket, removed when merged, and one for the integration branch when the checkout has
-changes you don't want committed. See [Code layout](../../README.md#code-layout).
+changes you don't want committed. See [Code layout](../../AGENTS.md#code-layout).
 
 ## Layout of a skill
 
@@ -50,8 +50,7 @@ invoke the skill on its own). Some skills carry extra reference files or scripts
 
 Most of these skills are modified copies of skills from these repos. Their licenses are in
 [`THIRD_PARTY_LICENSES`](./THIRD_PARTY_LICENSES), and each copied skill carries its source's
-notice in its own `LICENSE`, so the notice installs with it. `scripts/check-skills.sh` checks that
-every skill listed here has that `LICENSE`.
+notice in its own `LICENSE`, so the notice installs with it.
 
 - [mattpocock/skills](https://github.com/mattpocock/skills)
   by [Matt Pocock](https://github.com/mattpocock), used under the MIT License:

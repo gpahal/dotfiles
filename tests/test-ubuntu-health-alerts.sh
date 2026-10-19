@@ -176,6 +176,19 @@ assert_file_not_contains "$STUB_LOG" "last output"
 echo 0 > "$SANDBOX/exit/setup"
 mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
+# A syntax error in lib/common.sh, which the script sources, is pushed as one the runners hit, and
+# fails the service
+cp "$REPO/lib/common.sh" "$SANDBOX/common.sh"
+echo 'if then' >> "$REPO/lib/common.sh"
+: > "$STUB_LOG"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "lib/common.sh has a syntax error"
+assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
+assert_file_contains "$STUB_LOG" "Health check couldn't run: lib/common.sh has a syntax error"
+assert_file_contains "$STUB_LOG" "bash -n's last output: "
+assert_file_not_contains "$STUB_LOG" "setup --status"
+cp "$SANDBOX/common.sh" "$REPO/lib/common.sh"
+
 # A failed push fails the service, the output leaves the topic out, and the state stays as it was.
 # A changed message is pushed though the last push was recent.
 echo 3 > "$SANDBOX/exit/setup"

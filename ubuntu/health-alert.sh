@@ -21,9 +21,6 @@ set -euo pipefail
 # Ubuntu only. It fails when a runner couldn't run or a push failed, so the unit shows failed.
 
 HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# For status_parse_line and status_summary_line, which read the runners' reports
-# shellcheck source=../lib/common.sh
-source "$HEALTH_REPO_DIR/lib/common.sh"
 # shellcheck source=lib/ntfy.sh
 source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
 # shellcheck source=lib/paths.sh
@@ -31,6 +28,27 @@ source "$HEALTH_REPO_DIR/ubuntu/lib/paths.sh"
 
 # Tests point this into their sandbox
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
+
+# A syntax error in lib/common.sh, as after a pull, would stop this script when it sources the
+# file, before it could push that the check couldn't run, as it does for a runner that crashes on
+# one. So status checks it first, with only what ntfy.sh gives.
+if [ "${1:-}" == status ] && ! syntax="$("$BASH" -n "$HEALTH_REPO_DIR/lib/common.sh" 2>&1)"; then
+    echo "lib/common.sh has a syntax error:" >&2
+    printf '%s\n' "$syntax" >&2
+    [ -r "$NTFY_URL_FILE" ] || exit 1
+    url="$(head -n 1 "$NTFY_URL_FILE")"
+    [ -n "$url" ] || exit 1
+    message="Health check couldn't run: lib/common.sh has a syntax error"
+    last="$(grep -v '^[[:space:]]*$' <<< "$syntax" | tail -n 1)" || last=""
+    [ -z "$last" ] || message="$message"$'\n\n'"bash -n's last output: $last"
+    ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning" ||
+        echo "Couldn't push the health alert to ntfy." >&2
+    exit 1
+fi
+
+# For status_parse_line and status_summary_line, which read the runners' reports
+# shellcheck source=../lib/common.sh
+source "$HEALTH_REPO_DIR/lib/common.sh"
 # ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 # How a status item only root could check says so, and the line a push then ends with

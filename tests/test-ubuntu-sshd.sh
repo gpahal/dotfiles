@@ -175,10 +175,13 @@ for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
 assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
-# A wildcard pattern samples an address sshd parses; an IPv6 one short of 8 groups gets a ::
+# A wildcard pattern samples an address sshd parses; an IPv6 one short of 8 groups gets a ::. sshd
+# matches the pattern as a string, so fd00:* takes in the sample of fd00::/8 too.
 printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
-assert_exit 0 status
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
+assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1)"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \

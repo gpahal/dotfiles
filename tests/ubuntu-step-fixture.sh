@@ -123,8 +123,10 @@ ubuntu_step_setup() {
     # sshd -t fails on any drop-in with a "Bogus" line, naming the file the way sshd does. sshd -T
     # prints the port, and the settings the drop-in sets as sshd reads them: the first value in the
     # drop-ins in name order, or sshd's default, and every AllowUsers line's users. With -C
-    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" or "Match Address
-    # <address>" block, or one whose list has a /24 the address is in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
+    # user=<user>,...,addr=<address>, the first value in a "Match User <user>" block, or a "Match
+    # Address" block whose list has the address, a pattern with * or ? that matches it, or a /24
+    # it's in, wins over those. sshd -T fails while $SANDBOX/sshd-T-fails exists.
+    # test-ubuntu-sshd-real.sh checks the step against the real sshd -T.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console. test-ufw-recheck.sh covers them.
     stub ss
@@ -137,10 +139,20 @@ ubuntu_step_setup() {
             cat "'"$SANDBOX"'"/sshd_config.d/*.conf 2> /dev/null | awk -v user="$user" -v addr="$addr" '"'"'
                 { k = tolower($1) }
                 k == "match" {
-                    matched = (tolower($2) == "user" && $3 == user) || (tolower($2) == "address" && $3 == addr)
-                    # A /24, or a list that has one, as the step samples them
-                    if (tolower($2) == "address" && match($3, /[0-9.]+\.0\/24/))
-                        matched = matched || index(addr, substr($3, RSTART, RLENGTH - 4)) == 1
+                    matched = tolower($2) == "user" && $3 == user
+                    n = tolower($2) == "address" ? split($3, entries, ",") : 0
+                    for (i = 1; i <= n; i++) {
+                        entry = entries[i]
+                        if (entry ~ /^!/) continue
+                        if (entry ~ /\.0\/24$/) {
+                            matched = matched || index(addr, substr(entry, 1, length(entry) - 4)) == 1
+                            continue
+                        }
+                        gsub(/\./, "\\.", entry)
+                        gsub(/\*/, ".*", entry)
+                        gsub(/\?/, ".", entry)
+                        matched = matched || addr ~ ("^" entry "$")
+                    }
                     inmatch = 1
                     next
                 }

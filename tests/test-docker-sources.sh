@@ -67,11 +67,21 @@ reset() {
     unset DOTFILES_ASSUME_YES
 }
 
-# Declined: nothing written
+# Declined: nothing written. The list names the install, the daemon config, and the update
+# origins, but not the units, which the packages enable.
 reset
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_contains "$RUN_OUTPUT" "    - Install docker-ce docker-ce-cli"
+assert_contains "$RUN_OUTPUT" "set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
+assert_contains "$RUN_OUTPUT" "Let unattended-upgrades install Docker updates"
+assert_not_contains "$RUN_OUTPUT" "Enable docker.socket"
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written without a yes"
+# Status reports Docker missing, and doesn't check its apt source
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Docker Engine from Docker's apt repo"
+assert_contains "$RUN_OUTPUT" "missing    $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
+assert_not_contains "$RUN_OUTPUT" "apt source"
 
 # On a yes, Docker's own source is written, with unattended-upgrades set up
 export DOTFILES_ASSUME_YES=1
@@ -220,7 +230,7 @@ stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && ech
 stub usermod 'touch "'"$SANDBOX"'/in-group"'
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y docker-ce"
 assert_contains "$RUN_OUTPUT" "root-equivalent"
 assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
 assert_contains "$RUN_OUTPUT" "Added you to the docker group."

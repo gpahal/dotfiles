@@ -14,6 +14,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=lib/config.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 REPO_CONFIG="$DOTFILES_DIR/git/gitconfig"
 XDG_GIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
 LOCAL_CONFIG="$HOME/.gitconfig"

@@ -17,6 +17,11 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../../lib/casks.sh
+source "$DOTFILES_DIR/lib/casks.sh"
+
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 T3_CODE_SETTINGS="$HOME/.t3/userdata/settings.json"
 T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"

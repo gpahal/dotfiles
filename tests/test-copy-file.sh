@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# copy_file and copy_file_ask record what they install, replace unedited files silently, and back
-# up files edited by hand. status_file tells the two kinds of difference apart.
+# copy_file replaces a file that differs from the repo's, edited or not, with no backup or
+# question, and leaves one that matches alone. status_file reports a file that differs as missing.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -10,8 +10,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script lib/common.sh
 
-HELLO_SHA=5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03
-record="$HOME/.local/state/dotfiles/installed-files"
 src="$SANDBOX/repo/config.yml"
 # A path with spaces, like lazygit's config on macOS
 dest="$HOME/Library/Application Support/tool/config.yml"
@@ -19,7 +17,7 @@ mkdir -p "$SANDBOX/repo"
 
 # Act as if stdin were a terminal, answered from the test's stdin. read -p prints no question
 # without a terminal, so confirm prints it. load_script lib/common.sh puts the real ones back.
-# shellcheck disable=SC2329 # copy_file calls them
+# shellcheck disable=SC2329 # maybe_backup calls them
 fake_terminal() {
     is_interactive() { true; }
     confirm() {
@@ -30,165 +28,57 @@ fake_terminal() {
     }
 }
 
-# First install: copied and recorded
+# First install: copied, and a second run leaves it
 printf 'hello\n' > "$src"
 assert_exit 0 copy_file "$src" "$dest"
 assert_contains "$RUN_OUTPUT" "Copied"
 assert_eq "hello" "$(cat "$dest")" "installed file"
-assert_eq "$HELLO_SHA  $dest" "$(cat "$record")" "record after first install"
-assert_eq "$HELLO_SHA" "$(recorded_sha256 "$dest")" "recorded_sha256"
+assert_exit 0 copy_file "$src" "$dest"
+assert_eq "  $dest is already up to date" "$RUN_OUTPUT" "second copy"
 
-# A second file, whose record must outlive updates to the first
+# A repo update or a hand edit is replaced, with no question or backup, even with a terminal and
+# --backup, which only answers the settings merges' questions. No install record is kept.
+fake_terminal
+for change in repo edit; do
+    if [ "$change" == repo ]; then
+        printf 'hello2\n' > "$src"
+    else
+        printf 'my edit\n' > "$dest"
+    fi
+    export DOTFILES_BACKUP=yes
+    assert_exit 0 copy_file "$src" "$dest" <<< y
+    unset DOTFILES_BACKUP
+    assert_contains "$RUN_OUTPUT" "Copied" "copy after a $change change"
+    assert_not_contains "$RUN_OUTPUT" "?" "copy after a $change change"
+    assert_eq "hello2" "$(cat "$dest")" "file after a $change change"
+    assert_eq "config.yml" "$(/bin/ls -A "$(dirname "$dest")")" "files after a $change change"
+done
+assert_eq "" "$(/bin/ls -A "$HOME/.local/state/dotfiles" 2>/dev/null)" "state files after copies"
+load_script lib/common.sh
+
+# status_file: ok when it matches, and missing when it differs or is gone, without writing
 src2="$SANDBOX/repo/vimrc"
 dest2="$HOME/.vimrc"
-printf 'hello\n' > "$src2"
-assert_exit 0 copy_file "$src2" "$dest2"
-
-# Repo update: the installed file is what setup put there, so it's replaced with no backup
-printf 'hello2\n' > "$src"
-assert_exit 0 copy_file "$src" "$dest"
-assert_contains "$RUN_OUTPUT" "Copied"
-assert_not_contains "$RUN_OUTPUT" "Back"
-assert_eq "hello2" "$(cat "$dest")" "file after a repo update"
-[ ! -e "$dest.bak" ] || fail "a repo update made a backup"
-assert_eq "$(file_sha256 "$src")" "$(recorded_sha256 "$dest")" "record after a repo update"
-assert_eq "$HELLO_SHA" "$(recorded_sha256 "$dest2")" "the other file's record after a repo update"
-
-# Hand edit, no terminal: backed up to .bak automatically, then replaced
-printf 'my edit\n' > "$dest"
-assert_exit 0 copy_file "$src" "$dest"
-assert_contains "$RUN_OUTPUT" "Backed up $dest to $dest.bak"
-assert_eq "my edit" "$(cat "$dest.bak")" ".bak after a hand edit"
-assert_eq "hello2" "$(cat "$dest")" "file after a hand edit"
-
-# Hand edit again, with a .bak that holds an older edit: a timestamped backup, the .bak kept
-printf 'second edit\n' > "$dest"
-assert_exit 0 copy_file "$src" "$dest"
-assert_eq "my edit" "$(cat "$dest.bak")" "stale .bak"
-stamped="$(find "$(dirname "$dest")" -name 'config.yml.bak.*')"
-case "${stamped##*/}" in
-    config.yml.bak.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-    *) fail "no timestamped backup, found '$stamped'" ;;
-esac
-[ -z "$stamped" ] || assert_eq "second edit" "$(cat "$stamped")" "timestamped backup"
-assert_contains "$RUN_OUTPUT" "Backed up $dest to $stamped"
-
-# A .bak that already matches the edit is reused
-rm -f "$stamped"
-printf 'my edit\n' > "$dest"
-assert_exit 0 copy_file "$src" "$dest"
-assert_eq "" "$(find "$(dirname "$dest")" -name 'config.yml.bak.*')" "timestamped backups when .bak matches"
-
-# No record yet: a differing file counts as edited
-printf 'mine\n' > "$HOME/.zshrc-like"
-printf 'repo\n' > "$SANDBOX/repo/zshrc-like"
-assert_exit 0 copy_file "$SANDBOX/repo/zshrc-like" "$HOME/.zshrc-like"
-assert_eq "mine" "$(cat "$HOME/.zshrc-like.bak")" "backup of an unrecorded file"
-
-# --no-backup (DOTFILES_BACKUP=no): replaced with no backup
-printf 'edit\n' > "$dest2"
-export DOTFILES_BACKUP=no
-assert_exit 0 copy_file "$src2" "$dest2"
-unset DOTFILES_BACKUP
-[ ! -e "$dest2.bak" ] || fail "--no-backup made a backup"
-assert_eq "hello" "$(cat "$dest2")" "file after --no-backup"
-
-# A terminal asks; DOTFILES_BACKUP=yes doesn't
-fake_terminal
-printf 'edit\n' > "$dest2"
-assert_exit 0 copy_file "$src2" "$dest2" <<< n
-assert_contains "$RUN_OUTPUT" "$dest2 was changed since setup installed it, and will be replaced. Back it up to $dest2.bak first?"
-[ ! -e "$dest2.bak" ] || fail "answering no made a backup"
-printf 'edit\n' > "$dest2"
-assert_exit 0 copy_file "$src2" "$dest2" <<< y
-assert_eq "edit" "$(cat "$dest2.bak")" ".bak after answering yes"
-# With an older, different .bak, the question names the path the backup goes to
-printf 'edit 2\n' > "$dest2"
-assert_exit 0 copy_file "$src2" "$dest2" <<< y
-assert_contains "$RUN_OUTPUT" "Back it up to $dest2.bak."
-bak2="$(sed -n 's/.*Back it up to \(.*\) first?.*/\1/p' <<< "$RUN_OUTPUT")"
-assert_eq "edit 2" "$(cat "$bak2")" "the backup at the path the question named"
-rm -f "$dest2.bak" "$bak2"
-printf 'edit\n' > "$dest2"
-export DOTFILES_BACKUP=yes
-assert_exit 0 copy_file "$src2" "$dest2" < /dev/null
-unset DOTFILES_BACKUP
-assert_not_contains "$RUN_OUTPUT" "Back it up"
-assert_eq "edit" "$(cat "$dest2.bak")" ".bak after --backup"
-# A file setup has no record of installing isn't called changed since. An & in its path stays in
-# the question, where bash 5.2's patsub_replacement would put the {} it replaced.
-amp="$HOME/a&b/config"
-mkdir -p "$HOME/a&b"
-printf 'mine\n' > "$amp"
-assert_exit 0 copy_file "$src2" "$amp" <<< n
-assert_contains "$RUN_OUTPUT" "$amp exists and differs from the repo's copy, and will be replaced. Back it up to $amp.bak first?"
-# A {} in the path stays too: the backup's path replaces the question's last {}
-braces="$HOME/x{}y/config"
-mkdir -p "$HOME/x{}y"
-printf 'mine\n' > "$braces"
-assert_exit 0 copy_file "$src2" "$braces" <<< n
-assert_contains "$RUN_OUTPUT" "  $braces exists and differs from the repo's copy, and will be replaced. Back it up to $braces.bak first?"
-# Put the real is_interactive and confirm back
-load_script lib/common.sh
-
-# copy_file_ask: a file setup installed and nobody edited is replaced without asking
-zsrc="$SANDBOX/repo/settings.json"
-zdest="$HOME/.config/zed/settings.json"
-printf 'hello\n' > "$zsrc"
-assert_exit 0 copy_file_ask "$zsrc" "$zdest"
-assert_eq "$HELLO_SHA" "$(recorded_sha256 "$zdest")" "copy_file_ask's record after first install"
-printf 'hello2\n' > "$zsrc"
-assert_exit 0 copy_file_ask "$zsrc" "$zdest"
-assert_contains "$RUN_OUTPUT" "Copied"
-assert_eq "hello2" "$(cat "$zdest")" "copy_file_ask after a repo update"
-assert_eq "$(file_sha256 "$zsrc")" "$(recorded_sha256 "$zdest")" "copy_file_ask's record after a repo update"
-[ ! -e "$zdest.bak" ] || fail "copy_file_ask backed up an unedited file"
-
-# An edited one is left alone without a terminal
-printf 'my edit\n' > "$zdest"
-assert_exit 0 copy_file_ask "$zsrc" "$zdest"
-assert_contains "$RUN_OUTPUT" "Left $zdest unchanged"
-assert_eq "my edit" "$(cat "$zdest")" "edited file copy_file_ask left alone"
-
-# With a terminal, it asks once: yes replaces it and backs it up
-fake_terminal
-assert_exit 0 copy_file_ask "$zsrc" "$zdest" <<< y
-assert_contains "$RUN_OUTPUT" "Replace it?"
-assert_not_contains "$RUN_OUTPUT" "Back it up"
-assert_eq "hello2" "$(cat "$zdest")" "copy_file_ask after answering yes"
-assert_eq "my edit" "$(cat "$zdest.bak")" "copy_file_ask's backup"
-assert_eq "$(file_sha256 "$zsrc")" "$(recorded_sha256 "$zdest")" "copy_file_ask's record after replacing an edit"
-# With --no-backup, yes replaces it with no backup
-rm -f "$zdest.bak"
-printf 'another edit\n' > "$zdest"
-export DOTFILES_BACKUP=no
-assert_exit 0 copy_file_ask "$zsrc" "$zdest" <<< y
-unset DOTFILES_BACKUP
-assert_eq "hello2" "$(cat "$zdest")" "copy_file_ask after yes with --no-backup"
-[ ! -e "$zdest.bak" ] || fail "copy_file_ask backed up with --no-backup"
-load_script lib/common.sh
-
-# status_file tells a newer repo version from a hand edit
-printf 'unrecorded\n' > "$HOME/unrecorded-config"
-record_before="$(cat "$INSTALLED_FILES")"
-assert_exit 0 status_file "$src2" "$HOME/unrecorded-config" "merge by hand"
-assert_contains "$RUN_OUTPUT" "differs, and setup has no record of installing it; merge by hand"
-assert_not_contains "$RUN_OUTPUT" "was edited"
-assert_eq "$record_before" "$(cat "$INSTALLED_FILES")" "status leaves installation records unchanged"
 printf 'v1\n' > "$src2"
 assert_exit 0 copy_file "$src2" "$dest2"
 assert_exit 0 status_file "$src2" "$dest2"
-assert_contains "$RUN_OUTPUT" "ok         ~/.vimrc"
-printf 'v2\n' > "$src2"
-assert_exit 0 status_file "$src2" "$dest2" "merge by hand"
-assert_contains "$RUN_OUTPUT" "missing    ~/.vimrc differs from $src2: the repo has a newer version"
-assert_not_contains "$RUN_OUTPUT" "merge by hand"
+assert_eq "  ok         ~/.vimrc" "$RUN_OUTPUT" "status of a matching file"
 printf 'edit\n' > "$dest2"
-assert_exit 0 status_file "$src2" "$dest2" "merge by hand"
-assert_contains "$RUN_OUTPUT" "missing    ~/.vimrc was edited since setup installed it; merge by hand"
+assert_exit 0 status_file "$src2" "$dest2"
+assert_eq "  missing    ~/.vimrc differs from the repo's $src2" "$RUN_OUTPUT" "status of a differing file"
+assert_eq "edit" "$(cat "$dest2")" "file after status_file"
 rm -f "$dest2"
 assert_exit 0 status_file "$src2" "$dest2"
 assert_eq "  missing    ~/.vimrc" "$RUN_OUTPUT" "status of a missing file"
+
+# The AI tools' user instructions, which may hold edits made by hand, are replaced the same way
+load_script ai_tools/lib/user-instructions.sh
+instructions="$HOME/.codex/AGENTS.md"
+mkdir -p "$HOME/.codex"
+printf 'my own instructions\n' > "$instructions"
+assert_exit 0 install_user_instructions "$instructions"
+assert_eq "" "$(cmp "$REPO_DIR/ai_tools/user-instructions.md" "$instructions" 2>&1)" "user instructions after an edit"
+assert_eq "AGENTS.md" "$(/bin/ls -A "$HOME/.codex")" "files beside the user instructions"
 
 # A command whose copy matches but lost its executable bit can't run
 printf '#!/bin/sh\n' > "$SANDBOX/repo/cmd"
@@ -208,27 +98,20 @@ load_script lib/common.sh
 edited="$HOME/ro/edited.yml"
 mkdir -p "$HOME/ro"
 printf 'repo\n' > "$SANDBOX/repo/edited.yml"
-for copy in copy_file maybe_backup; do
-    chmod 755 "$HOME/ro"
-    # JSON, so json_merge's jq succeeds and, since the filter changes it, goes on to back it up
-    printf '"my edit"\n' > "$edited"
-    printf 'older\n' > "$edited.bak"
-    chmod 555 "$HOME/ro"
-    if [ "$copy" == copy_file ]; then
-        assert_exit 1 copy_file "$SANDBOX/repo/edited.yml" "$edited"
-    else
-        export DOTFILES_BACKUP=yes
-        assert_exit 1 json_merge "$edited" '"merged"'
-        unset DOTFILES_BACKUP
-    fi
-    assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup ($copy)"
-    assert_not_contains "$RUN_OUTPUT" "Backed up" "$copy output"
-    assert_contains "$RUN_OUTPUT" "Couldn't back up $edited" "$copy output"
-done
+# JSON, so json_merge's jq succeeds and, since the filter changes it, goes on to back it up
+printf '"my edit"\n' > "$edited"
+printf 'older\n' > "$edited.bak"
+chmod 555 "$HOME/ro"
+export DOTFILES_BACKUP=yes
+assert_exit 1 json_merge "$edited" '"merged"'
+unset DOTFILES_BACKUP
+assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup"
+assert_not_contains "$RUN_OUTPUT" "Backed up"
+assert_contains "$RUN_OUTPUT" "Couldn't back up $edited"
 chmod 755 "$HOME/ro"
 
 # A copy into a read-only directory fails, even when called under ||, which turns set -e off: no
-# "Copied" and nothing recorded
+# "Copied"
 ro="$HOME/read-only"
 mkdir -p "$ro"
 chmod 555 "$ro"
@@ -240,10 +123,9 @@ copy_or_7() {
 }
 assert_exit 7 copy_or_7
 assert_not_contains "$RUN_OUTPUT" "Copied"
-assert_file_not_contains "$record" "$ro/edited.yml"
 chmod 755 "$ro"
 
-# A recorded file made read-only is left as it is, as cp would leave it, though its directory
+# A copied file made read-only is left as it is, as cp would leave it, though its directory
 # would let a rename replace it. So is one a symlink points to.
 if [ "$(id -u)" -ne 0 ]; then
     locked="$HOME/locked/config.yml"
@@ -275,7 +157,6 @@ rm -f "$STUB_DIR/cp"
 assert_eq old "$(cat "$atomic")" "file after a copy that failed partway"
 assert_eq config.yml "$(/bin/ls -A "$HOME/atomic")" "files beside it after a copy that failed partway"
 assert_not_contains "$RUN_OUTPUT" "Copied"
-assert_eq "$(file_sha256 "$atomic")" "$(recorded_sha256 "$atomic")" "record after a copy that failed partway"
 inode="$(/bin/ls -i "$atomic" | awk '{print $1}')"
 assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$atomic"
 assert_eq new "$(cat "$atomic")" "file after a copy"
@@ -286,9 +167,7 @@ mkdir -p "$HOME/real"
 printf 'old\n' > "$HOME/real/linked.yml"
 chmod 640 "$HOME/real/linked.yml"
 ln -s "$HOME/real/linked.yml" "$HOME/linked.yml"
-export DOTFILES_BACKUP=no
 assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$HOME/linked.yml"
-unset DOTFILES_BACKUP
 [ -L "$HOME/linked.yml" ] || fail "copy_file replaced the symlink"
 assert_eq new "$(cat "$HOME/real/linked.yml")" "symlink target after copy_file"
 assert_eq 640 "$(file_mode "$HOME/real/linked.yml")" "symlink target's mode after copy_file"
@@ -313,12 +192,6 @@ assert_exit 0 copy_file "$SANDBOX/repo/cmd" "$HOME/modes/cmd"
 assert_contains "$RUN_OUTPUT" "Copied"
 assert_eq 755 "$(file_mode "$HOME/modes/cmd")" "mode of an executable that lost its bit"
 assert_eq "" "$(find "$HOME/modes" -name '*.bak*')" "backups of an executable that lost its bit"
-# The bit alone is missing from a file setup has no record of: no backup, since nothing differs
-sed -i.orig '\|/modes/cmd$|d' "$INSTALLED_FILES"
-chmod 644 "$HOME/modes/cmd"
-assert_exit 0 copy_file "$SANDBOX/repo/cmd" "$HOME/modes/cmd"
-assert_eq 755 "$(file_mode "$HOME/modes/cmd")" "mode of an unrecorded executable that lost its bit"
-assert_eq "" "$(find "$HOME/modes" -name '*.bak*')" "backups of an unrecorded executable that lost its bit"
 
 # Backups in the same second: each new version gets its own -2, -3 name, none is overwritten, and
 # a version already backed up reuses its file. date is pinned, so the second is the same.
@@ -398,4 +271,11 @@ for want in true false; do
     copy_file "$SANDBOX/repo/copied.yml" "$HOME/copied.yml" > /dev/null
     assert_eq "$want" "$COPIED" "COPIED after copy_file"
 done
+
+# A question without {} gets the backup's path appended, once
+plain="$HOME/plain-question.yml"
+printf 'mine\n' > "$plain"
+assert_exit 0 maybe_backup "$plain" no "Keep a copy?" <<< y
+assert_eq "Keep a copy? ($plain.bak)
+  Backed up $plain to $plain.bak" "$RUN_OUTPUT" "maybe_backup with a question without {}"
 test_done

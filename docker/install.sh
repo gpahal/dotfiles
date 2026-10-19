@@ -17,6 +17,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=../lib/system.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
@@ -134,15 +137,23 @@ write_docker_auto_updates() {
     write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
 }
 
-# Add the step's simple sudo items, which status and apply drive by their check functions. Added
-# at run time, since their texts name paths tests point elsewhere.
-docker_sudo_items() {
-    sudo_items_reset
-    sudo_item "Docker starts at boot (docker.service enabled)" \
+# The step's items, in the order apply fixes them: the packages first, since the rest needs them,
+# then the socket, then the daemon config, so a daemon that starting at boot starts reads it
+# rather than restarting for it. The daemon item's pending text says when it can't be read
+# without sudo, and what a restart does to a running daemon.
+docker_items() {
+    local daemon_pending="Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
+    daemon_config_unreadable && daemon_pending="Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it"
+    items_reset
+    item --sudo "Docker Engine from Docker's apt repo" "Install ${DOCKER_PACKAGES[*]} from Docker's apt repo" \
+        docker_installed install_docker
+    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    item --sudo "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "$daemon_pending$(daemon_restart_note)" \
+        daemon_configured configure_daemon
+    item --sudo "Docker starts at boot (docker.service enabled)" \
         "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
         starts_at_boot enable_docker_service
-    sudo_item "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
-    sudo_item "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
+    item --sudo "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
         "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
         docker_auto_updates_configured write_docker_auto_updates
 }
@@ -301,8 +312,8 @@ status() {
     fi
     local installed=false
     docker_installed && installed=true
-    docker_sudo_items
-    status_check "Docker Engine from Docker's apt repo" "$installed"
+    docker_items
+    items_status docker_installed
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
     # The step asks about the group once, and you may say no, so its absence isn't missing
     if in_docker_group; then
@@ -310,20 +321,14 @@ status() {
     else
         status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
     fi
-    if "$installed"; then
-        sudo_items_status starts_at_boot socket_ready
-    else
-        status_item missing "Docker starts at boot (docker.service enabled)"
-        status_item missing "docker.socket enabled and listening"
-    fi
-    if ! "$installed" || [ ! -e "$DOCKER_DAEMON_CONFIG" ]; then
-        status_item missing "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
-    elif daemon_config_unreadable && ! sudo_cached; then
+    items_status socket_ready starts_at_boot
+    # A config only root can read, or no jq, can't be checked
+    if daemon_config_unreadable && ! sudo_cached; then
         status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
-        status_check "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" daemon_configured
+        items_status daemon_configured
     fi
-    sudo_items_status docker_auto_updates_configured
+    items_status docker_auto_updates_configured
     ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
     status_result
@@ -414,38 +419,28 @@ apply() {
         repair_source=true
     fi
     local pending=()
-    docker_sudo_items
-    "$installed" || pending+=("Install ${DOCKER_PACKAGES[*]} from Docker's apt repo")
+    docker_items
+    items_pending docker_installed
     ! "$repair_source" ||
         pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
-    # Freshly installed packages enable and start both units
-    ! "$installed" || sudo_items_pending starts_at_boot socket_ready
-    if ! "$installed" || ! daemon_configured; then
-        if daemon_config_unreadable; then
-            pending+=("Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it$(daemon_restart_note)")
-        else
-            pending+=("Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG$(daemon_restart_note)")
-        fi
+    if "$installed"; then
+        items_pending socket_ready daemon_configured starts_at_boot docker_auto_updates_configured
+    else
+        # Freshly installed packages enable and start both units
+        items_pending daemon_configured docker_auto_updates_configured
     fi
-    sudo_items_pending docker_auto_updates_configured
 
     local result=0 fresh=false
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Docker is already installed and set up."
         return 0
     elif confirm_sudo_changes "${pending[@]}"; then
-        if ! "$installed"; then
-            # The rest needs Docker's packages, and the docker group they add
-            install_docker || return 1
-            fresh=true
-        elif "$repair_source"; then
-            add_docker_repo || result=1
-        fi
-        # Each part from here on runs whether or not the one before it failed
-        sudo_items_apply socket_ready || result=1
-        daemon_configured || configure_daemon || result=1
-        # After the config, so a daemon this starts reads it rather than restarting for it
-        sudo_items_apply starts_at_boot docker_auto_updates_configured || result=1
+        # The rest needs Docker's packages, and the docker group they add
+        items_apply docker_installed || return 1
+        "$installed" || fresh=true
+        ! "$repair_source" || add_docker_repo || result=1
+        # Each item from here on runs whether or not the one before it failed
+        items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
         if [ "$result" -ne 0 ]; then
             echo "  Applied the rest. Some changes failed; see the errors above." >&2
         else

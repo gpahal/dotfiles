@@ -20,6 +20,9 @@ set -euo pipefail
 # Ubuntu only. It fails when a runner couldn't run or a push failed, so the unit shows failed.
 
 HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# For status_parse_line and status_summary_line, which read the runners' reports
+# shellcheck source=../lib/common.sh
+source "$HEALTH_REPO_DIR/lib/common.sh"
 # shellcheck source=lib/ntfy.sh
 source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
 # shellcheck source=lib/paths.sh
@@ -30,7 +33,7 @@ NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 # ntfy turns a message over 4096 bytes into an attachment, so this leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 # How a status item only root could check says so, and the line a push then ends with
-ROOT_ONLY_PATTERN='^  unverified .*run sudo -v, then status'
+ROOT_ONLY_TEXT='run sudo -v, then status'
 ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 # "<epoch seconds of the last push> <cksum of the message pushed, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
@@ -65,12 +68,30 @@ ntfy_url() {
 # Print the lines of a runner's --status output that need attention: the summary lines, then each
 # missing or unknown item as "<step>: <item>", from run_steps' "<step>:" headers
 attention_lines() {
-    awk '
-        /^(Needs attention|Failed steps):/ { summary = summary $0 "\n"; next }
-        /^[^ ].*:$/ { step = substr($0, 1, length($0) - 1); next }
-        /^  (missing|unknown) / { sub(/^  [a-z]+ +/, ""); items = items (step == "" ? "" : step ": ") $0 "\n" }
-        END { printf "%s%s", summary, items }
-    '
+    local line step="" summary="" items=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        if status_summary_line "$line"; then
+            summary="$summary$line"$'\n'
+        elif status_parse_line "$line"; then
+            ! status_state_needs_attention "$STATUS_LINE_STATE" ||
+                items="$items${step:+$step: }$STATUS_LINE_TEXT"$'\n'
+        elif [[ "$line" == [!\ ]*: ]]; then
+            step="${line%:}"
+        fi
+    done
+    printf '%s%s' "$summary" "$items"
+}
+
+# Succeeds when a runner's --status output on stdin has an item only root could check
+has_root_only_items() {
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        if status_parse_line "$line" && [ "$STATUS_LINE_STATE" == unverified ] &&
+            [[ "$STATUS_LINE_TEXT" == *"$ROOT_ONLY_TEXT"* ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Print the first lines of stdin that fit in MESSAGE_MAX_BYTES, and a note when some didn't
@@ -106,7 +127,7 @@ status_alert() {
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
         out="$("$BASH" "$HEALTH_REPO_DIR/$runner" --status --quick < /dev/null 2>&1)" || status=$?
-        ! grep -qE "$ROOT_ONLY_PATTERN" <<< "$out" || root_only=true
+        ! has_root_only_items <<< "$out" || root_only=true
         case "$status" in
             0) ;;
             1 | 3) message="$message$(attention_lines <<< "$out")"$'\n' ;;

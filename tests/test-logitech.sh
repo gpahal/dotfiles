@@ -64,7 +64,7 @@ export UPDATE_FAILS=""
 # Approved: apt-get updates its lists, then installs it with sudo, and status reports it
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get"
 assert_eq "update" "$(grep -E '^sudo .*apt-get' "$STUB_LOG" | head -n 1 | awk '{ print $NF }')" "apt-get's first run"
 assert_file_contains "$STUB_LOG" "install -y solaar"
 [ -e "$SANDBOX/solaar" ] || fail "Solaar wasn't installed"

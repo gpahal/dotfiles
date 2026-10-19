@@ -14,6 +14,10 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=../lib/system.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
+STEP_OS=ubuntu
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 # unattended-upgrades only installs from Ubuntu's own repos unless told otherwise. The origin and
 # suite come from Google's Release file:
 # https://dl.google.com/linux/chrome-stable/deb/dists/stable/Release
@@ -78,10 +82,6 @@ google_source_exists() {
 }
 
 status() {
-    if is_macos; then
-        status_item skipped "Chrome from Google's apt repo: the homebrew step installs Chrome on macOS"
-        return 0
-    fi
     if apt_installed google-chrome-stable; then
         status_item ok "google-chrome-stable from Google's .deb"
     elif status_require_cmd curl "google-chrome-stable from Google's .deb"; then
@@ -102,11 +102,6 @@ status() {
 
 apply() {
     echo "Setting up Google Chrome..."
-    if is_macos; then
-        echo "  The homebrew step installs Chrome on macOS; skipping."
-        return 0
-    fi
-    require_supported_os || return 1
 
     if ! apt_installed google-chrome-stable; then
         require_cmd curl || return 1

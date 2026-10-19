@@ -56,4 +56,14 @@ if [ "$(uname -s)" != Darwin ]; then
   missing    GitHub SSH remotes go over HTTPS, through gh's credential helper (a re-run after gh auth login and gh auth setup-git adds it)"
 fi
 assert_eq "$expected" "$items" "status items that need attention"
+
+# Zed's settings, which Zed itself edits, are replaced like any other config: no question, even
+# without a terminal, and no backup
+zed_settings="$HOME/.config/zed/settings.json"
+printf '{"edited in Zed": true}\n' > "$zed_settings"
+assert_exit 3 bash "$REPO_DIR/setup.sh" --status zed
+assert_contains "$RUN_OUTPUT" "settings.json differs from the repo's zed/settings.json"
+assert_exit 0 bash "$REPO_DIR/setup.sh" zed
+assert_eq "" "$(cmp "$REPO_DIR/zed/settings.json" "$zed_settings" 2>&1)" "Zed's settings after an edit"
+assert_eq "keymap.json settings.json " "$(/bin/ls -A "$(dirname "$zed_settings")" | tr '\n' ' ')" "Zed's config files"
 test_done

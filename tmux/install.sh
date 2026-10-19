@@ -16,6 +16,9 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 PLUGIN_DIR="$HOME/.tmux/plugins"
 # Lines of "<owner>/<repo> <commit>". tpm's #ref goes to git clone -b, which takes no commit, so the
 # pins live here, not in tmux.conf. The tests point DOTFILES_TMUX_PLUGINS_LOCK at their own pins.

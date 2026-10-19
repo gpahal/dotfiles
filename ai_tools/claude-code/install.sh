@@ -12,6 +12,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/keepab
 # shellcheck source=../lib/user-instructions.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/user-instructions.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
@@ -252,7 +255,7 @@ status() {
         [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered; remove it from ~/.claude/settings.json and re-run the step"
     done <<< "$(claude_code_other_worktree_hooks)"
     script_files status_file
-    user_instructions_files status_file "merge by hand, or re-run the step from a terminal to replace it"
+    user_instructions_files status_file
     status_result
 }
 

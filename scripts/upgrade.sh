@@ -11,6 +11,8 @@ set -u
 # sets DOTFILES_DIR to this script's repo.
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/casks.sh
+source "$DOTFILES_DIR/lib/casks.sh"
 
 # Print which of the casks given are outdated, one per line, counting those that update themselves.
 # Fails when `brew outdated` does. Given casks, brew outdated exits 1 when it lists one, so only an

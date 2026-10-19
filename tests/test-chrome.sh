@@ -81,7 +81,7 @@ rm "$SANDBOX/fetch-fails"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $URL"
-assert_file_contains "$STUB_LOG" "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
+assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
 [ -e "$SANDBOX/installed" ] || fail "Chrome wasn't installed"
 deb="$(cat "$SANDBOX/deb-path")"
 assert_eq google-chrome-stable.deb "${deb##*/}" "the .deb apt-get installed"
@@ -133,4 +133,14 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "curl"
 [ ! -e "$CHROME_DEFAULTS" ] || fail "Chrome's defaults file was written without curl"
 assert_file_not_contains "$STUB_LOG" "sudo"
+
+# On macOS, STEP_OS=ubuntu skips the step, run or reported, without running any of it
+is_macos() { true; }
+is_ubuntu() { false; }
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_eq "chrome: skipped, Ubuntu only" "$RUN_OUTPUT" "the step on macOS"
+assert_exit 0 main --status
+assert_eq "  skipped    Ubuntu only" "$RUN_OUTPUT" "the step's status on macOS"
+assert_eq "" "$(cat "$STUB_LOG")" "commands the skipped step ran"
 test_done

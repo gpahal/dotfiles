@@ -197,7 +197,7 @@ stub brew 'case "$*" in
     "bundle check"*) exit 1 ;;
 esac'
 stub pgrep 'exit 1'
-assert_eq "sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
+assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
 sudo apt -o DPkg::Lock::Timeout=300 upgrade
 brew update
 brew upgrade

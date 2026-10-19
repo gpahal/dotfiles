@@ -42,6 +42,9 @@ source "$UBUNTU_LIB_DIR/ups.sh"
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 # Masking these stops every suspend, whether GNOME's idle timer, the login screen's, or a command
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target)
 # Sorts before 50-cloud-init.conf: sshd keeps the first value it reads for most settings
@@ -193,24 +196,24 @@ install_root_copy() {
 # rest branch, so they stay in status and apply. Added at run time, since their texts name paths
 # tests point elsewhere.
 ubuntu_sudo_items() {
-    sudo_items_reset
-    sudo_item "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
-    sudo_item "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
+    items_reset
+    item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
+    item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
         "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
-    sudo_item "Linger, so user services start at boot" \
+    item --sudo "Linger, so user services start at boot" \
         "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
     # status_smartd_hook reports it, skipped in a VM and out of date apart
-    sudo_item "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
+    item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
         smartd_hook_ready install_smartd_hook
-    sudo_item "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
+    item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
         locale_installed install_locale
-    sudo_item "unattended-upgrades runs daily" \
+    item --sudo "unattended-upgrades runs daily" \
         "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
         unattended_upgrades_running turn_on_unattended_upgrades
-    sudo_item "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
+    item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
-    sudo_item "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
+    item --sudo "apt's daily timers enabled and running" "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" \
         apt_timers_enabled enable_apt_timers
 }
 
@@ -290,7 +293,7 @@ status() {
     fi
     cache_checks
     ubuntu_sudo_items
-    sudo_items_status sleep_masked sleep_conf_written
+    items_status sleep_masked sleep_conf_written
     item="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
     if ! sysctl_file_written; then
         status_item missing "$item"
@@ -300,7 +303,7 @@ status() {
     else
         status_item ok "$item"
     fi
-    sudo_items_status lingering
+    items_status lingering
     status_check "smartmontools, with smartd enabled at boot" smartd_enabled
     if in_vm; then
         status_item skipped "smartd running: this is a VM, whose host manages the disks"
@@ -311,11 +314,11 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    sudo_items_status locale_installed
+    items_status locale_installed
     status_unattended_upgrades
-    sudo_items_status keep_conffiles_written
+    items_status keep_conffiles_written
     status_held_back
-    # The sudo_item's text, with the command that turns them on
+    # The item's text, with the command that turns them on
     if apt_timers_enabled; then
         status_item ok "apt's daily timers enabled and running"
     else
@@ -385,32 +388,32 @@ apply() {
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
-    sudo_items_pending sleep_masked sleep_conf_written
+    items_pending sleep_masked sleep_conf_written
     if ! sysctl_file_written; then
         pending+=("Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF")
     elif ! sysctl_in_effect; then
         pending+=("Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system")
     fi
-    sudo_items_pending lingering
+    items_pending lingering
     if ! smartd_enabled; then
         pending+=("Watch disk health: enable smartd, installing smartmontools without its recommends")
     elif ! smartd_ready; then
         pending+=("Watch disk health: start smartd, which is enabled but not running")
     fi
-    sudo_items_pending smartd_hook_ready
+    items_pending smartd_hook_ready
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
     # Only root can read the settings, and apt-config skips them as you: checked with sudo only
     # when other changes need it, as the ufw rules are
     local auto_upgrades_unchecked=false
-    sudo_items_pending locale_installed
+    items_pending locale_installed
     if auto_upgrades_unreadable && ! sudo_cached; then
         auto_upgrades_unchecked=true
     else
-        sudo_items_pending unattended_upgrades_running
+        items_pending unattended_upgrades_running
     fi
-    sudo_items_pending keep_conffiles_written apt_timers_enabled
+    items_pending keep_conffiles_written apt_timers_enabled
     if ! apt_installed openssh-server; then
         pending+=("Install openssh-server")
     elif ! sshd_enabled; then
@@ -471,13 +474,13 @@ apply() {
             echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
         # Each part runs whether or not the one before it failed
-        sudo_items_apply sleep_masked sleep_conf_written || result=1
+        items_apply sleep_masked sleep_conf_written || result=1
         sysctl_written || apply_sysctl || result=1
-        sudo_items_apply lingering || result=1
+        items_apply lingering || result=1
         smartd_ready || install_smartd || result=1
-        sudo_items_apply smartd_hook_ready || result=1
+        items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
-        sudo_items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
+        items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
             apt_timers_enabled || result=1
         if ! apt_installed openssh-server; then
             apt_get install -y openssh-server || result=1

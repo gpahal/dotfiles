@@ -20,8 +20,9 @@ export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBO
 # A copy of the script in a repo whose runners print $SANDBOX/out/<runner> and exit with
 # $SANDBOX/exit/<runner>, 0 by default, logging how they were called
 REPO="$SANDBOX/repo"
-mkdir -p "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
+mkdir -p "$REPO/lib" "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
 cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO/ubuntu/"
+cp "$REPO_DIR/lib/common.sh" "$REPO/lib/"
 cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" "$REPO/ubuntu/lib/"
 for runner in setup ai_tools; do
     script="$REPO/setup.sh"

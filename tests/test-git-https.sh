@@ -140,6 +140,11 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
 assert_exit 0 status_github_login
 assert_contains "$RUN_OUTPUT" "ok         Logged in to GitHub with gh"
+# --quick asks GitHub nothing: stored credentials are unverified
+: > "$STUB_LOG"
+DOTFILES_STATUS_QUICK=1 assert_exit 0 status_github_login
+assert_contains "$RUN_OUTPUT" "unverified Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --quick"
+assert_file_not_contains "$STUB_LOG" 'gh auth status'
 
 # The rewrite needs gh's credential helper, or git would have no credentials for GitHub. Without a
 # login, main leaves the remotes on SSH and says a re-run after logging in adds the rewrite.

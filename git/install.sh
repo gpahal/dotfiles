@@ -47,7 +47,16 @@ github_auth_state() {
     fi
 }
 
+# --quick only reads what gh stored, since asking GitHub can take 10 s
 status_github_login() {
+    if status_quick; then
+        if gh auth token --hostname github.com &>/dev/null; then
+            status_item unverified "Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --quick"
+        else
+            status_item missing "Logged in to GitHub with gh"
+        fi
+        return 0
+    fi
     case "$(github_auth_state)" in
         ok) status_item ok "Logged in to GitHub with gh" ;;
         unknown) status_item unknown "Logged in to GitHub with gh: credentials are stored, but GitHub couldn't be reached to check them" ;;

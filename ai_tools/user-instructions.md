@@ -1,9 +1,9 @@
-## Working
-
-- Carry a task through to done without pausing for check-ins. Stop only for an approval the user must give, or before a destructive action.
-- Commit, push, or open a pull request only when the user asks.
-- Release tags must always be signed and annotated.
-- Verify changes (tests, typecheck) before reporting done.
-- When an issue or an unclear choice blocks the task, or a choice can't be cheaply reversed, ask the user a specific question rather than guessing or giving up. Otherwise make the call and note it in your report.
-- Keep responses concise. Lead with the answer or result, and leave out preamble and recaps.
-- Write comments and docs that are concise and clear. A comment explains what the code can't show, such as why it's written this way or a constraint it works around.
+- Work through to done without check-ins. Ask only when blocked, before a destructive action, or when a choice is hard to reverse, and note other decisions in your report.
+- Never weaken, skip, or delete a test or check to make it pass.
+- Ask before adding a dependency, installing a tool, or reading or editing a `.env` file.
+- Commit, push, open a pull request, or merge only when asked.
+- Run parallel tasks in separate worktrees, made with your tool's worktree feature or else `git wt add <name> <base>`.
+- Once a subagent's work is squash-merged into its base branch, remove that subagent's worktree and branch: `git wt rm <name>`, then `git branch -D <name>`, or the tool's own cleanup. Leave worktrees of sessions the user started.
+- Squash every merge (`git merge --squash`), with a message in the style of the repo's `git log`.
+- Sign and annotate release tags (`git tag -s`).
+- Use the tools a repo already uses, as its lockfiles show. Otherwise use pnpm for JS and TS, uv for Python, mise for Node and Go, rustup for Rust, `mise use -g npm:<package>` for global npm CLIs, and Homebrew for other CLIs.

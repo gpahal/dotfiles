@@ -112,15 +112,6 @@ in_docker_group() {
     case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
 }
 
-# sudo_cached, as status found it once, for its checks that run docker or read the config
-sudo_ready() {
-    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
-        [ "$SUDO_CACHED_CACHE" == yes ]
-        return
-    fi
-    sudo_cached
-}
-
 # docker.service wants containerd.service, so it starts containerd too
 starts_at_boot() {
     systemctl is-enabled --quiet docker.service 2>/dev/null

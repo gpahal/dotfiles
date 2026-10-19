@@ -247,15 +247,6 @@ cache_checks() {
     SUDO_CACHED_CACHE="$cached"
 }
 
-# sudo_cached, as cache_checks found it
-sudo_ready() {
-    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
-        [ "$SUDO_CACHED_CACHE" == yes ]
-        return
-    fi
-    sudo_cached
-}
-
 # Copy the environment.d file. When it changes, reload the user manager, which reads environment.d
 # then, so services it starts from now on get the new PATH. Running ones keep theirs until they
 # restart, which the step leaves to you.

@@ -5,30 +5,20 @@ set -euo pipefail
 # Each minimum is the tested floor from Ubuntu 26.04's apt, not a version known to be required: an
 # older one may work, but nothing tests it. GitHub's Ubuntu runners ship a newer git than apt's, so
 # CI doesn't test git's floor; the version this prints for each tool is what the run tested. yq's is
-# a real requirement: the codex step rewrites config.toml with yq -o toml, whose encoder arrived in
-# 4.52.1 and was fixed up to 4.54.1. CI pins shellcheck instead, since each release reports
-# different warnings.
+# a real requirement, YQ_MIN_VERSION in lib/common.sh, which the codex step checks too. CI pins
+# shellcheck instead, since each release reports different warnings.
+
+# shellcheck source=../lib/common.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 # tool, minimum, and the command that prints its version
 TOOLS="jq 1.8.1 jq --version
-yq 4.54.1 yq --version
+yq $YQ_MIN_VERSION yq --version
 just 1.45 just --version
 zsh 5.9 zsh --version
 tmux 3.6 tmux -V
 vim 9.1 vim --version
 git 2.53 git --version"
-
-# version_at_least <version> <minimum>: compare dot-separated numbers, a missing part counting as 0
-version_at_least() {
-    local IFS=. i have want
-    read -ra have <<< "$1"
-    read -ra want <<< "$2"
-    for ((i = 0; i < ${#want[@]} || i < ${#have[@]}; i++)); do
-        [ "${have[i]:-0}" -eq "${want[i]:-0}" ] && continue
-        [ "${have[i]:-0}" -gt "${want[i]:-0}" ]
-        return
-    done
-}
 
 errors=0
 while read -r tool minimum cmd; do

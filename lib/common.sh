@@ -879,6 +879,32 @@ sudo_cached() {
     sudo -n true 2> /dev/null
 }
 
+# sudo_cached, as a step found it once and saved it in SUDO_CACHED_CACHE (yes or no), so the
+# answer stays the same through one status run. Unset, it asks sudo each time.
+sudo_ready() {
+    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
+        [ "$SUDO_CACHED_CACHE" == yes ]
+        return
+    fi
+    sudo_cached
+}
+
+# The oldest yq the codex step's config edit and scripts/check-tool-versions.sh take: yq -o toml's
+# encoder arrived in 4.52.1 and was fixed up to 4.54.1
+YQ_MIN_VERSION=4.54.1
+
+# version_at_least <version> <minimum>: compare dot-separated numbers, a missing part counting as 0
+version_at_least() {
+    local IFS=. i have want
+    read -ra have <<< "$1"
+    read -ra want <<< "$2"
+    for ((i = 0; i < ${#want[@]} || i < ${#have[@]}; i++)); do
+        [ "${have[i]:-0}" -eq "${want[i]:-0}" ] && continue
+        [ "${have[i]:-0}" -gt "${want[i]:-0}" ]
+        return
+    done
+}
+
 # Run an external command, stopping it after <seconds> with exit status 124, as timeout(1) does,
 # for a status check that can hang, such as smartctl on a failing disk. macOS has no timeout(1), so
 # there perl's alarm stops only the command, not what it started; its macOS callers (fdesetup,

@@ -236,6 +236,14 @@ echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
 assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts set ($NTFY_URL_FILE)"
+# smartd runs the hook only through smartd-runner, which smartd.conf names: with that line
+# commented out, status says so, and the step leaves the file to you
+cp "$SMARTD_CONF" "$SANDBOX/smartd.conf.orig"
+sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner"
+mv "$SANDBOX/smartd.conf.orig" "$SMARTD_CONF"
+rm "$SMARTD_CONF.bak"
 
 # The health alert's units after the repo moved: status says they differ, and a run from the repo's
 # new place points them there

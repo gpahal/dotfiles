@@ -35,6 +35,7 @@ lingering() { [ -e "$SANDBOX/linger" ]; }
 # conffile options, the packages apt holds back, and the health alerts' worktree check and reload
 smartd_enabled() { true; }
 smartd_hook_installed() { true; }
+echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
 keep_conffiles_written() { true; }
 status_held_back() { :; }
 in_git_worktree() { false; }

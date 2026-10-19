@@ -201,20 +201,31 @@ smartd_hook_ready() {
     in_vm || smartd_hook_installed
 }
 
-# The hook that pushes smartd's warnings, and the ntfy code it sources. In a VM smartd doesn't run,
-# so it doesn't matter there. status_health_alerts reports the ntfy URL.
+# Succeeds when smartd's config runs smartd-runner on a warning, which runs the hook: an
+# uncommented line names it. The step leaves the file to you.
+smartd_runs_hooks() {
+    grep -qE '^[^#]*smartd-runner' "$SMARTD_CONF" 2>/dev/null
+}
+
+# The hook that pushes smartd's warnings, the ntfy code it sources, and the smartd-runner line that
+# runs it. In a VM smartd doesn't run, so it doesn't matter there. status_health_alerts reports
+# the ntfy URL.
 status_smartd_hook() {
     local label="smartd's warnings pushed to ntfy ($SMARTD_HOOK)"
     if in_vm; then
         status_item skipped "smartd's warning hook: this is a VM, whose host manages the disks"
         return 0
     fi
-    if smartd_hook_installed; then
-        status_item ok "$label"
-    elif [ -e "$SMARTD_HOOK" ]; then
-        status_item missing "$label: out of date (re-run the ubuntu step)"
+    if ! smartd_hook_installed; then
+        if [ -e "$SMARTD_HOOK" ]; then
+            status_item missing "$label: out of date (re-run the ubuntu step)"
+        else
+            status_item missing "$label"
+        fi
+    elif apt_installed smartmontools && ! smartd_runs_hooks; then
+        status_item missing "$label: $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner, which runs the hook; put it back on the DEVICESCAN line"
     else
-        status_item missing "$label"
+        status_item ok "$label"
     fi
 }
 

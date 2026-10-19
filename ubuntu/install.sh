@@ -90,6 +90,8 @@ fs.inotify.max_user_watches = 1048576'
 SMARTD_UNIT=smartmontools.service
 # smartd's warning hook, installed as $SMARTD_HOOK
 SMARTD_HOOK_SRC="$DOTFILES_DIR/ubuntu/smartd-notify.sh"
+# smartd's config, whose -M exec smartd-runner, in Ubuntu's default DEVICESCAN line, runs the hook
+SMARTD_CONF=/etc/smartd.conf
 # NUT, which watches a UPS on USB. nut-server ships the drivers, upsd, nut-scanner, the udev rules
 # that name the UPSes it knows, and the system-shutdown hook that has the UPS cut its power when
 # upsmon left POWERDOWNFLAG. nut-client ships upsmon and upsc.

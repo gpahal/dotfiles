@@ -24,6 +24,7 @@ ubuntu_sandbox_paths() {
     SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
     SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
     SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
+    SMARTD_CONF="$SANDBOX/smartd.conf"
     NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
     NUT_DIR="$SANDBOX/nut"
     # The test runs as you, without a nut group, so NUT's files are yours, in your own group

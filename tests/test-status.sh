@@ -111,6 +111,7 @@ esac'
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"
 printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
+echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
 stub nmcli
 # sshd -T prints the port, and the drop-in's settings as sshd takes them
 stub sshd '[ "$1" != -T ] || { echo "port 22"

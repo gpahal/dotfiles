@@ -88,6 +88,8 @@ ubuntu_step_setup() {
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'
+    # Ubuntu's default smartd.conf, which runs smartd-runner, and so the hook, on a warning
+    echo "DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
     # sysctl --system puts the settings of the files in $SANDBOX/sysctl.d in effect. It fails, setting
     # none, when $SANDBOX/sysctl-fails exists, and after setting them when $SANDBOX/sysctl-key-fails
     # does, as for a key another file sets that the kernel lacks. sysctl -n prints one setting.

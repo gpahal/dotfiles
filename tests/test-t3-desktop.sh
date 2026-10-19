@@ -185,11 +185,13 @@ assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
 assert_file_not_contains "$STUB_LOG" "brew install"
 
 # Without jq, status still reports the cask, the LaunchAgent, and launchd's variable; only the
-# settings are unknown
+# settings are unknown. brew's metadata needs jq, so the cask's state then depends on whether
+# /Applications holds a T3 Code, which this machine decides.
 no_jq_status() {
     hide jq
     run status
-    assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
+    assert_contains "$RUN_OUTPUT" "t3-code (cask)"
+    assert_not_contains "$RUN_OUTPUT" "command not found"
     assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
     assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
     assert_contains "$RUN_OUTPUT" "unknown    T3 Code's settings: $(missing_cmd_hint jq)"

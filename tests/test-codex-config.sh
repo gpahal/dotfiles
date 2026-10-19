@@ -14,6 +14,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ai_tools/codex/install.sh
 stub pgrep 'exit 1'
+# Codex's sandbox works, where bwrap is installed, as on the Ubuntu runner
+stub bwrap
 # Signed in, for the status runs below
 stub codex 'echo "Logged in using ChatGPT" >&2'
 as_os macos

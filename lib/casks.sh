@@ -36,8 +36,10 @@ install_cask() {
 # with no app, such as a font or one that runs an installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app
+# Print the path of the app a Homebrew cask installs, e.g. /Applications/Claude.app, or nothing
+# without jq, so a caller falls back to where the app usually is
 cask_app_path() {
+    command -v jq &>/dev/null || return 0
     brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
 }
 

@@ -1,13 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which /etc/pam.d/sudo includes, and
-# which OS updates keep. Each run rebuilds the file from scratch (desired_sudo_local in
-# macos/pam.sh): pam_tid, after pam_reattach when the homebrew step has installed pam-reattach, so
-# Touch ID works inside tmux too. sudo loads a root-owned copy of pam-reattach's module in
-# /usr/local/lib/pam, which this script installs from Homebrew's and updates when it changes.
-# Any other line in sudo_local goes: macOS reserves sudo_local for local sudo changes such as this
-# one, and rebuilding it keeps status and setup in agreement.
+# Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
+#
+# Each run rebuilds the file from scratch (desired_sudo_local in macos/pam.sh), dropping any other
+# line, which keeps status and setup in agreement. sudo loads a root-owned copy of pam-reattach's
+# module in /usr/local/lib/pam, which this script installs from Homebrew's and updates.
 # setup.sh doesn't run it, since it changes /etc with sudo. --status reports, changing nothing.
 
 # shellcheck source=../lib/common.sh

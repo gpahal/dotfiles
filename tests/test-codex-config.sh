@@ -114,12 +114,13 @@ assert_not_contains "$RUN_OUTPUT" ".credentials.json"
 echo '{}' > "$CODEX_CREDENTIALS"
 chmod 644 "$CODEX_CREDENTIALS"
 run status
-assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you: its mode is 644; re-run the codex step, which sets it to 600"
+assert_contains "$RUN_OUTPUT" "missing    Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 # The step sets it, and a second run changes nothing
-assert_exit 0 secure_codex_credentials
+codex_items
+assert_exit 0 items_apply codex_credentials_private
 assert_contains "$RUN_OUTPUT" "Made Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 assert_eq 600 "$(file_mode "$CODEX_CREDENTIALS")" "the tokens' mode after the step"
-assert_exit 0 secure_codex_credentials
+assert_exit 0 items_apply codex_credentials_private
 assert_eq "" "$RUN_OUTPUT" "a second run's output"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"

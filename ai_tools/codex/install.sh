@@ -392,27 +392,22 @@ codex_status_signed_in() {
     fi
 }
 
-# Print an item for whether only you can read the MCP tokens Codex keeps in plain text on Ubuntu.
-# Prints nothing when there are no tokens yet.
-codex_status_credentials() {
-    local mode name="Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
-    [ -e "$CODEX_CREDENTIALS" ] || return 0
-    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
-    if [ "$mode" == 600 ]; then
-        status_item ok "$name"
-    elif [ -z "$mode" ]; then
-        status_item unknown "$name: couldn't read its mode"
-    else
-        status_item missing "$name: its mode is $mode; re-run the codex step, which sets it to 600"
+# The step's items. Only Ubuntu keeps the MCP tokens in a file, and there's nothing to say of them
+# before there are any.
+codex_items() {
+    items_reset
+    if is_ubuntu && [ -e "$CODEX_CREDENTIALS" ]; then
+        item "Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you" \
+            "Make ~/.codex/.credentials.json readable only by you" \
+            codex_credentials_private secure_codex_credentials
     fi
 }
 
-# Make the MCP tokens Codex keeps in plain text on Ubuntu readable only by you, when there are any
+codex_credentials_private() {
+    [ "$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" == 600 ]
+}
+
 secure_codex_credentials() {
-    local mode
-    [ -e "$CODEX_CREDENTIALS" ] || return 0
-    mode="$(file_mode "$CODEX_CREDENTIALS" 2>/dev/null)" || mode=""
-    [ "$mode" != 600 ] || return 0
     if ! chmod 600 "$CODEX_CREDENTIALS"; then
         echo "  Couldn't make $CODEX_CREDENTIALS readable only by you." >&2
         return 1
@@ -507,7 +502,8 @@ status() {
             keepable_status codex
         fi
         user_instructions_files status_file
-        ! is_ubuntu || codex_status_credentials
+        codex_items
+        items_status codex_credentials_private
     fi
     if is_ubuntu; then
         status_check "Codex's sandbox: bwrap can create one" bwrap_works
@@ -537,7 +533,8 @@ apply() {
     configure_codex || result=1
     install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
     if is_ubuntu; then
-        secure_codex_credentials || result=1
+        codex_items
+        items_apply codex_credentials_private || result=1
         setup_codex_sandbox || result=1
     fi
     return "$result"

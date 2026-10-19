@@ -103,7 +103,6 @@ assert_eq false "$(cat "$SANDBOX/launchd-env")" "launchd's T3CODE_TELEMETRY_ENAB
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code
 assert_contains "$RUN_OUTPUT" "$T3_CODE_TELEMETRY_AGENT is already up to date"
-assert_contains "$RUN_OUTPUT" "Telemetry is already off in launchd's environment"
 assert_contains "$RUN_OUTPUT" "settings are already set"
 assert_file_not_contains "$STUB_LOG" "launchctl setenv"
 

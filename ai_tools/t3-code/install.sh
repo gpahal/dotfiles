@@ -268,9 +268,27 @@ t3_code_cask_state() {
     printf '%s\t%s\n' "$state" "$app"
 }
 
+# The macOS items
+t3_code_macos_items() {
+    items_reset
+    item "T3 Code's telemetry off in launchd's environment" \
+        "Turn off T3 Code's telemetry in launchd's environment" t3_code_telemetry_off turn_off_t3_code_telemetry
+}
+
 # Succeeds when launchd's environment has the variable now
 t3_code_telemetry_off() {
     [ "$(launchctl getenv T3CODE_TELEMETRY_ENABLED 2>/dev/null)" == false ]
+}
+
+# Set the variable in launchd's environment now. When that fails, the LaunchAgent still sets it at
+# the next login.
+turn_off_t3_code_telemetry() {
+    if ! launchctl setenv T3CODE_TELEMETRY_ENABLED false; then
+        echo "  Couldn't set T3CODE_TELEMETRY_ENABLED in launchd's environment, so telemetry stays on" >&2
+        echo "  until the next login" >&2
+        return 1
+    fi
+    echo "  Turned off telemetry (restart T3 Code if it's running)"
 }
 
 # Usage: configure_t3_code [cask app path], as t3_code_app_path takes it
@@ -284,16 +302,8 @@ configure_t3_code() {
     local result=0
     echo "  LaunchAgent that opens T3 Code at login with telemetry off:"
     t3_code_files copy_file || result=1
-    if t3_code_telemetry_off; then
-        echo "  Telemetry is already off in launchd's environment"
-    elif ! launchctl setenv T3CODE_TELEMETRY_ENABLED false; then
-        # The LaunchAgent still sets it at the next login
-        echo "  Couldn't set T3CODE_TELEMETRY_ENABLED in launchd's environment, so telemetry stays on" >&2
-        echo "  until the next login" >&2
-        result=1
-    else
-        echo "  Turned off telemetry (restart T3 Code if it's running)"
-    fi
+    t3_code_macos_items
+    items_apply t3_code_telemetry_off || result=1
 
     t3_code_choose_custom_values
     if json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" &&
@@ -812,7 +822,8 @@ status() {
             status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
         fi
         t3_code_files status_file
-        status_check "T3 Code's telemetry off in launchd's environment" t3_code_telemetry_off
+        t3_code_macos_items
+        items_status t3_code_telemetry_off
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
         status_result
         return

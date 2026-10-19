@@ -359,6 +359,15 @@ assert_not_contains "$RUN_OUTPUT" "is running"
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 stub pgrep 'exit 1'
 
+# brew list --cask fails: no cask counts as installed, so the stage upgrades none and fails,
+# naming the listing, and the stages after it still run
+stub brew '[ "$*" != "list --cask -1" ] || exit 1'
+upgrade_ai_tools_mac 1
+assert_contains "$RUN_OUTPUT" "Couldn't list the installed casks"
+assert_contains "$RUN_OUTPUT" "Failed: desktop apps, codex cask"
+assert_file_not_contains "$STUB_LOG" "brew outdated"
+assert_file_contains "$STUB_LOG" "codex plugin marketplace upgrade"
+
 # One brew list and one brew outdated cover a stage's casks, and only the installed ones are asked
 # about. brew outdated may name a cask after its tap.
 stub brew 'case "$*" in

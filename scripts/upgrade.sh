@@ -44,7 +44,7 @@ _cask_listed() {
 # lose a suffix in parentheses between releases, so match any running app whose name starts with the
 # cask's app name up to " (". -a counts the app this shell runs in. A failed `brew outdated` or
 # `brew info` for a cask leaves it alone and fails, since its output can't say the cask is up to
-# date or what app it has. An interrupted brew command returns its status, so the caller stops. An
+# date or what app it has, and a failed `brew list` fails before upgrading any. An interrupted brew command returns its status, so the caller stops. An
 # app that renamed itself as it updated, as T3 Code can, would fail brew upgrade, which first removes the app
 # under the name brew recorded and stops when that's gone. Such a cask is re-recorded instead,
 # keeping the app on disk (_readopt_renamed_cask).
@@ -56,6 +56,11 @@ _upgrade_self_updating_casks() {
     rc=0
     installed="$(brew list --cask -1 2>/dev/null)" || rc=$?
     ! interrupted_status "$rc" || return "$rc"
+    # An empty list would pass for no casks installed, skipping them all without a word
+    if [ "$rc" -ne 0 ]; then
+        echo "Couldn't list the installed casks: brew list --cask failed." >&2
+        return 1
+    fi
     for entry in "$@"; do
         if _cask_listed "${entry%%:*}" <<< "$installed"; then
             listed+=("$entry")

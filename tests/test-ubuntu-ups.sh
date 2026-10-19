@@ -20,8 +20,7 @@ load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 is_ubuntu() { true; }
 
-# shellcheck disable=SC2012 # ls -l is the portable way to read a file's group
-file_group() { ls -ld "$1" | awk '{ print $4 }'; }
+file_group() { owner_group_mode "$1" | awk '{ print $2 }'; }
 mkdir -p "$NUT_DIR" "$SANDBOX/udev"
 touch "$UPOWER_HWDB"
 
@@ -292,6 +291,26 @@ else
     assert_exit 1 nut_files_current
     NUT_GROUP="$(id -gn)"
 fi
+
+# A file with another mode: 0644 or 0666 lets other users read upsmon's password, or rewrite the
+# file, and 0600 shuts the nut group out. It isn't current, and the step rewrites it alone, 0640.
+for mode in 644 666 600; do
+    chmod "$mode" "$NUT_DIR/upsd.users"
+    assert_exit 1 nut_files_current
+    run status_ups
+    assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
+    assert_contains "$(ups_todo)" "UPS: set up NUT"
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_eq 640 "$(file_mode "$NUT_DIR/upsd.users")" "upsd.users's mode after a re-run from $mode"
+    assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for mode $mode"
+    assert_exit 0 nut_files_current
+done
+# Another owner: the step writes them as root, and the test as you
+NUT_OWNER=root
+assert_exit 1 nut_files_current
+# shellcheck disable=SC2034 # nut_file_current reads it
+NUT_OWNER="$(id -un)"
 
 # The RTC wake hook out of date: status says so, and the step replaces it alone
 echo "# edited" >> "$UPS_RTC_HOOK"

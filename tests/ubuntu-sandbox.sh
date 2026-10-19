@@ -26,7 +26,8 @@ ubuntu_sandbox_paths() {
     SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
     NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
     NUT_DIR="$SANDBOX/nut"
-    # The test runs as you, without a nut group, so NUT's files get your own
+    # The test runs as you, without a nut group, so NUT's files are yours, in your own group
+    NUT_OWNER="$(id -un)"
     NUT_GROUP="$(id -gn)"
     UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
     UPS_RTC_HOOK="$SANDBOX/system-shutdown/dotfiles-rtc-wake"

@@ -171,16 +171,25 @@ nut_password() {
     echo "$password"
 }
 
-# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and the nut
-# group, which upsd and upsmon read it through. Returns 2 when it can't be read without sudo.
+# Print a file's owner, group, and permission bits in octal, e.g. "root nut 640". GNU stat, as
+# Ubuntu's, takes -c; macOS's, which the tests run, takes -f.
+owner_group_mode() {
+    stat -c '%U %G %a' "$1" 2>/dev/null || stat -f '%Su %Sg %Lp' "$1"
+}
+
+# nut_file_current <file> <content>: succeeds when a file in $NUT_DIR has the content, and is
+# root's, in the nut group, with mode 0640, as write_nut_file leaves it: upsd and upsmon read it
+# through the group, and two of the files hold upsmon's password, which no other user may read.
+# Returns 2 when it can't be read without sudo.
 nut_file_current() {
-    local current group
+    local current meta
     current="$(nut_read "$1")" || return 2
     [ "$current" == "$2" ] || return 1
     # Through sudo -n, as nut_read reads, when $NUT_DIR is closed to you
-    group="$({ ls -ld "$NUT_DIR/$1" || sudo -n ls -ld "$NUT_DIR/$1"; } 2>/dev/null | awk '{ print $4 }')"
-    [ -n "$group" ] || return 2
-    [ "$group" == "$NUT_GROUP" ]
+    meta="$({ owner_group_mode "$NUT_DIR/$1" ||
+        sudo -n bash -c "$(declare -f owner_group_mode)"'; owner_group_mode "$1"' _ "$NUT_DIR/$1"; } 2>/dev/null)"
+    [ -n "$meta" ] || return 2
+    [ "$meta" == "$NUT_OWNER $NUT_GROUP 640" ]
 }
 
 # Succeeds when each file in $NUT_DIR is what the step writes for the configured UPS. Returns 2

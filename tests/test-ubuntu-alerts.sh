@@ -1,13 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# smartd's warning hook (ubuntu/smartd-notify.sh) pushes the warning to ntfy when a URL is set,
-# through the installed ntfy code it sources, logging what fails and always exiting 0. It runs as
-# root, so it reads only the installed paths, and a copy points them into the sandbox. ntfy_push
-# sends the message as is, even one starting with @. And ubuntu/setup-alerts.sh, which reads a
-# topic or URL without showing it, saves the URL, names the four alerts that go there, and runs the
-# hook with a test warning and the UPS notifier, when installed, with a test event. The ubuntu step
-# installs the hooks with fixed modes. curl, logger, sudo, and id are stubs.
+# smartd's warning hook (ubuntu/smartd-notify.sh), ubuntu/setup-alerts.sh, and the ubuntu step's
+# installs of the hooks. The hook runs as root, so it reads only the installed paths, and a copy
+# points them into the sandbox. curl, logger, sudo, and id are stubs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

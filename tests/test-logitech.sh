@@ -3,11 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The logitech step installs Solaar from apt on Ubuntu, after asking. Declining, as happens without
-# a terminal, leaves it uninstalled without failing, and a failed install fails the step. A re-run
-# with Solaar installed asks nothing. Status reports Solaar. Stubs stand in for dpkg-query, whose
-# answer depends on $SANDBOX/solaar, apt-get, which creates it, and sudo. apt's lists are updated
-# first, and a failed update fails the step before the install.
+# The logitech step installs Solaar from apt on Ubuntu. Stubs stand in for dpkg-query, whose answer
+# depends on $SANDBOX/solaar, apt-get, which creates it, and sudo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

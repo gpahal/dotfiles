@@ -96,8 +96,8 @@ readd_google_repo() {
     return 1
 }
 
-# The step's items. Installing Chrome isn't one: it branches on whether Google has a .deb for this
-# CPU. The source is driven only once Chrome is installed, since installing it writes the source.
+# Installing Chrome isn't an item: it branches on whether Google has a .deb for this CPU. The
+# source is driven only once Chrome is installed, since installing it writes the source.
 chrome_items() {
     items_reset
     item --sudo "Google's apt source ($GOOGLE_SOURCES)" \

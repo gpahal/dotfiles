@@ -173,14 +173,11 @@ HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 # The disks unlocked at boot, whose tpm2-device option binds one to the TPM (warn_disk_encryption)
 CRYPTTAB=/etc/crypttab
 
-# Pass each file the step copies, as source and destination, to a function: copy_file to copy it,
-# or status_file to report it
 ubuntu_files() {
     "$1" "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF"
 }
 
-# The same for the files the step installs as root. Nothing in the step calls it:
-# scripts/copy-back.sh does, to copy them back to the repo.
+# The files the step installs as root. Only scripts/copy-back.sh calls it, to copy them back.
 ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"
@@ -210,8 +207,6 @@ install_ntfy_lib() {
     install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
-# The step's simple items, which status and apply drive by their check functions. The rest branch,
-# so they stay in status and apply.
 ubuntu_items() {
     items_reset
     item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
@@ -315,8 +310,8 @@ enable_linger() {
     sudo loginctl enable-linger "$(id -un)"
 }
 
-# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo
-# credentials are cached, and is otherwise unverified.
+# Never asks for sudo and writes nothing. What only root can read is checked with sudo -n when sudo credentials are cached, and is
+# otherwise unverified.
 status() {
     local uuid name wired=false item packages overrides
     local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE=""
@@ -489,7 +484,6 @@ apply() {
         ! "$auto_upgrades_unchecked" ||
             echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
-        # Each part runs whether or not the one before it failed
         items_apply sleep_masked sleep_conf_written || result=1
         sysctl_written || apply_sysctl || result=1
         items_apply lingering || result=1

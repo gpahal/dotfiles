@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Health alerts for the ubuntu step: the user units that run ubuntu/health-alert.sh, a daily
 # status check and a boot notice, which push to the ntfy URL in NTFY_URL_FILE.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # Print a path quoted for an ExecStart line, where systemd expands % specifiers and $ variables
 systemd_quote() {

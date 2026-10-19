@@ -3,12 +3,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The docker step merges log-driver, live-restore, 127.0.0.1 as the address published ports bind to,
-# and address pools that keep Docker's networks in 172.16.0.0/12 into /etc/docker/daemon.json,
-# keeping the file's other keys and mode, restarts a running daemon only when the file changed, and
-# leaves invalid JSON alone. A file of several JSON values isn't configured. A failed write leaves
-# the old file whole, and a failed restart puts it back and keeps a backup, which goes once Docker
-# takes the new file.
+# The docker step's merge of its settings into /etc/docker/daemon.json (configure_daemon).
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

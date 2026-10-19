@@ -3,7 +3,7 @@
 # ssh.socket listen on, but never from Docker's bridges, and any port from the tailnet
 # (tailscale0), which Tailscale's ACLs limit.
 # ufw goes on only while no SSH session comes from elsewhere.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # Succeeds when ufw is on and denies incoming connections, dropping or rejecting them: its config
 # files say so, and ufw.service, which loads the rules at boot, is enabled and active. systemctl

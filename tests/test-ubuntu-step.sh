@@ -3,12 +3,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh): what status
-# lists, a declined run, an approved one, then apt's daily timers, the packages apt holds back, a
-# pending reboot, sshd at boot, a re-run that changes nothing, a VM, smartd's hook, the health
-# alerts' user units (reloaded until systemd has them, and not installed from a git worktree), and
-# Wake-on-LAN. Also tests/ubuntu-sandbox.sh's check for a constant left on a system path. The other
-# test-ubuntu-*.sh tests of the step's main start from the machine this one sets up.
+# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh), and
+# tests/ubuntu-sandbox.sh's check for a constant left on a system path. The other test-ubuntu-*.sh
+# tests of the step's main start from the machine this one sets up.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

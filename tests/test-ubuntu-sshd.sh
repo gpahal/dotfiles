@@ -3,10 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's sshd drop-in on a set-up machine (tests/ubuntu-step-fixture.sh): replacing it
-# without removing a working one, rolling it back when sshd rejects it or won't reload, not blaming
-# the config for a missing sshd, carrying on when one part fails, and checking sshd takes its
-# settings, which another file can override, with sudo -n in status.
+# The ubuntu step's sshd drop-in on a set-up machine (tests/ubuntu-step-fixture.sh): replacing and
+# rolling it back, and checking that sshd takes its settings.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

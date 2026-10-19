@@ -2,8 +2,7 @@
 # Pushing to a ntfy topic, for ubuntu/setup-alerts.sh and ubuntu/health-alert.sh. smartd's hook
 # (ubuntu/smartd-notify.sh), which runs as root, and upsmon's notifier (ubuntu/ups-notify.sh),
 # which runs as the nut user, run away from the repo and source an installed copy at
-# /usr/local/lib/dotfiles/ntfy.sh, so this file mustn't depend on the repo. It only defines
-# functions.
+# /usr/local/lib/dotfiles/ntfy.sh, so this file mustn't depend on the repo.
 
 # ntfy_push <url> <title> <message> [header...]
 # The URL reaches curl as config on stdin, with its backslashes and double quotes escaped, rather

@@ -4,7 +4,7 @@
 # machine starts again when mains returns. As a fallback for a UPS that keeps its power on, a
 # shutdown hook sets an RTC alarm, which starts the machine only on a board that supports it;
 # status checks the hook, not the board. Physical machines only.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 nut_installed() {
     local package

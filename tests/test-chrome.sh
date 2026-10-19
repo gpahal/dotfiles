@@ -3,12 +3,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The chrome step on Ubuntu (amd64): it installs Chrome from Google's .deb, readable by apt's
-# sandbox user, removes the download, and writes the unattended-upgrades file once. A missing
-# Google apt source is re-added by setting repo_add_once in /etc/default/google-chrome and
-# reinstalling the .deb. A failed download fails the step, as does dl.google.com being
-# unreachable. It leaves enabling daily unattended upgrades to the ubuntu step.
-# test-unattended-upgrades.sh covers the step's status.
+# The chrome step on Ubuntu (amd64). test-unattended-upgrades.sh covers the step's status.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

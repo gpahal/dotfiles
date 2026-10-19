@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # OpenSSH for the ubuntu step: the sshd drop-in, the proof that a key logs in, the check that sshd
 # takes the drop-in's settings, and the unit that starts sshd.
-# ubuntu/install.sh sources this file and sets the constants it uses. It only defines functions.
+# ubuntu/install.sh sets the constants it uses.
 
 # Print the SHA256 fingerprint of the public key line on stdin, or nothing when it isn't one
 key_fingerprint() {

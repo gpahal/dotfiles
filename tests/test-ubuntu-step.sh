@@ -277,7 +277,7 @@ for unit in dotfiles-health.service dotfiles-boot-notice.service; do
     rm "$USER_UNITS/$unit.orig"
 done
 OTHER_UNIT="$(cat "$USER_UNITS/dotfiles-health.service")"
-in_git_worktree() { true; }
+replace_fn in_git_worktree true
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "is a git worktree, so the daily health alert and the boot notice aren't"
@@ -287,7 +287,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
 assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
-in_git_worktree() { false; }
+replace_fn in_git_worktree false
 
 # in_git_worktree tells a linked worktree, and a dir inside one, from the main checkout
 eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
@@ -302,7 +302,7 @@ assert_exit 1 in_git_worktree "$GIT_REPO/sub"
 assert_exit 0 in_git_worktree "$SANDBOX/git-wt"
 assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
 assert_exit 1 in_git_worktree "$SANDBOX"
-in_git_worktree() { false; }
+replace_fn in_git_worktree false
 
 # No wired connection: Wake-on-LAN is skipped
 stub nmcli '[ "$*" != "-t -e no -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'

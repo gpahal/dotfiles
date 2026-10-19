@@ -63,7 +63,7 @@ assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 rm "$SANDBOX/sshd_config.d/50-other.conf"
 
 # A new drop-in sshd rejects: the old one goes back
-sshd_drop_in() { echo "Bogus new"; }
+replace_fn sshd_drop_in 'echo "Bogus new"'
 : > "$STUB_LOG"
 assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in after sshd rejected the new one"
@@ -71,7 +71,7 @@ assert_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
 assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 # When the old one can't go back, the step says the broken one is still in place
 eval "real_write_root_file() $(declare -f write_root_file | tail -n +2)"
-write_root_file() { [ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"; }
+replace_fn write_root_file '[ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "the broken drop-in is still in place: $SSHD_DROP_IN"
 assert_not_contains "$RUN_OUTPUT" "the old one is back"

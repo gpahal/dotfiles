@@ -69,33 +69,33 @@ no_prompting_sudo() {
 # from files under /etc and /var, so those two checks are replaced.
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
-lingering() { true; }
+as_os ubuntu
+replace_fn lingering true
 # test-ubuntu-step.sh covers smartd with its hook, the locale, unattended-upgrades with its
 # conffile options, the packages apt holds back, and the health alerts' worktree check, and
 # test-diagnostics-ubuntu.sh SMART health and firmware updates
-smartd_enabled() { true; }
-smartd_hook_installed() { true; }
-keep_conffiles_written() { true; }
-status_held_back() { :; }
-in_git_worktree() { false; }
-status_smart() { :; }
-status_firmware() { :; }
+replace_fn smartd_enabled true
+replace_fn smartd_hook_installed true
+replace_fn keep_conffiles_written true
+replace_fn status_held_back :
+replace_fn in_git_worktree false
+replace_fn status_smart :
+replace_fn status_firmware :
 # test-ubuntu-ups.sh covers the UPS
-ups_todo() { :; }
-status_ups() { :; }
-warn_no_ups() { :; }
+replace_fn ups_todo :
+replace_fn status_ups :
+replace_fn warn_no_ups :
 # The kernel has the sysctl settings, which test-ubuntu-system.sh covers
-sysctl_in_effect() { true; }
-locale_installed() { true; }
-unattended_upgrades_running() { true; }
+replace_fn sysctl_in_effect true
+replace_fn locale_installed true
+replace_fn unattended_upgrades_running true
 # test-ubuntu-step.sh covers apt's timers, sshd at boot, a pending reboot, and the health alerts'
 # units and their reload
-apt_timers_enabled() { true; }
-health_units_written() { true; }
-health_units_loaded() { true; }
-sshd_enabled() { true; }
-ufw_enabled() { true; }
+replace_fn apt_timers_enabled true
+replace_fn health_units_written true
+replace_fn health_units_loaded true
+replace_fn sshd_enabled true
+replace_fn ufw_enabled true
 echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 # Not a VM
@@ -193,7 +193,7 @@ chmod 644 "$SSHD_DROP_IN"
 load_script docker/install.sh
 # No containerd shim runs, so a stopped daemon runs no containers
 stub pgrep 'exit 1'
-is_macos() { false; }
+as_os ubuntu
 # Docker's packages are installed
 stub dpkg-query 'case "${!#}" in docker-ce | docker-ce-cli | containerd.io | docker-*-plugin) echo "install ok installed" ;; esac'
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'

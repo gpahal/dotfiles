@@ -13,20 +13,20 @@
 ubuntu_step_load() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
-    is_ubuntu() { true; }
-    ufw_enabled() { [ -e "$SANDBOX/ufw-on" ]; }
-    lingering() { true; }
+    as_os ubuntu
+    replace_fn ufw_enabled '[ -e "$SANDBOX/ufw-on" ]'
+    replace_fn lingering true
     # test-diagnostics-ubuntu.sh covers SMART health and firmware updates
-    status_smart() { :; }
-    status_firmware() { :; }
+    replace_fn status_smart :
+    replace_fn status_firmware :
     # test-ubuntu-ups.sh covers the UPS
-    ups_todo() { :; }
-    status_ups() { :; }
-    warn_no_ups() { :; }
+    replace_fn ups_todo :
+    replace_fn status_ups :
+    replace_fn warn_no_ups :
     # This checkout may be a worktree, so the check is replaced, and test-ubuntu-step.sh tests the
     # real one
     declare -F real_in_git_worktree > /dev/null || eval "real_$(declare -f in_git_worktree)"
-    in_git_worktree() { false; }
+    replace_fn in_git_worktree false
 }
 
 # systemctl: the sleep targets are masked, apt's timers and ssh.socket are enabled, as on 26.04,

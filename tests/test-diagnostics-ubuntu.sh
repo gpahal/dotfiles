@@ -118,8 +118,8 @@ read_only
 # sbin_cmd searches only the stubs
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
-in_vm() { false; }
+as_os ubuntu
+replace_fn in_vm false
 # sudo -n runs a command when $SANDBOX/sudo-cached exists, and fails without asking otherwise.
 # Not stub_sudo_exec, which would refuse the disks' /dev paths; smartctl, the only command it
 # runs here, is a stub.
@@ -231,11 +231,11 @@ assert_contains "$RUN_OUTPUT" "unverified Disk health (SMART)"
 assert_not_contains "$RUN_OUTPUT" "missing"
 read_only
 # In a VM the host manages the disks
-in_vm() { true; }
+replace_fn in_vm true
 assert_exit 0 diag status_smart
 assert_contains "$RUN_OUTPUT" "skipped    Disk health (SMART): this is a VM"
 assert_file_not_contains "$STUB_LOG" "smartctl"
-in_vm() { false; }
+replace_fn in_vm false
 # Without smartctl, it's unknown and says what installs it
 # shellcheck disable=SC2034 # sbin_cmd reads it
 SBIN_PATH="$SANDBOX/no-such-dir"
@@ -244,8 +244,8 @@ assert_contains "$RUN_OUTPUT" "unknown    Disk health (SMART): smartctl isn't in
 assert_contains "$RUN_OUTPUT" "smartmontools"
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
-in_vm() { false; }
+as_os ubuntu
+replace_fn in_vm false
 read_only
 
 # --- the ubuntu step: firmware ---
@@ -333,7 +333,7 @@ read_only
 stub apt-get
 ubuntu_report() {
     hide tailscale nmcli
-    ufw_enabled() { false; }
+    replace_fn ufw_enabled false
     run status
     assert_file_contains "$STUB_LOG" "df -P -k /"
     assert_file_contains "$STUB_LOG" "df -P -k $HOME"
@@ -342,8 +342,8 @@ ubuntu_report() {
     assert_contains "$RUN_OUTPUT" "Firmware updates"
     read_only
     # And under --quick, with sudo cached, sshd installed, and ufw on, so the firewall checks run
-    ufw_enabled() { true; }
-    apt_installed() { true; }
+    replace_fn ufw_enabled true
+    replace_fn apt_installed true
     SSHD_RUN_DIR="$SANDBOX/run-sshd"
     mkdir -p "$SSHD_RUN_DIR"
     DOTFILES_STATUS_QUICK=1 run status
@@ -355,7 +355,7 @@ subtest ubuntu_report
 
 # --- the docker step: disk usage, and ports published on every address ---
 load_script docker/install.sh
-is_macos() { false; }
+as_os ubuntu
 # You're in the docker group while $SANDBOX/in-group exists. sudo -n runs a command while
 # $SANDBOX/sudo-cached exists, and fails without asking otherwise.
 stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
@@ -497,8 +497,8 @@ assert_file_not_contains "$STUB_LOG" "docker ps"
 rm "$SANDBOX/docker-inactive" "$SANDBOX/shims"
 read_only
 # The docker step's report includes both once Docker is installed
-docker_installed() { true; }
-status_apt_source() { :; }
+replace_fn docker_installed true
+replace_fn status_apt_source :
 docker_df 'Images\t1\t1GB\t0B\n'
 run status
 assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 1, 1GB"
@@ -506,7 +506,7 @@ assert_contains "$RUN_OUTPUT" "ok         No container ports published on every 
 DOTFILES_STATUS_QUICK=1 run status
 assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --quick"
 read_only
-docker_installed() { false; }
+replace_fn docker_installed false
 run status
 assert_not_contains "$RUN_OUTPUT" "Docker disk usage"
 read_only

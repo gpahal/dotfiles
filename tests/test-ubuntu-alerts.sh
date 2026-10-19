@@ -75,8 +75,7 @@ ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh
 
 # --- setup-alerts.sh ---
 load_script ubuntu/setup-alerts.sh
-# shellcheck disable=SC2329 # main calls it
-is_ubuntu() { true; }
+as_os ubuntu
 NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
 # sudo runs the command, and refuses any path under /etc. Not stub_sudo_exec, which would refuse
@@ -172,8 +171,7 @@ assert_contains "$RUN_OUTPUT" "Done. The UPS test shows on your phone if a ntfy 
 assert_contains "$RUN_OUTPUT" "When one doesn't arrive, journalctl -t dotfiles-ups says why."
 
 # Not Ubuntu: nothing to do
-# shellcheck disable=SC2329 # main calls it
-is_ubuntu() { false; }
+as_os macos
 assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "The alerts are Ubuntu only"
 

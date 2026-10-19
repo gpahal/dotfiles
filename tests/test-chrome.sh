@@ -15,8 +15,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script chrome/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 stub_sudo_exec
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
@@ -47,11 +46,9 @@ touch "'"$SANDBOX"'/installed"'
 # curl answers the HEAD request with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 echo 200 > "$SANDBOX/http-status"
-fetch() {
-    echo "fetch $1" >> "$STUB_LOG"
-    [ ! -e "$SANDBOX/fetch-fails" ] || return 1
-    echo deb > "$2"
-}
+replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+[ ! -e "$SANDBOX/fetch-fails" ] || return 1
+echo deb > "$2"'
 
 # Declined: nothing downloaded or written
 assert_exit 0 main
@@ -135,8 +132,7 @@ assert_contains "$RUN_OUTPUT" "curl"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
 # On macOS, STEP_OS=ubuntu skips the step, run or reported, without running any of it
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "chrome: skipped, Ubuntu only" "$RUN_OUTPUT" "the step on macOS"

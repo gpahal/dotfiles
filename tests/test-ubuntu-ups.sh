@@ -18,7 +18,7 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
-is_ubuntu() { true; }
+as_os ubuntu
 
 file_group() { owner_group_mode "$1" | awk '{ print $2 }'; }
 mkdir -p "$NUT_DIR" "$SANDBOX/udev"
@@ -57,7 +57,7 @@ stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
 # nut-scanner prints $SANDBOX/scan, as nut-scanner -U -q prints what it finds
 stub nut-scanner 'cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
 # NUT 2.8.2 and later name, after the driver, others that could serve the UPS
-scan() {
+ups_scan() {
     printf '%s\n' "[nutdev-usb1]" "	driver = \"$1\"	# alternately: apc_modbus" '	port = "auto"' "	vendorid = \"$2\"" \
         "	productid = \"$3\"" '	product = "CP1500PFCLCD"' '	serial = "CXXNV2000123"' '	vendor = "CPS"' \
         '	# bus = "001"' '	# device = "004"' '	# busport = "002"' > "$SANDBOX/scan"
@@ -117,7 +117,7 @@ assert_contains "$RUN_OUTPUT" "No UPS found on USB"
 [ -z "$(ls "$NUT_DIR")" ] || fail "NUT's config was written for a UPS nut-scanner didn't find"
 [ ! -e "$UPS_NOTIFY" ] || fail "the notifier was installed for a UPS nut-scanner didn't find"
 assert_file_not_contains "$STUB_LOG" "systemctl"
-scan usbhid-ups 0764 0501
+ups_scan usbhid-ups 0764 0501
 assert_contains "$(ups_todo)" "UPS: set up NUT for the UPS on USB (0764:0501)"
 run status_ups
 assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
@@ -362,7 +362,7 @@ upsc_answers OL 0764 0501
 # --- a changed UPS ---
 unplug 1-3
 usb_device 1-4 0463 ffff ups
-scan usbhid-ups 0463 ffff
+ups_scan usbhid-ups 0463 ffff
 rm "$SANDBOX/upsc"
 assert_contains "$(ups_todo)" "UPS: set up NUT for the UPS on USB (0463:ffff)"
 : > "$STUB_LOG"

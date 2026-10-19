@@ -41,10 +41,8 @@ rm "$SANDBOX/tailscale-reset"
 # a yes writes the key and the one-line tailscale.list for this release, and updates from it alone.
 # test-apt-sources.sh covers the other states apt_source_state reports.
 mkdir -p "$SANDBOX/keyrings"
-fetch() {
-    echo "fetch $1" >> "$STUB_LOG"
-    echo key > "$2"
-}
+replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+echo key > "$2"'
 # The key has the fingerprint the step pins
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $TAILSCALE_KEY_FPR"
 # curl answers the HEAD request for Tailscale's Release file with $SANDBOX/http-status

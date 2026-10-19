@@ -55,11 +55,9 @@ assert_eq "  missing    Example's apt source ($file): missing; re-run the exampl
 # key's fpr record, then its subkey's. apt-get update succeeds.
 fpr=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 echo "$fpr" | tr 'A-F' 'a-f' > "$SANDBOX/served-key"
-fetch() {
-    echo "fetch $1" >> "$STUB_LOG"
-    [ ! -e "$SANDBOX/fetch-fails" ] || return 1
-    cp "$SANDBOX/served-key" "$2"
-}
+replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+[ ! -e "$SANDBOX/fetch-fails" ] || return 1
+cp "$SANDBOX/served-key" "$2"'
 stub gpg 'for key; do :; done
 [ "$1 $2" == "--show-keys --with-colons" ] || exit 2
 while IFS= read -r f; do

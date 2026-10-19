@@ -16,8 +16,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 stub_sudo_exec
 stub systemctl
 stub dockerd
@@ -98,7 +97,7 @@ assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed restart"
 # When it can't go back either, the step prints it, to write back by hand
 eval "real_$(declare -f write_root_file)"
-write_root_file() { return 1; }
+replace_fn write_root_file 'return 1'
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "putting the previous configuration back failed too"
 assert_contains "$RUN_OUTPUT" '{"log-driver":"json-file"}'

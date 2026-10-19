@@ -14,8 +14,7 @@ setup_sandbox
 load_script docker/install.sh
 # No containerd shim runs, so a stopped daemon runs no containers
 stub pgrep 'exit 1'
-is_macos() { false; }
-is_ubuntu() { true; }
+as_os ubuntu
 
 DOCKER_SOURCES="$SANDBOX/apt/sources.list.d/docker.sources"
 DOCKER_UNATTENDED_CONF="$SANDBOX/apt/52dotfiles-docker"
@@ -51,7 +50,7 @@ stub systemctl 'case "$*" in *docker.socket* | "is-enabled --quiet docker.servic
 stub dockerd
 stub_sudo_exec
 # fetch downloads Docker's key, which has the fingerprint the step pins
-fetch() { echo key > "$2"; }
+replace_fn fetch 'echo key > "$2"'
 stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $DOCKER_KEY_FPR"
 # The key goes under /etc/apt/keyrings
 DOCKER_KEYRING="$SANDBOX/keyrings/docker.asc"
@@ -238,13 +237,11 @@ assert_contains "$RUN_OUTPUT" "Added you to the docker group."
 reset
 rm "$SANDBOX/in-group"
 eval "real_$(declare -f confirm)"
-confirm() {
-    if [[ "$1" == *"docker group"* ]]; then
-        echo "$1 n"
-        return 1
-    fi
-    real_confirm "$@"
-}
+replace_fn confirm 'if [[ "$1" == *"docker group"* ]]; then
+    echo "$1 n"
+    return 1
+fi
+real_confirm "$@"'
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left me out of the docker group."

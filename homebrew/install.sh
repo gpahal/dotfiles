@@ -24,11 +24,10 @@ BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 # buy. An optional app that isn't installed is information in status and the step's output, not
 # something to fix. Once you're signed in to the App Store, mas get takes a free app the Apple
 # Account doesn't have yet, and mas install one it has, such as a paid app bought once.
-# scripts/check-docs.sh reads the list, one app per line.
 MAS_APPS=(
-    "937984704 Amphetamine"
-    "1470584107 Dato optional"
-    "1295203466 Windows App"
+    "937984704 Amphetamine"       # Keeps the Mac awake
+    "1470584107 Dato optional"    # Menu bar calendar
+    "1295203466 Windows App"      # Microsoft's RDP client, for the Ubuntu desktop's GNOME Remote Login
 )
 
 # Print each cask brew lists, a tab, and the path of the app it installs, with one brew call for
@@ -46,21 +45,22 @@ installed_cask_apps() {
 # fontconfig for fc-cache, which lets apps find the Monaspace cask's fonts. Minimal images lack them.
 UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
 
+# The casks macOS gets, one per line, which scripts/check-brew-packages.sh reads
 CASKS=(
-    font-monaspace
-    ghostty
-    zed
-    google-chrome
-    orbstack
-    tailscale-app
-    raycast
-    rectangle
-    stats
-    appcleaner
-    the-unarchiver
-    logi-options+
-    elgato-stream-deck
-    hammerspoon
+    font-monaspace      # Monaspace, the terminal and editor font
+    ghostty             # Terminal; Ubuntu gets its snap from the ghostty step
+    zed                 # Editor
+    google-chrome       # Browser, which the AI tools also control; Ubuntu gets it from the chrome step
+    orbstack            # Docker containers and Linux machines
+    tailscale-app       # Private network to reach the Ubuntu machine from anywhere
+    raycast             # Launcher
+    rectangle           # Window management
+    stats               # Menu bar memory pressure, CPU, GPU, network, and sensors
+    appcleaner          # App uninstaller
+    the-unarchiver      # Opens any archive format
+    logi-options+       # Logitech device settings; Ubuntu gets Solaar from the logitech step
+    elgato-stream-deck  # Stream Deck keys, with the stream-deck step's plugin
+    hammerspoon         # The hotkeys the hammerspoon step sets
 )
 
 # Casks with Linux builds that Ubuntu gets too. Fonts install into $XDG_DATA_HOME/fonts, or

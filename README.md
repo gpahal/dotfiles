@@ -53,7 +53,7 @@ bash setup.sh
 
 | Step | What it does |
 | :- | :- |
-| `homebrew` | Installs [Homebrew](https://brew.sh/) and the packages in [What's included](#whats-included). On Ubuntu, first the apt packages Homebrew needs |
+| `homebrew` | Installs [Homebrew](https://brew.sh/) and the [packages](#packages). On Ubuntu, first the apt packages Homebrew needs |
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
 | `git` | Copies the git config, the global ignore file, and `git wt`, and offers to log in to GitHub with `gh` |
 | `lazygit` | Copies the lazygit config |
@@ -95,8 +95,8 @@ The same `bash setup.sh` sets up Ubuntu, the only Linux supported, with the step
 
 What differs from macOS:
 
-- **System packages.** Before Homebrew, the `homebrew` step installs these apt packages, after asking: `build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig`.
-- **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only `macmon`, `terminal-notifier`, `pam-reattach`, and `mas`. zsh comes from apt. Of the casks, Ubuntu gets `zed` and `font-monaspace` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
+- **System packages.** Before Homebrew, the `homebrew` step asks to install the apt packages in `UBUNTU_PACKAGES` in [`homebrew/install.sh`](homebrew/install.sh).
+- **Packages.** Homebrew installs the Brewfile's formulae on Ubuntu too, except the Mac-only ones in its `if OS.mac?` block. zsh comes from apt. Of the casks, Ubuntu gets those in `UBUNTU_CASKS` here and `codex` from `ai_tools/setup.sh`. Ghostty comes from its snap, Chrome from Google's apt repo, and [Solaar](https://pwr-solaar.github.io/Solaar/) takes the place of Logi Options+.
 - **PATH.** Homebrew comes first, as on macOS, so brew's `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
 - **Clipboard.** Copying in tmux and yanking in vim go through OSC 52, which Ghostty puts on the Mac's clipboard.
 - **GitHub.** `gh` keeps its token in `~/.config/gh/hosts.yml`, since the desktop keyring is locked over SSH, and git reaches GitHub over HTTPS. To push a change under `.github/workflows`, run `gh auth refresh -h github.com -s workflow --insecure-storage` once.
@@ -229,11 +229,11 @@ A thread's folder is its worktree, or else its project's folder. With no folder 
 | Top Process | GPU | Temperature | Power | Disk |
 | Network | | | | |
 
-A stat key updates every 2 seconds while it's on screen, turns yellow or red as the stat nears trouble, and opens Activity Monitor when pressed. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need [macmon](#cli-tools-installed-via-brew). **Back** returns to the profile you came from. The stat keys are also in the category, for any page.
+A stat key updates every 2 seconds while it's on screen, turns yellow or red as the stat nears trouble, and opens Activity Monitor when pressed. Memory's color is macOS's memory pressure. GPU, Temperature, and Power need macmon, from the [Brewfile](homebrew/Brewfile). **Back** returns to the profile you came from. The stat keys are also in the category, for any page.
 
 ### Hammerspoon
 
-macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets global hotkeys on `Ctrl+Opt+Cmd`, since [Rectangle](#apps)'s recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`. Each opens its app, or brings it to the front:
+macOS only. The `hammerspoon` step copies `~/.hammerspoon/init.lua`, which sets global hotkeys on `Ctrl+Opt+Cmd`, since Rectangle's recommended shortcuts take `Ctrl+Opt+C`, `E`, and `T`. Each opens its app, or brings it to the front:
 
 - `Ctrl+Opt+Cmd+Space` opens Claude, whose own `Option+Space` opens quick entry. `Ctrl+Opt+Cmd+B` opens Google Chrome, and `Ctrl+Opt+Cmd+C` T3 Code.
 - `Ctrl+Opt+Cmd+T` opens Ghostty, and `Ctrl+Opt+Cmd+E` Zed, at the folder in front, as the Stream Deck's **Terminal** and **Editor** keys do.
@@ -261,92 +261,9 @@ The `runtimes` step installs these:
 - [Node.js](https://nodejs.org/) LTS and [Go](https://go.dev/), with mise, as the global versions
 - [Rust](https://www.rust-lang.org/) with [rustup](https://rustup.rs/), with the stable toolchain
 
-### CLI tools (installed via brew)
+### Packages
 
-**Search and navigation:**
-- [fzf](https://github.com/junegunn/fzf): fuzzy finder
-- [ripgrep](https://github.com/BurntSushi/ripgrep): regex search
-- [fd](https://github.com/sharkdp/fd): a simpler find
-- [broot](https://github.com/Canop/broot): interactive directory navigator
-- [zoxide](https://github.com/ajeetdsouza/zoxide): a cd that learns your habits
-
-**Git tools:**
-- [gh](https://cli.github.com/): GitHub from the terminal
-- [delta](https://github.com/dandavison/delta): syntax-highlighting pager for git
-- [lazygit](https://github.com/jesseduffield/lazygit): terminal UI for git
-- [difftastic](https://github.com/Wilfred/difftastic): structural diff
-- [git-absorb](https://github.com/tummychow/git-absorb): fixup commits for staged changes, aimed at the commits they belong to
-
-**File viewing:**
-- [bat](https://github.com/sharkdp/bat): cat with syntax highlighting
-- [bat-extras](https://github.com/eth-p/bat-extras): bat-powered scripts
-- [glow](https://github.com/charmbracelet/glow): Markdown in the terminal
-
-**System monitoring:**
-- [macmon](https://github.com/vladkens/macmon) (macOS only): power, temperature, and RAM monitor
-
-**Disk and process tools:**
-- [dust](https://github.com/bootandy/dust): du alternative
-- [duf](https://github.com/muesli/duf): df alternative
-- [procs](https://github.com/dalance/procs): ps alternative
-
-**Modern replacements:**
-- [eza](https://github.com/eza-community/eza): ls alternative
-- [sd](https://github.com/chmln/sd): sed alternative
-- [doggo](https://github.com/mr-karan/doggo): DNS client
-
-**Data processing:**
-- [jq](https://github.com/jqlang/jq): JSON processor
-- [yq](https://github.com/mikefarah/yq): YAML, TOML, and XML processor
-
-**Networking:**
-- [httpie](https://github.com/httpie/httpie): HTTP client
-
-**Development utilities:**
-- [ShellCheck](https://www.shellcheck.net/): shell script linter
-- [tokei](https://github.com/XAMPPRocky/tokei): code statistics
-- [hyperfine](https://github.com/sharkdp/hyperfine): CLI benchmarking
-- [watchexec](https://github.com/watchexec/watchexec): runs commands on file changes
-- [grex](https://github.com/pemistahl/grex): regexes from examples
-- [just](https://github.com/casey/just): command runner
-- [atuin](https://github.com/atuinsh/atuin): shell history with fuzzy search
-- [tlrc](https://github.com/tldr-pages/tlrc): tldr client
-- [terminal-notifier](https://github.com/julienXX/terminal-notifier) (macOS only): macOS notifications from scripts
-- [pam-reattach](https://github.com/fabianishere/pam_reattach) (macOS only): the PAM module [Touch ID for sudo](#touch-id-for-sudo) needs inside tmux
-- [lazydocker](https://github.com/jesseduffield/lazydocker): terminal UI for Docker
-
-**Encryption:**
-- [age](https://github.com/FiloSottile/age): file encryption
-
-**Version management:**
-- [mise](https://github.com/jdx/mise): version manager for dev tools
-- [uv](https://docs.astral.sh/uv/): Python packages, environments, and tools
-- [pnpm](https://pnpm.io/) and [Bun](https://bun.sh/): JavaScript packages
-
-**Mac App Store (macOS only):**
-- [mas](https://github.com/mas-cli/mas): installs the App Store apps below
-
-### Apps
-
-macOS only. Installed with brew casks:
-
-- [Google Chrome](https://www.google.com/chrome/): browser, which the AI tools also control. The `chrome` step installs it on Ubuntu
-- [OrbStack](https://orbstack.dev/): Docker containers and Linux machines
-- [Tailscale](https://tailscale.com/): private network to reach the Ubuntu machine from anywhere
-- [Raycast](https://www.raycast.com/): launcher
-- [Rectangle](https://rectangleapp.com/): window management
-- [Stats](https://github.com/exelban/stats): menu bar memory pressure, CPU, GPU, network, and sensors
-- [AppCleaner](https://freemacsoft.net/appcleaner/): app uninstaller
-- [The Unarchiver](https://theunarchiver.com/): opens any archive format
-- [Logi Options+](https://www.logitech.com/software/logi-options-plus.html): Logitech device settings. The `logitech` step installs Solaar on Ubuntu instead
-- [Elgato Stream Deck](https://www.elgato.com/s/downloads): Stream Deck keys, with the [Stream Deck](#stream-deck) plugin
-- [Hammerspoon](https://www.hammerspoon.org/): the [hotkeys](#hammerspoon) that open Claude, Chrome, Ghostty, T3 Code, and Zed
-
-Installed from the Mac App Store with mas, once you're signed in to the App Store (see [First run](#macos)):
-
-- [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704): keeps the Mac awake
-- [Dato](https://apps.apple.com/app/dato/id1470584107): menu bar calendar. It's paid and optional, and installs only once you buy it
-- [Windows App](https://apps.apple.com/app/windows-app/id1295203466): Microsoft's RDP client, to reach the Ubuntu desktop through GNOME's Remote Login
+The `homebrew` step installs the CLI tools in [`homebrew/Brewfile`](homebrew/Brewfile), and on macOS the apps in `CASKS` and the App Store apps in `MAS_APPS` in [`homebrew/install.sh`](homebrew/install.sh). A comment beside each says what it is. The App Store apps install once you're signed in to the App Store (see [First run](#macos)). Dato is paid and optional, and installs only once you buy it.
 
 ### macOS defaults
 
@@ -503,7 +420,7 @@ Configs come from this repo, so to update them, pull, then re-run `bash setup.sh
 
 The repo keeps no copy of `~/.gitconfig`, `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.profile`, or `~/.ssh/config`. To change the lines setup adds to them, edit the scripts that write them: `zsh/install.sh`, `ssh/install.sh`, `ssh/add-host.sh`, `git/install.sh`, and `git/setup-signing.sh`.
 
-Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, and each to [What's included](#whats-included). A cask Ubuntu gets too also goes in `UBUNTU_CASKS` and the Packages list in [Ubuntu](#ubuntu-1).
+Packages installed by hand don't go back automatically. Add formulae to `homebrew/Brewfile`, and App Store apps to `MAS_APPS` and casks to `CASKS` in `homebrew/install.sh`, each with a comment saying what it is. A cask Ubuntu gets too also goes in `UBUNTU_CASKS`.
 
 Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. It moves the pins in `vim/vimrc` and `tmux/plugins.lock` to each plugin's latest commit, and replaces `vim/plug.vim` when vim-plug has a newer release. It prints a link to review each change. Commit the result. Then on each machine, re-run `bash setup.sh vim tmux`, which copies the new pins and moves the installed plugins to them.
 

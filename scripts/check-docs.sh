@@ -7,12 +7,6 @@ set -euo pipefail
 #   a step "macOS only" or "Ubuntu only" when the other OS's STEPS lacks it
 # - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
 # Also check that:
-# - README.md "What's included" lists every formula in homebrew/Brewfile, and every App Store app
-#   in homebrew/install.sh's MAS_APPS and cask in its CASKS, as a list item's link in the section package_section
-#   names, and lists no other package in its "CLI tools" and "Apps" lists
-# - README.md "Ubuntu" names the casks in UBUNTU_CASKS, as Mac-only the formulae in the
-#   Brewfile's `if OS.mac?` blocks, and in its "System packages." item the apt packages in
-#   homebrew/install.sh's UBUNTU_PACKAGES
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
@@ -21,8 +15,6 @@ set -euo pipefail
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/markdown.sh
 source "$REPO_DIR/scripts/lib/markdown.sh"
-# shellcheck source=lib/brew.sh
-source "$REPO_DIR/scripts/lib/brew.sh"
 # shellcheck source=lib/runners.sh
 source "$REPO_DIR/scripts/lib/runners.sh"
 errors=0
@@ -79,7 +71,6 @@ done
 
 # README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"
-section "$readme" "## Ubuntu" > "$tmp/ubuntu-section"
 section "$readme" "## How setup works" | { grep '^| `' || true; } > "$tmp/table-rows"
 sed 's/^| `\([^`]*\)`.*/\1/' "$tmp/table-rows" > "$tmp/table"
 for os in macos ubuntu; do
@@ -126,104 +117,6 @@ backquoted "${skips%%[;.]*}" > "$tmp/ai-skips"
 grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
 compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
     '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
-
-# README.md "What's included" against the Brewfile, MAS_APPS, and CASKS. A package and a name in the README
-# match when they're equal lowercased, with all but letters and digits dropped: the README's
-# ShellCheck is the formula shellcheck, and Logi Options+ the cask logi-options+. Homebrew names
-# some packages apart from their tools: git-delta is delta, a font cask starts with font-, and a
-# cask whose name a formula took ends in -app.
-canonical() {
-    tr '[:upper:]' '[:lower:]' |
-        sed -e 's/^git-delta$/delta/' -e 's/^font-//' -e 's/-app$//' -e 's/[^a-z0-9]//g'
-}
-
-# Print the ### section of README.md "What's included" that must list a package: CLI tools for a
-# formula, Apps for a cask or an App Store app, or the section of the tool it sets up
-package_section() {
-    case "$1 $2" in
-        "formula git") echo git ;;
-        "formula vim") echo vim ;;
-        "formula tmux") echo tmux ;;
-        "formula starship" | "formula zsh-"*) echo zsh ;;
-        "cask font-monaspace") echo Fonts ;;
-        "cask ghostty") echo Ghostty ;;
-        "cask zed") echo Zed ;;
-        formula*) echo "CLI tools" ;;
-        *) echo Apps ;;
-    esac
-}
-
-brewfile="$REPO_DIR/homebrew/Brewfile"
-{
-    brewfile_formulae "$brewfile" | sed 's/^/formula /; s/ [^ ]*$//'
-    # MAS_APPS's entries read "<id> <name>", with "optional" after some
-    array_entries "$REPO_DIR/homebrew/install.sh" MAS_APPS | sed -E 's/^[0-9]+ /mas /; s/ optional$//'
-    cask_list "$REPO_DIR/homebrew/install.sh" CASKS | sed 's/^/cask /'
-} > "$tmp/packages"
-[ -s "$tmp/packages" ] || fail "Couldn't read the packages from homebrew/Brewfile and homebrew/install.sh"
-cut -d' ' -f2- "$tmp/packages" | canonical > "$tmp/package-names"
-
-section "$readme" "## What's included" > "$tmp/included"
-[ -s "$tmp/included" ] || fail "README.md has no What's included section"
-
-# Print the link labels in the list items of a ### section of What's included, and its ####
-# subsections. A heading or a link in a paragraph doesn't count.
-section_entries() {
-    awk -v name="$1" '/^#+ / { if (/^### / || /^## /) on = ($0 == "### " name || index($0, "### " name " (") == 1); next }
-        on && /^[[:space:]]*- /' "$tmp/included" |
-        { grep -oE '\[[^]]+\]\(' || true; } | sed 's/^\[//; s/\]($//' | canonical
-}
-
-# Each section's entries are read once, and the names were made canonical in one pass above, line
-# for line, since forking per package made this slow
-while read -r kind name && read -r canonical_name <&3; do
-    section="$(package_section "$kind" "$name")"
-    [ -f "$tmp/entries-$section" ] || section_entries "$section" > "$tmp/entries-$section"
-    if ! grep -qxF -- "$canonical_name" "$tmp/entries-$section"; then
-        case "$kind" in
-            cask) fail "README.md What's included doesn't list the cask $name, in its $section section" ;;
-            mas) fail "README.md What's included doesn't list the App Store app $name, in its $section section" ;;
-            *) fail "README.md What's included doesn't list the Brewfile's $name, in its $section section" ;;
-        esac
-    fi
-done < "$tmp/packages" 3< "$tmp/package-names"
-# Each item of the package lists, by its first link
-awk '/^### / { in_list = ($0 ~ /^### (CLI tools|Apps)/) } in_list && /^- \[/' "$tmp/included" |
-    sed -E 's/^- \[([^]]+)\].*/\1/' > "$tmp/listed"
-canonical < "$tmp/listed" > "$tmp/listed-names"
-while IFS= read -r label && IFS= read -r canonical_name <&3; do
-    grep -qxF -- "$canonical_name" "$tmp/package-names" ||
-        fail "README.md What's included lists $label, which isn't in the Brewfile, MAS_APPS, or CASKS"
-done < "$tmp/listed" 3< "$tmp/listed-names"
-
-# README.md "Ubuntu": the casks the Packages item says Ubuntu gets "here", against UBUNTU_CASKS
-line="$(awk '/Of the casks, Ubuntu gets / { print; exit }' "$tmp/ubuntu-section")"
-line="${line#*Of the casks, Ubuntu gets }"
-backquoted "${line%% here*}" | sort > "$tmp/ubuntu-casks-doc"
-cask_list "$REPO_DIR/homebrew/install.sh" UBUNTU_CASKS | sort > "$tmp/ubuntu-casks"
-cmp -s "$tmp/ubuntu-casks" "$tmp/ubuntu-casks-doc" ||
-    fail "README.md Ubuntu's cask list doesn't match UBUNTU_CASKS. UBUNTU_CASKS: $(tr '\n' ' ' < "$tmp/ubuntu-casks")
-  The doc: $(doc_words "$tmp/ubuntu-casks-doc" '"Of the casks, Ubuntu gets `<cask>` ... here" under "## Ubuntu"')"
-
-# README.md "Ubuntu": the formulae the Packages item calls Mac-only, against the Brewfile's
-# `if OS.mac?` blocks
-line="$(awk '/except the Mac-only / { print; exit }' "$tmp/ubuntu-section")"
-line="${line#*except the Mac-only }"
-backquoted "${line%%.*}" | sort > "$tmp/mac-only-doc"
-brewfile_formulae "$brewfile" | awk '$2 == "mac" { print $1 }' | sort > "$tmp/mac-only"
-cmp -s "$tmp/mac-only" "$tmp/mac-only-doc" ||
-    fail "README.md Ubuntu's Mac-only formulae don't match the Brewfile's OS.mac? blocks. The Brewfile: $(tr '\n' ' ' < "$tmp/mac-only")
-  The doc: $(doc_words "$tmp/mac-only-doc" '"except the Mac-only `<formula>` ..." under "## Ubuntu"')"
-
-# README.md "Ubuntu": the System packages item's backquoted list, against UBUNTU_PACKAGES
-line="$(awk '/^- \*\*System packages\.\*\* / { print; exit }' "$tmp/ubuntu-section")"
-line="${line#*installs these apt packages}"
-backquoted "$line" | head -1 | tr ' ' '\n' | sort > "$tmp/ubuntu-packages-doc"
-sed -n 's/^UBUNTU_PACKAGES="\(.*\)"$/\1/p' "$REPO_DIR/homebrew/install.sh" | tr ' ' '\n' | sort > "$tmp/ubuntu-packages"
-[ -s "$tmp/ubuntu-packages" ] || fail "Couldn't read UBUNTU_PACKAGES from homebrew/install.sh"
-cmp -s "$tmp/ubuntu-packages" "$tmp/ubuntu-packages-doc" ||
-    fail "README.md Ubuntu's System packages item doesn't match UBUNTU_PACKAGES. UBUNTU_PACKAGES: $(tr '\n' ' ' < "$tmp/ubuntu-packages")
-  The doc: $(doc_words "$tmp/ubuntu-packages-doc" '"- **System packages.** ... installs these apt packages `<packages>`" under "## Ubuntu"')"
 
 # The manual-steps scripts print these sections with print_doc_section, which fails when one is
 # missing or empty

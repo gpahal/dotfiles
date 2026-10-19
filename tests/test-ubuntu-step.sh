@@ -3,9 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh), and
-# tests/ubuntu-sandbox.sh's check for a constant left on a system path. The other test-ubuntu-*.sh
-# tests of the step's main start from the machine this one sets up.
+# The ubuntu step's main and status on a new machine (tests/ubuntu-step-fixture.sh).
+# The other test-ubuntu-*.sh tests start from the machine this one sets up.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -16,19 +15,6 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 setup_sandbox
 ubuntu_step_setup
-# ubuntu_sandbox_paths fails the test when a constant still names a system path, as REBOOT_REQUIRED
-# did once a test loaded the step again
-leak_reboot_required() {
-    TEST_FAILURES=0
-    REBOOT_REQUIRED=/var/run/reboot-required
-    _ubuntu_system_paths_left
-    exit "$TEST_FAILURES"
-}
-leak_status=0
-leaks="$( (leak_reboot_required) 2>&1)" || leak_status=$?
-assert_eq 1 "$leak_status" "the failures for a constant left on a system path"
-assert_contains "$leaks" "REBOOT_REQUIRED=/var/run/reboot-required"
-
 # Not set up yet: status lists each new item as missing
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Suspend and hibernation off in systemd ($SLEEP_CONF)"

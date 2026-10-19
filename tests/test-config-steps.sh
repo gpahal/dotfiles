@@ -64,4 +64,38 @@ assert_contains "$RUN_OUTPUT" "settings.json differs from the repo's zed/setting
 assert_exit 0 bash "$REPO_DIR/setup.sh" zed
 assert_eq "" "$(cmp "$REPO_DIR/zed/settings.json" "$zed_settings" 2>&1)" "Zed's settings after an edit"
 assert_eq "keymap.json settings.json " "$(/bin/ls -A "$(dirname "$zed_settings")" | tr '\n' ' ')" "Zed's config files"
+
+# Config paths honor XDG_CONFIG_HOME on Linux; Ghostty and Zed use ~/.config on macOS.
+export XDG_CONFIG_HOME="$SANDBOX/xdg"
+
+# check_destination <step> <os> <repo file> <installed path> <copy function>: copy the step's files, then
+# check the file landed there and status reports it ok
+check_destination() {
+    local step="$1" os="$2" src="$3" dest="$4" copy="$5"
+    rm -rf "$XDG_CONFIG_HOME" "$HOME/.config" "$HOME/Library"
+    if [ "$os" == ubuntu ]; then
+        stub uname 'echo Linux'
+    else
+        stub uname 'echo Darwin'
+    fi
+    load_script "$step/install.sh"
+    if [ "$os" == ubuntu ]; then
+        as_os ubuntu
+    else
+        as_os macos
+    fi
+    run "${step}_files" "$copy"
+    assert_eq "" "$(cmp "$REPO_DIR/$src" "$dest" 2>&1)" "$step's config on $os"
+    run "${step}_files" status_file
+    assert_contains "$RUN_OUTPUT" "ok " "$step's status on $os"
+    assert_not_contains "$RUN_OUTPUT" "missing" "$step's status on $os"
+    rm -f "$STUB_DIR/uname"
+}
+
+check_destination lazygit ubuntu lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" copy_file
+check_destination lazygit macos lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" copy_file
+check_destination ghostty ubuntu ghostty/config.ghostty "$XDG_CONFIG_HOME/ghostty/config.ghostty" copy_file
+check_destination ghostty macos ghostty/config.ghostty "$HOME/.config/ghostty/config.ghostty" copy_file
+check_destination zed ubuntu zed/settings.json "$XDG_CONFIG_HOME/zed/settings.json" copy_file
+check_destination zed macos zed/settings.json "$HOME/.config/zed/settings.json" copy_file
 test_done

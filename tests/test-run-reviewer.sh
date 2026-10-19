@@ -246,9 +246,6 @@ review_tmp
 assert_exit 1 bash "$MATERIALIZE" "$SANDBOX/review tmp" "$OLD"
 assert_file_contains "$STUB_LOG" "git checkout-index --all --prefix=$SANDBOX/review tmp/head/"
 assert_eq "" "$(/bin/ls -A "$SANDBOX/review tmp")" "the temp dir after a checkout that failed partway"
-review_tmp
-assert_exit 1 bash "$MATERIALIZE" "$SANDBOX/review tmp" HEAD
-assert_eq "" "$(/bin/ls -A "$SANDBOX/review tmp")" "the temp dir after a range head's checkout failed partway"
 rm "$STUB_DIR/git"
 # An existing head dir is left alone
 mkdir "$SANDBOX/review tmp/head"

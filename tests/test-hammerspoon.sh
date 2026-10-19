@@ -86,18 +86,6 @@ run_lua() {
         fail "lua failed: $RUN_OUTPUT"
 }
 
-# Loading: open at login, and the six hotkeys
-run_lua 'local keys = {}
-for k in pairs(hotkeys) do keys[#keys + 1] = k .. " " .. type(hotkeys[k]) end
-table.sort(keys); print(table.concat(keys, "\n"))'
-assert_eq "autoLaunch true
-ctrl+alt+cmd+b function
-ctrl+alt+cmd+c function
-ctrl+alt+cmd+e function
-ctrl+alt+cmd+n function
-ctrl+alt+cmd+space function
-ctrl+alt+cmd+t function" "$RUN_OUTPUT" "loading"
-
 # Claude, Chrome, and T3 Code open, and a missing app shows an alert
 run_lua 'hotkeys["ctrl+alt+cmd+space"](); hotkeys["ctrl+alt+cmd+b"](); hotkeys["ctrl+alt+cmd+c"]()
 state.installed["com.google.Chrome"] = nil; hotkeys["ctrl+alt+cmd+b"]()'

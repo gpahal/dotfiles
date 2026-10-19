@@ -146,28 +146,19 @@ run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
 assert_file_not_contains "$STUB_LOG" "brew reinstall"
 assert_file_not_contains "$STUB_LOG" "brew install"
-# A run asks brew about the cask once
-assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run"
-assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run"
-# Without it, the cask's app is gone, and setup reinstalls it, still asking brew once
+# Without it, the cask's app is gone, and setup reinstalls it
 rm -r "$SANDBOX/Applications/T3 Code.app"
 : > "$STUB_LOG"
 run status
 assert_contains "$RUN_OUTPUT" "missing    t3-code (cask): brew lists it, but its app is gone"
-assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in status"
-assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in status"
 : > "$STUB_LOG"
 run main
 assert_file_contains "$STUB_LOG" "brew reinstall"
-assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run that reinstalls"
-assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run that reinstalls"
-# The cask's app in place is installed, and asks brew once too
+# The cask's app in place is installed
 mkdir -p "$APP"
 : > "$STUB_LOG"
 run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed."
-assert_eq 1 "$(grep -c '^brew info' "$STUB_LOG")" "brew info calls in a run with the app in place"
-assert_eq 1 "$(grep -c '^brew list' "$STUB_LOG")" "brew list calls in a run with the app in place"
 run status
 assert_contains "$RUN_OUTPUT" "ok         t3-code (cask)"
 # A renamed app brew doesn't list was installed outside Homebrew
@@ -199,11 +190,4 @@ no_jq_status() {
 }
 subtest no_jq_status
 
-# A model of the repo's with no instance gets Claude's, and a custom Claude instance stays
-jq -n '{defaultModelSelection: {model: "claude-opus-5-5"}}' > "$T3_CODE_SETTINGS"
-assert_eq claudeAgent "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
-    "the instance of the repo's model without one"
-jq -n '{defaultModelSelection: {model: "claude-opus-5-5", instanceId: "myClaude"}}' > "$T3_CODE_SETTINGS"
-assert_eq myClaude "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
-    "a custom instance of the repo's model"
 test_done

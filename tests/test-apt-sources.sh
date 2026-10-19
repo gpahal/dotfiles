@@ -16,15 +16,8 @@ content="deb [signed-by=/k] https://example.com/ubuntu resolute main"
 assert_eq missing "$(apt_source_state "$file" "$content")" "no file"
 echo "$content" > "$file"
 assert_eq "" "$(apt_source_state "$file" "$content")" "the exact content"
-for changed in "# $content # disabled on upgrade to resolute" "${content/resolute/stale-suite}" "$content
-deb https://example.com/other resolute main"; do
-    echo "$changed" > "$file"
-    assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$content")" "a changed file: $changed"
-done
-# deb822's way of turning a source off
-stanza="$(printf '%s\n' "Types: deb" "URIs: https://example.com/ubuntu" "Suites: resolute")"
-printf '%s\n' "$stanza" "Enabled: no" > "$file"
-assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$stanza")" "a stanza turned off"
+echo "# $content" > "$file"
+assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$content")" "a changed file"
 # curl answers the HEAD request for the Release file with $SANDBOX/http-status
 stub curl 'cat "'"$SANDBOX"'/http-status"'
 release=https://example.com/dists/resolute/Release

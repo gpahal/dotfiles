@@ -22,33 +22,7 @@ as_os macos
 
 yq --version 2>/dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 
-# Settings of your own
 mkdir -p "$HOME/.codex"
-cat > "$CODEX_CONFIG" << 'EOF_CONFIG'
-# My settings
-notify = ["notify-send", "Codex"]
-
-[sandbox_workspace_write]
-writable_roots = ["/tmp/x"]
-
-[permissions.mine]
-extends = ":workspace"
-
-[mcp_servers.docs]
-command = "npx"
-args = ["-y", "docs-mcp"]
-
-[projects."/Users/me/Dev/x"]
-trust_level = "trusted"
-
-[[skills.config]]
-path = "/a/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/b/SKILL.md"
-enabled = true
-EOF_CONFIG
 
 # get <yq path>: print a value of the config as one line of JSON
 get() {
@@ -60,34 +34,79 @@ set_key() {
     yq -i -p toml -o toml "$1 = $2" "$CODEX_CONFIG"
 }
 
-assert_exit 0 configure_codex
-assert_eq '["notify-send","Codex"]' "$(get .notify)" "notify"
-assert_eq '{"command":"npx","args":["-y","docs-mcp"]}' "$(get .mcp_servers.docs)" "mcp_servers.docs"
-assert_eq '"trusted"' "$(get '.projects["/Users/me/Dev/x"].trust_level')" "the project's trust level"
-assert_eq '[{"path":"/a/SKILL.md","enabled":false},{"path":"/b/SKILL.md","enabled":true}]' \
-    "$(get .skills.config)" "skills.config"
-assert_file_contains "$CODEX_CONFIG" "# My settings"
+# yq rewrites the file, keeping every value: inline tables, arrays of tables, dotted keys, quoted
+# table names, multi-line strings, and full-line comments. A table the step sets that's written
+# as dotted keys or an inline table takes the step's keys.
+cat > "$CODEX_CONFIG" << 'EOF_CONFIG'
+# Mine, at the top
+notify = ["notify-send", "Codex"]
+model = "x" # end-of-line comment
+tui = { theme = "dark" }
+developer_instructions = """
+line one
+line two"""
+profile.fast = { model = "a", model_reasoning_effort = "low" }
+analytics.enabled = true
 
-# The built-in sandbox, with your writable roots and profiles
+[sandbox_workspace_write]
+writable_roots = [
+    "/a", # mine
+    "/b",
+]
+
+[permissions.mine]
+extends = ":workspace"
+
+# A full-line comment
+[mcp_servers.docs]
+command = "npx"
+args = ["-y", "docs-mcp"]
+env = { A = "1", B = "2" }
+
+[projects."/Users/me/Dev/x"]
+trust_level = "trusted"
+
+["a.b"]
+k = 1
+
+[[skills.config]]
+path = "/a/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/b/SKILL.md"
+enabled = true
+EOF_CONFIG
+# The values, minus those the step sets, sorted so that order doesn't count
+step_keys='del(.model_reasoning_effort, .model_verbosity, .model_reasoning_summary, .approval_policy,
+    .approvals_reviewer, .sandbox_mode, .analytics, .feedback, .tui.status_line,
+    .tui.notification_method, .mcp_oauth_credentials_store, .desktop)'
+before="$(yq -p toml -o json -I=0 "$step_keys | sort_keys(..)" "$CODEX_CONFIG")"
+assert_exit 0 configure_codex
+assert_eq "$before" "$(yq -p toml -o json -I=0 "$step_keys | sort_keys(..)" "$CODEX_CONFIG")" \
+    "the config's own values after the edit"
+assert_file_contains "$CODEX_CONFIG" "# Mine, at the top"
+assert_file_contains "$CODEX_CONFIG" "# A full-line comment"
+assert_eq '"line one\nline two"' "$(get .developer_instructions)" "a multi-line string"
+assert_eq 'false "dark"' "$(get .analytics.enabled) $(get .tui.theme)" "dotted and inline tables the step sets"
+assert_eq '["model-with-reasoning","current-dir","git-branch","context-used"]' "$(get .tui.status_line)" \
+    "the status line in an inline [tui]"
+# Keep independent expectations for owned security and desktop settings.
 assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode"
-assert_eq '{"writable_roots":["/tmp/x"]}' "$(get .sandbox_workspace_write)" "[sandbox_workspace_write]"
 assert_eq '"on-request"' "$(get .approval_policy)" "approval_policy"
 assert_eq '"auto_review"' "$(get .approvals_reviewer)" "approvals_reviewer"
-assert_eq '{"mine":{"extends":":workspace"}}' "$(get .permissions)" "your permission profiles"
-# The ChatGPT app's settings, on macOS
 assert_eq '"squash"' "$(get .desktop.git-pull-request-merge-method)" "a [desktop] key on macOS"
-
-# A second run finds everything set and leaves the file as it was
 first="$(cat "$CODEX_CONFIG")"
 assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "status line, and desktop app settings are already set"
+assert_contains "$RUN_OUTPUT" "already set"
 assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run"
 
 # A fresh install gets the sandbox and no profile
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on a fresh install"
-assert_eq 'null null' "$(get .default_permissions) $(get .permissions)" "profiles on a fresh install"
+assert_eq 'null null null' "$(get .default_permissions) $(get .permissions) $(get .sandbox_workspace_write)" \
+    "profiles and sandbox table on a fresh install"
 
 # On Ubuntu, the same sandbox, with notifications and MCP tokens set for SSH, and no [desktop]
 # keys, since there's no ChatGPT app. Status doesn't expect them, and leaves ones already there.
@@ -125,62 +144,6 @@ assert_eq "" "$RUN_OUTPUT" "a second run's output"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Codex's MCP tokens, ~/.codex/.credentials.json, readable only by you"
 rm -f "$CODEX_CREDENTIALS"
-
-# yq rewrites the file, keeping every value: inline tables, arrays of tables, dotted keys, quoted
-# table names, multi-line strings, and full-line comments. A table the step sets that's written
-# as dotted keys or an inline table takes the step's keys.
-cat > "$CODEX_CONFIG" << 'EOF_CONFIG'
-# Mine, at the top
-model = "x" # end-of-line comment
-tui = { theme = "dark" }
-developer_instructions = """
-line one
-line two"""
-profile.fast = { model = "a", model_reasoning_effort = "low" }
-analytics.enabled = true
-
-[sandbox_workspace_write]
-writable_roots = [
-    "/a", # mine
-    "/b",
-]
-
-# A full-line comment
-[mcp_servers.docs]
-command = "npx"
-args = ["-y", "docs-mcp"]
-env = { A = "1", B = "2" }
-
-[projects."/Users/me/Dev/x"]
-trust_level = "trusted"
-
-["a.b"]
-k = 1
-
-[[skills.config]]
-path = "/a/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/b/SKILL.md"
-enabled = true
-EOF_CONFIG
-# The values, minus those the step sets, sorted so that order doesn't count
-step_keys='del(.model_reasoning_effort, .model_verbosity, .model_reasoning_summary, .approval_policy,
-    .approvals_reviewer, .sandbox_mode, .analytics, .feedback, .tui.status_line,
-    .tui.notification_method, .mcp_oauth_credentials_store, .desktop)'
-before="$(yq -p toml -o json -I=0 "$step_keys | sort_keys(..)" "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_eq "$before" "$(yq -p toml -o json -I=0 "$step_keys | sort_keys(..)" "$CODEX_CONFIG")" \
-    "the config's own values after the edit"
-assert_file_contains "$CODEX_CONFIG" "# Mine, at the top"
-assert_file_contains "$CODEX_CONFIG" "# A full-line comment"
-assert_eq '"line one\nline two"' "$(get .developer_instructions)" "a multi-line string"
-assert_eq 'false "dark"' "$(get .analytics.enabled) $(get .tui.theme)" "dotted and inline tables the step sets"
-assert_eq '["model-with-reasoning","current-dir","git-branch","context-used"]' "$(get .tui.status_line)" \
-    "the status line in an inline [tui]"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "already set"
 
 # A subtable such as Codex's own [tui.model_availability_nux] stays beside a new [tui]
 printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n' > "$CODEX_CONFIG"
@@ -284,20 +247,13 @@ assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "is it valid TOML? Leaving it unchanged."
 assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
 
-# The step never writes [sandbox_workspace_write]: it isn't added when missing
-rm -f "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq null "$(get .sandbox_workspace_write)" "[sandbox_workspace_write] with no config before"
-
 # The footer's items are a value you can change with /statusline. Unset, setup sets them. Set to
-# items of your own, they're kept without a terminal, and status names them. With a terminal,
-# setup asks every run and replaces them on yes. DOTFILES_ASSUME_YES=1 answers yes.
+# items of your own, they're kept without a terminal, and status names them. One replacement
+# checks TOML array writing; test-claude-settings.sh covers the shared consent matrix.
 repo_line='["model-with-reasoning","current-dir","git-branch","context-used"]'
 printf 'model = "gpt-6.1-sol"\n' > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line when it was unset"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "already set"
 set_key .tui.status_line '["model", "git-branch"]'
 mine="$(cat "$CODEX_CONFIG")"
 assert_exit 0 configure_codex
@@ -307,24 +263,14 @@ stub brew 'exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
 assert_contains "$RUN_OUTPUT" "ok         Codex's status line (tui.status_line): yours, [\"model\",\"git-branch\"] (the repo's is $repo_line)"
-replace_fn is_interactive 'true'
-replace_fn confirm 'local reply
-echo "$1"
-read -r reply
-[ "$reply" == y ]'
-assert_exit 0 configure_codex <<< n
-assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model\",\"git-branch\"], not the repo's $repo_line. Replace it?"
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config after no"
-assert_exit 0 configure_codex <<< y
+answer yes
+assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"
 run status
 assert_not_contains "$RUN_OUTPUT" "yours"
-# Reloading brings back the real confirm and is_interactive
+# Reloading brings back the real confirm.
 load_script ai_tools/codex/install.sh
 as_os macos
-printf '%s\n' "$mine" > "$CODEX_CONFIG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_codex
-assert_eq "$repo_line" "$(get .tui.status_line)" "the status line with DOTFILES_ASSUME_YES=1"
 
 # Status reports the sign-in from `codex login status`, which exits 0 when signed in and prints
 # "Not logged in" and exits 1 when not. Signed out, it names the login for the OS. The stubbed
@@ -344,16 +290,8 @@ replace_fn bwrap_works 'true'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
 
-# Status reads the values you can change, and the repo's, with one yq each, rather than one per
-# value. The configure phase reads them again once ChatGPT quits: a model the app removed as it
-# quit counts as unset, so the repo's is set, though your own was there before.
-real_yq="$(command -v yq)"
+# The configure phase reloads values after ChatGPT quits: a model removed on quit is unset.
 as_os macos
-stub yq 'exec '"$(printf %q "$real_yq")"' "$@"'
-: > "$STUB_LOG"
-run status
-assert_eq 5 "$(grep -c '^yq' "$STUB_LOG")" "yq runs in status: version, values, repo's values, and the settings check"
-rm -f "$STUB_DIR/yq"
 printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"
 replace_fn ensure_app_quit 'yq -i -p toml -o toml "del(.model)" "$CODEX_CONFIG"'
 assert_exit 0 configure_codex

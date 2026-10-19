@@ -311,6 +311,8 @@ Run these over SSH from the Mac.
 | ChatGPT app | 26.930.21537 | The `[desktop]` table it writes in `~/.codex/config.toml`, which OpenAI's reference doesn't list |
 | T3 Code | 0.1.0 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts), documented only in its source. `scripts/check-t3-settings.sh` checks the keys against a release |
 
+CI validates settings against the latest Claude Code and Codex and runs Codex's sandbox on both OSes. These checks and one T3 Code schema scan run weekly, manually, and when the related steps, shared helpers, checks, or reviewer flags change.
+
 After an update, check the keys against the app's settings file or schema, fix the step if they changed, and update the version here. The `t3-code` step sets each key on its own, so a key a newer T3 Code adds stays as T3 wrote it. Then check that the app still does what setup configured:
 
 - **Model.** Claude Code's status line starts with `Opus 5.5 · medium`, and the Codex CLI's footer shows `gpt-6.1-sol` with high effort. In the apps, the model picker of a new chat or thread shows the same.

@@ -388,9 +388,8 @@ done
 
 # At SessionEnd, the session's worktrees that hold nothing to lose go, with their branches,
 # including the files the create hook copied from .worktreeinclude while they match the repo's.
-# One with changes, a changed copy, or a commit no other branch has stays, as do another
-# session's and one the hook didn't make. They branch from HEAD, whose .gitignore ignores the
-# copies.
+# A changed copy and another session's worktree stay. test-git-wt.sh covers the other prune
+# safeguards. They branch from HEAD, whose .gitignore ignores the copies.
 end_session() {
     status=0
     printf '{"session_id":"%s","hook_event_name":"SessionEnd","reason":"other","cwd":"%s"}' "$1" "$2" |
@@ -398,24 +397,21 @@ end_session() {
 }
 mkdir -p "$repo/.claude"
 echo '{"worktree": {"baseRef": "head"}}' > "$repo/.claude/settings.local.json"
-for name in e-clean e-changed e-copy e-committed; do
+for name in e-clean e-copy; do
     create "$name" "$repo" s1
     assert_eq "0 $dir/$name" "$status $out" "create hook for $name"
 done
 assert_eq s1 "$(cat "$(git -C "$dir/e-clean" rev-parse --absolute-git-dir)/worktree-hook-session")" \
     "the session the create hook records"
 create e-other "$repo" s2
-git -C "$repo" wt add e-unmarked > /dev/null 2>&1
 [ -f "$dir/e-clean/.env" ] || fail "the create hook copied no .env into e-clean"
-echo change > "$dir/e-changed/file"
 echo changed > "$dir/e-copy/.env"
-git -C "$dir/e-committed" commit -q --allow-empty -m mine
 end_session s1 "$repo"
 assert_eq "0" "$status" "SessionEnd hook's exit status"
 assert_eq "" "$(cat "$SANDBOX/stdout")" "SessionEnd hook's stdout"
 [ ! -e "$dir/e-clean" ] || fail "SessionEnd hook kept e-clean"
 git -C "$repo" show-ref --verify --quiet refs/heads/e-clean && fail "SessionEnd hook kept branch e-clean"
-for name in e-changed e-copy e-committed e-other e-unmarked; do
+for name in e-copy e-other; do
     [ -d "$dir/$name" ] || fail "SessionEnd hook removed $name"
 done
 # A cwd outside a repo, or with no git wt, removes nothing and still exits 0
@@ -424,7 +420,7 @@ assert_eq "0" "$status" "SessionEnd hook's exit status outside a repo"
 printf '{"session_id":"s2","hook_event_name":"SessionEnd","cwd":"%s"}' "$repo" |
     env PATH=/usr/bin:/bin bash "$hook" > /dev/null 2>&1 || fail "SessionEnd hook without git wt failed"
 [ -d "$dir/e-other" ] || fail "SessionEnd hook removed e-other without git wt"
-for name in e-changed e-copy e-committed e-other e-unmarked; do
+for name in e-copy e-other; do
     git -C "$repo" wt rm -f "$name" 2> /dev/null
 done
 # A .env that's a symlink in the checkout is copied as the file it points at, so the worktree has

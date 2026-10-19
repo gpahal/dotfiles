@@ -445,18 +445,9 @@ assert_contains "$RUN_OUTPUT" "ok         No container ports published on every 
 : > "$SANDBOX/docker-ps"
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
-# The daemon out of reach without the docker group is unverified; another failure is unknown
-echo 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock' > "$SANDBOX/docker-ps"
-echo 1 > "$SANDBOX/docker-ps.status"
-assert_exit 0 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me can't reach the daemon's socket yet; log out and back in"
-# Outside the docker group, it goes through sudo -n while sudo credentials are cached
+# Shared access failures are covered through status_docker_usage above; check ports with sudo.
 rm "$SANDBOX/in-group"
 : > "$STUB_LOG"
-assert_exit 0 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "unverified Container ports published on every address, which ufw doesn't filter: me isn't in the docker group; run sudo -v, then status, to check it"
-assert_file_not_contains "$STUB_LOG" "docker ps"
-read_only
 printf '%b\n' 'web\t0.0.0.0:8080->80/tcp' > "$SANDBOX/docker-ps"
 echo 0 > "$SANDBOX/docker-ps.status"
 touch "$SANDBOX/sudo-cached"
@@ -470,10 +461,6 @@ echo 1 > "$SANDBOX/docker-ps.status"
 echo 'Error response from daemon: something broke' > "$SANDBOX/docker-ps"
 assert_exit 3 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: couldn't list the containers (Error response from daemon: something broke)"
-# A daemon that went away during the check, as a restart does, is information
-echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' > "$SANDBOX/docker-ps"
-assert_exit 0 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "info       Container ports published on every address, which ufw doesn't filter: the daemon isn't running"
 rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
 # A stopped daemon isn't started. With no containerd shim running, it runs no containers. With one,
 # live-restore kept containers running, whose ports can't be checked.

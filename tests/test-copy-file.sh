@@ -119,68 +119,26 @@ assert_exit 7 copy_or_7
 assert_not_contains "$RUN_OUTPUT" "Copied"
 chmod 755 "$ro"
 
-# A copied file made read-only is left as it is, as cp would leave it, though its directory
-# would let a rename replace it. So is one a symlink points to.
+# The shared replacement cases (symlinks, modes, and atomic writes) live in test-write-back.sh.
+# copy_file translates a read-only failure into its own message, without claiming a copy.
 if [ "$(id -u)" -ne 0 ]; then
-    locked="$HOME/locked/config.yml"
-    printf 'old\n' > "$SANDBOX/repo/locked.yml"
-    assert_exit 0 copy_file "$SANDBOX/repo/locked.yml" "$locked"
-    chmod 444 "$locked"
-    ln -s config.yml "$HOME/locked/link.yml"
-    printf 'new\n' > "$SANDBOX/repo/locked.yml"
-    for name in config.yml link.yml; do
-        assert_exit 1 copy_file "$SANDBOX/repo/locked.yml" "$HOME/locked/$name"
-        assert_contains "$RUN_OUTPUT" "$HOME/locked/$name is read-only, so left it unchanged."
-        assert_not_contains "$RUN_OUTPUT" "Copied"
-        assert_eq old "$(cat "$locked")" "read-only file after copying to $name"
-    done
-    chmod 644 "$locked"
+    chmod 444 "$dest"
+    printf 'changed\n' > "$src"
+    assert_exit 1 copy_file "$src" "$dest"
+    assert_contains "$RUN_OUTPUT" "$dest is read-only, so left it unchanged."
+    assert_not_contains "$RUN_OUTPUT" "Copied"
+    assert_eq hello2 "$(cat "$dest")" "read-only copy"
+    chmod 644 "$dest"
 fi
 
-# A copy goes to a temp file beside the destination, then moves into place, so a copy that fails
-# partway leaves the old file whole, and a script running from the old file reads on unchanged.
-# Here cp writes part of the file, then fails.
-load_script lib/common.sh
-atomic="$HOME/atomic/config.yml"
-printf 'old\n' > "$SANDBOX/repo/atomic.yml"
-assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$atomic"
-printf 'new\n' > "$SANDBOX/repo/atomic.yml"
-stub cp 'for last; do :; done; printf part > "$last"; exit 1'
-assert_exit 1 copy_file "$SANDBOX/repo/atomic.yml" "$atomic"
-rm -f "$STUB_DIR/cp"
-assert_eq old "$(cat "$atomic")" "file after a copy that failed partway"
-assert_eq config.yml "$(/bin/ls -A "$HOME/atomic")" "files beside it after a copy that failed partway"
-assert_not_contains "$RUN_OUTPUT" "Copied"
-inode="$(/bin/ls -i "$atomic" | awk '{print $1}')"
-assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$atomic"
-assert_eq new "$(cat "$atomic")" "file after a copy"
-[ "$inode" != "$(/bin/ls -i "$atomic" | awk '{print $1}')" ] || fail "copy_file wrote through the file instead of moving a new one into place"
-
-# A symlink stays a link, and its target is replaced, keeping its mode
-mkdir -p "$HOME/real"
-printf 'old\n' > "$HOME/real/linked.yml"
-chmod 640 "$HOME/real/linked.yml"
-ln -s "$HOME/real/linked.yml" "$HOME/linked.yml"
-assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$HOME/linked.yml"
-[ -L "$HOME/linked.yml" ] || fail "copy_file replaced the symlink"
-assert_eq new "$(cat "$HOME/real/linked.yml")" "symlink target after copy_file"
-assert_eq 640 "$(file_mode "$HOME/real/linked.yml")" "symlink target's mode after copy_file"
-assert_eq linked.yml "$(/bin/ls -A "$HOME/real")" "files beside the symlink target after copy_file"
-
-# A new file gets 644, or 755 when the source is executable, whatever the umask. An existing file
-# keeps its mode, and gets back an executable bit it lost, which copy_file doesn't take for up to
-# date.
+# copy_file uses fixed default modes regardless of umask, and restores lost executable bits.
 (
     umask 077
-    copy_file "$SANDBOX/repo/atomic.yml" "$HOME/modes/plain" > /dev/null
+    copy_file "$src" "$HOME/modes/plain" > /dev/null
     copy_file "$SANDBOX/repo/cmd" "$HOME/modes/cmd" > /dev/null
 )
 assert_eq 644 "$(file_mode "$HOME/modes/plain")" "mode of a new file"
 assert_eq 755 "$(file_mode "$HOME/modes/cmd")" "mode of a new executable"
-chmod 600 "$HOME/modes/plain"
-printf 'newer\n' > "$SANDBOX/repo/atomic.yml"
-assert_exit 0 copy_file "$SANDBOX/repo/atomic.yml" "$HOME/modes/plain"
-assert_eq 600 "$(file_mode "$HOME/modes/plain")" "mode of a replaced file"
 chmod 644 "$HOME/modes/cmd"
 assert_exit 0 copy_file "$SANDBOX/repo/cmd" "$HOME/modes/cmd"
 assert_contains "$RUN_OUTPUT" "Copied"

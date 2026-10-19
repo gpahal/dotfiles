@@ -411,6 +411,8 @@ Update the vim and tmux plugins, and vim-plug itself, with `just bump-plugins`. 
 
 **Stream Deck and Hammerspoon.** The Stream Deck keys and Hammerspoon's `Ctrl+Opt+Cmd+N`, `Ctrl+Opt+Cmd+T`, and `Ctrl+Opt+Cmd+E` run the plugin's `bin/open-in`, which the `hammerspoon` step copies to `~/.hammerspoon/bin`. Each run logs a line, to `~/Library/Logs/ElgatoStreamDeck/com.gpahal.dotfiles0.log` from a key and to Hammerspoon's console from a hotkey. After editing the **System** page in `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. Stream Deck installs the page on the first **Overview** press and keeps its own copy, so to load a changed page, delete the **System** profile in Stream Deck's settings and press **Overview** again.
 
+CI runs `just check` and `just test` on macOS and Ubuntu for every push to main and pull request. Live Homebrew package and AI compatibility checks run weekly, manually, and when their inputs change.
+
 [AGENTS.md](./AGENTS.md) describes how to add a config or step, and how to check and test one with `just check`, `just test`, and `just test-ubuntu`.
 
 ## License

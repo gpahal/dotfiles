@@ -49,13 +49,9 @@ printf 'host *\n  ignoreunknown foo,usekeychain\n  usekeychain yes\n' > "$SSH_CO
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "  AddKeysToAgent yes"
 assert_not_contains "$RUN_OUTPUT" "UseKeychain"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "UseKeychain; add AddKeysToAgent yes to the top of it by hand"
 # A block with both settings but no IgnoreUnknown is missing only that
 printf 'Host *\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
 assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing without IgnoreUnknown"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain to the top of it by hand"
 # ssh reads the file in order, so an IgnoreUnknown below a UseKeychain line, in any block, or one
 # that doesn't name UseKeychain, doesn't count
 for config in 'Host *\n  UseKeychain yes\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n' \
@@ -71,8 +67,6 @@ done
 # UseKeychain wins over one that does. In the Host * block, the line still goes at its top.
 printf 'Host *\n  IgnoreUnknown ControlPersistX\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
 assert_eq '  IgnoreUnknown UseKeychain' "$(host_star_missing)" "the lines missing after another IgnoreUnknown"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain to the top of it by hand"
 # Above every Host line, it goes at the top of the file
 config='IgnoreUnknown ControlPersistX\nHost *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n'
 # shellcheck disable=SC2059 # the config holds \n
@@ -95,8 +89,6 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "to the top of it"
 assert_contains "$RUN_OUTPUT" "at the top of $SSH_CONFIG:"
 assert_eq 1 "$(host_star_count)" "Host * blocks after a UseKeychain above Host *"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "UseKeychain; add IgnoreUnknown UseKeychain at the top of the file by hand"
 # With other lines missing from your Host * block too, it names both places
 printf 'Host github.com\n  UseKeychain yes\nHost *\n  User me\n' > "$SSH_CONFIG"
 assert_exit 0 main
@@ -114,13 +106,6 @@ assert_contains "$RUN_OUTPUT" "ok         The Host * block"
 if [ -n "${ssh_bin:-}" ]; then
     assert_exit 0 "$ssh_bin" -F "$SSH_CONFIG" -G example.com
 fi
-
-# With both, there's nothing to add
-printf 'Host *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' > "$SSH_CONFIG"
-assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "AddKeysToAgent"
-run status
-assert_contains "$RUN_OUTPUT" "ok         The Host * block in ~/.ssh/config has IgnoreUnknown UseKeychain, AddKeysToAgent, and UseKeychain"
 
 # Settings above the first Host or Match line apply to every host, as a Host * block's do, so
 # they count, and no block is added

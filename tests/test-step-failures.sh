@@ -3,7 +3,7 @@ set -euo pipefail
 
 # A step that didn't do its job fails, after doing what else it can; a declined confirm doesn't, and
 # neither does a run with nothing to do. Covers macos, zsh, and ghostty, with stubs for defaults,
-# chsh, and snap. test-macos-shortcuts.sh and test-macos-activity-monitor.sh cover the macos step's
+# chsh, and snap. test-macos-settings.sh cover the macos step's
 # re-run.
 
 # shellcheck source=lib.sh
@@ -38,7 +38,7 @@ fail_defaults() {
 
 load_script macos/install.sh
 as_os macos
-# test-macos-shortcuts.sh covers the shortcuts the step turns off
+# test-macos-settings.sh covers the shortcuts the step turns off
 replace_fn hotkey_off true
 
 # A failed write fails the step, after the other writes and the restarts

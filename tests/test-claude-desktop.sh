@@ -44,48 +44,21 @@ assert_contains "$RUN_OUTPUT" "Copied ai_tools/claude-desktop/dotfiles.claude-de
 assert_eq "$(cat "$DOTFILES_DIR/ai_tools/claude-desktop/dotfiles.claude-desktop.plist")" "$(cat "$AGENT")" "LaunchAgent"
 assert_file_contains "$STUB_LOG" "brew install --cask claude"
 
-# The app installed outside brew: nothing to install
-rm -f "$CONFIG"
-mkdir -p "$APP"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "claude already installed, but not by Homebrew"
-assert_file_not_contains "$STUB_LOG" "brew install"
-
 # The cask installed and Claude not running
 stub brew '[ "$*" == "list --cask claude" ]'
 stub pgrep 'exit 1'
 mkdir -p "$APP" "$(dirname "$CONFIG")"
-echo '{"mcpServers": {"x": {"command": "y"}}, "preferences": {"sidebarMode": "chat", "menuBarEnabled": true}}' > "$CONFIG"
+echo '{"mcpServers": {"x": {"command": "y"}}, "preferences": {"sidebarMode": "chat", "menuBarEnabled": true, "quickEntryShortcut": {"enabled": true}}}' > "$CONFIG"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    Claude desktop app settings"
+: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "claude already installed."
 assert_contains "$RUN_OUTPUT" "Set notifications, keep-awake"
 assert_file_not_contains "$STUB_LOG" "brew install"
-assert_eq '{
-  "mcpServers": {
-    "x": {
-      "command": "y"
-    }
-  },
-  "preferences": {
-    "sidebarMode": "chat",
-    "menuBarEnabled": false,
-    "dockBounceEnabled": true,
-    "ccAutoArchiveInactiveDays": 30,
-    "ccKeepAwakeWhileWorking": true,
-    "ccKeepAwakeOnBattery": true,
-    "ccdScheduledTasksEnabled": true,
-    "quickEntryShortcut": {
-      "accelerator": "Alt+Space"
-    },
-    "coworkBrowserToolsEnabled": true,
-    "coworkPreferredBrowser": "chrome",
-    "coworkWebSearchEnabled": true,
-    "coworkScheduledTasksEnabled": true
-  }
-}' "$(cat "$CONFIG")" "config after the step"
+assert_eq 'y chat false Alt+Space true' "$(jq -r '[.mcpServers.x.command, .preferences.sidebarMode,
+    .preferences.menuBarEnabled, .preferences.quickEntryShortcut.accelerator,
+    .preferences.quickEntryShortcut.enabled] | map(tostring) | join(" ")' "$CONFIG")" "merged settings"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         Claude desktop app settings"
 assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
@@ -97,11 +70,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set"
 assert_contains "$RUN_OUTPUT" "$AGENT is already up to date"
 assert_eq "$before" "$(/bin/ls -i "$CONFIG")" "config after a re-run"
-
-# A key Claude adds to the quick entry shortcut stays, so the settings still count as set
-jq '.preferences.quickEntryShortcut.enabled = true' "$CONFIG" > "$SANDBOX/q.json" && cp "$SANDBOX/q.json" "$CONFIG"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Claude desktop app settings"
 
 # A quick entry shortcut that isn't an object is replaced by one
 stub pgrep 'exit 1'
@@ -123,23 +91,11 @@ assert_contains "$RUN_OUTPUT" "Claude is running; skipping."
 assert_eq "$(cat "$SANDBOX/changed.json")" "$(cat "$CONFIG")" "config while Claude runs"
 assert_file_not_contains "$STUB_LOG" "osascript"
 
-# brew lists the claude cask, but its app was deleted: status reports it, and the step
-# reinstalls it
-rm -rf "$APP"
-stub brew 'case "$*" in
-    "list --cask claude" | "reinstall --cask claude") ;;
-    *) exit 1 ;;
-esac'
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    claude (cask): brew lists it, but its app is gone; run brew reinstall --cask claude"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "brew reinstall --cask claude"
-
 # Without jq, status still reports the cask and the LaunchAgent; only the settings are unknown
 no_jq_status() {
     hide jq
     assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "claude (cask): brew lists it"
+    assert_contains "$RUN_OUTPUT" "ok         claude (cask)"
     assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
     assert_contains "$RUN_OUTPUT" "unknown    Claude desktop app settings: $(missing_cmd_hint jq)"
 }

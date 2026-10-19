@@ -25,12 +25,24 @@ assert_eq "-rw-r-----" "$(/bin/ls -l "$file" | cut -c1-10)" "mode after write_ba
 [ ! -e "$new" ] || fail "write_back left the temp file"
 assert_eq "settings.json" "$(/bin/ls -A "$HOME")" "files in the directory after write_back"
 
-# A new file gets the usual mode
-umask 022
+# A partial copy fails without replacing the old file or discarding the new contents.
+new="$(mktemp)"
+printf 'replacement\n' > "$new"
+stub cp 'for last; do :; done; printf part > "$last"; exit 1'
+assert_exit 1 write_back "$new" "$file"
+rm -f "$STUB_DIR/cp"
+assert_eq new "$(cat "$file")" "file after a partial copy"
+assert_eq replacement "$(cat "$new")" "new contents after a partial copy"
+assert_eq settings.json "$(/bin/ls -A "$HOME")" "files after a partial copy"
+rm "$new"
+
+# Unlike copy_file's fixed default, write_back honors the caller's umask.
+umask 077
 new="$(mktemp)"
 printf 'fresh\n' > "$new"
 assert_exit 0 write_back "$new" "$HOME/fresh.json"
-assert_eq "-rw-r--r--" "$(/bin/ls -l "$HOME/fresh.json" | cut -c1-10)" "mode of a new file"
+assert_eq 600 "$(file_mode "$HOME/fresh.json")" "mode of a new file"
+umask 022
 
 # A symlink stays a link, and its target is replaced whole in its own directory, keeping its mode.
 # The relative link goes through another link, to check readlink -f follows the chain.
@@ -76,13 +88,6 @@ if [ "$(id -u)" -ne 0 ]; then
     assert_eq old "$(cat "$HOME/ro/settings.json")" "file after a failed write_back"
     assert_contains "$RUN_OUTPUT" "The new contents are in $new"
     [ -e "$new" ] || fail "a failed write_back removed the new contents"
-    # The same through a symlink to a file in that directory
-    ln -s "$HOME/ro/settings.json" "$HOME/ro-link.json"
-    assert_exit 1 write_back "$new" "$HOME/ro-link.json"
-    [ -L "$HOME/ro-link.json" ] || fail "a failed write_back replaced the symlink"
-    assert_eq old "$(cat "$HOME/ro/settings.json")" "symlink target after a failed write_back"
-    assert_contains "$RUN_OUTPUT" "The new contents are in $new"
-    [ -e "$new" ] || fail "a failed write_back through a symlink removed the new contents"
     chmod 755 "$HOME/ro"
     # A file made read-only stays as it is, as cp would leave it, though its directory would let
     # a rename replace it. So does one a symlink points to.

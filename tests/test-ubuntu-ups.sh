@@ -3,12 +3,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's UPS part (ubuntu/lib/ups.sh): no UPS on USB, which installs nothing, a UPS
-# plugged in on a later run, which installs NUT and sets it up, an unchanged second run, a stale
-# notifier or RTC wake hook, NUT's files unreadable without sudo, a stopped service or driver, a
-# changed UPS, NUT removed, no upower hwdb, and a VM. And upsmon's notifier (ubuntu/ups-notify.sh),
-# which pushes each event to ntfy. /etc/nut, the notifier's and RTC wake hook's install paths, and
-# upower's hwdb point into the sandbox, and every command they'd run is a stub.
+# The ubuntu step's UPS part (ubuntu/lib/ups.sh), and upsmon's notifier (ubuntu/ups-notify.sh).
+# /etc/nut, the notifier's and RTC wake hook's install paths, and upower's hwdb point into the
+# sandbox, and every command they'd run is a stub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

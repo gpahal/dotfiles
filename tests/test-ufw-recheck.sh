@@ -1,12 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The ubuntu step doesn't ask for sudo just to re-check the ufw rules. It checks them up front when
-# sudo credentials are cached, and after the confirm when other changes need sudo anyway. It leaves
-# rules you added by hand alone. While a logged-in SSH session comes from outside the private ranges
-# and the tailnet, it doesn't turn ufw on, and fails; with ufw on, it adds the missing rules, which
-# can't cut anyone off. A connection that hasn't logged in doesn't count. The SSH ports include
-# ssh.socket's.
+# The ubuntu step's firewall: when it checks the ufw rules without asking for sudo, the rules it
+# adds, and the SSH sessions that keep it from turning ufw on.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

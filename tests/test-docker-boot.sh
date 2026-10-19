@@ -1,10 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Docker starts at boot, so containers with a restart policy come back after a reboot:
-# docker.service is enabled, and docker.socket is enabled and listening. The docker step enables
-# either one that's off, and status reports each. Only the run that installs Docker asks about the
-# docker group (test-docker-sources.sh), and status says how to join it.
+# The docker step's units that start Docker at boot, docker.service and docker.socket, and its
+# question about the docker group, which only the run that installs Docker asks
+# (test-docker-sources.sh).
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

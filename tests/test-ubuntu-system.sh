@@ -3,11 +3,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale waiting for its
-# first login, its apt source for an older release or a release it has no packages for, and its
-# install; smartd enabled but failed; sysctl settings written but not in effect, raised further by
-# another file, or lowered by one; the disk encryption warning; packages installed before they're
-# used; and unattended-upgrades' keys merged into 20auto-upgrades.
+# The ubuntu step on a set-up machine (tests/ubuntu-step-fixture.sh): Tailscale, smartd, sysctl,
+# the disk encryption warning, packages installed before they're used, and unattended-upgrades.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

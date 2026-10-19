@@ -7,7 +7,7 @@ set -euo pipefail
 # macOS signs with ~/.ssh/id_ed25519 and offers to load it into the agent from the keychain.
 # Ubuntu signs with a separate key without a passphrase, ~/.ssh/id_ed25519_signing, since the
 # T3 Code service's agents have no ssh-agent or terminal to unlock one. It sets only the signing
-# keys in ~/.gitconfig, and leaves its other settings as they are.
+# settings (user.signingkey, gpg.*, commit/tag.gpgsign) in ~/.gitconfig, and leaves the rest.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

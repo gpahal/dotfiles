@@ -4,7 +4,8 @@ set -euo pipefail
 # Copy the tmux config and tmux-sessionizer, and install tpm and the pinned plugins.
 #
 # The plugins go into ~/.tmux/plugins, each at the commit tmux/plugins.lock pins, and tpm loads
-# them when tmux starts. On Ubuntu, have tmux-continuum enable its systemd user unit, which starts tmux at boot and restores the sessions.
+# them when tmux starts. On Ubuntu, have tmux-continuum enable its systemd user unit, which
+# starts tmux at boot and restores the sessions.
 #
 # A temp HOME doesn't isolate the Ubuntu part, which enables the unit in your real user manager.
 # Test it in an ubuntu:26.04 container, which has no user manager, or with systemctl stubbed, as

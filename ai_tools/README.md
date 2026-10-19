@@ -67,7 +67,7 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 - **Model (script).** Opus 5.5 at medium effort.
 - **Interface (script).** Fullscreen TUI, normal key bindings.
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh): `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
-- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts `--worktree`, subagent, and background session worktrees under `~/.worktrees` with [`git wt`](../README.md#git), and removes clean subagent worktrees when a session ends. It copies the ignored paths `.worktreeinclude` lists; name an ignored directory, not a file inside one.
+- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts `--worktree`, subagent, and background session worktrees under `~/.worktrees` with [`git wt`](../README.md#git), and removes clean, merged subagent worktrees when a session ends, but not on `/clear`. It copies the ignored paths `.worktreeinclude` lists; name an ignored directory, not a file inside one.
 
 ### Desktop app
 
@@ -158,7 +158,7 @@ Notifications travel over SSH to Ghostty on the Mac. The script sets Claude Code
 One T3 Code server runs as a service, so the Mac and phone share it. Never start a second one on the same data.
 
 - **Service (script).** The `t3` CLI and a service on loopback port 3773, started at boot, telemetry off. `systemctl --user status t3code`; log in `~/.t3/userdata/logs/boot-service.log`.
-- While another server runs, the script changes nothing and `--status` reports it. Stop it and re-run.
+- While another server runs, the script leaves the service and its settings alone, and `--status` reports it. Stop it and re-run.
 - The service gets the same [app settings](#app-settings), and the script asks before restarting it.
 - Agents get the `docker` group after the first reboot. It's root-equivalent.
 - When T3 Code's browser needs root setup, the script prints the command instead of running it, since `~/.local/bin/t3` is user-writable.

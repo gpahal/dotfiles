@@ -344,7 +344,7 @@ done
 # Branch from HEAD, whose .gitignore ignores the copies; test-git-wt.sh covers the other safeguards
 end_session() {
     status=0
-    printf '{"session_id":"%s","hook_event_name":"SessionEnd","reason":"other","cwd":"%s"}' "$1" "$2" |
+    printf '{"session_id":"%s","hook_event_name":"SessionEnd","reason":"%s","cwd":"%s"}' "$1" "${3:-other}" "$2" |
         bash "$hook" > "$SANDBOX/stdout" 2> "$SANDBOX/stderr" || status=$?
 }
 mkdir -p "$repo/.claude"
@@ -358,6 +358,9 @@ assert_eq s1 "$(cat "$(git -C "$dir/e-clean" rev-parse --absolute-git-dir)/workt
 create e-other "$repo" s2
 [ -f "$dir/e-clean/.env" ] || fail "the create hook copied no .env into e-clean"
 echo changed > "$dir/e-copy/.env"
+end_session s1 "$repo" clear
+assert_eq "0" "$status" "SessionEnd hook's exit status on /clear"
+[ -d "$dir/e-clean" ] || fail "SessionEnd hook removed e-clean on /clear"
 end_session s1 "$repo"
 assert_eq "0" "$status" "SessionEnd hook's exit status"
 assert_eq "" "$(cat "$SANDBOX/stdout")" "SessionEnd hook's stdout"

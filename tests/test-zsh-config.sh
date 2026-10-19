@@ -77,6 +77,13 @@ assert_eq 2 "$(grep -c '^fakeinit' "$STUB_LOG")" "fakeinit runs"
 output="$(zsh -c "source '$HOME/.zsh/main.zsh'; _cached_init fakeinit two" 2>&1)"
 assert_contains "$output" "init-two" "cached _cached_init output"
 assert_eq 2 "$(grep -c '^fakeinit' "$STUB_LOG")" "fakeinit runs with the cache in place"
+cache="$HOME/.cache/zsh/fakeinit-init.zsh"
+assert_eq "$cache" "$(find "$cache" -perm 600)" "the cache with mode 600"
+# One others could write is rewritten, even under umask 0
+chmod 666 "$cache"
+zsh -c "umask 000; source '$HOME/.zsh/main.zsh'; _cached_init fakeinit two" > /dev/null 2>&1
+assert_eq 3 "$(grep -c '^fakeinit' "$STUB_LOG")" "fakeinit runs with a writable cache"
+assert_eq "$cache" "$(find "$cache" -perm 600)" "the rewritten cache with mode 600"
 run_with_file() {
     output="$(zsh -c "source '$HOME/.zsh/main.zsh'; _cached_init -f '$1' fakeinit two" 2>&1 || true)"
     assert_contains "$output" "init-two" "_cached_init -f output ($2)"
@@ -84,12 +91,12 @@ run_with_file() {
 }
 echo one > "$SANDBOX/fakeinit.conf"
 touch -t 200001010000 "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "first -f file" 3
-run_with_file "$SANDBOX/fakeinit.conf" "unchanged -f file" 3
+run_with_file "$SANDBOX/fakeinit.conf" "first -f file" 4
+run_with_file "$SANDBOX/fakeinit.conf" "unchanged -f file" 4
 touch -t 203001010000 "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "newer -f file" 4
+run_with_file "$SANDBOX/fakeinit.conf" "newer -f file" 5
 rm "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "deleted -f file" 5
+run_with_file "$SANDBOX/fakeinit.conf" "deleted -f file" 6
 
 # mise must load after command-not-found.zsh, or that replaces mise's wrapping handler
 export HOMEBREW_PREFIX="$SANDBOX/brew" HOMEBREW_REPOSITORY="$SANDBOX/brew"

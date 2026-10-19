@@ -147,6 +147,21 @@ mv "$SANDBOX/agents-skills" "$AGENTS_DIR"
 step_status
 assert_eq 0 "$RUN_STATUS" "status with separate dirs again"
 
+# A skills dir linked elsewhere, such as the repo's skills, keeps that dir's files
+mv "$CLAUDE_DIR" "$SANDBOX/claude-skills"
+mkdir -p "$SANDBOX/elsewhere"
+touch "$SANDBOX/elsewhere/keep"
+ln -s "$SANDBOX/elsewhere" "$CLAUDE_DIR"
+step
+assert_eq 1 "$RUN_STATUS" "a run with ~/.claude/skills linked elsewhere"
+assert_contains "$RUN_OUTPUT" "skills is a symlink, so left the skills dirs alone"
+[ "$(/bin/ls -A "$SANDBOX/elsewhere")" == keep ] || fail "the step changed the linked dir: $(/bin/ls -A "$SANDBOX/elsewhere")"
+step_status
+assert_eq 3 "$RUN_STATUS" "status with ~/.claude/skills linked elsewhere"
+assert_contains "$RUN_OUTPUT" "skills is a symlink, and the step removes what it didn't install there"
+rm "$CLAUDE_DIR"
+mv "$SANDBOX/claude-skills" "$CLAUDE_DIR"
+
 # With CLAUDE_CONFIG_DIR elsewhere, ~/.claude/skills is left alone
 rm -rf "$AGENTS_DIR" "$CLAUDE_DIR"
 mkdir -p "$CLAUDE_DIR/mine"

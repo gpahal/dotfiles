@@ -94,7 +94,15 @@ assert_exit 0 git wt rm unmerged --delete-merged-branch
 assert_contains "$RUN_OUTPUT" "git wt: kept branch unmerged, which has commits no other branch has"
 [ ! -e "$out" ] || fail "git wt rm --delete-merged-branch left $out"
 git show-ref --verify --quiet refs/heads/unmerged || fail "git wt rm --delete-merged-branch deleted branch unmerged"
+# Pushed isn't merged: origin/unmerged is the branch's own copy
+git push -q origin unmerged
+git fetch -q origin
+out="$(git wt add unmerged 2> /dev/null)" || fail "git wt add unmerged again failed"
+assert_exit 0 git wt rm unmerged --delete-merged-branch
+assert_contains "$RUN_OUTPUT" "git wt: kept branch unmerged"
 git branch -q -D unmerged
+git push -q origin :unmerged
+git fetch -q --prune origin
 
 git tag v2
 git wt add v2 > /dev/null 2>&1 || fail "git wt add v2 failed"

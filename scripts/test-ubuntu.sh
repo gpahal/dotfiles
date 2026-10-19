@@ -34,7 +34,7 @@ if ! command -v orb &>/dev/null; then
     echo "OrbStack's orb command isn't installed. Install OrbStack (brew install --cask orbstack)." >&2
     exit 1
 fi
-if orb list -q | grep -qx "$MACHINE"; then
+if orb list -q | grep -x "$MACHINE" > /dev/null; then
     echo "An OrbStack machine named $MACHINE already exists. Delete it with: orb delete -f $MACHINE" >&2
     exit 1
 fi
@@ -51,7 +51,7 @@ OWN_MACHINE=false
 
 # shellcheck disable=SC2329 # the EXIT trap runs it
 cleanup() {
-    if "$OWN_MACHINE" && orb list -q | grep -qx "$MACHINE"; then
+    if "$OWN_MACHINE" && orb list -q | grep -x "$MACHINE" > /dev/null; then
         echo "Deleting the $MACHINE machine..."
         orb delete -f "$MACHINE" >> "$LOG" 2>&1 || echo "Couldn't delete it. Run: orb delete -f $MACHINE" >&2
     fi

@@ -297,11 +297,13 @@ same_file() {
     fi
 }
 
-# Read whole first: grep -q exiting early would SIGPIPE a long listing
+# Read whole first: grep -q exiting early would SIGPIPE a long listing. A remote's copy of the
+# branch, such as an open PR's, maps to the branch itself, so a push alone doesn't count.
 is_merged() {
     local refs
     refs="$(git for-each-ref --contains "refs/heads/$1" --format='%(refname)' refs/heads refs/remotes)" ||
         return 1
+    refs="$(sed -E 's|^refs/remotes/[^/]+/|refs/heads/|' <<< "$refs")"
     [ -n "$refs" ] && grep -qvxF "refs/heads/$1" <<< "$refs"
 }
 

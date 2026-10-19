@@ -342,16 +342,16 @@ status_ufw() {
         status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         return 0
     fi
-    if sudo_ready; then
-        ufw_configured -n || ufw=$?
-    else
-        ufw=2
+    if ! sudo_ready; then
+        status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
+        return 0
     fi
+    ufw_configured -n || ufw=$?
     case "$ufw" in
         0) status_item ok "$rules" ;;
         1) status_item missing "$rules (re-run the ubuntu step)" ;;
         *)
-            status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
+            status_item unknown "$rules: sudo ufw status or sudo sshd -T fails, so they can't be checked"
             return 0
             ;;
     esac

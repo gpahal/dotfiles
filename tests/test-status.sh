@@ -95,6 +95,7 @@ printf '%s\n' "$SLEEP_CONF_CONTENT" > "$SLEEP_CONF"
 printf '%s\n' "$SYSCTL_CONTENT" > "$SYSCTL_CONF"
 echo "DEVICESCAN -M exec /usr/share/smartmontools/smartd-runner" > "$SMARTD_CONF"
 stub nmcli
+stub lsblk
 stub sshd '[ "$1" != -T ] || { echo "port 22"
     { cat "'"$SANDBOX"'/10-dotfiles.conf" 2> /dev/null || cat "'"$SANDBOX"'/10-dotfiles.conf.root"; } | awk "{ print tolower(\$1), \$2 }"; }'
 ufw_has_rules() {

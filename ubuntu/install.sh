@@ -295,7 +295,14 @@ status() {
             status_check "Wake-on-LAN on \"$name\" (also needs the BIOS settings in the README)" wake_on_lan_on "$uuid"
         done < <(wired_connections)
         "$wired" || status_item skipped "Wake-on-LAN: no wired connection"
+        while IFS=$'\t' read -r uuid name; do
+            status_check "Wi-Fi \"$name\" connects at boot, without a login (bash setup.sh ubuntu says how)" \
+                wifi_connects_at_boot "$uuid"
+        done < <(nm_connections 802-11-wireless --active)
     fi
+    # info, since a passphrase is often chosen on purpose and only a reinstall or TPM binding changes it
+    ! disk_needs_passphrase ||
+        status_item info "Disk encrypted with a passphrase, so every boot waits for it at the console (bash setup.sh ubuntu says how to avoid it)"
     status_disk_space / "$HOME" /var
     status_firmware
     status_result
@@ -391,7 +398,9 @@ apply() {
 
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Everything it can check is already set up."
-        if [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ]; then
+        if [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ] && sudo_ready; then
+            echo "  ufw is on, but its rules couldn't be checked: sudo ufw status or sudo sshd -T fails."
+        elif [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ]; then
             echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
         elif [ "$ufw" -ne 0 ]; then
             echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
@@ -454,30 +463,38 @@ apply() {
 
 # A user-limited connection, or psk-flags 1 or 2 (password not kept by the system), waits for a
 # login, so the machine stays offline after a reboot
+wifi_connects_at_boot() {
+    local permissions psk_flags n
+    permissions="$(nmcli -g connection.permissions connection show uuid "$1" 2>/dev/null)"
+    psk_flags="$(nmcli -g 802-11-wireless-security.psk-flags connection show uuid "$1" 2>/dev/null)"
+    n="${psk_flags%% *}"
+    case "$n" in '' | *[!0-9]*) n=0 ;; esac
+    [ -z "$permissions" ] && (((n & 3) == 0))
+}
+
 warn_wifi_needs_login() {
-    local uuid name permissions psk_flags n
+    local uuid name
     while IFS=$'\t' read -r uuid name; do
-        permissions="$(nmcli -g connection.permissions connection show uuid "$uuid" 2>/dev/null)"
-        psk_flags="$(nmcli -g 802-11-wireless-security.psk-flags connection show uuid "$uuid" 2>/dev/null)"
-        n="${psk_flags%% *}"
-        case "$n" in '' | *[!0-9]*) n=0 ;; esac
-        if [ -n "$permissions" ] || (((n & 3) != 0)); then
-            echo "  Wi-Fi \"$name\" only connects after you log in. Use Ethernet, or make it connect at boot."
-            echo "  Run these at the machine, not over this Wi-Fi: the second reconnects it, asks for the"
-            echo "  password, and saves it."
-            echo "    sudo nmcli connection modify uuid $uuid connection.permissions \"\" 802-11-wireless-security.psk-flags 0"
-            echo "    sudo nmcli --ask connection up uuid $uuid"
-        fi
+        wifi_connects_at_boot "$uuid" && continue
+        echo "  Wi-Fi \"$name\" only connects after you log in. Use Ethernet, or make it connect at boot."
+        echo "  Run these at the machine, not over this Wi-Fi: the second reconnects it, asks for the"
+        echo "  password, and saves it."
+        echo "    sudo nmcli connection modify uuid $uuid connection.permissions \"\" 802-11-wireless-security.psk-flags 0"
+        echo "    sudo nmcli --ask connection up uuid $uuid"
     done < <(nm_connections 802-11-wireless --active)
 }
 
 # snapd labels TPM-backed LUKS ubuntu-<role>-enc; systemd-cryptenroll keeps the label, so a
 # crypttab tpm2-device option also counts. TPM+PIN can't be told apart and isn't warned about.
-warn_disk_encryption() {
-    lsblk -rno TYPE 2>/dev/null | grep -qx crypt || return 0
+disk_needs_passphrase() {
+    lsblk -rno TYPE 2>/dev/null | grep -qx crypt || return 1
     lsblk -rno FSTYPE,LABEL 2>/dev/null |
-        awk '$1 == "crypto_LUKS" && $2 !~ /^ubuntu-.*-enc$/ { found = 1 } END { exit !found }' || return 0
-    ! grep -qE '^[^#]*tpm2-device=' "$CRYPTTAB" 2>/dev/null || return 0
+        awk '$1 == "crypto_LUKS" && $2 !~ /^ubuntu-.*-enc$/ { found = 1 } END { exit !found }' || return 1
+    ! grep -qE '^[^#]*tpm2-device=' "$CRYPTTAB" 2>/dev/null
+}
+
+warn_disk_encryption() {
+    disk_needs_passphrase || return 0
     echo "  The disk is encrypted with a passphrase. Every boot waits for it at the console, so the"
     echo "  machine can't come back by itself after a power cut. Reinstalling with TPM-backed"
     echo "  encryption, or binding the disk to the TPM (systemd-cryptenroll), avoids it."

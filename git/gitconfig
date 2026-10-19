@@ -134,6 +134,6 @@
 [includeIf "gitdir:~/Dev/"]
     path = fsmonitor
 
-# Last, so per-machine settings win
+# Last, so its settings win over this file. ~/.gitconfig, which git reads after this file, wins over both.
 [include]
     path = ~/.gitconfig.local

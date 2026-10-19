@@ -106,17 +106,7 @@ assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 update --er
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was kept after its update failed"
 assert_file_not_contains "$STUB_LOG" "apt-get install"
 
-# The same with a docker.sources and a key from before: both come back as they were
-reset
-mkdir -p "$(dirname "$DOCKER_KEYRING")"
-echo "old key" > "$DOCKER_KEYRING"
-echo "old source" > "$DOCKER_SOURCES"
-touch "$SANDBOX/docker-update-fails"
-export DOTFILES_ASSUME_YES=1
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "so the old one is back"
-assert_eq "old source" "$(cat "$DOCKER_SOURCES")" "docker.sources after its update failed"
-assert_eq "old key" "$(cat "$DOCKER_KEYRING")" "Docker's key after the update failed"
+# Previous source/key restoration is covered directly in test-apt-sources.sh.
 # Without a key from before, the new one goes too
 reset
 rm -f "$DOCKER_KEYRING"
@@ -124,6 +114,7 @@ touch "$SANDBOX/docker-update-fails"
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 main
 [ ! -e "$DOCKER_KEYRING" ] || fail "Docker's new key was kept after its source's update failed"
+mkdir -p "$(dirname "$DOCKER_KEYRING")"
 # Writing the key fails partway: the old key stays whole, with no temp file beside it, and no
 # source is written
 reset

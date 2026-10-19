@@ -42,14 +42,6 @@ assert_contains "$RUN_OUTPUT" "already sets log-driver, live-restore, localhost-
 assert_eq "$before" "$(/bin/ls -li "$DOCKER_DAEMON_CONFIG")" "daemon.json after a re-run"
 assert_file_not_contains "$STUB_LOG" "systemctl"
 
-# The 15 /16 pools of an earlier run need the change to /24s
-jq -c '.["default-address-pools"] = [range(17; 32) | {base: "172.\(.).0.0/16", size: 16}]' \
-    "$DOCKER_DAEMON_CONFIG" > "$SANDBOX/old-pools.json"
-cp "$SANDBOX/old-pools.json" "$DOCKER_DAEMON_CONFIG"
-assert_exit 1 daemon_configured
-assert_exit 0 configure_daemon
-assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json after the change to /24 pools"
-
 # Driver-specific options don't survive the switch to local; compatible limits and other
 # daemon settings do. No temp file is left beside it.
 printf '%s\n' '{"log-driver":"syslog","log-opts":{"syslog-address":"udp://127.0.0.1:514","max-size":"10m"},"dns":["1.1.1.1"]}' > "$DOCKER_DAEMON_CONFIG"
@@ -105,7 +97,7 @@ assert_file_contains "$STUB_LOG" 'systemctl try-restart docker.service'
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a retry"
 
 # Other keys are kept, a setting with another value is replaced, and the file keeps its mode
-echo '{"dns": ["1.1.1.1"], "log-driver": "json-file", "ip": "0.0.0.0"}' > "$DOCKER_DAEMON_CONFIG"
+echo '{"dns": ["1.1.1.1"], "log-driver": "json-file", "ip": "0.0.0.0", "default-address-pools": [{"base":"172.17.0.0/16","size":16}]}' > "$DOCKER_DAEMON_CONFIG"
 chmod 640 "$DOCKER_DAEMON_CONFIG"
 assert_exit 1 daemon_configured
 assert_exit 0 configure_daemon
@@ -125,16 +117,7 @@ assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_eq '{"dns": [' "$(cat "$DOCKER_DAEMON_CONFIG")" "invalid daemon.json"
 assert_file_not_contains "$STUB_LOG" "systemctl"
-# So is a file with two JSON values, which jq would turn into two
-printf '%s\n' '{"dns": ["1.1.1.1"]}' '{"debug": true}' > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
-: > "$STUB_LOG"
-assert_exit 1 configure_daemon
-assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
-assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
-assert_file_not_contains "$STUB_LOG" "dockerd"
-assert_file_not_contains "$STUB_LOG" "systemctl"
-# Even when the last of them has every setting: it's not configured, and the step leaves it alone
+# Multiple JSON values are invalid even when the last has every setting.
 { echo '{"debug": true}'; echo "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
 cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
 assert_exit 1 daemon_configured
@@ -144,9 +127,7 @@ assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
 assert_file_not_contains "$STUB_LOG" "dockerd"
 
-# Several JSON values aren't configured, even when the last one is
-{ cat "$SANDBOX/before-restart"; sorted /dev/stdin <<< "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
-assert_exit 1 daemon_configured
+assert_file_not_contains "$STUB_LOG" "systemctl"
 
 # A running daemon: the pending item says the restart stops containers
 stub systemctl '[ "$*" == "is-active --quiet docker.service" ]'

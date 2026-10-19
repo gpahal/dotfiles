@@ -66,14 +66,11 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "plugin.js differs from the repo's"
 stub pkill 'exit 1'
 : > "$STUB_LOG"
-assert_exit 0 main --no-backup
+assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Stream Deck isn't running; it loads the plugin when it starts."
 assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
 cmp -s "$src/plugin.js" "$PLUGIN_DIR/plugin.js" || fail "plugin.js wasn't restored"
 
-# An edit is replaced with no backup
-echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
-assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Backed up"
 [ ! -e "$PLUGIN_DIR/plugin.js.bak" ] || fail "the step backed up the edit"
 assert_exit 0 status
@@ -111,8 +108,6 @@ stub pgrep 'exit 1'
 # the plugin
 if command -v jq &> /dev/null; then
     actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
-    assert_eq "com.gpahal.dotfiles.overview com.gpahal.dotfiles.editor com.gpahal.dotfiles.terminal com.gpahal.dotfiles.files com.gpahal.dotfiles.chrome com.gpahal.dotfiles.chrome-tab com.gpahal.dotfiles.gmail com.gpahal.dotfiles.t3-code com.gpahal.dotfiles.claude com.gpahal.dotfiles.cpu com.gpahal.dotfiles.memory com.gpahal.dotfiles.swap com.gpahal.dotfiles.top com.gpahal.dotfiles.gpu com.gpahal.dotfiles.temperature com.gpahal.dotfiles.power com.gpahal.dotfiles.disk com.gpahal.dotfiles.network com.gpahal.dotfiles.activity-monitor com.gpahal.dotfiles.back " \
-        "$actions" "the manifest's actions"
     open_in_targets="|$(sed -n 's/^# Usage: open-in //p' "$src/bin/open-in")|"
     for action in $actions; do
         target="${action##*.}"

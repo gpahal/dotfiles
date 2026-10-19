@@ -2,7 +2,7 @@ name: Check
 
 # main is the default branch (gh repo view). A pull request's pushes run once, as pull_request,
 # instead of also as push. Run it by hand on another branch with workflow_dispatch. The weekly run
-# is only for ai-settings, whose CLIs release without a change to this repo.
+# checks upstream packages and AI tools, which release without a change to this repo.
 on:
   push:
     branches: [main]
@@ -52,6 +52,47 @@ defaults:
     shell: bash
 
 jobs:
+  # Only live upstream checks need path selection. Local checks and tests run on every change.
+  changes:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      brew: ${{ steps.paths.outputs.brew }}
+      ai: ${{ steps.paths.outputs.ai }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: paths
+        name: Select live compatibility checks
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          brew=false ai=false
+          range="$BASE_SHA..$HEAD_SHA"
+          [ "$EVENT" != pull_request ] || range="$BASE_SHA...$HEAD_SHA"
+          # A new branch or unavailable history runs everything, as do weekly and manual runs.
+          if [[ "$EVENT" == schedule || "$EVENT" == workflow_dispatch || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] ||
+              ! git diff --name-only --no-renames "$range" -- > "$RUNNER_TEMP/changed-files"; then
+            brew=true ai=true
+          else
+            while IFS= read -r file; do
+              case "$file" in
+                .github/* | lib/*) brew=true ai=true ;;
+                homebrew/* | scripts/check-brew-packages.sh | scripts/lib/brew.sh | tests/test-check-brew-packages.sh) brew=true ;;
+                ai_tools/claude-code/* | ai_tools/codex/* | ai_tools/t3-code/* | ai_tools/lib/* | \
+                  ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh | \
+                  scripts/check-ai-settings.sh | scripts/check-claude-keys.sh | scripts/check-t3-settings.sh | \
+                  scripts/claude-settings-keys.txt | scripts/lib/ai-settings.sh | tests/test-check-ai-settings.sh | \
+                  tests/test-check-t3-settings.sh) ai=true ;;
+              esac
+            done < "$RUNNER_TEMP/changed-files"
+          fi
+          printf 'brew=%s\nai=%s\n' "$brew" "$ai" >> "$GITHUB_OUTPUT"
+
   check:
     if: github.event_name != 'schedule'
     timeout-minutes: 20
@@ -125,12 +166,6 @@ jobs:
           shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
           bash scripts/check-tool-versions.sh
 
-      # Fails on a formula or cask brew dropped, deprecated, or disabled, or a formula Ubuntu gets
-      # that has no Linux bottle. The macOS leg runs it, since brew is on its PATH.
-      - name: Check the Homebrew packages still exist (macOS)
-        if: runner.os == 'macOS'
-        run: bash scripts/check-brew-packages.sh
-
       # The tests stub sudo, and the steps expect a normal user. GitHub's runners run jobs as one.
       - name: Check the job isn't root
         run: test "$(id -u)" -ne 0
@@ -142,12 +177,27 @@ jobs:
         env:
           TEST_FAIL_ON_SKIP: 1
 
+  # Homebrew can drop packages or Linux bottles independently of repo changes.
+  brew-packages:
+    needs: changes
+    if: needs.changes.outputs.brew == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: brew install jq
+      - run: bash scripts/check-brew-packages.sh
+
   # The settings the claude-code and codex steps write, checked by the latest Claude Code and Codex
   # (scripts/check-ai-settings.sh), and the t3-code step's keys against the latest T3 Code
   # (scripts/check-t3-settings.sh). Unpinned on purpose, so a release that renames or rejects a
   # setting fails here. A job of its own, so a CLI release can't block the shell checks. `just check`
   # runs neither script.
   ai-settings:
+    needs: changes
+    if: needs.changes.outputs.ai == 'true'
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -196,8 +246,8 @@ jobs:
       - run: bash scripts/check-ai-settings.sh < /dev/null
 
       # The keys the t3-code step writes, against the latest T3 Code release's settings schemas
-      # Runs even when the check above fails, since it doesn't depend on it
-      - if: success() || failure()
+      # The schema is platform-independent, so check it once, even if the CLI check fails.
+      - if: runner.os == 'macOS' && (success() || failure())
         run: bash scripts/check-t3-settings.sh < /dev/null
         env:
           GITHUB_TOKEN: ${{ github.token }}

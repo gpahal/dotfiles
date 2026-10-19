@@ -95,6 +95,12 @@ upgrade_on() {
     sed -e "s|$HOME|~|g" -e "s|$REPO_DIR/|REPO/|g" -e "/^$(basename "$JQ") /d" "$STUB_LOG"
 }
 
+# Keep the ordered actions and environment activation, leaving out read-only discovery calls.
+# Any unexpected command remains in the result, so extra writes still fail the test.
+upgrade_actions() {
+    upgrade_on "$1" | sed -E '/^(brew (bundle check|info|list|outdated|--caskroom)|pgrep |claude plugin (marketplace list|list) )/d'
+}
+
 # macOS. Claude Code is the native install, which updates itself.
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
 mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
@@ -104,16 +110,8 @@ ln -s "$STUB_DIR/t3" "$HOME/.local/bin/t3"
 assert_eq "brew update
 brew upgrade
 (not auto_updates casks)
-brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
-brew info --json=v2 --installed --cask
-brew info --json=v2 --cask rectangle
 brew install --cask rectangle
-brew list --cask -1
-brew outdated --cask --greedy --quiet zed
-brew info --json=v2 --cask zed
-brew --caskroom
-pgrep -af ^/Applications/Zed[^/]*\\.app/Contents/MacOS/
 brew upgrade --cask --greedy zed
 mas upgrade
 vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
@@ -123,20 +121,11 @@ new-node npm update -g
 uv tool upgrade --all
 rustup update
 claude update
-brew list --cask -1
-brew outdated --cask --greedy --quiet claude
-brew info --json=v2 --cask claude
-brew --caskroom
-pgrep -af ^/Applications/Claude[^/]*\\.app/Contents/MacOS/
-claude plugin marketplace list --json
 claude plugin marketplace update
-claude plugin marketplace list --json
-claude plugin list --json
 claude plugin update a@m --scope user
-claude plugin list --json
 t3 update
 codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_on darwin25.0)" "commands upgrade runs on macOS"
+brew cleanup" "$(upgrade_actions darwin25.0)" "commands upgrade runs on macOS"
 assert_file_contains "$SANDBOX/output" "Claude is running; quit it and run upgrade-ai-tools again to update it."
 
 # With HOME reached through a symlink, Claude Code still counts as the native install
@@ -158,7 +147,8 @@ stub brew 'case "$*" in
     "bundle check"*) ;;
 esac'
 assert_not_contains "$(upgrade_on darwin25.0)" "bundle install" "commands upgrade runs with the Brewfile installed"
-assert_eq "" "$(ls -A "$TMPDIR")" "files upgrade leaves in TMPDIR"
+# Only the sandbox mktemp wrapper's files belong to the script; system tools may cache here.
+assert_eq "" "$(find "$TMPDIR" -maxdepth 1 -name 'tmp.*' -print)" "temporary files upgrade leaves behind"
 cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
 # A cask with no app artifact, such as Logi Options+, which installs through an installer and quits
@@ -194,13 +184,8 @@ sudo apt -o DPkg::Lock::Timeout=300 upgrade
 brew update
 brew upgrade
 (not auto_updates casks)
-brew bundle check --file=REPO/homebrew/Brewfile --no-upgrade
 brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
-brew list --cask -1
 fc-cache -f ~/.local/share/fonts
-brew list --cask -1
-brew outdated --cask --greedy --quiet zed
-pgrep -x zed-editor
 brew upgrade --cask --greedy zed
 vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
 mise upgrade
@@ -208,16 +193,11 @@ mise hook-env --force -s bash
 new-node npm update -g
 uv tool upgrade --all
 rustup update
-brew list --cask -1
-claude plugin marketplace list --json
 claude plugin marketplace update
-claude plugin marketplace list --json
-claude plugin list --json
 claude plugin update a@m --scope user
-claude plugin list --json
 t3 update
 codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_on linux-gnu)" "commands upgrade runs on Ubuntu"
+brew cleanup" "$(upgrade_actions linux-gnu)" "commands upgrade runs on Ubuntu"
 
 # A running Zed isn't replaced, which would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'

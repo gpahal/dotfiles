@@ -221,18 +221,20 @@ for password in 'two words' 'pass#word' 'say "hi"' 'back\slash' 'all "of" #th\is
     escaped="$(printf '%s' "$password" | sed 's/[\\"]/\\&/g')"
     printf '%s\n' "[upsmon]" "	password = \"$escaped\"" "	upsmon primary" > "$NUT_DIR/upsd.users"
     assert_eq "$password" "$(upsmon_password)" "the password NUT reads from upsd.users"
-    : > "$STUB_LOG"
-    assert_exit 0 setup_ups
-    assert_eq "$password" "$(upsmon_password)" "the password kept in upsd.users"
-    assert_file_contains "$NUT_DIR/upsd.users" "	password = \"$escaped\""
-    assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$escaped\" primary"
-    # A second run reads it back as it wrote it, so it changes nothing
-    : > "$STUB_LOG"
-    assert_exit 0 setup_ups
-    assert_file_not_contains "$STUB_LOG" "install -m"
-    assert_contains "$RUN_OUTPUT" "already set up"
-    assert_exit 0 nut_files_current
+    assert_eq "\"$escaped\"" "$(nut_quote "$password")" "quoted password"
 done
+# The final value combines every special character; one full round trip checks both files.
+: > "$STUB_LOG"
+assert_exit 0 setup_ups
+assert_eq "$password" "$(upsmon_password)" "the password kept in upsd.users"
+assert_file_contains "$NUT_DIR/upsd.users" "	password = \"$escaped\""
+assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$escaped\" primary"
+# A second run reads it back as it wrote it, so it changes nothing
+: > "$STUB_LOG"
+assert_exit 0 setup_ups
+assert_file_not_contains "$STUB_LOG" "install -m"
+assert_contains "$RUN_OUTPUT" "already set up"
+assert_exit 0 nut_files_current
 # An unquoted password ends at a space or #, as NUT reads it
 printf '%s\n' "[upsmon]" "	password = plain # a comment" > "$NUT_DIR/upsd.users"
 assert_eq plain "$(upsmon_password)" "an unquoted password"

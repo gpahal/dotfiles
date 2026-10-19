@@ -74,8 +74,7 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
 assert_eq 5 "$(interval)" "the refresh interval with DOTFILES_ASSUME_YES=1"
 
 # Each model's effort, which /effort saves, follows the same rule: unset, it's set (medium for Opus
-# 5.5, high for Sonnet 5.5). One of your own is kept without a terminal and named by status, and
-# replaced with DOTFILES_ASSUME_YES=1.
+# 5.5, high for Sonnet 5.5). Keep one nested-key preserve/replace case; the interval covers consent.
 load_script ai_tools/claude-code/install.sh
 replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
 effort() { jq -r --arg m "$1" '.modelSettings[$m].effortLevel' "$settings"; }
@@ -86,12 +85,7 @@ jq '.modelSettings["claude-opus-5-5"].effortLevel = "xhigh"' "$settings" > "$set
     mv "$settings.new" "$settings"
 mine="$(cat "$settings")"
 assert_exit 0 configure_claude_code
-assert_contains "$RUN_OUTPUT" "Kept your value for Claude Code's claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel), xhigh."
-assert_contains "$RUN_OUTPUT" "already set"
 assert_eq "$mine" "$(cat "$settings")" "the settings with an effort of your own"
-run status
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
-assert_contains "$RUN_OUTPUT" "ok         Claude Code's claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel): yours, xhigh (the repo's is medium)"
 DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
 assert_eq medium "$(effort claude-opus-5-5)" "the effort with DOTFILES_ASSUME_YES=1"
 

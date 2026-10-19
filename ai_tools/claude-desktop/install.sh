@@ -12,6 +12,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 
+STEP_OS=macos
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
@@ -68,10 +69,6 @@ configure_claude_desktop() {
 }
 
 status() {
-    if ! is_macos; then
-        status_item skipped "Claude desktop app: macOS only"
-        return 0
-    fi
     status_cask claude /Applications/Claude.app
     claude_desktop_files status_file
     if status_require_cmd jq "Claude desktop app settings"; then
@@ -82,10 +79,6 @@ status() {
 
 apply() {
     echo "Setting up the Claude desktop app..."
-    if ! is_macos; then
-        echo "  Claude desktop app: macOS only; skipping."
-        return 0
-    fi
     require_cmd jq || return 1
     require_cmd brew || return 1
     local result=0

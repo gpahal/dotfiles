@@ -5,7 +5,7 @@ set -euo pipefail
 
 # The claude-desktop step merges its settings into the app's config, keeping the keys it doesn't
 # set, copies the LaunchAgent that opens Claude at login, changes nothing on a re-run, leaves the
-# config alone while Claude runs, and skips on Ubuntu.
+# config alone while Claude runs, and is macOS only.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -25,17 +25,14 @@ CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 assert_eq "$CONFIG" "$CLAUDE_DESKTOP_CONFIG" "config path"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 
-# Ubuntu: nothing to do
-is_macos() { false; }
+# Ubuntu: STEP_OS skips the step, which writes nothing
+as_os ubuntu
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Claude desktop app: macOS only"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "skipped    Claude desktop app: macOS only"
 [ ! -e "$CONFIG" ] || fail "the config was written on Ubuntu"
 [ ! -e "$AGENT" ] || fail "the LaunchAgent was written on Ubuntu"
 
 # macOS, with neither the cask nor the app: status reports it, and the step installs it
-is_macos() { true; }
+as_os macos
 stub brew '[ "$*" == "install --cask claude" ]'
 stub pgrep 'exit 1'
 assert_exit 3 status

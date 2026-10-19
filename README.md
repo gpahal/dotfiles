@@ -57,7 +57,7 @@ bash setup.sh
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
 | `git` | Copies the git config, the global ignore file, and `git wt`, and offers to log in to GitHub with `gh` |
 | `lazygit` | Copies the lazygit config |
-| `ssh` | Makes `~/.ssh` private. On macOS, keeps your keys in the keychain and loads them at login |
+| `ssh` | Makes `~/.ssh` and `~/.ssh/config` private. On macOS, keeps your keys in the keychain and loads them at login |
 | `zsh` | Copies the zsh and starship config, adds its lines to `~/.zshrc` and the other startup files, and offers to make zsh the login shell |
 | `vim` | Copies the vim config, installs vim-plug, and moves installed plugins to their pins |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs tpm and the plugins at their pinned commits. On Ubuntu, sets tmux to start at boot |

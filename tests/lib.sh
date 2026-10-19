@@ -7,7 +7,12 @@
 # command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
 # runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
 # test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
-# calls skip. tests/run.sh runs each test and says how skips and timeouts count.
+# calls skip. tests/run.sh runs each test and says how skips, timeouts, and the "# serial" mark
+# work.
+#
+# To change a function a loaded script defines, use replace_fn, which fails the test when there's
+# no such function, rather than redefining it bare. as_os macos|ubuntu sets is_macos and is_ubuntu,
+# and answer yes|no sets confirm's answer.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -299,6 +304,45 @@ subtest() {
         exit "$TEST_FAILURES"
     ) || failed=$?
     TEST_FAILURES=$((TEST_FAILURES + failed))
+}
+
+# Replace function <name>, which a loaded script defines, with <body>. It fails the test when no
+# such function exists, as when a step renamed it, since the override would then change nothing
+# and the test could pass without testing what it meant to. It redefines the function anyway.
+# e.g. replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+replace_fn() {
+    declare -F "$1" > /dev/null || fail "replace_fn: no function $1 to replace"
+    eval "$1() {
+${2:-:}
+}"
+}
+
+# Make the loaded scripts' is_macos and is_ubuntu say the test runs on macOS or on Ubuntu. Only
+# this shell's functions change; a step run as its own process needs a uname stub instead.
+# e.g. as_os ubuntu
+as_os() {
+    case "$1" in
+        macos)
+            replace_fn is_macos 'return 0'
+            replace_fn is_ubuntu 'return 1'
+            ;;
+        ubuntu)
+            replace_fn is_macos 'return 1'
+            replace_fn is_ubuntu 'return 0'
+            ;;
+        *) fail "as_os: '$1' isn't macos or ubuntu" ;;
+    esac
+}
+
+# Make the loaded scripts' confirm print its question and answer yes or no, as a person at a
+# terminal would
+# e.g. answer yes
+answer() {
+    case "$1" in
+        yes) replace_fn confirm 'echo "$1"' ;;
+        no) replace_fn confirm 'echo "$1"; return 1' ;;
+        *) fail "answer: '$1' isn't yes or no" ;;
+    esac
 }
 
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # The skills step copies each repo skill into ~/.agents/skills and links it from ~/.claude/skills,
 # replaces a copy that differs from the repo, down to its executable bits, and removes every entry
-# that isn't a repo skill. A Python cache or .git in a copy doesn't count as a difference. A re-run
+# that isn't a repo skill, apart from Claude Code's own in ~/.claude/skills. A Python cache or .git in a copy doesn't count as a difference. A re-run
 # changes nothing, and --status names what the step would change. It runs on a copy of the repo
 # with three skills.
 
@@ -122,6 +122,44 @@ done
 step_status
 assert_eq 0 "$RUN_STATUS" "status after removing extra entries"
 
+# Claude Code's own entries in ~/.claude/skills, synced and its dot-entries, aren't extra
+mkdir -p "$CLAUDE_DIR/synced/x" "$CLAUDE_DIR/.trash/y"
+step_status
+assert_eq 0 "$RUN_STATUS" "status with Claude Code's own entries"
+assert_not_contains "$RUN_OUTPUT" "synced"
+assert_not_contains "$RUN_OUTPUT" ".trash"
+step
+assert_eq 0 "$RUN_STATUS" "a run with Claude Code's own entries"
+[ -d "$CLAUDE_DIR/synced/x" ] && [ -d "$CLAUDE_DIR/.trash/y" ] || fail "the step removed Claude Code's own entries"
+rm -rf "$CLAUDE_DIR/synced" "$CLAUDE_DIR/.trash"
+
+# When the two dirs are one, through a symlink either way or into the other, the step fails
+# before changing anything, and status says so
+mv "$CLAUDE_DIR" "$SANDBOX/claude-skills"
+for target in "$AGENTS_DIR" "$AGENTS_DIR/tdd"; do
+    ln -s "$target" "$CLAUDE_DIR"
+    before="$(cd "$AGENTS_DIR" && /bin/ls -lAR)"
+    step
+    assert_eq 1 "$RUN_STATUS" "a run with ~/.claude/skills linked to $target"
+    assert_contains "$RUN_OUTPUT" "are one dir, or one is inside the other"
+    assert_eq "$before" "$(cd "$AGENTS_DIR" && /bin/ls -lAR)" "~/.agents/skills after a run with shared dirs"
+    step_status
+    assert_eq 3 "$RUN_STATUS" "status with ~/.claude/skills linked to $target"
+    assert_contains "$RUN_OUTPUT" "missing    Skills dirs: ~/.agents/skills and ~/.claude/skills are one dir"
+    assert_not_contains "$RUN_OUTPUT" "ok "
+    rm "$CLAUDE_DIR"
+done
+mv "$AGENTS_DIR" "$SANDBOX/agents-skills"
+mv "$SANDBOX/claude-skills" "$CLAUDE_DIR"
+ln -s "$CLAUDE_DIR" "$AGENTS_DIR"
+step
+assert_eq 1 "$RUN_STATUS" "a run with ~/.agents/skills linked to ~/.claude/skills"
+assert_contains "$RUN_OUTPUT" "are one dir, or one is inside the other"
+rm "$AGENTS_DIR"
+mv "$SANDBOX/agents-skills" "$AGENTS_DIR"
+step_status
+assert_eq 0 "$RUN_STATUS" "status with separate dirs again"
+
 # CLAUDE_CONFIG_DIR elsewhere: the skills are for Codex only, and ~/.claude/skills, extra entries
 # included, is left alone
 rm -rf "$AGENTS_DIR" "$CLAUDE_DIR"
@@ -173,4 +211,9 @@ step
 assert_eq 1 "$RUN_STATUS" "status without repo skills"
 assert_contains "$RUN_OUTPUT" "Found no skills in ai_tools/skills"
 [ -f "$AGENTS_DIR/tdd/SKILL.md" ] || fail "the step removed skills when the repo had none"
+step_status
+assert_eq 3 "$RUN_STATUS" "status without repo skills"
+assert_contains "$RUN_OUTPUT" "missing    Skills in ai_tools/skills: found none"
+assert_not_contains "$RUN_OUTPUT" "ok "
+assert_not_contains "$RUN_OUTPUT" "which isn't a skill"
 test_done

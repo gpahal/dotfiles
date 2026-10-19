@@ -32,7 +32,7 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
   - steps done by hand → the "Manual steps" section of README or `ai_tools/README.md`. The `manual-steps` steps print it at run time, so it's the only copy.
 
   `README.md` and `ai_tools/README.md` each start with a first-run checklist per OS, and keep to what a user does and sees. How a step handles a case goes in a comment beside the code that handles it, or in a test. Run prose through `unslop`.
-- **Skills**: load `writing-for-agents` before editing one or this file. Most skills are modified upstream copies (the skills README's Acknowledgements lists which), so port upstream diffs by hand and keep our changes. The `skills` step owns `~/.agents/skills` and `~/.claude/skills`: it copies each repo skill into the first, links it from the second, and deletes every other entry in both.
+- **Skills**: load `writing-for-agents` before editing one or this file. Most skills are modified upstream copies (the skills README's Acknowledgements lists which), so port upstream diffs by hand and keep our changes. The `skills` step owns `~/.agents/skills` and `~/.claude/skills`: it copies each repo skill into the first, links it from the second, and deletes every other entry in both, apart from Claude Code's own `synced` and dot-entries in `~/.claude/skills`.
 
 ## Code layout
 

@@ -209,7 +209,7 @@ Docs: [Claude Code data usage](https://code.claude.com/docs/en/data-usage), [Cha
 The `skills` step copies each skill into `~/.agents/skills`, which Codex reads, and links it into `~/.claude/skills` **(script)**. Type `/` in Claude Code or T3 Code, or `$` in Codex, to list them.
 
 - **Changes need a re-run** of `bash ai_tools/setup.sh skills`. It replaces a copy that differs from the repo, so make your edits in the repo.
-- **The repo owns both directories.** The step deletes every entry in them that isn't a skill in `ai_tools/skills`, including skills you installed from elsewhere. `--status` lists what it would delete.
+- **The repo owns both directories.** The step deletes every entry in them that isn't a skill in `ai_tools/skills`, including skills you installed from elsewhere. It keeps what Claude Code writes to `~/.claude/skills`: `synced`, for skills synced from claude.ai, and entries whose names start with a dot, such as `.trash`. `--status` lists what it would delete.
 - **`code-review`** replaces Claude Code's bundled `/code-review`. In Codex, run it as `$code-review`.
 - **`interrogate`** runs reviewers through `claude -p` and `codex exec`, so sign in to both.
 

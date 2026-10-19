@@ -6,7 +6,8 @@ set -euo pipefail
 # Install every skill in ai_tools/skills for Codex, as a copy in ~/.agents/skills, and for Claude
 # Code, as a link to that copy in ~/.claude/skills. The repo owns both dirs: a run replaces a copy
 # that differs from the repo, and deletes every entry that isn't a repo skill, such as a skill
-# installed from elsewhere or one the repo no longer has.
+# installed from elsewhere or one the repo no longer has. Claude Code's own entries in
+# ~/.claude/skills, its dot-entries and synced, stay.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -93,13 +94,29 @@ skill_dirs() {
     ! claude_skills_on || echo "$CLAUDE_SKILLS"
 }
 
-# Print the path of each entry in the skills dirs that isn't a repo skill, one per line
+# Succeeds when both skills dirs exist and are one dir, or one is inside the other, through a
+# symlink. Installing there would replace the copy with the link to itself.
+skill_dirs_shared() {
+    local agents claude
+    claude_skills_on && [ -d "$AGENTS_SKILLS" ] && [ -d "$CLAUDE_SKILLS" ] || return 1
+    agents="$(cd -P "$AGENTS_SKILLS" && pwd -P)" && claude="$(cd -P "$CLAUDE_SKILLS" && pwd -P)" || return 1
+    case "$agents/" in "$claude/"*) return 0 ;; esac
+    case "$claude/" in "$agents/"*) return 0 ;; esac
+    return 1
+}
+
+# Print the path of each entry in the skills dirs that isn't a repo skill, one per line. Claude
+# Code writes its own entries to ~/.claude/skills, synced for the skills claude.ai syncs and
+# dot-entries such as .trash, so those aren't extra.
 extra_skill_entries() {
     local dir entry
     while IFS= read -r dir; do
         [ -d "$dir" ] || continue
         while IFS= read -r entry; do
             [ -n "$entry" ] || continue
+            if [ "$dir" == "$CLAUDE_SKILLS" ]; then
+                case "$entry" in .* | synced) continue ;; esac
+            fi
             case " ${SKILL_NAMES[*]-} " in
                 *" $entry "*) ;;
                 *) echo "$dir/$entry" ;;
@@ -121,6 +138,10 @@ install_skills() {
     # Every entry would count as extra
     if [ ${#SKILL_NAMES[@]} -eq 0 ]; then
         echo "  Found no skills in ai_tools/skills, so left the skills dirs alone." >&2
+        return 1
+    fi
+    if skill_dirs_shared; then
+        echo "  ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink, so left them alone. Make them separate dirs." >&2
         return 1
     fi
     claude_skills_on || echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude, so the skills are for Codex only."
@@ -163,10 +184,9 @@ install_skills() {
     return "$result"
 }
 
-status() {
+# Report each repo skill's copy and link, and each extra entry, for status
+status_skills() {
     local i name problem path problems=false
-    load_repo_skills 2>/dev/null ||
-        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
     claude_skills_on || status_item skipped "Skills for Claude Code: CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude"
     for i in ${SKILL_NAMES[@]+"${!SKILL_NAMES[@]}"}; do
         name="${SKILL_NAMES[i]}"
@@ -188,6 +208,19 @@ status() {
         [ -z "$path" ] ||
             status_item missing "$(shown "$path"), which isn't a skill in ai_tools/skills; the step removes it"
     done <<< "$(extra_skill_entries)"
+}
+
+status() {
+    load_repo_skills 2>/dev/null ||
+        status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
+    # As in install_skills, where every entry would count as extra
+    if [ ${#SKILL_NAMES[@]} -eq 0 ]; then
+        status_item missing "Skills in ai_tools/skills: found none, so the step leaves the skills dirs alone"
+    elif skill_dirs_shared; then
+        status_item missing "Skills dirs: ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink; make them separate dirs"
+    else
+        status_skills
+    fi
     status_result
 }
 

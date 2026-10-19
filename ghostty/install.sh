@@ -27,8 +27,24 @@ ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }
 
+install_ghostty_snap() {
+    if ! sudo snap install ghostty --classic; then
+        echo "  Couldn't install the Ghostty snap." >&2
+        return 1
+    fi
+}
+
+ghostty_items() {
+    items_reset
+    item --sudo "Ghostty snap installed" "Install Ghostty from its snap (classic confinement)" \
+        ghostty_snap_installed install_ghostty_snap
+}
+
 install_ghostty() {
-    if ghostty_snap_installed; then
+    local pending=()
+    ghostty_items
+    items_pending
+    if [ ${#pending[@]} -eq 0 ]; then
         echo "  Ghostty already installed."
         return 0
     fi
@@ -36,11 +52,8 @@ install_ghostty() {
         echo "  Installing Ghostty needs snapd. Install it with: sudo apt-get install snapd" >&2
         return 1
     fi
-    confirm_sudo_changes "Install Ghostty from its snap (classic confinement)" || return 0
-    if ! sudo snap install ghostty --classic; then
-        echo "  Couldn't install the Ghostty snap." >&2
-        return 1
-    fi
+    confirm_sudo_changes "${pending[@]}" || return 0
+    items_apply
 }
 
 ghostty_files() {
@@ -82,7 +95,8 @@ ghostty_overrides_status() {
 
 status() {
     if is_ubuntu; then
-        status_check "Ghostty snap installed" ghostty_snap_installed
+        ghostty_items
+        items_status
     else
         status_item skipped "Ghostty snap: the homebrew step installs Ghostty on macOS"
     fi

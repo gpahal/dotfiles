@@ -9,6 +9,9 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
+
 PLUG_VIM="$HOME/.vim/autoload/plug.vim"
 
 vim_files() {
@@ -53,7 +56,6 @@ vim_plugins_pinned() {
 # clone lacks. vim-plug's clones are shallow, and GitHub serves a single commit by its hash.
 pin_vim_plugins() {
     local repo sha dir status=0
-    require_cmd git || return 1
     while read -r repo sha; do
         dir="$PLUGGED_DIR/${repo##*/}"
         if { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
@@ -85,6 +87,7 @@ status() {
 
 apply() {
     local status=0
+    require_cmd git || return 1
     copy_step "Copying vim config..." vim_files || status=1
     vim_items
     if ! items_ok; then

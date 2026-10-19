@@ -1078,6 +1078,7 @@ items_ok() {
 }
 
 # e.g. local pending=(); items_pending sleep_masked sleep_conf_written
+# shellcheck disable=SC2120 # with no check functions, it lists every sudo item
 items_pending() {
     local i=0
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do

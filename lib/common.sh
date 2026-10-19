@@ -580,35 +580,22 @@ append_line() {
     printf '%s\n' "$line" >> "$file"
 }
 
-# maybe_backup <file> [<no-terminal answer: yes|no>] [<question>]
+# maybe_backup <file>
 # Before editing an existing file, ask whether to back it up, unless <file>.bak already matches
 # it. The backup goes where backup_file puts it, so an older, different .bak is kept. --backup or
-# --no-backup (DOTFILES_BACKUP) answers for you. Otherwise the question is asked with a terminal;
-# without one, yes backs the file up, and no leaves it to confirm, which says no unless
-# DOTFILES_ASSUME_YES=1. The question's last {} is the backup's path; a question without one gets
-# the path appended. Fails when the backup does; the caller must then leave the file as it is.
+# --no-backup (DOTFILES_BACKUP) answers for you; otherwise confirm asks, which says no without a
+# terminal unless DOTFILES_ASSUME_YES=1. Fails when the backup does; the caller must then leave
+# the file as it is.
 # e.g. maybe_backup "$CODEX_CONFIG"
 maybe_backup() {
-    local file="$1" default="${2:-no}" question="${3:-}" bak
-    [ -n "$question" ] || question="  Back up $file to {}?"
+    local file="$1" bak
     [ -f "$file" ] || return 0
     cmp -s "$file" "$file.bak" && return 0
     bak="$(backup_path "$file")"
     case "${DOTFILES_BACKUP:-}" in
         no) return 0 ;;
         yes) ;;
-        *)
-            if [ "$default" != yes ] || is_interactive; then
-                # Not ${question//\{\}/$bak}: bash 5.2's patsub_replacement would put the {} back
-                # in place of each & in $bak. The last {}, since the file's path before it may hold
-                # one.
-                case "$question" in
-                    *"{}"*) question="${question%\{\}*}$bak${question##*\{\}}" ;;
-                    *) question="$question ($bak)" ;;
-                esac
-                confirm "$question" || return 0
-            fi
-            ;;
+        *) confirm "  Back up $file to $bak?" || return 0 ;;
     esac
     backup_file "$file" "$bak"
 }

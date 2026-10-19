@@ -265,10 +265,4 @@ for want in true false; do
     assert_eq "$want" "$COPIED" "COPIED after copy_file"
 done
 
-# A question without {} gets the backup's path appended, once
-plain="$HOME/plain-question.yml"
-printf 'mine\n' > "$plain"
-assert_exit 0 maybe_backup "$plain" no "Keep a copy?" <<< y
-assert_eq "Keep a copy? ($plain.bak)
-  Backed up $plain to $plain.bak" "$RUN_OUTPUT" "maybe_backup with a question without {}"
 test_done

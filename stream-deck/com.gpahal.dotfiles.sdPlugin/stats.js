@@ -83,11 +83,13 @@ const NEEDS = {
   network: ["network"],
 };
 
-// macmonPath, spawnProcess, and clock stand in for macmon, child_process.spawn, and Date.now in tests
+// macmonPath, spawnProcess, runCommand, and clock stand in for macmon, child_process.spawn, the
+// other commands, and Date.now in tests
 function createSampler({
   log = () => {},
   macmonPath = MACMON,
   spawnProcess = spawn,
+  runCommand = run,
   clock = Date.now,
 } = {}) {
   let cpuPrev = cpuTimes();
@@ -185,19 +187,30 @@ function createSampler({
   async function sample(kinds) {
     const needed = new Set(kinds.flatMap((kind) => NEEDS[kind] ?? []));
     const s = { cpuHistory, gpuHistory };
-    if (needed.has("macmon")) startMacmon();
-    else stopMacmon();
+    // A kind no key needs anymore starts afresh when one shows it again, as after reset, so its
+    // first rate doesn't average over the time it was hidden
+    if (needed.has("macmon")) {
+      startMacmon();
+    } else {
+      stopMacmon();
+      gpuHistory.length = 0;
+    }
+    if (!needed.has("cpu")) {
+      cpuPrev = null;
+      cpuHistory.length = 0;
+    }
+    if (!needed.has("network")) netPrev = null;
     const jobs = [];
     if (needed.has("cpu")) {
       const now = cpuTimes();
-      const total = now.total - cpuPrev.total;
+      const total = cpuPrev ? now.total - cpuPrev.total : 0;
       s.cpu = total > 0 ? (1 - (now.idle - cpuPrev.idle) / total) * 100 : null;
       cpuPrev = now;
       if (s.cpu != null) push(cpuHistory, s.cpu);
     }
     if (needed.has("memory")) {
       jobs.push(
-        run("/usr/bin/vm_stat", []).then((out) => {
+        runCommand("/usr/bin/vm_stat", []).then((out) => {
           if (out) s.memory = { used: parseVmStat(out), total: os.totalmem() };
         }),
       );
@@ -208,7 +221,7 @@ function createSampler({
     if (needed.has("swap")) keys.push("vm.swapusage");
     if (keys.length > 0) {
       jobs.push(
-        run("/usr/sbin/sysctl", ["-n", ...keys]).then((out) => {
+        runCommand("/usr/sbin/sysctl", ["-n", ...keys]).then((out) => {
           if (!out) return;
           const values = out.split("\n");
           if (needed.has("memory")) s.pressure = Number(values.shift());
@@ -218,7 +231,7 @@ function createSampler({
     }
     if (needed.has("top")) {
       jobs.push(
-        run("/bin/ps", ["-Aceo", "pcpu=,comm=", "-r"]).then((out) => {
+        runCommand("/bin/ps", ["-Aceo", "pcpu=,comm=", "-r"]).then((out) => {
           if (out) s.top = parseTop(out);
         }),
       );
@@ -234,9 +247,9 @@ function createSampler({
     if (needed.has("network")) {
       jobs.push(
         // -n skips looking up each address's name, which takes seconds
-        run("/usr/sbin/netstat", ["-ibn"]).then((out) => {
+        runCommand("/usr/sbin/netstat", ["-ibn"]).then((out) => {
           if (!out) return;
-          const now = { ...parseNetstat(out), at: Date.now() };
+          const now = { ...parseNetstat(out), at: clock() };
           if (netPrev && now.at > netPrev.at) {
             const seconds = (now.at - netPrev.at) / 1000;
             s.network = {
@@ -350,6 +363,23 @@ function card(label, value, valueColor, sub, extra = "") {
 
 const empty = (label, sub = "") => card(label, "—", COLORS.muted, sub);
 
+// Each key's label, which its placeholder shows too
+const LABELS = {
+  overview: "SYSTEM",
+  cpu: "CPU",
+  memory: "MEMORY",
+  swap: "SWAP",
+  top: "TOP CPU",
+  gpu: "GPU",
+  temperature: "TEMP",
+  power: "POWER",
+  disk: "DISK",
+  network: "NETWORK",
+};
+
+// A reading in watts, or a dash when macmon doesn't give it, as after an update renames a field
+const watts = (value) => (typeof value === "number" ? value.toFixed(1) : "—");
+
 const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
 
 const RENDER = {
@@ -403,9 +433,9 @@ const RENDER = {
     return card("TEMP", `${Math.round(cpu)}°`, level(cpu, 75, 90), gpu ? `GPU ${Math.round(gpu)}°` : "CPU");
   },
   power(s) {
-    if (s.power?.system == null) return empty("POWER", s.macmonMissing ? "needs macmon" : "");
+    if (typeof s.power?.system !== "number") return empty("POWER", s.macmonMissing ? "needs macmon" : "");
     const { system, cpu, gpu } = s.power;
-    return card("POWER", `${system.toFixed(1)} W`, COLORS.text, `CPU ${cpu.toFixed(1)} · GPU ${gpu.toFixed(1)}`);
+    return card("POWER", `${watts(system)} W`, COLORS.text, `CPU ${watts(cpu)} · GPU ${watts(gpu)}`);
   },
   disk(s) {
     if (!s.disk) return empty("DISK");
@@ -426,10 +456,13 @@ const RENDER = {
 
 const isStat = (kind) => Object.hasOwn(RENDER, kind);
 const render = (kind, s) => RENDER[kind](s);
+// What a key shows when its render throws
+const placeholder = (kind) => empty(LABELS[kind] ?? kind.toUpperCase());
 
 module.exports = {
   createSampler,
   isStat,
+  placeholder,
   render,
   formatBytes,
   parseNetstat,

@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # On macOS, the stream-deck step copies the plugin, removes installed files the repo's plugin no
@@ -15,7 +13,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script stream-deck/install.sh
-is_macos() { true; }
+as_os macos
 src="$REPO_DIR/stream-deck/$PLUGIN"
 
 # The plugin's files, found in the repo, leave out a .DS_Store Finder leaves there
@@ -133,23 +131,18 @@ else
     skip_rest "the manifest checks: jq isn't installed"
 fi
 
-# The System profile's zip holds stream-deck/profile's files, so build-profile.sh ran after the
-# last edit, and its keys are the plugin's actions
-zip_file="$src/profiles/System.streamDeckProfile"
-if command -v unzip &> /dev/null && command -v jq &> /dev/null; then
+# The System profile's zip is what build-profile.sh builds from stream-deck/profile now, byte for
+# byte, so it ran after the last edit, and its keys are the plugin's actions
+if command -v zip &> /dev/null && command -v jq &> /dev/null; then
     profile_src="$REPO_DIR/stream-deck/profile"
-    zipped="$(unzip -Z1 "$zip_file" | grep -v '/$' | LC_ALL=C sort)"
-    sources="$(cd "$profile_src" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)"
-    assert_eq "$sources" "$zipped" "the System profile's files; run stream-deck/build-profile.sh"
-    for file in $sources; do
-        [ "$(unzip -p "$zip_file" "$file")" == "$(cat "$profile_src/$file")" ] ||
-            fail "the System profile's $file is out of date; run stream-deck/build-profile.sh"
-    done
+    assert_exit 0 bash "$REPO_DIR/stream-deck/build-profile.sh" "$SANDBOX/System.streamDeckProfile"
+    cmp -s "$src/profiles/System.streamDeckProfile" "$SANDBOX/System.streamDeckProfile" ||
+        fail "the System profile is out of date; run stream-deck/build-profile.sh"
     for action in $(cat "$profile_src"/*.sdProfile/Profiles/*/manifest.json | jq -r '.Controllers[].Actions // {} | .[].UUID'); do
         jq -e --arg uuid "$action" '.Actions | any(.UUID == $uuid)' "$src/manifest.json" > /dev/null ||
             fail "the System profile has $action, which the manifest lacks"
     done
 else
-    skip_rest "the profile checks: unzip or jq isn't installed"
+    skip_rest "the profile checks: zip or jq isn't installed"
 fi
 test_done

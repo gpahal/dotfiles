@@ -221,7 +221,7 @@ macOS only. The `stream-deck` step installs a plugin whose **Dotfiles** category
 
 A thread's folder is its worktree, or else its project's folder. With no folder to use, as when another app is in front or the folder is on another machine, a key opens Finder or Ghostty at your home folder, or an empty Zed window. A key shows a warning when a permission is missing or nothing opened. **Chrome**, **New Tab**, **T3 Code**, and **Claude** do what the [Hammerspoon](#hammerspoon) hotkeys do, and **Gmail** brings Chrome's Gmail tab to the front, or opens Gmail in a new tab. [`stream-deck/icons`](stream-deck/icons/README.md) lists where the app icons came from.
 
-**Overview** shows CPU and memory use, and a press opens the **System** page, laid out for the 15-key Stream Deck:
+**Overview** shows CPU and memory use. On the 15-key Stream Deck, a press opens the **System** page. The plugin has no page for other models, so there a press shows a warning on the key. The page:
 
 | | | | | |
 | :- | :- | :- | :- | :- |
@@ -362,6 +362,12 @@ The `macos` step sets these:
 ### Touch ID for sudo
 
 `just touch-id` makes `sudo` take Touch ID, inside tmux too, by rewriting `/etc/pam.d/sudo_local`. It copies pam-reattach's module into `/usr/local/lib/pam`, which only root can write, so a process running as you can't replace what sudo loads. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. Uninstalling pam-reattach doesn't break sudo, which loads the copy.
+
+If a module `sudo_local` loads goes missing and `sudo` stops working, `just touch-id` can't fix it, since it needs `sudo`. Remove the file with an admin password instead, then re-run `just touch-id`:
+
+```sh
+osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'
+```
 
 ## Manual steps
 

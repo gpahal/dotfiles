@@ -1,14 +1,17 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # The Stream Deck plugin's stats.js reads vm_stat, vm.swapusage, ps, and netstat output as
 # Activity Monitor counts them, and draws each stat key as an SVG, with a placeholder when a stat
 # is missing. Its sampler survives macmon failing to start, ignores a stopped macmon that exits
 # late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
-# installed, and starts the sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
+# installed, and starts the sparklines afresh after a reset, and a kind's rate and sparkline once
+# it's needed again. Fixed command output stands in for the real machine's, and a
 # fake spawn for macmon, apart from one real spawn of a file that isn't executable.
 # plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
-# hotkey does, and runs it again once that one exits. A fake Stream Deck socket and open-in stand
+# hotkey does, and runs it again once that one exits. A key whose render throws shows a
+# placeholder, logged once, while the others update. A fake Stream Deck socket and open-in stand
 # in for the real ones.
 
 # shellcheck source=lib.sh
@@ -79,6 +82,9 @@ for kind in overview cpu memory swap top gpu temperature power disk network; do
 done
 assert_contains "$(render gpu '{"macmonMissing": true}')" "needs macmon"
 assert_contains "$(render power '{"power": {"system": 7.75, "cpu": 0.42, "gpu": 0.03}}')" ">7.8 W</text>"
+# A field macmon no longer gives, as after an update renames it, shows a dash
+assert_contains "$(render power '{"power": {"system": 7.75, "gpu": 0.03}}')" ">CPU — · GPU 0.0</text>"
+assert_contains "$(js 'console.log(s.placeholder("top"))')" ">TOP CPU</text>"
 assert_contains "$(render temperature '{"temperature": {"cpu": 95, "gpu": 44}}')" "#f87171"
 
 # Run JavaScript inside an async function with stats.js as `s`, a fake spawn as `spawnProcess`,
@@ -203,15 +209,41 @@ const sample = await sampler.sample(["cpu"]);
 const before = sample.cpuHistory.length;
 sampler.reset();
 console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
+
+# The network rate is over the clock's time between samples. A kind no key needs, as when its key
+# is hidden while others show, starts afresh when it's needed again: no rate over the gap, and an
+# empty sparkline.
+assert_eq '[{"rx":500,"tx":50},null,{"rx":1000,"tx":100},0,null]' "$(sampler_js 'let t = 0;
+let bytes = 0;
+const runCommand = async () => {
+  bytes += 1000;
+  return `en0 1500 <Link#11> 36:53:3e:4a:e9:c0 1 0 ${bytes} 1 0 ${bytes / 10} 0`;
+};
+const sampler = s.createSampler({ log, runCommand, clock: () => t });
+const rates = [];
+await sampler.sample(["network"]);
+t += 2000;
+rates.push((await sampler.sample(["network"])).network);
+await sampler.sample(["disk"]);
+t += 60000;
+rates.push((await sampler.sample(["network"])).network ?? null);
+t += 1000;
+rates.push((await sampler.sample(["network"])).network);
+await new Promise((r) => setTimeout(r, 100));
+const cpu = await sampler.sample(["cpu"]);
+await sampler.sample(["disk"]);
+rates.push(cpu.cpuHistory.length);
+rates.push((await sampler.sample(["cpu"])).cpu ?? null);
+console.log(JSON.stringify(rates));')" "rates after a kind is hidden"
 # A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
-# chrome-tab waits until $SANDBOX/release exists.
+# chrome-tab waits until $SANDBOX/release exists, for up to 10 s.
 PLUGIN="$SANDBOX/plugin"
 mkdir -p "$PLUGIN/bin"
 cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
 cat > "$PLUGIN/bin/open-in" << EOF
 echo "\$1" >> "$SANDBOX/open-in.log"
 if [ "\$1" == chrome-tab ]; then
-    while [ ! -e "$SANDBOX/release" ]; do sleep 0.05; done
+    for _ in \$(seq 200); do [ ! -e "$SANDBOX/release" ] || break; sleep 0.05; done
 fi
 echo "done \$1"
 EOF
@@ -227,16 +259,76 @@ require(process.argv[1]);
 const press = (key) =>
   socket.onmessage({ data: JSON.stringify({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key }) });
 const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
-const until = async (test) => { while (!test()) await new Promise((r) => setTimeout(r, 20)); };
+// Wait up to 10 s for a condition, then fail naming it, rather than leave the test to the watchdog
+const until = async (what, test) => {
+  const deadline = Date.now() + 10000;
+  while (!test()) {
+    if (Date.now() > deadline) {
+      console.log(`timed out waiting for ${what}; sent: ${JSON.stringify(sent)}`);
+      process.exit(1);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+};
 (async () => {
   press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
-  await until(() => done("files") === 2);
+  await until("both Files presses", () => done("files") === 2);
   require("node:fs").writeFileSync(process.argv[2], "");
-  await until(() => done("chrome-tab") >= 1);
+  await until("the first New Tab", () => done("chrome-tab") >= 1);
   press("chrome-tab");
-  await until(() => done("chrome-tab") >= 2);
+  await until("the second New Tab", () => done("chrome-tab") >= 2);
   process.exit(0);
 })();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
 assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
     "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
+
+# A key whose render throws shows its placeholder, and the error is logged once, while the other
+# keys still update. A stats.js whose Disk render throws stands in for the real one.
+cat > "$PLUGIN/stats.js" << EOF
+const real = require("$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js");
+module.exports = { ...real, render: (kind, s) => { if (kind === "disk") throw new Error("broken"); return real.render(kind, s); } };
+EOF
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const appear = (key) =>
+  socket.onmessage({ data: JSON.stringify({ event: "willAppear", action: `com.gpahal.dotfiles.${key}`, context: key }) });
+const images = (key) => sent.filter((m) => m.event === "setImage" && m.context === key);
+appear("swap"); appear("disk");
+(async () => {
+  // The first update comes after 0.5 s and the next 2 s later, so a second error would show
+  await new Promise((r) => setTimeout(r, 3000));
+  const disk = decodeURIComponent(images("disk")[0].payload.image);
+  console.log(images("swap").length > 0, disk.includes(">DISK</text>") && disk.includes(">—</text>"));
+  console.log(sent.filter((m) => m.payload?.message?.startsWith("ERROR")).map((m) => m.payload.message).join("\n"));
+  process.exit(0);
+})();' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin with a broken key failed: $out"
+assert_eq "true true
+ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
+
+# Overview opens the System page on the 15-key Stream Deck (device type 0), and shows a warning on
+# any other, which has no page to open
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const message = (m) => socket.onmessage({ data: JSON.stringify(m) });
+message({ event: "deviceDidConnect", device: "classic", deviceInfo: { type: 0 } });
+message({ event: "deviceDidConnect", device: "xl", deviceInfo: { type: 2 } });
+for (const device of ["classic", "xl"])
+  message({ event: "keyDown", action: "com.gpahal.dotfiles.overview", context: `key-${device}`, device });
+for (const m of sent) console.log(m.event, m.device ?? m.context ?? m.payload.message);
+process.exit(0);' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin's Overview presses failed: $out"
+assert_eq "switchToProfile classic
+logMessage Overview's System page is laid out for the 15-key Stream Deck, not device type 2
+showAlert key-xl" "$out" "Overview on the 15-key Stream Deck and on another"
 test_done

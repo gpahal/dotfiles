@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # Without a terminal, the homebrew step installs Homebrew when sudo is cached or the prefix
@@ -14,19 +12,13 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script homebrew/install.sh
 hide brew
-run_installer() { echo "run_installer $*" >> "$STUB_LOG"; }
-load_brew() { :; }
+replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
+replace_fn load_brew
 PREFIX="$SANDBOX/homebrew"
-homebrew_prefix() { echo "$PREFIX"; }
+replace_fn homebrew_prefix 'echo "$PREFIX"'
 
 for os in ubuntu macos; do
-    if [ "$os" == ubuntu ]; then
-        is_ubuntu() { true; }
-        is_macos() { false; }
-    else
-        is_ubuntu() { false; }
-        is_macos() { true; }
-    fi
+    as_os "$os"
 
     # No terminal, no prefix, and sudo would ask for a password: stop before the installer
     : > "$STUB_LOG"
@@ -54,24 +46,24 @@ done
 # that a caller's `|| result=1` would turn into 1. Any other failure returns, so the rest still
 # install, including other codes above 128 such as 137, 141 from SIGPIPE, or 255.
 load_script homebrew/install.sh
-is_macos() { false; }
-cask_state() { printf 'missing\t\n'; }
-try_cask() {
-    local failed=()
-    try_install_cask foo ""
-    echo "carried on, failed: ${failed[*]}"
-}
+as_os ubuntu
+replace_fn cask_state "printf 'missing\t\n'"
+# shellcheck disable=SC2034 # os_casks reads it
+UBUNTU_CASKS=(foo bar)
+stub fc-cache
 direct() {
     install_cask foo "" || echo "returned $?"
 }
 for code in 130 143 129 1 137 141 255; do
     stub brew "exit $code"
+    : > "$STUB_LOG"
     if ! interrupted_status "$code"; then
-        assert_exit 0 try_cask
-        assert_contains "$RUN_OUTPUT" "carried on, failed: foo"
+        assert_exit 1 install_casks
+        assert_contains "$RUN_OUTPUT" "These casks failed to install: foo bar."
     else
-        assert_exit "$code" try_cask
-        assert_not_contains "$RUN_OUTPUT" "carried on"
+        assert_exit "$code" install_casks
+        assert_not_contains "$RUN_OUTPUT" "failed to install"
+        assert_file_not_contains "$STUB_LOG" "install --cask bar"
         assert_exit "$code" direct
         assert_not_contains "$RUN_OUTPUT" "returned"
     fi
@@ -80,7 +72,7 @@ done
 # A cask that runs an installer names no app in brew's metadata, so cask_state takes its app from
 # CASK_PKG_APPS, on macOS. Without it, an app installed outside brew would count as missing.
 load_script homebrew/install.sh
-is_macos() { true; }
+as_os macos
 stub brew 'exit 1'
 for entry in "elgato-stream-deck=/Applications/Elgato Stream Deck.app" "tailscale-app=/Applications/Tailscale.app"; do
     IFS=$'\t' read -r _ app <<< "$(cask_state "${entry%%=*}")"

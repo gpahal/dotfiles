@@ -183,11 +183,17 @@ pam_module_exists() {
     [ -f "$1" ] || [ -f "$1.2" ]
 }
 
+# Print a command that removes sudo_local without sudo, through macOS's admin password prompt, for
+# when a module it loads is gone and sudo itself fails
+sudo_local_rescue() {
+    echo "osascript -e 'do shell script \"rm $SUDO_LOCAL\" with administrator privileges'"
+}
+
 # status_touch_id <state>: report Touch ID for sudo, with <state> (missing or skipped) for off.
 # Touch ID is optional in the macos step, which skips it when off. Every module sudo_local loads
 # must exist: one can be removed under it, and then sudo may fail, depending on the stack.
 status_touch_id() {
-    local off="$1" module blocker
+    local off="$1" module blocker rescue
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
@@ -200,22 +206,23 @@ status_touch_id() {
             status_item missing "Touch ID in tmux: $blocker"
         elif ! reattach_in_use; then
             status_item skipped "Touch ID in tmux: pam-reattach isn't installed; the homebrew step installs it, then re-run just touch-id"
-        elif [ -L "$REATTACH_MODULE" ]; then
-            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, is a symlink; re-run just touch-id"
-        elif [ -e "$REATTACH_MODULE" ] && ! pam_owner_safe "$REATTACH_MODULE"; then
-            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't root's alone to write; re-run just touch-id"
-        elif [ -f "$REATTACH_MODULE" ] && reattach_source_installed && ! cmp -s "$REATTACH_SOURCE" "$REATTACH_MODULE"; then
-            status_item missing "Touch ID in tmux: pam-reattach was upgraded; re-run just touch-id to install the new module"
+        elif { [ -e "$REATTACH_MODULE" ] || [ -L "$REATTACH_MODULE" ]; } && reattach_copy_needed; then
+            # A link, a copy others can write, or one older than Homebrew's. A missing copy is
+            # reported below, with the modules sudo_local loads.
+            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
         fi
     else
         status_item missing "Touch ID for sudo: $SUDO_LOCAL differs from what just touch-id writes; run it to rewrite the file"
     fi
+    # just touch-id needs sudo, which a missing module can break, so each item also gives a fix
+    # that asks for an admin password without sudo
+    rescue="If sudo fails, remove the file without it: $(sudo_local_rescue)"
     while IFS= read -r module; do
         pam_module_exists "$module" && continue
         if [[ "$module" == */pam_reattach.so ]]; then
-            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so Touch ID in tmux doesn't work and sudo may fail; run brew install pam-reattach, then just touch-id"
+            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so Touch ID in tmux doesn't work and sudo may fail; run brew install pam-reattach, then just touch-id. $rescue"
         else
-            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so sudo may fail; just touch-id rewrites the file without it"
+            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so sudo may fail; just touch-id rewrites the file without it. $rescue"
         fi
     done < <(sudo_local_modules)
 }

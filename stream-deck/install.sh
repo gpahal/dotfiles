@@ -5,9 +5,9 @@ set -euo pipefail
 # actions runs bin/open-in, which says what each does: Editor, Terminal, and Files open the folder
 # or file in front in Zed, Ghostty, or Finder, and Chrome, New Tab, Gmail, T3 Code, and Claude do
 # what the matching Hammerspoon hotkeys do. The hammerspoon step copies bin/open-in too, for its
-# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU, memory,
-# and other stats, and its Overview key opens a page of them. A file the repo's plugin no longer
-# has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
+# Ctrl+Opt+Cmd+T, E, and N. The plugin's stat keys, which plugin.js describes, show live CPU,
+# memory, and other stats, and its Overview key opens a page of them on the 15-key Stream Deck. A
+# file the repo's plugin no longer has is removed from the installed plugin. Stream Deck loads plugins when it starts, so a run
 # that changes the plugin restarts a running Stream Deck. macOS only, since Stream Deck has no
 # Linux app. The homebrew step installs Stream Deck.
 #
@@ -16,6 +16,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+STEP_OS=macos
 
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
@@ -90,10 +92,6 @@ restart_stream_deck() {
 
 status() {
     local file
-    if ! is_macos; then
-        status_item skipped "Stream Deck plugin: Stream Deck has no Linux app"
-        return 0
-    fi
     each_plugin_file status_file
     while IFS= read -r file; do
         status_item missing "$file in the installed plugin: the repo's plugin no longer has it; re-run the stream-deck step to remove it"
@@ -103,10 +101,6 @@ status() {
 
 apply() {
     echo "Installing the Stream Deck plugin..."
-    if ! is_macos; then
-        echo "  Stream Deck has no Linux app; skipping."
-        return 0
-    fi
     local status=0
     COPIED=false
     each_plugin_file copy_file || status=1

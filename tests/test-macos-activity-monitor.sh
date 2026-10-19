@@ -33,10 +33,9 @@ stub pgrep '[ -e "'"$SANDBOX"'/running" ]'
 stub osascript 'rm -f "'"$SANDBOX"'/running"'
 
 load_script macos/install.sh
-# shellcheck disable=SC2329 # main calls it
-is_macos() { true; }
+as_os macos
 # test-macos-shortcuts.sh covers the shortcuts the step turns off
-hotkey_off() { true; }
+replace_fn hotkey_off 'return 0'
 SHOW_CATEGORY="$DEFAULTS_DIR/com.apple.ActivityMonitor.ShowCategory"
 
 # Running, and confirm says no without a terminal: the other settings are written, ShowCategory
@@ -61,7 +60,8 @@ assert_exit 0 status
 # Approved: it quits Activity Monitor, then writes ShowCategory
 touch "$SANDBOX/running"
 rm "$SHOW_CATEGORY"
-DOTFILES_ASSUME_YES=1 run main
+answer yes
+run main
 assert_eq 0 "$RUN_STATUS" "exit status after quitting Activity Monitor: $RUN_OUTPUT"
 assert_file_contains "$STUB_LOG" 'osascript -e quit app "Activity Monitor"'
 assert_eq 100 "$(cat "$SHOW_CATEGORY")" "ShowCategory after quitting Activity Monitor"

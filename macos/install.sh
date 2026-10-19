@@ -12,9 +12,11 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-# The Touch ID status check, without the Touch ID script's main and status
+# The Touch ID status check, which the Touch ID script shares
 # shellcheck source=pam.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
+
+STEP_OS=macos
 
 # socketfilterfw reads the application firewall's settings, and isn't on PATH
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
@@ -88,12 +90,13 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Succeeds when symbolic hotkey $1 is turned off. An unset one is on. defaults prints
-# AppleSymbolicHotKeys in the old-style plist format, where each hotkey's entry starts at a
-# four-space indent.
+# Succeeds when symbolic hotkey $1 is turned off. An unset one is on, and so is one whose entry
+# has no enabled key. defaults prints AppleSymbolicHotKeys in the old-style plist format, where
+# each hotkey's entry starts at a four-space indent, so each entry header decides whether the
+# enabled keys after it are the hotkey's.
 hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
-        awk -v id="$1" '$0 ~ "^    " id " = " { on_id = 1 } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
+        awk -v id="$1" '/^    [0-9]+ = / { on_id = $1 == id } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
 # disable_hotkey <hotkey> <modifiers> <description> <app>
@@ -172,7 +175,7 @@ each_default() {
     # Spaces: keep their order instead of rearranging by most recent use
     "$apply" com.apple.dock mru-spaces -bool false
 
-    # Screenshots: save to ~/Screenshots (which main creates) as PNG
+    # Screenshots: save to ~/Screenshots (which apply creates) as PNG
     "$apply" com.apple.screencapture location -string "$HOME/Screenshots"
     "$apply" com.apple.screencapture type -string png
     # Screenshots: no window shadow
@@ -257,16 +260,10 @@ hostname_valid() {
 
 set_hostname() {
     local name
-    if hostname_valid; then
-        echo "  The hostname is already $(scutil --get HostName)."
-        return 0
-    fi
     if ! name="$(scutil --get LocalHostName)"; then
         echo "  Couldn't read the local hostname, so the hostname is left unset." >&2
         return 1
     fi
-    confirm_sudo_changes "Set the hostname to $name, so Ghostty's shell can report its folder" ||
-        return 0
     if ! sudo scutil --set HostName "$name"; then
         echo "  Couldn't set the hostname." >&2
         return 1
@@ -274,16 +271,32 @@ set_hostname() {
     echo "  Set the hostname to $name. Shells started from now on use it."
 }
 
+# The screenshot location key points here
+screenshots_dir() {
+    [ -d "$HOME/Screenshots" ]
+}
+
+make_screenshots_dir() {
+    mkdir -p "$HOME/Screenshots"
+}
+
+# What the step sets up besides the defaults and shortcuts, which each_default and
+# symbolic_hotkeys list
+macos_items() {
+    local name
+    name="$(scutil --get LocalHostName 2>/dev/null)" || name="the name in System Settings → General → Sharing"
+    items_reset
+    item "$HOME/Screenshots directory" "Create $HOME/Screenshots" screenshots_dir make_screenshots_dir
+    item --sudo "Hostname set, so Ghostty's shell can report its folder" \
+        "Set the hostname to $name, so Ghostty's shell can report its folder" hostname_valid set_hostname
+}
+
 status() {
-    if ! is_macos; then
-        status_item skipped "macOS defaults: macOS only"
-        return 0
-    fi
+    macos_items
     each_default status_default
-    # The screenshot location key points here, and main creates it
-    status_check "$HOME/Screenshots directory" test -d "$HOME/Screenshots"
+    items_status screenshots_dir
     symbolic_hotkeys status_hotkey
-    status_check "Hostname set, so Ghostty's shell can report its folder" hostname_valid
+    items_status hostname_valid
     # Touch ID for sudo is optional (just touch-id), so off is skipped
     status_touch_id skipped
     status_filevault
@@ -294,13 +307,14 @@ status() {
 
 apply() {
     echo "Setting macOS defaults..."
-    if ! is_macos; then
-        echo "  Not macOS; skipping."
-        return 0
+    local status=0 pending=()
+    macos_items
+    items_pending hostname_valid
+    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
+        items_apply || status=1
+    else
+        items_apply --no-sudo || status=1
     fi
-    local status=0
-    set_hostname || status=1
-    mkdir -p "$HOME/Screenshots"
     each_default set_default
     symbolic_hotkeys disable_hotkey
 

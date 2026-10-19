@@ -1,6 +1,4 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # The homebrew step's status lists the installed casks and their apps with one brew call, rather
@@ -16,7 +14,7 @@ setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 load_script homebrew/install.sh
 export DOTFILES_STATUS_QUICK=1
-command_line_tools_installed() { true; }
+replace_fn command_line_tools_installed 'return 0'
 # zed is installed outside Homebrew. brew lists ghostty, font-monaspace, which has no app, and
 # raycast, whose app was deleted.
 mkdir -p "$SANDBOX/Zed.app" "$SANDBOX/Ghostty.app"
@@ -27,7 +25,7 @@ zed_outside_homebrew() {
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
 eval "real_$(declare -f cask_app_path)"
-cask_app_path() { zed_outside_homebrew "$1"; }
+replace_fn cask_app_path 'zed_outside_homebrew "$1"'
 # brew list names the casks without their apps, for Ubuntu
 stub brew 'S="'"$SANDBOX"'"
 [ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nraycast\n"; exit; }
@@ -45,7 +43,7 @@ brew_calls() {
     grep -c '^brew ' "$STUB_LOG" || true
 }
 
-is_macos() { true; }
+as_os macos
 # One App Store app isn't installed, as on a Mac not yet signed in to the App Store
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 run status
@@ -80,20 +78,27 @@ run status
 assert_contains "$RUN_OUTPUT" "ok         App Store apps"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 
+# Without mas, as when the bundle that installs it failed, the App Store apps can't be checked:
+# unknown, naming what's missing, rather than missing for want of a sign-in
+subtest eval 'hide mas; run status
+assert_contains "$RUN_OUTPUT" "unknown    App Store apps: mas"
+assert_not_contains "$RUN_OUTPUT" "sign in to the App Store"
+assert_not_contains "$RUN_OUTPUT" "Dato"'
+
 # brew info fails for a cask it doesn't list when offline with no API cache, or when the cask was
 # removed upstream. The report still lists every cask.
-cask_app_path() { real_cask_app_path "$1"; }
+replace_fn cask_app_path 'real_cask_app_path "$1"'
 run status
 assert_contains "$RUN_OUTPUT" "missing    zed (cask)"
 assert_contains "$RUN_OUTPUT" "missing    the-unarchiver (cask)"
 assert_contains "$RUN_OUTPUT" "logi-options+ (cask)"
-cask_app_path() { zed_outside_homebrew "$1"; }
+replace_fn cask_app_path 'zed_outside_homebrew "$1"'
 
 : > "$STUB_LOG"
-is_macos() { false; }
-missing_ubuntu_commands() { :; }
+as_os ubuntu
+replace_fn missing_ubuntu_commands
 # The ubuntu step adds the locale and reports it, so this step's status leaves it out
-locale_installed() { false; }
+replace_fn locale_installed 'return 1'
 run status
 assert_not_contains "$RUN_OUTPUT" "locale"
 assert_eq "brew list --cask -1" "$(cat "$STUB_LOG")" "brew calls on Ubuntu"
@@ -104,8 +109,8 @@ assert_not_contains "$RUN_OUTPUT" "rectangle"
 
 # Ubuntu without the apt packages Homebrew needs, or Homebrew: both missing, and nothing asks brew
 : > "$STUB_LOG"
-is_macos() { false; }
-missing_ubuntu_commands() { printf ' %s' build-essential locale-gen; }
+as_os ubuntu
+replace_fn missing_ubuntu_commands "printf ' %s' build-essential locale-gen"
 hide brew
 run status
 assert_eq 3 "$RUN_STATUS" "status's exit status without Homebrew"

@@ -137,14 +137,16 @@ assert_eq '# From the dotfiles ubuntu step: the UPS nut-scanner found on USB
 	productid = "0501"' "$(cat "$NUT_DIR/ups.conf")" "ups.conf"
 assert_eq "# From the dotfiles ubuntu step: upsd answers only this machine
 LISTEN 127.0.0.1" "$(cat "$NUT_DIR/upsd.conf")" "upsd.conf"
-PASSWORD="$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")"
+# upsmon's password, as NUT reads it from upsd.users
+upsmon_password() { nut_value upsmon password < "$NUT_DIR/upsd.users"; }
+PASSWORD="$(upsmon_password)"
 [ "${#PASSWORD}" -ge 24 ] || fail "upsmon's password is short: '$PASSWORD'"
 assert_eq "# From the dotfiles ubuntu step: upsmon's login to upsd
 [upsmon]
-	password = $PASSWORD
+	password = \"$PASSWORD\"
 	upsmon primary" "$(cat "$NUT_DIR/upsd.users")" "upsd.users"
 assert_eq "# From the dotfiles ubuntu step: watch the UPS, push its events, and shut down on a low battery
-MONITOR ups@localhost 1 upsmon $PASSWORD primary
+MONITOR ups@localhost 1 upsmon \"$PASSWORD\" primary
 SHUTDOWNCMD \"/sbin/shutdown -h +0\"
 POWERDOWNFLAG /etc/killpower
 NOTIFYCMD $UPS_NOTIFY
@@ -213,7 +215,35 @@ assert_exit 0 setup_ups
 assert_file_not_contains "$STUB_LOG" "install -m"
 assert_file_not_contains "$STUB_LOG" "restart"
 assert_contains "$RUN_OUTPUT" "already set up"
-assert_eq "$PASSWORD" "$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")" "upsmon's password after a second run"
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password after a second run"
+
+# A password of your own is kept, and written quoted and escaped to both files, so a space, #, ",
+# or \ stays in it: NUT reads an unquoted space as the end of the password, and # as a comment
+USERS="$(cat "$NUT_DIR/upsd.users")"
+for password in 'two words' 'pass#word' 'say "hi"' 'back\slash' 'all "of" #th\is'; do
+    # As you'd write it by hand: quoted, with a backslash before each " and \
+    escaped="$(printf '%s' "$password" | sed 's/[\\"]/\\&/g')"
+    printf '%s\n' "[upsmon]" "	password = \"$escaped\"" "	upsmon primary" > "$NUT_DIR/upsd.users"
+    assert_eq "$password" "$(upsmon_password)" "the password NUT reads from upsd.users"
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_eq "$password" "$(upsmon_password)" "the password kept in upsd.users"
+    assert_file_contains "$NUT_DIR/upsd.users" "	password = \"$escaped\""
+    assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$escaped\" primary"
+    # A second run reads it back as it wrote it, so it changes nothing
+    : > "$STUB_LOG"
+    assert_exit 0 setup_ups
+    assert_file_not_contains "$STUB_LOG" "install -m"
+    assert_contains "$RUN_OUTPUT" "already set up"
+    assert_exit 0 nut_files_current
+done
+# An unquoted password ends at a space or #, as NUT reads it
+printf '%s\n' "[upsmon]" "	password = plain # a comment" > "$NUT_DIR/upsd.users"
+assert_eq plain "$(upsmon_password)" "an unquoted password"
+# Back to the generated one, for the rest of the test
+printf '%s\n' "$USERS" > "$NUT_DIR/upsd.users"
+assert_exit 0 setup_ups
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password, put back"
 
 # A notifier out of date: the step reinstalls it, and nut-scanner finds the same UPS, so ups.conf
 # stays as it is and NUT isn't restarted
@@ -321,7 +351,7 @@ assert_exit 0 setup_ups
 assert_file_contains "$NUT_DIR/ups.conf" 'vendorid = "0463"'
 assert_file_contains "$NUT_DIR/ups.conf" 'productid = "ffff"'
 assert_file_not_contains "$NUT_DIR/ups.conf" "0764"
-assert_eq "$PASSWORD" "$(sed -n 's/^[[:space:]]*password = //p' "$NUT_DIR/upsd.users")" "upsmon's password after a new UPS"
+assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password after a new UPS"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver-enumerator.service"
 # Only ups.conf changed
 assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for a new UPS"

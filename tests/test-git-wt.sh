@@ -81,7 +81,11 @@ assert_exit 0 git wt rm t3code/abc
 printf '.env\nnode_modules/\n' >> "$(git rev-parse --git-common-dir)/info/exclude"
 out="$(git wt add secrets 2> /dev/null)" || fail "git wt add secrets failed"
 mkdir -p "$out/node_modules/x"
+: > "$out/node_modules/x/index.js"
 assert_exit 0 git wt rm secrets
+# and names the build output it deletes
+assert_contains "$RUN_OUTPUT" "also deleting ignored build output, caches, and dependencies:
+    node_modules/"
 out="$(git wt add secrets 2> /dev/null)" || fail "git wt add secrets again failed"
 printf 'local\n' > "$out/.env"
 # status.showUntrackedFiles=no hides ignored files from git status unless asked for them

@@ -128,7 +128,8 @@ t3_code_server_filter() {
     # The 1M context window goes with the effort set here, so an effort of your own keeps your
     # context window too. A window of your own stays unless this run replaced your model or effort.
     | if .defaultModelSelection.model == "'"$T3_CODE_MODEL"'"
-      then .defaultModelSelection.options |= ((. // [])
+      then .defaultModelSelection.instanceId //= "claudeAgent"
+        | .defaultModelSelection.options |= ((. // [])
           | (map(select(.id == "effort") | .value) | . == [] or . == ["'"$T3_CODE_EFFORT"'"])
             as $effort_is_ours
           | if $effort_is_ours or '"$T3_CODE_REPLACE_EFFORT"'
@@ -204,6 +205,12 @@ t3_code_status_custom_values() {
     [ "$model" == "$T3_CODE_MODEL" ] || return 0
     effort="$(t3_code_effort)"
     [ -z "$effort" ] || status_custom_value "$T3_CODE_EFFORT_NAME" "$effort" "$T3_CODE_EFFORT"
+}
+
+# Status items for the server settings, and a model or effort of your own
+t3_code_status_server_settings() {
+    status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
+    t3_code_status_custom_values
 }
 
 # Desktop app settings: system notifications with sound and in-app notifications, a message sent
@@ -303,8 +310,10 @@ configure_t3_code() {
 
 # A T3 Code server started by hand or over SSH. The Mac's SSH connection (as of T3 Code 0.1.0)
 # runs ~/.t3/ssh-launch/<key>/run-t3.sh serve, which downloads t3 to ~/.t3/runtime and execs it.
-T3_CODE_CLI_SERVER_PATTERN="$HOME/\.t3/(runtime|ssh-launch)/.* serve( |\$)|(^|/)t3 (serve|start)( |\$)"
-T3_CODE_SSH_SERVER_PATTERN="$HOME/\.t3/(runtime|ssh-launch)/"
+# HOME is escaped, since pgrep and =~ read the patterns as extended regexes.
+T3_CODE_HOME_RE="$(regex_escape "$HOME")"
+T3_CODE_CLI_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/.* serve( |\$)|(^|/)t3 (serve|start)( |\$)"
+T3_CODE_SSH_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/"
 
 # Succeeds when a process is the service's own, in its cgroup. The service's launcher and the
 # server it starts share it.
@@ -782,10 +791,9 @@ t3_code_status_connect() {
 }
 
 status() {
-    if ! status_require_cmd jq "T3 Code"; then
-        status_result
-        return
-    fi
+    # jq reads the settings and t3 connect status; the rest doesn't need it
+    local jq=true
+    status_require_cmd jq "T3 Code's settings" || jq=false
     if is_macos; then
         local state="" app="" listing=""
         if command -v brew &>/dev/null; then
@@ -799,9 +807,10 @@ status() {
             case "$state" in brew | gone) listing="t3-code"$'\t'"$app" ;; esac
             status_cask t3-code "$app" "$listing"
         fi
-        status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
-        t3_code_status_custom_values
-        status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
+        if "$jq"; then
+            t3_code_status_server_settings
+            status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
+        fi
         t3_code_files status_file
         status_check "T3 Code's telemetry off in launchd's environment" t3_code_telemetry_off
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
@@ -814,8 +823,7 @@ status() {
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
     status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
-    status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
-    t3_code_status_custom_values
+    ! "$jq" || t3_code_status_server_settings
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
         status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
     elif [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
@@ -844,7 +852,11 @@ status() {
             1) status_item missing "T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup" ;;
             *) status_item unknown "T3 Code's browser sandbox: t3 browser setup failed; run it directly to inspect the error" ;;
         esac
-        t3_code_status_connect
+        if "$jq"; then
+            t3_code_status_connect
+        else
+            status_item unknown "T3 Connect: $(missing_cmd_hint jq)"
+        fi
     else
         status_item unknown "T3 Connect: needs the t3 CLI"
     fi

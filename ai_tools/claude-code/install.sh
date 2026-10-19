@@ -98,7 +98,11 @@ install_claude_code() {
         echo "  Claude Code already installed ($("$claude" --version))."
     else
         echo "  Installing Claude Code..."
-        run_installer bash https://claude.ai/install.sh "the Claude Code installer"
+        run_installer bash https://claude.ai/install.sh "the Claude Code installer" || return 1
+        if ! claude_code_path > /dev/null; then
+            echo "  The Claude Code installer finished, but there's no claude on PATH or in ~/.local/bin." >&2
+            return 1
+        fi
     fi
 }
 

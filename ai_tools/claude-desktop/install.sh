@@ -72,20 +72,18 @@ status() {
         status_item skipped "Claude desktop app: macOS only"
         return 0
     fi
-    if ! status_require_cmd jq "Claude desktop app"; then
-        status_result
-        return
-    fi
     status_cask claude /Applications/Claude.app
     claude_desktop_files status_file
-    status_check "Claude desktop app settings" json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
+    if status_require_cmd jq "Claude desktop app settings"; then
+        status_check "Claude desktop app settings" json_applied "$CLAUDE_DESKTOP_CONFIG" "$CLAUDE_DESKTOP_SETTINGS"
+    fi
     status_result
 }
 
 apply() {
     echo "Setting up the Claude desktop app..."
     if ! is_macos; then
-        echo "  The claude cask is macOS-only, and this machine is used over SSH; skipping."
+        echo "  Claude desktop app: macOS only; skipping."
         return 0
     fi
     require_cmd jq || return 1

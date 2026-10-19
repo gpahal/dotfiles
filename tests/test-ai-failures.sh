@@ -24,6 +24,17 @@ assert_file_contains "$HOME/.claude/settings.json" '"autoMemoryEnabled": false'
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after installation failed"
 rm -rf "$HOME/.claude"
 
+# An installer that succeeds without leaving claude fails the install
+installer_without_claude() {
+    load_script ai_tools/claude-code/install.sh
+    hide claude
+    replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
+    install_claude_code
+}
+assert_exit 1 installer_without_claude
+assert_contains "$RUN_OUTPUT" "The Claude Code installer finished, but there's no claude on PATH or in ~/.local/bin."
+assert_file_contains "$STUB_LOG" "run_installer bash https://claude.ai/install.sh"
+
 desktop_failure() {
     load_script ai_tools/claude-desktop/install.sh
     is_macos() { true; }

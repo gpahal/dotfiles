@@ -185,4 +185,25 @@ assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Home
 run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
 assert_file_not_contains "$STUB_LOG" "brew install"
+
+# Without jq, status still reports the cask, the LaunchAgent, and launchd's variable; only the
+# settings are unknown
+no_jq_status() {
+    hide jq
+    run status
+    assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
+    assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
+    assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
+    assert_contains "$RUN_OUTPUT" "unknown    T3 Code's settings: $(missing_cmd_hint jq)"
+    assert_not_contains "$RUN_OUTPUT" "Server settings"
+}
+subtest no_jq_status
+
+# A model of the repo's with no instance gets Claude's, and a custom Claude instance stays
+jq -n '{defaultModelSelection: {model: "claude-opus-5-5"}}' > "$T3_CODE_SETTINGS"
+assert_eq claudeAgent "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
+    "the instance of the repo's model without one"
+jq -n '{defaultModelSelection: {model: "claude-opus-5-5", instanceId: "myClaude"}}' > "$T3_CODE_SETTINGS"
+assert_eq myClaude "$(jq -r "$(t3_code_server_filter)"' | .defaultModelSelection.instanceId' "$T3_CODE_SETTINGS")" \
+    "a custom instance of the repo's model"
 test_done

@@ -183,6 +183,21 @@ assert_contains "$RUN_OUTPUT" "PID 302, a server the Mac started over SSH"
 [ ! -f "$T3_CODE_SETTINGS" ] || fail "server settings were written while another server ran"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
 
+# A HOME with characters an extended regex treats as special matches only itself, so a server under
+# another HOME isn't one the Mac started over SSH
+special_home() {
+    HOME="$SANDBOX/a+b"
+    load_script ai_tools/t3-code/install.sh
+    replace_fn t3_code_in_service_cgroup 'false'
+    echo "302|t3|$SANDBOX/a+b/.t3/runtime/versions/0.0.45/t3 serve" > "$SANDBOX/procs"
+    assert_eq "302 ssh" "$(t3_code_other_servers | cut -d' ' -f1-2)" "a server under a HOME with a +"
+    echo "302|t3|$SANDBOX/aab/.t3/runtime/versions/0.0.45/t3 serve" > "$SANDBOX/procs"
+    assert_eq "302 manual" "$(t3_code_other_servers | cut -d" " -f1-2)" "a server under another HOME"
+}
+reset
+subtest special_home
+reset
+
 # Status names each T3 Code server outside the service, with its PID, kind, and command line, as
 # missing: a server the Mac started over SSH, and a t3 serve started by hand. The service's own server, in its cgroup, isn't one, nor is another program that runs serve.
 reset

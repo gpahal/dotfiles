@@ -28,7 +28,7 @@ AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 # Ubuntu: nothing to do
 is_macos() { false; }
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "macOS-only"
+assert_contains "$RUN_OUTPUT" "Claude desktop app: macOS only"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "skipped    Claude desktop app: macOS only"
 [ ! -e "$CONFIG" ] || fail "the config was written on Ubuntu"
@@ -137,4 +137,14 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    claude (cask): brew lists it, but its app is gone; run brew reinstall --cask claude"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "brew reinstall --cask claude"
+
+# Without jq, status still reports the cask and the LaunchAgent; only the settings are unknown
+no_jq_status() {
+    hide jq
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "claude (cask): brew lists it"
+    assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
+    assert_contains "$RUN_OUTPUT" "unknown    Claude desktop app settings: $(missing_cmd_hint jq)"
+}
+subtest no_jq_status
 test_done

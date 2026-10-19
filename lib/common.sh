@@ -2,6 +2,7 @@
 # The APIs a step builds on, each documented where it's defined:
 # - item and its drivers (items_reset, items_status, items_pending, items_apply): what a step sets
 #   up, listed once for its status, its confirm_sudo_changes list, and its fixes
+# - STEP_OS: the one OS a step supports; the default main and run_steps skip it on the other
 # shellcheck shell=bash
 
 # A cd to a relative dir would search an exported CDPATH and print the dir it found, so every
@@ -232,13 +233,78 @@ step_args() {
 # step_args's usage function, which reads its step_usage
 _step_usage() { echo "$step_usage"; }
 
-# The default main of a step: step_args, then with --status the step's read-only status report,
-# and otherwise its apply, which sets it up. A step defines status and apply, or its own main,
-# which replaces this one. Defined only while no main is, so a test that loads a step, then
-# lib/common.sh again to bring back a function it replaced, keeps the step's own main.
+# STEP_OS: a step that only one OS supports sets STEP_OS=macos or STEP_OS=ubuntu on a line of its
+# own near its top, before its functions. On the other OS the default main skips it, and so does
+# run_steps, which reads the line without sourcing the step: a run prints "<step>: skipped, macOS
+# only", and --status prints one skipped item. Its status and apply then need no OS check of their
+# own. MACOS_STEPS and UBUNTU_STEPS still decide which steps a runner runs by default. A step with
+# its own main calls step_os_skip itself.
+# e.g. STEP_OS=ubuntu
+
+# step_os_skip <step> <step os> [--status]: when <step os> is set and isn't this OS, print the
+# skip, as a skipped status item under --status, and succeed. Returns 1 when the step runs here,
+# and 2, saying why, when <step os> is neither macos nor ubuntu.
+step_os_skip() {
+    local step="$1" os="$2" label
+    case "$os" in
+        '') return 1 ;;
+        macos)
+            ! is_macos || return 1
+            label="macOS only"
+            ;;
+        ubuntu)
+            ! is_ubuntu || return 1
+            label="Ubuntu only"
+            ;;
+        *)
+            echo "$step: STEP_OS is $os, not macos or ubuntu." >&2
+            return 2
+            ;;
+    esac
+    if [ "${3:-}" == --status ]; then
+        status_item skipped "$label"
+    else
+        echo "$step: skipped, $label"
+    fi
+}
+
+# step_header_value <script> <var>: print the value a step's script gives <var> on a line of its
+# own, as <var>=value or <var>="value", without sourcing it, or nothing. The first such line wins.
+# e.g. step_header_value "$DOTFILES_DIR/docker/install.sh" STEP_OS
+step_header_value() {
+    sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -n 1
+}
+
+# Print the name of the step a script is: its directory's for an install.sh, such as docker, and
+# otherwise its own without .sh, such as manual-steps
+step_name() {
+    case "$1" in
+        */install.sh)
+            local dir="${1%/install.sh}"
+            echo "${dir##*/}"
+            ;;
+        *)
+            local file="${1##*/}"
+            echo "${file%.sh}"
+            ;;
+    esac
+}
+
+# The default main of a step: step_args, then the STEP_OS skip, then with --status the step's
+# read-only status report, and otherwise its apply, which sets it up. A step defines status and
+# apply, or its own main, which replaces this one. Defined only while no main is, so a test that
+# loads a step, then lib/common.sh again to bring back a function it replaced, keeps the step's
+# own main.
 if ! declare -F main > /dev/null; then
     main() {
+        local skip=0 flag=""
         step_args "$@"
+        ! status_requested "$@" || flag=--status
+        step_os_skip "$(step_name "$_SOURCED_BY")" "${STEP_OS:-}" ${flag:+"$flag"} || skip=$?
+        case "$skip" in
+            0) return 0 ;;
+            2) return 1 ;;
+        esac
         if status_requested "$@"; then
             status
             return $?
@@ -1067,7 +1133,7 @@ reraise_interrupt() {
 # exits 0 is listed too. A report that exits 3 without such an item failed. An empty mode runs the
 # steps.
 run_steps() {
-    local mode="$1" step script status codes interrupted="" failed=() attention=()
+    local mode="$1" step script status codes skipped interrupted="" failed=() attention=()
     shift
     require_supported_os || return 1
     # step_script takes either OS's steps, so the error lists both
@@ -1088,6 +1154,14 @@ run_steps() {
     for step in "$@"; do
         script="$(step_script "$step")"
         status=0
+        # A step for the other OS is skipped here, without starting it. Its own main reports a
+        # STEP_OS that's neither.
+        if [ -n "$mode" ] && skipped="$(step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" --status 2>/dev/null)"; then
+            printf '%s:\n%s\n' "$step" "$skipped"
+            continue
+        elif [ -z "$mode" ] && step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" 2>/dev/null; then
+            continue
+        fi
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
             # as manual-steps) prints nothing. fflush streams each line as it comes. awk exits 0

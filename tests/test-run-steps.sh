@@ -77,6 +77,23 @@ assert_eq "first
 broken
 last" "$(cat "$SANDBOX/ran")" "steps run around a failed one"
 
+# A step whose STEP_OS line names the other OS is skipped without starting it, run or reported,
+# and needs no attention. One for this OS runs.
+if is_macos; then
+    this=macos other=ubuntu label="Ubuntu only"
+else
+    this=ubuntu other=macos label="macOS only"
+fi
+fake_step elsewhere "STEP_OS=$other"
+fake_step here "STEP_OS=\"$this\""
+rm -f "$SANDBOX/ran"
+assert_exit 0 run_steps "" elsewhere here
+assert_eq "elsewhere: skipped, $label" "$RUN_OUTPUT" "a run with a step for the other OS"
+assert_eq "here" "$(cat "$SANDBOX/ran")" "steps run beside one for the other OS"
+assert_exit 0 run_steps --status elsewhere
+assert_eq "elsewhere:
+  skipped    $label" "$RUN_OUTPUT" "the status of a step for the other OS"
+
 # An interrupted step stops the run with its status, before the next step and the summary
 rm -f "$SANDBOX/ran"
 assert_exit 130 run_steps "" first interrupted last

@@ -1,6 +1,4 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # A step missing a command it needs fails before it changes anything. chrome without curl is in
@@ -64,20 +62,18 @@ tmux_step() {
 }
 git_step() {
     load_script git/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
+    as_os macos
     main
 }
 ubuntu_step() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
-    is_ubuntu() { true; }
+    as_os ubuntu
     main
 }
 docker_step() {
     load_script docker/install.sh
-    is_macos() { false; }
-    is_ubuntu() { true; }
+    as_os ubuntu
     main
 }
 # The ubuntu step without Tailscale, whose apt key it would download to install it
@@ -86,27 +82,25 @@ ubuntu_no_tailscale() {
 }
 t3_code_macos() {
     load_script ai_tools/t3-code/install.sh
-    is_macos() { true; }
-    is_ubuntu() { false; }
+    as_os macos
     main
 }
 # T3 Code on Ubuntu without the t3 CLI, which it would download
 t3_code_ubuntu() {
     load_script ai_tools/t3-code/install.sh
-    is_macos() { false; }
-    is_ubuntu() { true; }
-    apt_installed() { false; }
+    as_os ubuntu
+    replace_fn apt_installed false
     main
 }
 runtimes_step() {
     load_script runtimes/install.sh
     stub mise
-    rustup_installed() { false; }
+    replace_fn rustup_installed false
     main
 }
 runtimes_no_mise() {
     load_script runtimes/install.sh
-    rustup_installed() { false; }
+    replace_fn rustup_installed false
     main
 }
 
@@ -134,10 +128,9 @@ for os in macos ubuntu; do
     mkdir -p "$HOME"
     load_script zsh/install.sh
     if [ "$os" == ubuntu ]; then
-        is_macos() { false; }
-        is_ubuntu() { true; }
+        as_os ubuntu
     fi
-    login_zsh_path() { return 1; }
+    replace_fn login_zsh_path 'return 1'
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "zsh is missing" "the zsh step's output on $os"
     check_untouched "zsh on $os"

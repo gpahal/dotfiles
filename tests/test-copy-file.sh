@@ -17,15 +17,9 @@ mkdir -p "$SANDBOX/repo"
 
 # Act as if stdin were a terminal, answered from the test's stdin. read -p prints no question
 # without a terminal, so confirm prints it. load_script lib/common.sh puts the real ones back.
-# shellcheck disable=SC2329 # maybe_backup calls them
 fake_terminal() {
-    is_interactive() { true; }
-    confirm() {
-        local reply
-        echo "$1"
-        read -r reply
-        [ "$reply" == y ]
-    }
+    replace_fn is_interactive true
+    replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]'
 }
 
 # First install: copied, and a second run leaves it

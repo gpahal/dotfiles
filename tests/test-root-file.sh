@@ -88,9 +88,8 @@ assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directo
 assert_exit 1 confirm_sudo_changes "Write /etc/example"
 assert_contains "$RUN_OUTPUT" "    - Write /etc/example"
 assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."
-is_interactive() { true; }
-# shellcheck disable=SC2329 # confirm_sudo_changes calls it
-confirm() { false; }
+replace_fn is_interactive true
+answer no
 assert_exit 1 confirm_sudo_changes "Write /etc/example"
 assert_contains "$RUN_OUTPUT" "Left unchanged."
 assert_not_contains "$RUN_OUTPUT" "from a terminal"

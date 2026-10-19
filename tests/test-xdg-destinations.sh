@@ -1,6 +1,4 @@
 #!/bin/bash
-# The steps' functions call the OS checks this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # With XDG_CONFIG_HOME set, the lazygit config goes under it on both OSes, and the Ghostty and Zed
@@ -25,11 +23,9 @@ check() {
     fi
     load_script "$step/install.sh"
     if [ "$os" == ubuntu ]; then
-        is_macos() { false; }
-        is_ubuntu() { true; }
+        as_os ubuntu
     else
-        is_macos() { true; }
-        is_ubuntu() { false; }
+        as_os macos
     fi
     run "${step}_files" "$copy"
     assert_eq "" "$(cmp "$REPO_DIR/$src" "$dest" 2>&1)" "$step's config on $os"

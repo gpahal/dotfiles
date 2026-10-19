@@ -1,6 +1,4 @@
 #!/bin/bash
-# The steps' functions call the ones this test replaces
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # --status --quick (DOTFILES_STATUS_QUICK=1) skips the slowest checks. This covers two of them: the
@@ -15,9 +13,9 @@ setup_sandbox
 
 # homebrew, on Ubuntu with Homebrew and its casks installed
 load_script homebrew/install.sh
-is_macos() { false; }
-missing_ubuntu_commands() { :; }
-locale_installed() { true; }
+as_os ubuntu
+replace_fn missing_ubuntu_commands :
+replace_fn locale_installed true
 # brew lists the Ubuntu casks as installed
 stub brew "[ \"\$1 \$2\" != 'list --cask' ] || printf '%s\n' ${UBUNTU_CASKS[*]}"
 

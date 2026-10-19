@@ -1,6 +1,4 @@
 #!/bin/bash
-# run_steps calls the step_script this test defines
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # STEP_NEEDS: when homebrew fails, run_steps skips the steps that need it, without starting them,
@@ -29,10 +27,7 @@ fake_step lazygit "" ''
 fake_step skills "runtimes" ''
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(homebrew runtimes lazygit skills)
-step_script() {
-    [ -f "$steps/$1.sh" ] || return 1
-    echo "$steps/$1.sh"
-}
+replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
 # homebrew fails: runtimes, which needs it, and skills, which needs runtimes, are skipped and
 # listed as failed; lazygit, which needs neither, runs

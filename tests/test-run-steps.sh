@@ -1,6 +1,4 @@
 #!/bin/bash
-# run_steps calls the step_script this test defines
-# shellcheck disable=SC2329
 set -euo pipefail
 # serial
 
@@ -41,10 +39,7 @@ done
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
-step_script() {
-    [ -f "$steps/$1.sh" ] || return 1
-    echo "$steps/$1.sh"
-}
+replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
 # Every step passes
 assert_exit 0 run_steps "" first last
@@ -143,8 +138,7 @@ assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
-is_macos() { true; }
-is_ubuntu() { false; }
+as_os macos
 
 # An Intel Mac fails before any step runs, status included
 stub uname '[ "$1" != -m ] || echo x86_64'

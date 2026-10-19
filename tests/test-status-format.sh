@@ -1,6 +1,4 @@
 #!/bin/bash
-# run_steps calls the step_script this test defines
-# shellcheck disable=SC2329
 set -euo pipefail
 
 # The status format lib/common.sh defines once, and its two consumers. A fake step prints an item
@@ -50,10 +48,7 @@ mkdir -p "$steps"
 } > "$steps/calm.sh"
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(every calm)
-step_script() {
-    [ -f "$steps/$1.sh" ] || return 1
-    echo "$steps/$1.sh"
-}
+replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
 # run_steps: the step with missing and unknown items needs attention, the other doesn't
 assert_exit 3 run_steps --status

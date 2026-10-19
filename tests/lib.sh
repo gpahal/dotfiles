@@ -7,7 +7,12 @@
 # command in SENTINELS. Stub every one the test reaches. hide makes a command missing. A sudo that
 # runs its command is stub_sudo_exec, checks run in a subshell go through subtest, and what the
 # test starts in another process group is stopped by on_exit. A test that lacks a tool it needs
-# calls skip. tests/run.sh runs each test and says how skips and timeouts count.
+# calls skip. tests/run.sh runs each test and says how skips, timeouts, and the "# serial" mark
+# work.
+#
+# To change a function a loaded script defines, use replace_fn, which fails the test when there's
+# no such function, rather than redefining it bare. as_os macos|ubuntu sets is_macos and is_ubuntu,
+# and answer yes|no sets confirm's answer.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -180,17 +185,49 @@ stub() {
 # Stub sudo to run its command as you, as sudo with cached credentials would, after dropping a
 # leading -n. It refuses a command with an absolute path, alone or after an =, outside the sandbox
 # (which holds $STUB_DIR), other than /dev/null and the repo's files. So a system path the test
-# didn't point into the sandbox fails the command, rather than being written to as you. The
-# optional body runs first, with sudo's arguments as "$@", as a stub's does, and may change them
-# with set --, as to drop options that need root.
+# didn't point into the sandbox fails the command, rather than being written to as you. A repo
+# file passes only as one the command reads: an argument before the last, as install's or cp's
+# source, or any argument of a command that only reads, such as cat or bash. It's refused as the
+# last argument, the destination or target of most commands, and anywhere for a command that
+# changes each file it's given, such as rm, chmod, or tee. The optional body runs first, with
+# sudo's arguments as "$@", as a stub's does, and may change them with set --, as to drop options
+# that need root.
 # e.g. stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
 [ "${1:-}" != -n ] || shift
+# The command, after any VAR=value words, and which of its files it reads: all, all but the last,
+# or none, as install -d makes each dir it is given
+cmd=""
 for arg in "$@"; do
     case "$arg" in
-        /dev/null | "$sandbox" | "$sandbox"/* | "$repo"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/* | *="$repo"/*) ;;
+        *=*) ;;
+        *)
+            cmd="${arg##*/}"
+            break
+            ;;
+    esac
+done
+case "$cmd" in
+    cat | bash | sh | head | tail | grep | diff | cmp | stat | test | \[) reads=all ;;
+    rm | rmdir | mv | chmod | chown | chgrp | touch | tee | truncate | mkdir | unlink | sed) reads=none ;;
+    *) reads=all-but-last ;;
+esac
+case " $* " in *" -d "*) [ "$cmd" != install ] || reads=none ;; esac
+i=0
+for arg in "$@"; do
+    i=$((i + 1))
+    case "$arg" in
+        /dev/null | "$sandbox" | "$sandbox"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/*) ;;
+        "$repo"/* | *="$repo"/*)
+            case "$reads" in
+                all) continue ;;
+                all-but-last) [ "$i" -eq $# ] || continue ;;
+            esac
+            echo "refused: $cmd would change $arg, in the repo" >&2
+            exit 1
+            ;;
         /* | *=/*)
             echo "refused: $arg is outside the sandbox" >&2
             exit 1
@@ -299,6 +336,45 @@ subtest() {
         exit "$TEST_FAILURES"
     ) || failed=$?
     TEST_FAILURES=$((TEST_FAILURES + failed))
+}
+
+# Replace function <name>, which a loaded script defines, with <body>. It fails the test when no
+# such function exists, as when a step renamed it, since the override would then change nothing
+# and the test could pass without testing what it meant to. It redefines the function anyway.
+# e.g. replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
+replace_fn() {
+    declare -F "$1" > /dev/null || fail "replace_fn: no function $1 to replace"
+    eval "$1() {
+${2:-:}
+}"
+}
+
+# Make the loaded scripts' is_macos and is_ubuntu say the test runs on macOS or on Ubuntu. Only
+# this shell's functions change; a step run as its own process needs a uname stub instead.
+# e.g. as_os ubuntu
+as_os() {
+    case "$1" in
+        macos)
+            replace_fn is_macos 'return 0'
+            replace_fn is_ubuntu 'return 1'
+            ;;
+        ubuntu)
+            replace_fn is_macos 'return 1'
+            replace_fn is_ubuntu 'return 0'
+            ;;
+        *) fail "as_os: '$1' isn't macos or ubuntu" ;;
+    esac
+}
+
+# Make the loaded scripts' confirm print its question and answer yes or no, as a person at a
+# terminal would
+# e.g. answer yes
+answer() {
+    case "$1" in
+        yes) replace_fn confirm 'echo "$1"' ;;
+        no) replace_fn confirm 'echo "$1"; return 1' ;;
+        *) fail "answer: '$1' isn't yes or no" ;;
+    esac
 }
 
 # Mark the end of the test: its last line. A test that exits 0 without it fails (see _sandbox_exit).

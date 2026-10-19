@@ -10,7 +10,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 # status calls these; failing stubs stand in for tools that aren't set up, instead of tripping the
 # sentinels
-for cmd in brew curl claude codex; do
+for cmd in brew curl claude codex bwrap; do
     stub "$cmd" 'exit 1'
 done
 

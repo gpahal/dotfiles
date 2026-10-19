@@ -2,19 +2,87 @@
 set -uo pipefail
 
 # Run every tests/test-*.sh, or the named ones (e.g. bash tests/run.sh vim copy-file), each in its
-# own process under the bash running this script, with stdin from /dev/null, $TEST_JOBS at a time
-# (one per CPU by default). Prints PASS, FAIL, or SKIP per file, in name order, with a failing or
-# skipped test's output, and exits 1 when any fails. A test skips by exiting 77, and with
-# TEST_FAIL_ON_SKIP=1, as CI sets, a skip fails. A test that runs longer than $TEST_TIMEOUT seconds
-# (120 by default) is killed and fails. A test that needs a command only macOS ships, such as
+# own process group under the bash running this script, with stdin from /dev/null. xargs -P runs
+# $TEST_JOBS at a time (one per CPU by default). A test with a "# serial" line, one whose timing
+# windows can flake under load, runs after the others, one at a time. Prints PASS, FAIL, or SKIP
+# per file, in name order with the serial tests last, with a failing or skipped test's output, and
+# exits 1 when any fails. A test skips by exiting 77, and with TEST_FAIL_ON_SKIP=1, as CI sets, a
+# skip fails. A test that runs longer than $TEST_TIMEOUT seconds (120 by default) is killed, by
+# lib/common.sh's run_bounded, and fails. A test that needs a command only macOS ships, such as
 # ls -e or sqlite3, has an "# os: macos" line in its first 20 lines, and a run of every test leaves
 # it out on Ubuntu; a named test always runs. Each test gets its own HOME and TMUX_TMPDIR, with
 # XDG_* and DOTFILES_* unset, as a backstop for one that forgets setup_sandbox. It syntax-checks
-# the repo's other shell scripts and each selected test before running it, since a syntax error in
-# a sourced script can let a test pass.
+# each selected test before running it, and, on a run of every test, the repo's other shell
+# scripts, since a syntax error in a sourced script can let a test pass. Ctrl-C or SIGTERM stops
+# every test and exits 130.
 
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
+
+# run_bounded alone: sourcing lib/common.sh would change PATH and export variables to the tests
+eval "$(sed -n '/^run_bounded() {$/,/^}$/p' ../lib/common.sh)"
+if ! declare -F run_bounded > /dev/null; then
+    echo "No run_bounded() in lib/common.sh" >&2
+    exit 1
+fi
+
+# Remove test $1's HOME, TMUX_TMPDIR, and sandbox, which the test's EXIT trap removes unless it
+# was SIGKILLed, stopping any tmux server it left running there
+clean_test_dirs() {
+    local dir="$tmp/$1" sock
+    if command -v tmux &>/dev/null; then
+        for sock in "$dir"/tmux/tmux-*/* "$dir"/dotfiles-test.*/tmux/tmux-*/*; do
+            [ ! -S "$sock" ] || tmux -S "$sock" kill-server &>/dev/null
+        done
+    fi
+    chmod -R u+w "$dir/home" "$dir/tmux" "$dir"/dotfiles-test.* 2>/dev/null
+    rm -rf "${dir:?}/home" "${dir:?}/tmux" "${dir:?}"/dotfiles-test.*
+}
+
+# The worker xargs runs: run test $2 as number $1 in $tmp/$1, leaving its output in output and,
+# last, its exit status in status. It exits 0 whatever the test does, since xargs stops at a
+# command that exits 255.
+run_test() {
+    local dir="$tmp/$1" t="$2" pid status
+    mkdir "$dir/home" "$dir/tmux"
+    # setup_sandbox makes the sandbox in TEST_SANDBOX_PARENT
+    export HOME="$dir/home" TMUX_TMPDIR="$dir/tmux" TEST_SANDBOX_PARENT="$dir"
+    if ! "$BASH" -n "$t" > "$dir/output" 2>&1; then
+        status=2
+    else
+        # Job control gives the test its own process group, so a timeout reaches what it started,
+        # and keeps SIGINT deliverable: without it, a background job ignores SIGINT, and so would
+        # the test, which checks how steps handle an interrupt. On macOS, bash's child sometimes
+        # prints "child setpgid (N to N): Operation not permitted" when the parent's setpgid for
+        # it ran first. The job still gets its own group. The child prints it before its own
+        # redirections apply, so the braces discard it.
+        set -m
+        { run_bounded "$TEST_TIMEOUT" "$BASH" "$t" < /dev/null > "$dir/output" 2>&1 & } 2>/dev/null
+        pid=$!
+        set +m
+        echo "$pid" > "$dir/pgid"
+        # Bash prints "Terminated" for a killed job on the wait's stderr, which the braces discard
+        { wait "$pid"; } 2>/dev/null
+        status=$?
+        if [ "$status" -eq 124 ]; then
+            echo "Killed: took longer than ${TEST_TIMEOUT}s" >> "$dir/output"
+            status=1
+            # Without timeout(1), run_bounded's alarm kills only the test, not what it started
+            if kill -TERM -- "-$pid" 2>/dev/null; then
+                sleep 2
+                kill -KILL -- "-$pid" 2>/dev/null
+            fi
+        fi
+    fi
+    clean_test_dirs "$1"
+    echo "$status" > "$dir/status.tmp" && mv "$dir/status.tmp" "$dir/status"
+}
+
+if [ "${1:-}" == --worker ]; then
+    tmp="$2" TEST_TIMEOUT="$3"
+    run_test "$4" "$5"
+    exit 0
+fi
 
 on_macos=false
 [ "$(uname -s)" != Darwin ] || on_macos=true
@@ -53,43 +121,29 @@ repo_scripts() {
     fi
 }
 
-# The *.sh files, and the scripts in */bin/ that run under bash. Each test gets its own check
-# below.
+# The *.sh files, and the scripts in */bin/ that run under bash, on a run of every test. Each test
+# gets its own check in run_test.
 broken=0
-while IFS= read -r f; do
-    # git lists a tracked file deleted from the working tree
-    [ -f "$f" ] || continue
-    case "$f" in
-        ../tests/test-*.sh) continue ;;
-        *.sh) ;;
-        *) head -1 "$f" | grep -q bash || continue ;;
-    esac
-    if ! output="$("$BASH" -n "$f" 2>&1)"; then
-        echo "FAIL  ${f#../}"
-        printf '%s\n' "$output" | sed 's/^/    /'
-        broken=$((broken + 1))
-    fi
-done < <(repo_scripts)
-
-# Kill test process group $1 once it has run $3 seconds, noting it in file $2
-watchdog() {
-    local pid="$1" limit="$3" i=0
-    while kill -0 "$pid" 2>/dev/null; do
-        if [ "$i" -ge "$limit" ]; then
-            echo "Killed: took longer than ${limit}s" > "$2"
-            kill -TERM -- "-$pid" 2>/dev/null
-            sleep 2
-            kill -KILL -- "-$pid" 2>/dev/null
-            return
+if [ $# -eq 0 ]; then
+    while IFS= read -r f; do
+        # git lists a tracked file deleted from the working tree
+        [ -f "$f" ] || continue
+        case "$f" in
+            ../tests/test-*.sh) continue ;;
+            *.sh) ;;
+            *) head -1 "$f" | grep -q bash || continue ;;
+        esac
+        if ! output="$("$BASH" -n "$f" 2>&1)"; then
+            echo "FAIL  ${f#../}"
+            printf '%s\n' "$output" | sed 's/^/    /'
+            broken=$((broken + 1))
         fi
-        sleep 1
-        i=$((i + 1))
-    done
-}
+    done < <(repo_scripts)
+fi
 
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
-# A TEST_JOBS of 0 would start no test and wait forever, and a TEST_TIMEOUT that isn't a number
-# would turn the watchdog off
+# A TEST_JOBS of 0 would start no test, and a TEST_TIMEOUT that isn't a number would turn the
+# timeout off
 for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
     case "${setting#*=}" in
         '' | *[!0-9]* | 0*)
@@ -98,80 +152,63 @@ for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
             ;;
     esac
 done
+# test-ubuntu-sandbox.sh copies the repo to /var/tmp, outside the dir removed below, so a test
+# killed before its EXIT trap leaves the copy there. Remove those a day old, which no run still uses.
+find /var/tmp/ -maxdepth 1 -type d -name 'dotfiles-test.*' -user "$(id -u)" -mtime +0 2>/dev/null |
+    while IFS= read -r dir; do
+        chmod -R u+w "$dir" 2>/dev/null
+        rm -rf "$dir"
+    done
 # /tmp, not $TMPDIR, keeps the tests' TMUX_TMPDIR under tmux's socket path length limit on macOS
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 
-# Remove test $1's HOME, TMUX_TMPDIR, and sandbox, which the test's EXIT trap removes unless the
-# watchdog had to SIGKILL it, stopping any tmux server it left running there
-clean_test_dirs() {
-    local dir="$tmp/$1" sock
-    if command -v tmux &>/dev/null; then
-        for sock in "$dir"/tmux/tmux-*/* "$dir"/dotfiles-test.*/tmux/tmux-*/*; do
-            [ ! -S "$sock" ] || tmux -S "$sock" kill-server &>/dev/null
-        done
-    fi
-    chmod -R u+w "$dir/home" "$dir/tmux" "$dir"/dotfiles-test.* 2>/dev/null
-    rm -rf "${dir:?}/home" "${dir:?}/tmux" "${dir:?}"/dotfiles-test.*
+# Print the process groups of the processes this runner started, other than its own group:
+# xargs's, which holds the workers, each test's, and each one timeout(1) makes for itself
+child_groups() {
+    ps -A -o pid= -o ppid= -o pgid= 2>/dev/null | awk -v root="$$" '
+        { parent[$1] = $2; group[$1] = $3 }
+        END {
+            for (p in parent) {
+                q = parent[p]
+                for (n = 0; q != root && (q in parent) && n < 100; n++) q = parent[q]
+                if (q == root && group[p] != group[root] && !(group[p] in seen)) {
+                    seen[group[p]] = 1
+                    print group[p]
+                }
+            }
+        }'
 }
 
-# Run test $2 as number $1 in $tmp/$1, leaving its output in output and, last, its exit status in
-# status. Runs in the background, one per test.
-run_test() {
-    local dir="$tmp/$1" t="$2" pid watchdog_pid status
-    # A worker is a subshell, which mustn't run the runner's cleanup when it exits
-    trap - EXIT
-    mkdir "$dir/home" "$dir/tmux"
-    # setup_sandbox makes the sandbox in TEST_SANDBOX_PARENT
-    export HOME="$dir/home" TMUX_TMPDIR="$dir/tmux" TEST_SANDBOX_PARENT="$dir"
-    if ! "$BASH" -n "$t" > "$dir/output" 2>&1; then
-        status=2
-    else
-        # Job control gives the test and the watchdog their own process groups, so a kill reaches
-        # what the test started too. It's on only for these two: on macOS, bash's child sometimes
-        # prints "child setpgid (N to N): Operation not permitted" when the parent's setpgid for
-        # it ran first. The job still gets its own group. The child prints it before its own
-        # redirections apply, so the braces discard it.
-        set -m
-        {
-            "$BASH" "$t" < /dev/null > "$dir/output" 2>&1 &
-            pid=$!
-            watchdog "$pid" "$dir/timed-out" "$TEST_TIMEOUT" < /dev/null > /dev/null 2>&1 &
-            watchdog_pid=$!
-        } 2>/dev/null
-        set +m
-        echo "$pid $watchdog_pid" > "$dir/pids"
-        trap 'kill -TERM -- "-$pid" "-$watchdog_pid" 2>/dev/null; exit 130' TERM
-        # Bash prints "Terminated" for a killed job on the wait's stderr, which the braces discard
-        { wait "$pid"; } 2>/dev/null
-        status=$?
-        { kill -- "-$watchdog_pid" && wait "$watchdog_pid"; } 2>/dev/null
-        if [ -e "$dir/timed-out" ]; then
-            cat "$dir/timed-out" >> "$dir/output"
-            status=1
-        fi
-    fi
-    clean_test_dirs "$1"
-    echo "$status" > "$dir/status.tmp" && mv "$dir/status.tmp" "$dir/status"
-}
-
-workers=()
+xargs_pid=""
 # shellcheck disable=SC2329 # the traps run them
 cleanup() {
     rm -rf "$tmp"
 }
-# A test runs in its own process group, which Ctrl-C doesn't reach, so stop each one running here
+# The tests run in process groups of their own, which Ctrl-C doesn't reach, so stop each one,
+# giving it 5 s to run its EXIT trap, then remove what it left
 # shellcheck disable=SC2329
 interrupted() {
-    local i test_pid watchdog_pid
-    for i in ${workers[@]+"${!workers[@]}"}; do
-        [ ! -e "$tmp/$i/status" ] || continue
-        kill -TERM "${workers[i]}" 2>/dev/null
-        read -r test_pid watchdog_pid < "$tmp/$i/pids" 2>/dev/null || continue
-        kill -TERM -- "-$test_pid" "-$watchdog_pid" 2>/dev/null
+    local groups group i alive
+    trap '' INT TERM
+    # Also xargs's group and the tests' recorded ones, should ps be missing
+    groups="$(child_groups) $xargs_pid $(cat "$tmp"/*/pgid 2>/dev/null)"
+    for group in $groups; do
+        kill -TERM -- "-$group" 2>/dev/null
+    done
+    for ((i = 0; i < 50; i++)); do
+        alive=false
+        for group in $groups; do
+            ! kill -0 -- "-$group" 2>/dev/null || alive=true
+        done
+        "$alive" || break
+        sleep 0.1
+    done
+    for group in $groups; do
+        kill -KILL -- "-$group" 2>/dev/null
     done
     wait 2>/dev/null
-    for i in ${workers[@]+"${!workers[@]}"}; do
-        clean_test_dirs "$i"
+    for i in "$tmp"/*/; do
+        [ ! -d "$i" ] || clean_test_dirs "$(basename "$i")"
     done
     exit 130
 }
@@ -184,54 +221,68 @@ done
 unset TMUX TMUX_PANE
 failed=()
 skipped=0
-started=0
-reported=0
-running=0
-while [ "$reported" -lt "${#tests[@]}" ]; do
-    while [ "$running" -lt "$jobs" ] && [ "$started" -lt "${#tests[@]}" ]; do
-        mkdir "$tmp/$started"
-        # With job control, as each worker starts its test: without it, a background job ignores
-        # SIGINT, and so would the test, which checks how steps handle an interrupt. The braces
-        # discard the setpgid message described in run_test.
-        set -m
-        { run_test "$started" "${tests[started]}" < /dev/null & } 2>/dev/null
-        workers[started]=$!
-        set +m
-        started=$((started + 1))
-        running=$((running + 1))
-    done
-    # Report the finished tests in order, so the output doesn't depend on which ends first
-    progressed=false
-    for ((i = reported; i < started; i++)); do
-        [ -e "$tmp/$i/status" ] || continue
-        if [ -z "${done_tests[i]:-}" ]; then
-            done_tests[i]=1
-            running=$((running - 1))
-            progressed=true
-            wait "${workers[i]}" 2>/dev/null
-        fi
-    done
-    while [ "$reported" -lt "$started" ] && [ -n "${done_tests[reported]:-}" ]; do
-        t="${tests[reported]}"
-        dir="$tmp/$reported"
+
+# Print test number $1's result, with its output unless it passed
+report() {
+    local t="${tests[$1]}" dir="$tmp/$1" status=1
+    if [ -e "$dir/status" ]; then
         status="$(cat "$dir/status")"
-        if [ "$status" -eq 0 ]; then
-            echo "PASS  $t"
-        elif [ "$status" -eq 77 ] && [ "${TEST_FAIL_ON_SKIP:-}" != 1 ]; then
-            echo "SKIP  $t"
-            sed 's/^/    /' "$dir/output"
-            skipped=$((skipped + 1))
-        else
-            [ "$status" -ne 77 ] || echo "Skipped, and TEST_FAIL_ON_SKIP=1 fails a skip" >> "$dir/output"
-            echo "FAIL  $t"
-            sed 's/^/    /' "$dir/output"
-            failed+=("$t")
-        fi
-        rm -rf "${dir:?}"
-        reported=$((reported + 1))
+    else
+        echo "It didn't finish: xargs stopped first" >> "$dir/output"
+    fi
+    if [ "$status" -eq 0 ]; then
+        echo "PASS  $t"
+    elif [ "$status" -eq 77 ] && [ "${TEST_FAIL_ON_SKIP:-}" != 1 ]; then
+        echo "SKIP  $t"
+        sed 's/^/    /' "$dir/output"
+        skipped=$((skipped + 1))
+    else
+        [ "$status" -ne 77 ] || echo "Skipped, and TEST_FAIL_ON_SKIP=1 fails a skip" >> "$dir/output"
+        echo "FAIL  $t"
+        sed 's/^/    /' "$dir/output"
+        failed+=("$t")
+    fi
+    rm -rf "${dir:?}"
+}
+
+# Run the tests numbered $2..., $1 at a time, and report each in the order given, so the output
+# doesn't depend on which ends first
+run_batch() {
+    local jobs="$1" i
+    shift
+    [ $# -gt 0 ] || return 0
+    for i in "$@"; do
+        mkdir "$tmp/$i"
+        printf '%s\0%s\0' "$i" "${tests[i]}"
+    done > "$tmp/batch"
+    # Job control puts xargs and its workers in a process group of their own, which interrupted
+    # stops, and keeps SIGINT deliverable to the tests (see run_test). xargs's stderr has only
+    # its complaint about a worker killed by a signal.
+    set -m
+    { xargs -0 -n 2 -P "$jobs" "$BASH" "$PWD/run.sh" --worker "$tmp" "$TEST_TIMEOUT" < "$tmp/batch" > /dev/null 2>&1 & } 2>/dev/null
+    xargs_pid=$!
+    set +m
+    for i in "$@"; do
+        while [ ! -e "$tmp/$i/status" ] && kill -0 "$xargs_pid" 2>/dev/null; do
+            sleep 0.1
+        done
+        report "$i"
     done
-    "$progressed" || sleep 0.1
+    wait "$xargs_pid" 2>/dev/null
+    xargs_pid=""
+}
+
+pool=()
+serial=()
+for i in "${!tests[@]}"; do
+    if grep -qx '# serial' "${tests[i]}"; then
+        serial+=("$i")
+    else
+        pool+=("$i")
+    fi
 done
+run_batch "$jobs" ${pool[@]+"${pool[@]}"}
+run_batch 1 ${serial[@]+"${serial[@]}"}
 
 echo ""
 echo "$((${#tests[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"

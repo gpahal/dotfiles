@@ -88,6 +88,8 @@ stub ss
 stub loginctl 'touch "'"$SANDBOX"'/linger"'
 stub nmcli
 stub lsblk
+# Not a VM
+stub systemd-detect-virt 'exit 1'
 SSHD_DROP_IN="$SANDBOX/10-dotfiles.conf"
 # Password logins already off
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"

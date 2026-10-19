@@ -33,6 +33,8 @@ load_script ai_tools/codex/install.sh
 is_macos() { false; }
 is_ubuntu() { true; }
 hide brew codex
+# Codex's sandbox works
+stub bwrap
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "unknown    codex: brew isn't installed"
 assert_not_contains "$RUN_OUTPUT" "missing    codex (cask)"

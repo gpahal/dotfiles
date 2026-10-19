@@ -5,7 +5,8 @@ set -euo pipefail
 # Activity Monitor counts them, and draws each stat key as an SVG, with a placeholder when a stat
 # is missing. Its sampler survives macmon failing to start, ignores a stopped macmon that exits
 # late, backs off from one that keeps exiting or whose spawn throws, notices macmon once it's
-# installed, and starts the sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
+# installed, and starts the sparklines afresh after a reset, and a kind's rate and sparkline once
+# it's needed again. Fixed command output stands in for the real machine's, and a
 # fake spawn for macmon, apart from one real spawn of a file that isn't executable.
 # plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
 # hotkey does, and runs it again once that one exits. A key whose render throws shows a
@@ -207,6 +208,32 @@ const sample = await sampler.sample(["cpu"]);
 const before = sample.cpuHistory.length;
 sampler.reset();
 console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
+
+# The network rate is over the clock's time between samples. A kind no key needs, as when its key
+# is hidden while others show, starts afresh when it's needed again: no rate over the gap, and an
+# empty sparkline.
+assert_eq '[{"rx":500,"tx":50},null,{"rx":1000,"tx":100},0,null]' "$(sampler_js 'let t = 0;
+let bytes = 0;
+const runCommand = async () => {
+  bytes += 1000;
+  return `en0 1500 <Link#11> 36:53:3e:4a:e9:c0 1 0 ${bytes} 1 0 ${bytes / 10} 0`;
+};
+const sampler = s.createSampler({ log, runCommand, clock: () => t });
+const rates = [];
+await sampler.sample(["network"]);
+t += 2000;
+rates.push((await sampler.sample(["network"])).network);
+await sampler.sample(["disk"]);
+t += 60000;
+rates.push((await sampler.sample(["network"])).network ?? null);
+t += 1000;
+rates.push((await sampler.sample(["network"])).network);
+await new Promise((r) => setTimeout(r, 100));
+const cpu = await sampler.sample(["cpu"]);
+await sampler.sample(["disk"]);
+rates.push(cpu.cpuHistory.length);
+rates.push((await sampler.sample(["cpu"])).cpu ?? null);
+console.log(JSON.stringify(rates));')" "rates after a kind is hidden"
 # A copy of the plugin whose bin/open-in logs each target and prints "done <target>" as it exits.
 # chrome-tab waits until $SANDBOX/release exists.
 PLUGIN="$SANDBOX/plugin"

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the Hammerspoon config and the open-in script its hotkeys run.
+#
 # Copy the Hammerspoon config, whose hotkeys open Claude, Chrome, a new Chrome tab with the
 # clipboard pasted, Ghostty and Zed at the folder or file in front, and T3 Code, and the Stream
 # Deck plugin's bin/open-in, which finds the folder or file and opens the new tab. A running

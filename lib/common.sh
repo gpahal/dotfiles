@@ -303,6 +303,13 @@ step_header_value() {
     sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -n 1
 }
 
+# Print a step's header line: the first comment line after the shebang, other than a shellcheck
+# directive, which says in one sentence what the step does. The runners' --help lists it.
+# e.g. step_header_line "$DOTFILES_DIR/docker/install.sh"
+step_header_line() {
+    awk 'NR > 1 && /^# / && !/^# shellcheck/ { sub(/^# /, ""); print; exit }' "$1"
+}
+
 # Print the name of the step a script is: its directory's for an install.sh, such as docker, and
 # otherwise its own without .sh, such as manual-steps
 step_name() {
@@ -1191,11 +1198,15 @@ runner_main() {
 
 # runner_main's usage function, which reads its script and quick
 _runner_usage() {
+    local step
     echo "Usage: bash $script [--status [--quick]] [--backup | --no-backup] [step...]"
     echo "Steps, run in this order by default: ${STEPS[*]}"
+    for step in "${STEPS[@]}"; do
+        printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"
+    done
     echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
     echo "unknown items. $quick"
-    echo "A config file that differs from the repo's is replaced. Settings merges into files other"
+    echo "A config file that differs from the repo's is replaced. Settings merged into files other"
     echo "tools also edit ask whether to back up the file first. --backup or --no-backup answers"
     echo "every backup question yes or no."
     echo "Flags may come before or after the step names."

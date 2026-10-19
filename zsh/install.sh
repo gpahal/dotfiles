@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the zsh and starship config, source it at login, and offer zsh as the login shell.
+#
 # Copy the zsh config and starship's config, add a line that sources it to ~/.zshrc and
 # ~/.zprofile (and ~/.zshenv and ~/.profile on Ubuntu), and make zsh the login shell.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.

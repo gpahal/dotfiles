@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the Ghostty config and reload it, and on Ubuntu install the Ghostty snap.
+#
 # Copy the Ghostty config and, when it changed, reload it in running Ghostty windows. On Ubuntu,
 # also install Ghostty from its snap, which snapd keeps updated; the homebrew step installs it on
 # macOS. Without snapd, the step still copies the config, then fails.

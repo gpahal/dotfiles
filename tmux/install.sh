@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the tmux config and tmux-sessionizer, and install tpm and the pinned plugins.
+#
 # Copy the tmux config and tmux-sessionizer, and install tpm and the plugins into ~/.tmux/plugins,
 # each at the commit tmux/plugins.lock pins. tpm loads them when tmux starts. On Ubuntu, have
 # tmux-continuum enable its systemd user unit, which starts tmux at boot and restores the sessions.

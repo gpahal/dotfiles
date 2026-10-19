@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install Homebrew and the formulae, casks, and App Store apps the step lists.
+#
 # Install Homebrew, the formulae in homebrew/Brewfile, and the App Store apps and casks listed
 # below. On macOS, also the Xcode Command Line Tools. On Ubuntu, also the apt packages Homebrew
 # needs, and only the casks with Linux builds.

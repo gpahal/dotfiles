@@ -11,7 +11,6 @@ The Mac is Apple Silicon on macOS 27. The Ubuntu desktop runs Ubuntu 26.04 LTS o
 - [First run](#first-run)
 - [How setup works](#how-setup-works)
 - [Ubuntu](#ubuntu-1)
-- [Code layout](#code-layout)
 - [What's included](#whats-included)
 - [Manual steps](#manual-steps)
 - [Check it works](#check-it-works)
@@ -73,7 +72,7 @@ bash setup.sh
 | `logitech` | Installs Solaar, since Logi Options+ has no Linux version. Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps). Its script is `manual-steps.sh` |
 
-Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, and the run ends by listing the failed steps and the command that re-runs them.
+Name steps to run only those, such as `bash setup.sh git zsh`. `--help` lists them, each with what it does. Re-running is safe: a step that's already applied says so and changes nothing. A failed step doesn't stop the rest, and the run ends by listing the failed steps and the command that re-runs them.
 
 **Status.** `bash setup.sh --status [step...]` reports what's set up and changes nothing. It checks root-only settings only while sudo credentials are cached (`sudo -v`). Each item is `ok`, `missing` (run the step, or the manual step it names), `skipped` (doesn't apply here), `unverified` (only partly checked), `unknown` (can't be checked), or `info`. The run ends by listing the steps that need attention. Status also checks free disk space, and on Ubuntu SMART health, firmware updates, Docker's disk usage, and container ports published on every address. `--quick` skips the slowest checks, Docker's disk usage among them.
 
@@ -106,33 +105,19 @@ What differs from macOS:
 The Ubuntu machine stays on so the Mac and the phone can reach its agents at any time. The `ubuntu` step does most of this, and the `docker` step the Docker part:
 
 - **No sleep.** Suspend is off.
-- **Power cuts.** With a UPS on USB, the machine shuts down on a low battery and starts again when mains returns. If the UPS keeps its power on, a fallback starts the machine 15 minutes later, but only on a motherboard that wakes from an RTC alarm. The **Power cuts** manual step tests both.
+- **Power cuts.** With a UPS on USB, the machine shuts down on a low battery and starts again when power returns. The **Power cuts** manual step tests it.
 - **Kernel panics.** The machine reboots 10 seconds after one.
-- **Disk health.** smartd watches the drives and pushes its warnings to your phone. It may not repeat a warning, so act on the first one.
-- **Health alerts.** A daily check pushes what needs attention to your phone when it changes, again each week while it lasts, and once more when it's all clear. It runs without root, so it skips the checks that need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. A push names them. To check them, run `sudo -v`, then `just status`. Each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
+- **Disk health.** smartd pushes drive warnings to your phone. It may not repeat one, so act on the first.
+- **Health alerts.** A daily check pushes what needs attention to your phone, and each boot pushes a notice. Re-run setup after moving the checkout, which they run from.
 - **Updates.** Security, Chrome, and Docker updates install daily, without a reboot. `just status` lists a pending reboot and firmware updates.
 - **User services.** Your systemd user services, such as the T3 Code server and tmux, start at boot without a login.
-- **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key.
-- **Tailscale.** Once you've logged in, Tailscale updates itself, and you can run `tailscale serve` without `sudo`. So can anything else running as you. It can also run `tailscale funnel`, which opens a port to the internet if the tailnet's policy grants funnel, and `tailscale set --ssh`, which turns on Tailscale SSH. The **Tailscale** manual step covers the policy. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
-- **Firewall.** ufw lets SSH in only from `10.0.0.0/8`, `192.168.0.0/16`, and IPv6's unique local and link-local ranges, and lets the tailnet (`tailscale0`) reach every port, so Tailscale's access rules decide what tailnet devices can reach. It leaves out `172.16.0.0/12`, which the `docker` step limits Docker's networks to, and denies SSH on Docker's bridges, `docker0` and `br-*`, so containers on them can't reach sshd, even on a network with IPv6 or a subnet you chose. A network whose bridge you name (`com.docker.network.bridge.name`), or Swarm's `docker_gwbridge`, needs its own rule: `sudo ufw prepend deny in on <bridge> to any port 22 proto tcp`. On a LAN in that range, SSH in over Tailscale. If you share the machine, or add devices you don't own to the tailnet, limit them with an ACL. `just status` flags any other rule that lets SSH in from outside those ranges, such as the one `ufw allow ssh` adds. Before Tailscale is up, SSH from the Mac to the machine's IPv4 address, or a name that resolves to it, since ufw lets in no global IPv6 address.
-- **Docker.** Docker starts at boot. You and T3 Code's agents use it without `sudo` through the `docker` group, which is root-equivalent, so the step asks about it on its own, once, when it installs Docker. Without it, use `sudo docker`, or join later with the command `just status` shows. Published ports bypass ufw, so they listen on `127.0.0.1` unless you give an address, as in `-p 0.0.0.0:8080:80`, and `just status` flags a running container's port that listens on every address. For containers to reach a port on the host, run `sudo ufw allow in on docker0`. Docker networks get `/24` subnets only from `172.17.0.0/16` to `172.31.0.0/16`, outside the SSH ranges.
+- **SSH.** sshd starts at boot, lets only you log in, and turns off password logins once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops every session when tailscaled restarts.
+- **Tailscale.** Tailscale updates itself, and you, or anything running as you, can run `tailscale serve`, `funnel`, and `set --ssh` without `sudo`. The **Tailscale** manual step covers the policy that limits them.
+- **Firewall.** ufw lets SSH in only from private ranges outside Docker's and from the tailnet, and `just status` flags any rule that lets in more.
+- **Docker.** Docker starts at boot, and published ports listen on `127.0.0.1` unless you give an address. The step asks once before adding you to the `docker` group, which is root-equivalent.
 - **Wake-on-LAN.** Wired connections wake on a magic packet, with the BIOS setting on.
 
 Over SSH from the Mac, both machines' tmux use the `Ctrl+a` prefix, so press it twice to reach the inner one.
-
-## Code layout
-
-Projects live at `~/Dev/<group>/<project>`, grouped by language or purpose: `~/Dev/go/envl`, `~/Dev/js/jslib`. This repo is at `~/Dev/setup/dotfiles`.
-
-Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects rather than inside them. A repo outside `~/Dev/<group>/<project>` uses `~/.worktrees/_/<project>-<hash>/<name>`. Each tool keeps its own:
-
-| Tool | Worktrees |
-| :- | :- |
-| [`git wt`](#git), the implement skill, and Claude Code's `--worktree`, subagents, and background sessions | `~/.worktrees/<group>/<project>/<name>` |
-| T3 Code | `~/.t3/worktrees/<repo>/<worktree>` |
-| The Codex app | `~/.codex/worktrees` |
-
-`ts` in zsh and `prefix+f` in tmux pick a project from `~/Dev/*/*` and open a tmux session for it.
 
 ## What's included
 
@@ -145,7 +130,7 @@ Worktrees go under `~/.worktrees/<group>/<project>/<name>`, beside the projects 
 - [Git](https://git-scm.com/) config with the [delta](https://github.com/dandavison/delta) pager, `zdiff3` and `histogram` diffs, `rerere`, auto-squash and `updateRefs` on rebase, rebase on pull, and object checks on fetch
 - [difftastic](https://github.com/Wilfred/difftastic) as the diff tool: `git dft`, `git dd`, and `git dlog`
 - `git cob` and `git cobr` pick a local or remote branch with fzf and switch to it. `git co` runs `switch`, `git unstage` runs `restore --staged`, and `git del` deletes a merged branch
-- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt base` prints the ref `git wt add` branches from when you give no base. `git wt rm --delete-merged-branch <name>` also deletes the branch when another branch has all its commits. `git wt path`, `list`, and `prune` do the rest; `git wt` alone prints its usage
+- `git wt` manages a repo's worktrees under `~/.worktrees` (see [Code layout](./AGENTS.md#code-layout)). `git wt add <name> [<base>]` creates a branch and its worktree and prints the path, so `cd "$(git wt add foo)"` works. `git wt base` prints the ref `git wt add` branches from when you give no base. `git wt rm --delete-merged-branch <name>` also deletes the branch when another branch has all its commits. `git wt path`, `list`, and `prune` do the rest; `git wt` alone prints its usage
 - Copied to `~/.config/git/config`, with a global ignore file at `~/.config/git/ignore`
 - Put settings for one machine in `~/.gitconfig.local`. To clone a repo with malformed objects, run `git -c transfer.fsckObjects=false clone <url>`
 

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Set macOS defaults, free Cmd+Space for Raycast, and set the hostname when needed.
+#
 # Set macOS defaults for Finder, Dock, keyboard, dialogs, and screenshots, turn off Spotlight's
 # Cmd+Space shortcut, so Raycast can take it, and set the hostname when it's unset or invalid.
 # Only writes values that differ, and only restarts Finder, Dock, or SystemUIServer when one of

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Make ~/.ssh private, and on macOS keep SSH keys in the keychain, loaded at login.
+#
 # macOS: add a Host * block to ~/.ssh/config that loads keys into the agent from the keychain, and
 # a LaunchAgent that does so at login. Ubuntu has no keychain, so it gets neither. Other tools
 # (e.g. OrbStack) add their own lines to that file, so it's never replaced, and a Host * block you

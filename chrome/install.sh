@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install Google Chrome from Google's apt repo.
+#
 # Install Google Chrome on Ubuntu from Google's .deb, which also adds Google's apt repo, and let
 # unattended-upgrades install its updates, which the ubuntu step turns on. These need sudo, so the
 # step lists what's missing and asks once. It skips when Google has no .deb for this CPU. On macOS,

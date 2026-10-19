@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install the Stream Deck plugin, and restart Stream Deck to load it.
+#
 # Install the Stream Deck plugin in stream-deck/com.gpahal.dotfiles.sdPlugin. Each of its app
 # actions runs bin/open-in, which says what each does: Editor, Terminal, and Files open the folder
 # or file in front in Zed, Ghostty, or Finder, and Chrome, New Tab, Gmail, T3 Code, and Claude do

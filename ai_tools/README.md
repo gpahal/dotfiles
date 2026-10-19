@@ -96,7 +96,7 @@ Sessions start in auto mode, where a classifier approves safe actions and asks a
 - **Model (script).** Opus 5.5 at medium effort, and Sonnet 5.5 at high. To switch for one session, press `s` in the `/model` picker.
 - **Interface (script).** The fullscreen TUI with normal (not vim) key bindings. When safeguards flag a message, Claude Code switches models instead of pausing.
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh) shows the model, effort, context used, the 5-hour rate limit, and the branch: `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
-- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts the worktrees of `--worktree`, subagents, and background sessions under `~/.worktrees` through [`git wt`](../README.md#git) (see [Code layout](../README.md#code-layout)). When a session ends, the hook removes its subagents' worktrees that have no changes; remove the rest with `git wt rm`.
+- **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts the worktrees of `--worktree`, subagents, and background sessions under `~/.worktrees` through [`git wt`](../README.md#git) (see [Code layout](../AGENTS.md#code-layout)). When a session ends, the hook removes its subagents' worktrees that have no changes; remove the rest with `git wt rm`.
 - **`.worktreeinclude`.** The hook copies the gitignored files and directories it lists into a new worktree. Naming an ignored directory, such as `node_modules/`, copies it whole. A pattern inside an ignored directory, such as `build/config.json` when `build/` is ignored, copies nothing, so name the directory instead.
 
 ### Desktop app settings

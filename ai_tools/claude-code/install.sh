@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install Claude Code and set its settings, status line, worktree hook, and instructions.
+#
 # Install Claude Code, configure ~/.claude/settings.json, copy the status line script to
 # ~/.claude/statusline.sh and the worktree hook to ~/.claude/hooks/worktree-hook.sh, and copy the
 # user-level instructions to ~/.claude/CLAUDE.md.

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install Docker Engine from Docker's apt repo, started at boot.
+#
 # Install Docker Engine on Ubuntu from Docker's apt repo, the Linux counterpart of OrbStack on the
 # Mac. The daemon starts at boot, so containers with a restart policy come back, container logs
 # rotate, containers keep running across daemon restarts, published ports listen on 127.0.0.1,

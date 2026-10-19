@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install the Codex CLI and the ChatGPT app, and set Codex's config and instructions.
+#
 # Install the Codex CLI and the ChatGPT desktop app, configure ~/.codex/config.toml (shared by
 # both), and copy the user-level instructions to ~/.codex/AGENTS.md. The ChatGPT app writes to
 # config.toml too, so it must be quit first; when run interactively the script offers to quit

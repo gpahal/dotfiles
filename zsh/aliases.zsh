@@ -33,7 +33,7 @@ alias .....="cd ../../../.."
 alias lg="lazygit"
 alias ts='tmux-sessionizer'
 
-# Both run scripts/upgrade.sh from the repo, which README → Code layout puts at
+# Both run scripts/upgrade.sh from the repo, which AGENTS.md → Code layout puts at
 # ~/Dev/setup/dotfiles unless DOTFILES_DIR says otherwise. It reads the repo's Brewfile anyway.
 upgrade() {
     bash "${DOTFILES_DIR:-$HOME/Dev/setup/dotfiles}/scripts/upgrade.sh" "$@"

@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Claude desktop app, open it at login, and set its preferences. Claude must be quit
-# first; when run interactively the script offers to quit it, otherwise it skips the settings.
+# Install the Claude desktop app, open it at login, and set its preferences.
+#
+# Claude must be quit first; when run interactively the script offers to quit it, otherwise it skips
+# the settings.
 #
 # A temp HOME doesn't isolate this step, which installs the claude cask into /Applications. Test it
 # in a macOS VM or on a spare Mac.

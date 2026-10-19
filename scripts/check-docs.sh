@@ -7,12 +7,16 @@ set -euo pipefail
 #   a step "macOS only" or "Ubuntu only" when the other OS's STEPS lacks it
 # - ai_tools/README.md: "The steps, in order, are ...", less the ones "Ubuntu skips"
 # Also check that:
+# - each of those steps has a header line, the one sentence after the shebang that --help lists
 # - README.md and ai_tools/README.md each have the "Manual steps" section for macOS and Ubuntu that
 #   the manual-steps scripts print
 # - README.md's and ai_tools/README.md's links to local files resolve, down to their #anchors
 # `just check` runs it.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# For step_header_line
+# shellcheck source=../lib/common.sh
+source "$REPO_DIR/lib/common.sh"
 # shellcheck source=lib/markdown.sh
 source "$REPO_DIR/scripts/lib/markdown.sh"
 # shellcheck source=lib/runners.sh
@@ -68,6 +72,26 @@ runner_steps "$REPO_DIR/ai_tools/setup.sh" Linux > "$tmp/ai-ubuntu" || true
 for list in setup-macos setup-ubuntu ai-macos ai-ubuntu; do
     [ -s "$tmp/$list" ] || fail "Couldn't read the steps for $list from the runner's --help"
 done
+
+# Each step's header line, which the runners' --help lists, is one sentence of at most 90 characters
+check_header_line() {
+    local script="$1" line
+    line="$(step_header_line "$script")"
+    if [ -z "$line" ]; then
+        fail "${script#"$REPO_DIR"/} has no header line, the comment after the shebang that --help lists"
+    elif [ "${#line}" -gt 90 ] || [ "${line%.}" == "$line" ]; then
+        fail "${script#"$REPO_DIR"/}'s header line, which --help lists, should be one sentence of at most 90 characters: $line"
+    fi
+}
+while IFS= read -r step; do
+    case "$step" in
+        */manual-steps) check_header_line "$step.sh" ;;
+        *) check_header_line "$step/install.sh" ;;
+    esac
+done < <({
+    sed "s|^|$REPO_DIR/|" "$tmp/setup-macos" "$tmp/setup-ubuntu"
+    sed "s|^|$REPO_DIR/ai_tools/|" "$tmp/ai-macos" "$tmp/ai-ubuntu"
+} | sort -u)
 
 # README.md "How setup works": the first cell of each table row under the heading
 readme="$REPO_DIR/README.md"

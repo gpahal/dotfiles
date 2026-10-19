@@ -37,6 +37,8 @@ assert_contains "$RUN_OUTPUT" "Needs attention: skills."
 assert_exit 0 "$BASH" "$setup_sh" vim --help
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
+# It lists each step with its header line
+assert_contains "$RUN_OUTPUT" "  vim             $(sed -n '4s/^# //p' "$REPO_DIR/vim/install.sh")"
 assert_exit 0 "$BASH" "$ai_setup_sh" --backup -h skills
 assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"

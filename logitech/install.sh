@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install Solaar for Logitech devices, since Logi Options+ has no Linux version.
+#
 # Install Solaar on Ubuntu to pair and configure Logitech mice and keyboards, since Logi Options+
 # has no Linux version. It comes from Ubuntu's universe, so its updates come with Ubuntu's. This
 # needs sudo, so the step asks first. On macOS, the homebrew step installs Logi Options+.

@@ -37,7 +37,7 @@ that repo's `.gitignore`. The skills work either way.
 
 `implement` keeps its worktrees outside the repo, under `~/.worktrees/<group>/<repo>/`: one per
 parallel ticket, removed when merged, and one for the integration branch when the checkout has
-changes you don't want committed. See [Code layout](../../README.md#code-layout).
+changes you don't want committed. See [Code layout](../../AGENTS.md#code-layout).
 
 ## Layout of a skill
 

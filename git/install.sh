@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the git config, ignore file, and git wt, and log in to GitHub with gh.
+#
 # Install the git config, global ignore file, and git-wt, and log in to GitHub with gh. On Ubuntu,
 # also send GitHub's SSH remotes over HTTPS.
 #

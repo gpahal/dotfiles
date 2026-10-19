@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Install T3 Code and set its settings, and on Ubuntu run its server as a service.
+#
 # Install the T3 Code desktop app, open it at login with its telemetry off, and set its settings.
 # T3 Code must be quit first; when run interactively the script offers to quit it, otherwise it
 # skips the settings.

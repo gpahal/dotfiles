@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Print the AI tool steps scripts can't do on this OS.
+#
 # Print the AI tool steps scripts can't do on this OS, from ai_tools/README.md's Manual steps
 # section, so the list has one copy. On macOS, also offer to open the settings still to do.
 

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Set Ubuntu up to run unattended around the clock.
+#
 # Set up Ubuntu to run unattended around the clock: never sleep, watch a UPS on USB with NUT once
 # one is plugged in, which shuts down on a dying battery and has the UPS cut and restore power,
 # reboot after a kernel panic, raise the inotify limits for agents' file watchers, add the

@@ -33,3 +33,15 @@ Dotfiles for macOS 27 and for an Ubuntu 26.04 desktop used over SSH. These are t
 
   `README.md` and `ai_tools/README.md` each start with a first-run checklist per OS, and keep to what a user does and sees. How a step handles a case goes in a comment beside the code that handles it, or in a test. Run prose through `unslop`.
 - **Skills**: load `writing-for-agents` before editing one or this file. Most are modified upstream copies (the skills README's Acknowledgements lists which), so port upstream diffs by hand and keep our changes.
+
+## Code layout
+
+Projects live at `~/Dev/<group>/<project>`, grouped by language or purpose, such as `~/Dev/go/envl`. This repo is at `~/Dev/setup/dotfiles`. `ts` in zsh and `prefix+f` in tmux pick a project from `~/Dev/*/*` and open a tmux session for it.
+
+Worktrees go beside the projects, not inside them. Each tool keeps its own:
+
+| Tool | Worktrees |
+| :- | :- |
+| `git wt`, the `implement` skill, and Claude Code's `--worktree`, subagents, and background sessions | `~/.worktrees/<group>/<project>/<name>`, or `~/.worktrees/_/<project>-<hash>/<name>` for a repo outside `~/Dev/<group>/<project>` |
+| T3 Code | `~/.t3/worktrees/<repo>/<worktree>` |
+| The Codex app | `~/.codex/worktrees` |

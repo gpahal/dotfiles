@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Copy the vim config, install vim-plug, and move the plugins to their pins.
+#
 # Copy the vim config, install the vim-plug the repo vendors in vim/plug.vim, and move the plugins
 # vim-plug installed to the commits the vimrc pins. When vim starts, the vimrc creates its undo
 # dir, and vim-plug installs any missing plugins at their pins.

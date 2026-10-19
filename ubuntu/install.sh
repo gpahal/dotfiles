@@ -198,6 +198,16 @@ install_root_copy() {
     root_copy_current "$@" || install_root_file "$@"
 }
 
+# The ntfy code smartd's hook and the UPS notifier source. They run away from the repo, the
+# notifier as the nut user, who may not be able to read it, so it's installed with each of them.
+ntfy_lib_installed() {
+    root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+}
+
+install_ntfy_lib() {
+    install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+}
+
 # The step's simple items, which status and apply drive by their check functions. The rest branch,
 # so they stay in status and apply.
 ubuntu_items() {
@@ -226,15 +236,27 @@ ubuntu_items() {
         "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
 }
 
-# status and apply run in_vm and key_login many times, some in subshells, so they declare
-# IN_VM_CACHE, KEY_LOGIN_CACHE, and KEY_LOGIN_STATUS local and call this first to set them once
+# status and apply run in_vm, key_login, and sudo_ready many times, some in subshells, so they
+# declare IN_VM_CACHE, KEY_LOGIN_CACHE, KEY_LOGIN_STATUS, and SUDO_CACHED_CACHE local and call this
+# first to set them once
 cache_checks() {
-    local vm=no status=0
+    local vm=no status=0 cached=no
     ! in_vm || vm=yes
     KEY_LOGIN_CACHE="$(key_login)" || status=$?
-    # Set last, since in_vm and key_login read them once set
+    ! sudo_cached || cached=yes
+    # Set last, since in_vm, key_login, and sudo_ready read them once set
     IN_VM_CACHE="$vm"
     KEY_LOGIN_STATUS="$status"
+    SUDO_CACHED_CACHE="$cached"
+}
+
+# sudo_cached, as cache_checks found it
+sudo_ready() {
+    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
+        [ "$SUDO_CACHED_CACHE" == yes ]
+        return
+    fi
+    sudo_cached
 }
 
 # Copy the environment.d file. When it changes, reload the user manager, which reads environment.d
@@ -295,7 +317,7 @@ enable_linger() {
 # credentials are cached, and is otherwise unverified.
 status() {
     local uuid name wired=false item packages overrides
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS=""
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE=""
     cache_checks
     ubuntu_items
     items_status sleep_masked sleep_conf_written
@@ -364,7 +386,7 @@ apply() {
     echo "Setting up Ubuntu to run around the clock..."
     local pending=() wol_pending=()
     local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" UPS_STATE="" UPS_PLUGGED=""
+    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE="" UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and Tailscale's updates come from it. Its
     # updater reads only tailscale.list (aptSourcesFile in its clientupdate.go), so the step owns
@@ -404,7 +426,7 @@ apply() {
     # when other changes need it, as the ufw rules are
     local auto_upgrades_unchecked=false
     items_pending locale_installed
-    if auto_upgrades_unreadable && ! sudo_cached; then
+    if auto_upgrades_unreadable && ! sudo_ready; then
         auto_upgrades_unchecked=true
     else
         items_pending unattended_upgrades_running

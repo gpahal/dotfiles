@@ -224,11 +224,11 @@ ups_services_active() {
 # The notifier runs as the nut user, from outside the repo, so the ntfy code it sources is
 # installed with it
 ups_notifier_installed() {
-    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    root_copy_current "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && ntfy_lib_installed
 }
 
 install_ups_notifier() {
-    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    install_root_copy "$UPS_NOTIFY_SRC" "$UPS_NOTIFY" 0755 && install_ntfy_lib
 }
 
 # Succeeds when NUT is set up for one of the plugged-in UPSes, given their IDs: ups.conf names one

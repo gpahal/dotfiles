@@ -364,7 +364,7 @@ status_sshd() {
     openssh_installed && installed=true
     items_status openssh_installed
     ! "$installed" || items_status sshd_enabled
-    if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_cached; then
+    if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_ready; then
         status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
     else
         status_check "$SSHD_DROP_IN" sshd_configured
@@ -374,7 +374,7 @@ status_sshd() {
         item="sshd's effective settings match $SSHD_DROP_IN"
         if [ ! -d "$SSHD_RUN_DIR" ]; then
             status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
-        elif ! sudo_cached; then
+        elif ! sudo_ready; then
             status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
         elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
             status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"

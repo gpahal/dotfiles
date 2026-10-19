@@ -47,7 +47,7 @@ unattended_upgrades_running() {
 # Print the status item for unattended-upgrades. Never asks for sudo.
 status_unattended_upgrades() {
     local item="unattended-upgrades runs daily"
-    if auto_upgrades_unreadable && ! sudo_cached; then
+    if auto_upgrades_unreadable && ! sudo_ready; then
         status_item unverified "$item (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
     else
         status_check "$item" unattended_upgrades_running

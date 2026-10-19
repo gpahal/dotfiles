@@ -112,8 +112,19 @@ install_docker() {
     apt_get install -y "${DOCKER_PACKAGES[@]}"
 }
 
+# From the group database, so it's true once you've joined, before a new login gives your
+# processes the group
 in_docker_group() {
-    id -nG "$(id -un)" | tr ' ' '\n' | grep -qx docker
+    case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
+}
+
+# sudo_cached, as status found it once, for its checks that run docker or read the config
+sudo_ready() {
+    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
+        [ "$SUDO_CACHED_CACHE" == yes ]
+        return
+    fi
+    sudo_cached
 }
 
 # docker.service wants containerd.service, so it starts containerd too
@@ -198,7 +209,7 @@ docker_status_run() {
     DOCKER_OUT=""
     DOCKER_STATUS=0
     if ! in_docker_group; then
-        if ! sudo_cached; then
+        if ! sudo_ready; then
             status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
             return 1
         fi
@@ -309,7 +320,8 @@ status_docker_ports() {
 # Never asks for sudo. A config only root can read is checked with sudo -n when sudo credentials
 # are cached, and is otherwise unverified.
 status() {
-    local installed=false
+    local installed=false SUDO_CACHED_CACHE=no
+    ! sudo_cached || SUDO_CACHED_CACHE=yes
     docker_installed && installed=true
     docker_items
     items_status docker_installed
@@ -322,7 +334,7 @@ status() {
     fi
     items_status socket_ready starts_at_boot
     # A config only root can read, or no jq, can't be checked
-    if daemon_config_unreadable && ! sudo_cached; then
+    if daemon_config_unreadable && ! sudo_ready; then
         status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         items_status daemon_configured

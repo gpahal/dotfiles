@@ -14,23 +14,15 @@ NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
 # smartd's PATH starts with /usr/local, so a curl or logger there would run instead of the system's
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-log() {
-    logger -t dotfiles-smartd -- "$*" 2> /dev/null || true
-}
-
 [ -s "$NTFY_URL_FILE" ] || exit 0
 if [ ! -r "$NTFY_LIB" ]; then
-    log "couldn't push the warning to ntfy: $NTFY_LIB is missing"
+    logger -t dotfiles-smartd -- "couldn't push the warning to ntfy: $NTFY_LIB is missing" 2> /dev/null
     exit 0
 fi
 # shellcheck source=lib/ntfy.sh
 source "$NTFY_LIB"
 
-subject="${SMARTD_SUBJECT:-SMART warning on $(hostname)}"
-message="${SMARTD_MESSAGE:-${SMARTD_FULLMESSAGE:-smartd reported a problem with ${SMARTD_DEVICE:-a disk}}}"
-# The URL holds the topic, which is its only secret, so the log leaves it out
-if ! out="$(ntfy_push "$(head -n 1 "$NTFY_URL_FILE")" "$subject" "$message" \
-    "Priority: urgent" "Tags: warning" 2>&1)"; then
-    log "couldn't push the warning to ntfy: ${out:-curl failed}"
-fi
+ntfy_hook_push dotfiles-smartd "the warning" "${SMARTD_SUBJECT:-SMART warning on $(hostname)}" \
+    "${SMARTD_MESSAGE:-${SMARTD_FULLMESSAGE:-smartd reported a problem with ${SMARTD_DEVICE:-a disk}}}" \
+    "Priority: urgent" "Tags: warning"
 exit 0

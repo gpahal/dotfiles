@@ -90,7 +90,7 @@ status_smart() {
         status_item unknown "$label: smartctl isn't installed; the ubuntu step installs smartmontools"
         return 0
     fi
-    if ! sudo_cached; then
+    if ! sudo_ready; then
         status_item unverified "$label: reading it needs root; run sudo -v, then status, to check it"
         return 0
     fi
@@ -185,15 +185,13 @@ install_smartd() {
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
 }
 
-# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources. The
-# hook runs away from the repo, as the UPS notifier does, whose nut user may not be able to read
-# it, so the ntfy code is installed for both.
+# The hook is root's and runs as root, so it's installed whole, with the ntfy code it sources
 smartd_hook_installed() {
-    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && root_copy_current "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    root_copy_current "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && ntfy_lib_installed
 }
 
 install_smartd_hook() {
-    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
+    install_root_copy "$SMARTD_HOOK_SRC" "$SMARTD_HOOK" 0755 && install_ntfy_lib
 }
 
 # In a VM smartd doesn't run, so its hook doesn't matter there

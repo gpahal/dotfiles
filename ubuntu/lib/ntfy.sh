@@ -23,3 +23,15 @@ ntfy_push() {
         curl -q -fsS --max-time 10 -H "Title: $title" ${headers[@]+"${headers[@]}"} \
             --data-raw "$message" -K - > /dev/null
 }
+
+# ntfy_hook_push <log tag> <what> <title> <message> [header...]: push for a hook, to the URL on
+# the first line of $NTFY_URL_FILE, which the hook sets. A failure goes to the journal under <log
+# tag>, as "couldn't push <what> to ntfy: <curl's error>", which leaves out the URL, whose topic is
+# its only secret. Always succeeds, so a hook exits 0 and its caller reports no failure.
+# e.g. ntfy_hook_push dotfiles-ups "the UPS event" "$title" "$message" "Priority: high"
+ntfy_hook_push() {
+    local tag="$1" what="$2" out
+    shift 2
+    out="$(ntfy_push "$(head -n 1 "$NTFY_URL_FILE")" "$@" 2>&1)" ||
+        logger -t "$tag" -- "couldn't push $what to ntfy: ${out:-curl failed}" 2>/dev/null || true
+}

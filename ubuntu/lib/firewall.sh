@@ -400,7 +400,7 @@ status_ufw() {
         return 0
     fi
     # Without cached credentials, the rules item below is unverified, which covers this too
-    if sudo_cached && ufw_stopped -n; then
+    if sudo_ready && ufw_stopped -n; then
         status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
         return 0
     fi
@@ -413,7 +413,7 @@ status_ufw() {
         status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         return 0
     fi
-    if sudo_cached; then
+    if sudo_ready; then
         ufw_configured -n || ufw=$?
     else
         ufw=2

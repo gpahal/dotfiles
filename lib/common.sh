@@ -3,6 +3,8 @@
 # - item and its drivers (items_reset, items_status, items_pending, items_apply): what a step sets
 #   up, listed once for its status, its confirm_sudo_changes list, and its fixes
 # - STEP_OS: the one OS a step supports; the default main and run_steps skip it on the other
+# - the status format: status_item prints an item, and status_parse_line and status_summary_line
+#   read a report back, for run_steps and ubuntu/health-alert.sh
 # shellcheck shell=bash
 
 # A cd to a relative dir would search an exported CDPATH and print the dir it found, so every
@@ -766,7 +768,13 @@ json_merge() {
 # Set once status_item prints an item that needs attention
 STATUS_NEEDS_ATTENTION=false
 
-# Print one item of a step's --status report. States:
+# The status format, defined here once. A --status report is lines a person reads, which
+# run_steps and ubuntu/health-alert.sh also parse, through status_parse_line and
+# status_summary_line, so a change to how items look changes all three together:
+# - an item is two spaces, its state padded to STATUS_STATE_WIDTH, a space, and its text
+# - run_steps puts a "<step>:" header before each step's items, and ends a run with the summary
+#   lines "Needs attention: ..." and "Failed steps: ..."
+# States:
 #   ok          set up
 #   missing     not set up; running the step (or the manual step it names) sets it up
 #   skipped     doesn't apply here, such as on the other OS or in a VM; say why
@@ -775,12 +783,69 @@ STATUS_NEEDS_ATTENTION=false
 #   unknown     can't be checked, e.g. because a tool is missing or a download failed; say why
 #   info        a value to know rather than something setup sets up, such as whether FileVault is
 #               on, or that such a check couldn't run; it doesn't need attention
+STATUS_STATES="ok missing skipped unverified unknown info"
+STATUS_STATE_WIDTH=10
+STATUS_SUMMARY_ATTENTION="Needs attention"
+STATUS_SUMMARY_FAILED="Failed steps"
+
+# Print one item of a step's --status report
 # e.g. status_item missing "~/.zshrc sources main.zsh"
 status_item() {
-    printf '  %-10s %s\n' "$1" "$2"
+    printf "  %-${STATUS_STATE_WIDTH}s %s\n" "$1" "$2"
+    ! status_state_needs_attention "$1" || STATUS_NEEDS_ATTENTION=true
+}
+
+# Succeeds for a state that needs attention: missing or unknown
+status_state_needs_attention() {
     case "$1" in
-        missing | unknown) STATUS_NEEDS_ATTENTION=true ;;
+        missing | unknown) return 0 ;;
     esac
+    return 1
+}
+
+# status_parse_line <line>: succeed when the line is a status item, setting STATUS_LINE_STATE and
+# STATUS_LINE_TEXT to its state and text. Other lines, such as a header, a summary, or a step's
+# own output, fail.
+status_parse_line() {
+    local line="$1" state padded
+    state="${line:2:$STATUS_STATE_WIDTH}"
+    state="${state%% *}"
+    case " $STATUS_STATES " in
+        *" $state "*) ;;
+        *) return 1 ;;
+    esac
+    printf -v padded "  %-${STATUS_STATE_WIDTH}s " "$state"
+    [ "${line:0:${#padded}}" == "$padded" ] || return 1
+    STATUS_LINE_STATE="$state"
+    # shellcheck disable=SC2034 # callers read it
+    STATUS_LINE_TEXT="${line:${#padded}}"
+}
+
+# Succeeds when a line is one of run_steps' summary lines
+status_summary_line() {
+    case "$1" in
+        "$STATUS_SUMMARY_ATTENTION: "* | "$STATUS_SUMMARY_FAILED: "*) return 0 ;;
+    esac
+    return 1
+}
+
+# _status_relay <header>: run_steps' classifier for one step's report. Copies stdin to stdout as
+# each line comes, after <header> when there's a first line, and succeeds when an item needs
+# attention: a report that set -e cut short at a command that exited 3, such as jq on a filter
+# that doesn't compile, exits 3 too, so the exit code alone can't tell.
+_status_relay() {
+    local line attention=1 first=true
+    while IFS= read -r line || [ -n "$line" ]; do
+        if "$first"; then
+            printf '%s\n' "$1"
+            first=false
+        fi
+        printf '%s\n' "$line"
+        if status_parse_line "$line" && status_state_needs_attention "$STATUS_LINE_STATE"; then
+            attention=0
+        fi
+    done
+    return "$attention"
 }
 
 # Succeeds when sudo credentials are cached, so sudo -n runs without asking for a password. A
@@ -1164,16 +1229,9 @@ run_steps() {
         fi
         if [ -n "$mode" ]; then
             # The header goes before the step's first line, so a step that reports nothing (such
-            # as manual-steps) prints nothing. fflush streams each line as it comes. awk exits 0
-            # when it saw an item status_item marks as needing attention, since a report that set
-            # -e cut short at a command that exited 3, such as jq on a filter that doesn't
-            # compile, exits 3 too. -e is off in the group, so PIPESTATUS is read.
+            # as manual-steps) prints nothing. -e is off in the group, so PIPESTATUS is read.
             {
-                "$BASH" "$script" --status | awk -v header="$step:" '
-                    NR == 1 { print header }
-                    /^  (missing|unknown)    / { attention = 1 }
-                    { print; fflush() }
-                    END { exit !attention }'
+                "$BASH" "$script" --status | _status_relay "$step:"
                 codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
             } || true
             status="${codes% *}"
@@ -1201,11 +1259,11 @@ run_steps() {
     trap - INT TERM HUP
     if [ ${#attention[@]} -gt 0 ]; then
         echo ""
-        echo "Needs attention: ${attention[*]}. Run: bash $0 ${attention[*]}"
+        echo "$STATUS_SUMMARY_ATTENTION: ${attention[*]}. Run: bash $0 ${attention[*]}"
     fi
     if [ ${#failed[@]} -gt 0 ]; then
         echo "" >&2
-        echo "Failed steps: ${failed[*]}" >&2
+        echo "$STATUS_SUMMARY_FAILED: ${failed[*]}" >&2
         echo "Fix the errors above, then re-run them with: bash $0 ${mode:+$mode }${failed[*]}" >&2
         return 1
     fi

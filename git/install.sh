@@ -19,7 +19,6 @@ STEP_NEEDS="homebrew"
 
 REPO_CONFIG="$DOTFILES_DIR/git/gitconfig"
 XDG_GIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
-LOCAL_CONFIG="$HOME/.gitconfig"
 
 # Succeeds when GitHub's API answers at all, whatever the answer. curl reads the same proxy
 # variables gh does.
@@ -147,7 +146,7 @@ configure_github_https() {
         return 0
     fi
     while IFS= read -r prefix; do
-        git_file "$LOCAL_CONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
+        git_file "$USER_GITCONFIG" --add "$GITHUB_HTTPS_KEY" "$prefix" || return 1
     done <<< "$missing"
     echo "  GitHub SSH remotes now go over HTTPS, through gh's credential helper"
 }
@@ -164,13 +163,13 @@ git_files() {
 }
 
 user_gitconfig_exists() {
-    [ -e "$LOCAL_CONFIG" ]
+    [ -e "$USER_GITCONFIG" ]
 }
 
 # git config --global writes to ~/.config/git/config when ~/.gitconfig doesn't exist, and the
 # next run would overwrite that. Make sure per-machine settings land in ~/.gitconfig.
 create_user_gitconfig() {
-    touch "$LOCAL_CONFIG"
+    touch "$USER_GITCONFIG"
 }
 
 git_items() {

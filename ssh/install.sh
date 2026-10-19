@@ -11,7 +11,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 # shellcheck source=lib/hosts.sh
 source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 
-SSH_CONFIG="$HOME/.ssh/config"
 SSH_ADD_LABEL="dotfiles.ssh-add"
 SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
 

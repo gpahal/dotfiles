@@ -350,6 +350,23 @@ function card(label, value, valueColor, sub, extra = "") {
 
 const empty = (label, sub = "") => card(label, "—", COLORS.muted, sub);
 
+// Each key's label, which its placeholder shows too
+const LABELS = {
+  overview: "SYSTEM",
+  cpu: "CPU",
+  memory: "MEMORY",
+  swap: "SWAP",
+  top: "TOP CPU",
+  gpu: "GPU",
+  temperature: "TEMP",
+  power: "POWER",
+  disk: "DISK",
+  network: "NETWORK",
+};
+
+// A reading in watts, or a dash when macmon doesn't give it, as after an update renames a field
+const watts = (value) => (typeof value === "number" ? value.toFixed(1) : "—");
+
 const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
 
 const RENDER = {
@@ -403,9 +420,9 @@ const RENDER = {
     return card("TEMP", `${Math.round(cpu)}°`, level(cpu, 75, 90), gpu ? `GPU ${Math.round(gpu)}°` : "CPU");
   },
   power(s) {
-    if (s.power?.system == null) return empty("POWER", s.macmonMissing ? "needs macmon" : "");
+    if (typeof s.power?.system !== "number") return empty("POWER", s.macmonMissing ? "needs macmon" : "");
     const { system, cpu, gpu } = s.power;
-    return card("POWER", `${system.toFixed(1)} W`, COLORS.text, `CPU ${cpu.toFixed(1)} · GPU ${gpu.toFixed(1)}`);
+    return card("POWER", `${watts(system)} W`, COLORS.text, `CPU ${watts(cpu)} · GPU ${watts(gpu)}`);
   },
   disk(s) {
     if (!s.disk) return empty("DISK");
@@ -426,10 +443,13 @@ const RENDER = {
 
 const isStat = (kind) => Object.hasOwn(RENDER, kind);
 const render = (kind, s) => RENDER[kind](s);
+// What a key shows when its render throws
+const placeholder = (kind) => empty(LABELS[kind] ?? kind.toUpperCase());
 
 module.exports = {
   createSampler,
   isStat,
+  placeholder,
   render,
   formatBytes,
   parseNetstat,

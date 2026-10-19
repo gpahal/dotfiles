@@ -8,7 +8,8 @@ set -euo pipefail
 # installed, and starts the sparklines afresh after a reset. Fixed command output stands in for the real machine's, and a
 # fake spawn for macmon, apart from one real spawn of a file that isn't executable.
 # plugin.js drops a New Tab press while the last one's open-in still runs, as the Hammerspoon
-# hotkey does, and runs it again once that one exits. A fake Stream Deck socket and open-in stand
+# hotkey does, and runs it again once that one exits. A key whose render throws shows a
+# placeholder, logged once, while the others update. A fake Stream Deck socket and open-in stand
 # in for the real ones.
 
 # shellcheck source=lib.sh
@@ -79,6 +80,9 @@ for kind in overview cpu memory swap top gpu temperature power disk network; do
 done
 assert_contains "$(render gpu '{"macmonMissing": true}')" "needs macmon"
 assert_contains "$(render power '{"power": {"system": 7.75, "cpu": 0.42, "gpu": 0.03}}')" ">7.8 W</text>"
+# A field macmon no longer gives, as after an update renames it, shows a dash
+assert_contains "$(render power '{"power": {"system": 7.75, "gpu": 0.03}}')" ">CPU — · GPU 0.0</text>"
+assert_contains "$(js 'console.log(s.placeholder("top"))')" ">TOP CPU</text>"
 assert_contains "$(render temperature '{"temperature": {"cpu": 95, "gpu": 44}}')" "#f87171"
 
 # Run JavaScript inside an async function with stats.js as `s`, a fake spawn as `spawnProcess`,
@@ -239,4 +243,33 @@ const until = async (test) => { while (!test()) await new Promise((r) => setTime
 })();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
 assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
     "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
+
+# A key whose render throws shows its placeholder, and the error is logged once, while the other
+# keys still update. A stats.js whose Disk render throws stands in for the real one.
+cat > "$PLUGIN/stats.js" << EOF
+const real = require("$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js");
+module.exports = { ...real, render: (kind, s) => { if (kind === "disk") throw new Error("broken"); return real.render(kind, s); } };
+EOF
+out="$(node -e 'const sent = [];
+let socket;
+globalThis.WebSocket = class {
+  constructor() { socket = this; }
+  send(message) { sent.push(JSON.parse(message)); }
+};
+process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
+require(process.argv[1]);
+const appear = (key) =>
+  socket.onmessage({ data: JSON.stringify({ event: "willAppear", action: `com.gpahal.dotfiles.${key}`, context: key }) });
+const images = (key) => sent.filter((m) => m.event === "setImage" && m.context === key);
+appear("swap"); appear("disk");
+(async () => {
+  // The first update comes after 0.5 s and the next 2 s later, so a second error would show
+  await new Promise((r) => setTimeout(r, 3000));
+  const disk = decodeURIComponent(images("disk")[0].payload.image);
+  console.log(images("swap").length > 0, disk.includes(">DISK</text>") && disk.includes(">—</text>"));
+  console.log(sent.filter((m) => m.payload?.message?.startsWith("ERROR")).map((m) => m.payload.message).join("\n"));
+  process.exit(0);
+})();' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin with a broken key failed: $out"
+assert_eq "true true
+ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
 test_done

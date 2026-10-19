@@ -44,13 +44,30 @@ const sampler = stats.createSampler({ log });
 let timer = null;
 let busy = false;
 
+// The kinds whose last render threw, so each error is logged once rather than every 2 seconds
+const failing = new Set();
+
+// A key's SVG, or its placeholder when rendering throws, so one bad stat, such as a field a macmon
+// update renamed, leaves the other keys updating
+function renderKey(kind, sample) {
+  try {
+    const svg = stats.render(kind, sample);
+    failing.delete(kind);
+    return svg;
+  } catch (error) {
+    if (!failing.has(kind)) log(`ERROR couldn't draw the ${kind} key: ${error.message}`);
+    failing.add(kind);
+    return stats.placeholder(kind);
+  }
+}
+
 async function update() {
   if (busy || visible.size === 0) return;
   busy = true;
   try {
     const sample = await sampler.sample([...new Set(visible.values())]);
     for (const [context, kind] of visible) {
-      const image = `data:image/svg+xml;charset=utf8,${encodeURIComponent(stats.render(kind, sample))}`;
+      const image = `data:image/svg+xml;charset=utf8,${encodeURIComponent(renderKey(kind, sample))}`;
       if (shown.get(context) === image) continue;
       shown.set(context, image);
       send({ event: "setImage", context, payload: { image } });

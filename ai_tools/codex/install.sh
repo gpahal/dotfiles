@@ -35,6 +35,35 @@ BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 # 1 when AppArmor restricts unprivileged user namespaces
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
+# The oldest yq whose TOML output the config edit below was checked against
+CODEX_YQ_MIN_VERSION=4.54.1
+
+# Print yq's version, such as 4.54.1, from mikefarah's yq's "yq (...) version v4.54.1", or nothing
+# for another yq
+codex_yq_version() {
+    yq --version 2>/dev/null | sed -nE 's/^yq .*version v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1
+}
+
+# Succeeds when yq is CODEX_YQ_MIN_VERSION or newer
+codex_yq_new_enough() {
+    local have want i
+    have="$(codex_yq_version)"
+    [ -n "$have" ] || return 1
+    IFS=. read -ra have <<< "$have"
+    IFS=. read -ra want <<< "$CODEX_YQ_MIN_VERSION"
+    for i in 0 1 2; do
+        [ "${have[i]}" -le "${want[i]}" ] || return 0
+        [ "${have[i]}" -ge "${want[i]}" ] || return 1
+    done
+}
+
+# Print why yq is too old, and how to update it
+codex_yq_too_old() {
+    local version
+    version="$(codex_yq_version)"
+    echo "yq ${version:-on PATH} isn't mikefarah's yq $CODEX_YQ_MIN_VERSION or newer, which the Codex config edit needs; run brew upgrade yq"
+}
+
 # Settings you may keep your own values of (ai_tools/lib/keepable.sh), each with a yq path and
 # the repo's value as TOML (see codex_set)
 # Usage: codex_keepable <yq path> <TOML value> <name> [ubuntu]
@@ -456,7 +485,11 @@ status() {
     if ! tool_home_is "${CODEX_HOME:-}" "$CODEX_DIR"; then
         status_item unknown "Codex settings and instructions: $CODEX_HOME_POLICY"
     else
-        if status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+        if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
+            :
+        elif ! codex_yq_new_enough; then
+            status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
+        else
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             keepable_status codex
         fi
@@ -478,6 +511,10 @@ apply() {
         return 1
     fi
     require_cmd yq || return 1
+    if ! codex_yq_new_enough; then
+        echo "  $(codex_yq_too_old)" >&2
+        return 1
+    fi
     require_cmd brew || return 1
     local result=0
     if is_macos; then

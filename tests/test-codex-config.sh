@@ -341,4 +341,26 @@ is_ubuntu() { true; }
 bwrap_works() { true; }
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
+
+# A yq older than 4.54.1, or another tool named yq, fails the step before it changes anything, and
+# status says to upgrade it. Newer versions, by any part, pass.
+real_yq="$(command -v yq)"
+for version in "v4.54.1" "v4.55.0" "v4.100.0" "v5.0.0"; do
+    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
+    codex_yq_new_enough || fail "yq $version counts as too old"
+done
+for version in "v4.54.0" "v4.9.9" "v3.99.99"; do
+    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
+    codex_yq_new_enough && fail "yq $version counts as new enough"
+done
+: > "$STUB_LOG"
+run apply
+assert_eq 1 "$RUN_STATUS" "apply's exit with yq 3.99.99"
+assert_contains "$RUN_OUTPUT" "yq 3.99.99 isn't mikefarah's yq 4.54.1 or newer, which the Codex config edit needs; run brew upgrade yq"
+assert_file_not_contains "$STUB_LOG" "brew"
+stub yq 'echo "yq 3.4.3"'
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
+assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
+ln -sf "$real_yq" "$STUB_DIR/yq"
 test_done

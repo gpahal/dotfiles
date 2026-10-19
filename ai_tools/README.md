@@ -138,7 +138,7 @@ In `~/.codex/config.toml` **(script)**:
 
 - **Model.** `gpt-6.1-sol` at high effort, with short answers and concise reasoning summaries. The script sets the model, effort, and footer when they're unset, and a run with a terminal asks before replacing your own. The interrogate skill's Codex reviewer uses the same model, so update its table in `ai_tools/skills/engineering/interrogate/SKILL.md` with the script's.
 - **Permissions.** Codex works in the workspace without asking, and sends anything else, network access included, to a reviewer agent instead of to you. The sandbox has no network unless you turn it on under `[sandbox_workspace_write]`, which the script leaves alone.
-- **Rewritten file.** The step rewrites `config.toml` with yq, which must be 4.54.1 or later, though the step doesn't check. End-of-line comments may go, and when yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
+- **Rewritten file.** The step rewrites `config.toml` with yq, which must be 4.54.1 or later: the step checks, and fails on an older one. End-of-line comments may go, and when yq would change another value or drop a full-line comment, the step leaves the file alone and says why.
 
 Docs: [Approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [Config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 

@@ -134,6 +134,17 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    $item (AllowUsers is someone $me; $first)"
 assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes; $first)"
 assert_eq 1 "$(grep -c "PasswordAuthentication is yes" <<< "$RUN_OUTPUT")" "items naming PasswordAuthentication"
+# As root, the password item is skipped, so the settings item names password logins instead. Root's
+# drop-in keeps them off once they are, and has no AllowUsers.
+stub id 'if [ "$*" == -u ]; then echo 0; else exec /usr/bin/id "$@"; fi'
+cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-as-you"
+sshd_drop_in > "$SANDBOX/drop-in-as-root"
+mv "$SANDBOX/drop-in-as-root" "$SSHD_DROP_IN"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "skipped    Password and keyboard-interactive SSH logins off: the step leaves them to root"
+assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes; $first)"
+rm "$STUB_DIR/id"
+mv "$SANDBOX/drop-in-as-you" "$SSHD_DROP_IN"
 # The step checks them once it writes the drop-in
 rm "$SSHD_DROP_IN"
 : > "$STUB_LOG"

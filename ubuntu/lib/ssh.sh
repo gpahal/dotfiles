@@ -380,8 +380,9 @@ status_sshd() {
             status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"
         else
             problems="$SSHD_PROBLEMS"
-            # Password logins get their own item below
-            others="$(grep -vE "$PASSWORD_PROBLEMS" <<< "$problems" || true)"
+            # Password logins get their own item below, except as root, where it's skipped
+            others="$problems"
+            [ "$(id -u)" == 0 ] || others="$(grep -vE "$PASSWORD_PROBLEMS" <<< "$problems" || true)"
             if [ -z "$others" ]; then
                 status_item ok "$item"
             else

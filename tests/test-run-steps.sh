@@ -2,6 +2,7 @@
 # run_steps calls the step_script this test defines
 # shellcheck disable=SC2329
 set -euo pipefail
+# serial
 
 # run_steps, which both runners use: a failing step doesn't stop the rest, and the run ends with the
 # "Failed steps" summary and exits 1. A step that exits 129, 130, or 143, as one does on SIGHUP,

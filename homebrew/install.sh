@@ -29,8 +29,9 @@ installed_cask_apps() {
     fi
 }
 
-# UBUNTU_COMMANDS (lib/common.sh), plus locale-gen and fc-cache, which minimal images lack
-UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig"
+# UBUNTU_COMMANDS (lib/common.sh), plus locale-gen and fc-cache, which minimal images lack, and
+# wl-copy, which gh auth login copies its one-time code with on the desktop
+UBUNTU_PACKAGES="build-essential procps curl file git zsh lsof bsdextrautils unzip jq gpg locales fontconfig wl-clipboard"
 
 # One per line: scripts/check-brew-packages.sh parses it
 CASKS=(
@@ -74,7 +75,7 @@ install_command_line_tools() {
 missing_ubuntu_commands() {
     (
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        for cmd in "${UBUNTU_COMMANDS[@]}" locale-gen fc-cache; do
+        for cmd in "${UBUNTU_COMMANDS[@]}" locale-gen fc-cache wl-copy; do
             command -v "$cmd" &>/dev/null || printf ' %s' "$cmd"
         done
     )

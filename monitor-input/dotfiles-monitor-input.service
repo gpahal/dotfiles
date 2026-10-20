@@ -1,0 +1,7 @@
+# From the dotfiles monitor-input step. The udev rule just monitor-input writes restarts it.
+[Unit]
+Description=Switch the monitor's input to follow the USB switch
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/dotfiles-monitor-input

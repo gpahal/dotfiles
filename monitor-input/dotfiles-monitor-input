@@ -1,0 +1,68 @@
+#!/bin/bash
+set -uo pipefail
+
+# Switches the monitor to this machine while it has the trigger device, and to the other machine
+# once it's gone, as /etc/dotfiles/monitor-input.conf says. Run as root by
+# dotfiles-monitor-input.service, which the udev rule restarts on each of the device's events, so
+# a run still settling is dropped for the newer one. The Mac only switches the monitor to itself,
+# so when the devices leave both machines this one alone switches it, to the Mac.
+
+CONF="${MONITOR_INPUT_CONF:-/etc/dotfiles/monitor-input.conf}"
+USB_DEVICES_DIR="${USB_DEVICES_DIR:-/sys/bus/usb/devices}"
+DRM_DIR="${DRM_DIR:-/sys/class/drm}"
+# The switch moves its devices one by one; this outlasts that
+SETTLE="${MONITOR_INPUT_SETTLE:-1}"
+
+conf_get() {
+    sed -n "s/^$1=//p" "$CONF" | tail -n 1
+}
+
+device_present() {
+    local dir
+    for dir in "$USB_DEVICES_DIR"/*; do
+        [ "$(cat "$dir/idVendor" 2>/dev/null):$(cat "$dir/idProduct" 2>/dev/null)" != "$1" ] || return 0
+    done
+    return 1
+}
+
+# The I2C bus number of the connector's DDC channel, which can change across boots
+ddc_bus() {
+    local link
+    for link in "$DRM_DIR"/card*-"$1"/ddc; do
+        [ -e "$link" ] || continue
+        link="$(readlink -f "$link")" || continue
+        link="${link##*/}"
+        [[ "$link" =~ ^i2c-[0-9]+$ ]] || continue
+        echo "${link#i2c-}"
+        return 0
+    done
+    return 1
+}
+
+main() {
+    local device input other connector bus target
+    [ -r "$CONF" ] || exit 0
+    device="$(conf_get device)"
+    input="$(conf_get input)"
+    other="$(conf_get other)"
+    connector="$(conf_get connector)"
+    if ! [[ "$device" =~ ^[0-9a-f]{4}:[0-9a-f]{4}$ && "$input" =~ ^[0-9]+$ && "$other" =~ ^[0-9]+$ && -n "$connector" ]]; then
+        echo "$CONF needs device, input, other, and connector; re-run just monitor-input." >&2
+        exit 1
+    fi
+    sleep "$SETTLE"
+    if device_present "$device"; then
+        target="$input"
+    else
+        target="$other"
+    fi
+    if ! bus="$(ddc_bus "$connector")"; then
+        echo "No DDC bus for the $connector connector; check the monitor's cable, then re-run just monitor-input." >&2
+        exit 1
+    fi
+    # --noverify: reading the input back can fail once the monitor shows the other machine
+    echo "Switching the monitor's input to $target (the trigger device is $([ "$target" == "$input" ] && echo here || echo away))."
+    ddcutil --bus "$bus" --noverify setvcp 60 "$target"
+}
+
+main "$@"

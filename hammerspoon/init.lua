@@ -1,9 +1,11 @@
 -- Needs Accessibility (a manual step) and Automation of Ghostty, Finder, System Events, and Chrome.
+-- With monitor-input.conf (just monitor-input), the monitor follows the USB switch to this Mac.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
 local T3_CODE = "com.t3tools.t3code"
 local OPEN_IN = hs.configdir .. "/bin/open-in"
+local MONITOR_CONF = hs.configdir .. "/monitor-input.conf"
 -- Ctrl+Opt alone clashes with Rectangle's shortcuts
 local MODS = { "ctrl", "alt", "cmd" }
 
@@ -14,7 +16,7 @@ hs.autoLaunch(true)
 
 dotfiles.watcher = hs.pathwatcher.new(hs.configdir, function(paths)
     for _, path in ipairs(paths) do
-        if path:match("/init%.lua$") then
+        if path:match("/init%.lua$") or path:match("/monitor%-input%.conf$") then
             hs.reload()
             return
         end
@@ -65,3 +67,70 @@ hs.hotkey.bind(MODS, "n", newTab)
 hs.hotkey.bind(MODS, "t", function() openIn("terminal") end)
 hs.hotkey.bind(MODS, "c", function() open(T3_CODE, "T3 Code") end)
 hs.hotkey.bind(MODS, "e", function() openIn("editor") end)
+
+-- Switches the monitor to this Mac once the switch's devices settle here, and after a wake that
+-- finds them here. It never switches away: the Ubuntu machine hands the monitor back, so the two
+-- can't undo each other when the devices leave both.
+local SETTLE, WAKE_SETTLE = 1, 3
+
+local function readConf(path)
+    local file = io.open(path)
+    if not file then return nil end
+    local conf = {}
+    for line in file:lines() do
+        local key, value = line:match("^(%w+)=(.*)$")
+        if key then conf[key] = value end
+    end
+    file:close()
+    return conf
+end
+
+local function followMonitor()
+    local conf = readConf(MONITOR_CONF)
+    if not conf then return end
+    local vendor, product = (conf.device or ""):match("^(%x%x%x%x):(%x%x%x%x)$")
+    local input = (conf.input or ""):match("^%d+$")
+    if not vendor or not input or (conf.m1ddc or "") == "" then
+        hs.alert.show("Ignoring " .. MONITOR_CONF .. "; re-run just monitor-input")
+        return
+    end
+    vendor, product = tonumber(vendor, 16), tonumber(product, 16)
+    local function isTrigger(device)
+        return device.vendorID == vendor and device.productID == product
+    end
+    local function attached()
+        for _, device in ipairs(hs.usb.attachedDevices() or {}) do
+            if isTrigger(device) then return true end
+        end
+        return false
+    end
+    local function switch()
+        if not attached() then return end
+        local task
+        task = hs.task.new(conf.m1ddc, function(exitCode, _, stderr)
+            dotfiles.tasks[task] = nil
+            if exitCode ~= 0 then
+                print("m1ddc: " .. stderr)
+                hs.alert.show("Couldn't switch the monitor to this Mac; see Hammerspoon's console")
+            end
+        end, { "set", "input", input })
+        if not (task and task:start()) then
+            hs.alert.show("Couldn't run " .. conf.m1ddc .. "; re-run the homebrew step")
+            return
+        end
+        dotfiles.tasks[task] = true
+    end
+    -- Each event restarts the wait, so a burst switches once
+    local function later(delay)
+        if dotfiles.monitorTimer then dotfiles.monitorTimer:stop() end
+        dotfiles.monitorTimer = hs.timer.doAfter(delay, switch)
+    end
+    dotfiles.usbWatcher = hs.usb.watcher.new(function(device)
+        if isTrigger(device) then later(SETTLE) end
+    end):start()
+    dotfiles.wakeWatcher = hs.caffeinate.watcher.new(function(event)
+        if event == hs.caffeinate.watcher.systemDidWake then later(WAKE_SETTLE) end
+    end):start()
+end
+
+followMonitor()

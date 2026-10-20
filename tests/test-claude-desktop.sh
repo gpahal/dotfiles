@@ -17,15 +17,63 @@ replace_fn cask_app_path 'echo "$APP"'
 eval "real_$(declare -f cask_state)"
 replace_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-assert_eq "$CONFIG" "$CLAUDE_DESKTOP_CONFIG" "config path"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 
-as_os ubuntu
-assert_exit 0 main
-[ ! -e "$CONFIG" ] || fail "the config was written on Ubuntu"
-[ ! -e "$AGENT" ] || fail "the LaunchAgent was written on Ubuntu"
+# Ubuntu: Anthropic's apt repo, Claude's own autostart file, and the settings without the Mac's
+ubuntu_step() {
+    local config="$HOME/.config/Claude/claude_desktop_config.json"
+    local autostart="$HOME/.config/autostart/claude-desktop.desktop"
+    as_os ubuntu
+    assert_eq "$config" "$(claude_desktop_config)" "config path on Ubuntu"
+    stub dpkg-query '[ "${*: -1}" == claude-desktop ] && [ -e "$SANDBOX/installed" ] && printf "install ok installed"'
+    stub apt-get '[ "${*: -1}" != claude-desktop ] || touch "$SANDBOX/installed"'
+    stub pgrep 'exit 1'
+    stub_sudo_exec
+    export SANDBOX
+    CLAUDE_APT_SOURCES="$SANDBOX/sources.list.d/claude-desktop.list"
+    replace_fn apt_repo_published 'return 0'
+    replace_fn add_apt_repo 'echo "add_apt_repo $1 $2 $4 $5 $6" >> "$STUB_LOG"; mkdir -p "${2%/*}"; printf "%s\n" "$3" > "$2"'
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "missing    Claude desktop app from Anthropic's apt repo"
+    assert_contains "$RUN_OUTPUT" "missing    ~/.config/autostart/claude-desktop.desktop"
+
+    answer no
+    assert_exit 0 main
+    assert_file_not_contains "$STUB_LOG" "add_apt_repo"
+    answer yes
+    : > "$STUB_LOG"
+    assert_exit 0 main
+    assert_file_contains "$STUB_LOG" "add_apt_repo Claude $CLAUDE_APT_SOURCES https://downloads.claude.ai/claude-desktop/key.asc /usr/share/keyrings/claude-desktop-archive-keyring.asc 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+    assert_file_contains "$STUB_LOG" "install -y claude-desktop"
+    assert_file_contains "$CLAUDE_APT_SOURCES" "### Managed by the claude-desktop package."
+    assert_eq '[Desktop Entry]
+Type=Application
+Name=Claude
+Exec="/usr/lib/claude-desktop/claude-desktop" --startup
+X-GNOME-Autostart-enabled=true' "$(cat "$autostart")" "the autostart file Claude's own setting writes"
+    assert_eq 'false 30 null null' "$(jq -r '[.preferences.menuBarEnabled, .preferences.ccAutoArchiveInactiveDays,
+        .preferences.dockBounceEnabled, .preferences.quickEntryShortcut] | map(tostring) | join(" ")' "$config")" \
+        "Ubuntu's settings, without the Dock's or quick entry's"
+    assert_exit 0 status
+    assert_contains "$RUN_OUTPUT" "ok         Claude desktop app from Anthropic's apt repo"
+
+    # A second run changes nothing; a running Claude can't have its settings changed
+    : > "$STUB_LOG"
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "claude-desktop is already installed from Anthropic's apt repo."
+    assert_contains "$RUN_OUTPUT" "Keep-awake, archiving, tray icon, and Cowork settings are already set"
+    assert_file_not_contains "$STUB_LOG" "apt-get"
+    jq '.preferences.menuBarEnabled = true' "$config" > "$SANDBOX/changed.json"
+    cp "$SANDBOX/changed.json" "$config"
+    stub pgrep '[ "${*: -1}" == "^claude-desktop$" ] || [ "${*: -1}" == claude-desktop ]'
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "claude-desktop is running and must be quit to change its settings"
+    assert_eq "$(cat "$SANDBOX/changed.json")" "$(cat "$config")" "config while Claude runs"
+}
+subtest ubuntu_step
 
 as_os macos
+assert_eq "$CONFIG" "$(claude_desktop_config)" "config path"
 stub brew '[ "$*" == "install --cask claude" ]'
 stub pgrep 'exit 1'
 assert_exit 3 status

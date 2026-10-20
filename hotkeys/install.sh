@@ -1,0 +1,131 @@
+#!/bin/bash
+set -euo pipefail
+
+# Add GNOME shortcuts on Ctrl+Alt+Super that match Hammerspoon's.
+# They run the Stream Deck's open-in, from the stream-deck step.
+# gsettings writes your session's GNOME settings whatever HOME is; run it under dbus-run-session
+# with a temp HOME and XDG_RUNTIME_DIR to test it.
+
+# shellcheck source=../lib/common.sh
+source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+STEP_OS=ubuntu
+# The shortcuts run its open-in, which needs its GNOME extension
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="stream-deck"
+
+MEDIA_KEYS=org.gnome.settings-daemon.plugins.media-keys
+KEYBINDING_DIR=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
+OPEN_IN="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/stream-deck/bin/open-in"
+# <key> <open-in target> <name>, as in hammerspoon/init.lua
+HOTKEYS=(
+    "space claude Claude"
+    "b chrome Chrome"
+    "c t3-code T3_Code"
+    "t terminal Terminal"
+    "e editor Editor"
+    "n chrome-tab New_Tab"
+)
+
+# As Hammerspoon's README writes them: Space, B
+key_label() {
+    if [ "$1" == space ]; then echo Space; else echo "$1" | tr '[:lower:]' '[:upper:]'; fi
+}
+
+hotkey_path() {
+    echo "$KEYBINDING_DIR/dotfiles-$1/"
+}
+
+# The command field is split like a shell's; systemd-cat sends open-in's log to the journal
+hotkey_command() {
+    printf "systemd-cat -t dotfiles-hotkeys env OPEN_IN_CALLER=Hotkeys 'OPEN_IN_LOG=journalctl --user -t dotfiles-hotkeys' /bin/bash '%s' %s" \
+        "$OPEN_IN" "$1"
+}
+
+# gsettings prints strings quoted, and a list as a GVariant: @as [] or ['a', 'b']
+binding_get() {
+    gsettings get "$MEDIA_KEYS.custom-keybinding:$1" "$2" 2> /dev/null
+}
+
+keybinding_paths() {
+    gsettings get "$MEDIA_KEYS" custom-keybindings | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
+        tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
+}
+
+hotkey_current() {
+    local key="$1" target="$2" name="${3//_/ }" path
+    path="$(hotkey_path "$target")"
+    keybinding_paths | grep -qxF "$path" &&
+        [ "$(binding_get "$path" name)" == "'$name'" ] &&
+        [ "$(binding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ] &&
+        [ "$(binding_get "$path" command)" == "\"$(hotkey_command "$target")\"" ]
+}
+
+# Another custom shortcut on the same keys, which GNOME would run instead
+hotkey_clash() {
+    local key="$1" own path
+    own="$(hotkey_path "$2")"
+    while IFS= read -r path; do
+        [ "$path" != "$own" ] || continue
+        if [ "$(binding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ]; then
+            echo "$path"
+            return 0
+        fi
+    done < <(keybinding_paths)
+    return 1
+}
+
+set_hotkey() {
+    local key="$1" target="$2" name="${3//_/ }" path list
+    path="$(hotkey_path "$target")"
+    gsettings set "$MEDIA_KEYS.custom-keybinding:$path" name "$name" &&
+        gsettings set "$MEDIA_KEYS.custom-keybinding:$path" command "$(hotkey_command "$target")" &&
+        gsettings set "$MEDIA_KEYS.custom-keybinding:$path" binding "<Control><Alt><Super>$key" || return 1
+    keybinding_paths | grep -qxF "$path" && return 0
+    list="$({ keybinding_paths; echo "$path"; } | sed "s/.*/'&'/" | join_lines ', ')"
+    gsettings set "$MEDIA_KEYS" custom-keybindings "[$list]"
+}
+
+status() {
+    local hotkey key target name clash
+    status_require_cmd gsettings "GNOME shortcuts" || { status_result; return; }
+    if [ ! -x "$OPEN_IN" ]; then
+        status_item missing "The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
+    fi
+    for hotkey in "${HOTKEYS[@]}"; do
+        read -r key target name <<< "$hotkey"
+        if clash="$(hotkey_clash "$key" "$target")"; then
+            status_item missing "Ctrl+Alt+Super+$(key_label "$key") for ${name//_/ }: your shortcut at $clash has it; change one"
+        else
+            status_check "Ctrl+Alt+Super+$(key_label "$key") opens ${name//_/ }" hotkey_current "$key" "$target" "$name"
+        fi
+    done
+    status_result
+}
+
+apply() {
+    echo "Adding GNOME shortcuts..."
+    require_cmd gsettings || return 1
+    local hotkey key target name clash status=0 changed=false
+    for hotkey in "${HOTKEYS[@]}"; do
+        read -r key target name <<< "$hotkey"
+        hotkey_current "$key" "$target" "$name" && continue
+        if clash="$(hotkey_clash "$key" "$target")"; then
+            echo "  Your shortcut at $clash has Ctrl+Alt+Super+$(key_label "$key"), so ${name//_/ } doesn't get it." >&2
+            status=1
+            continue
+        fi
+        if set_hotkey "$key" "$target" "$name"; then
+            echo "  Ctrl+Alt+Super+$(key_label "$key") opens ${name//_/ }"
+            changed=true
+        else
+            status=1
+        fi
+    done
+    "$changed" || [ "$status" -ne 0 ] || echo "  The shortcuts are already set."
+    return "$status"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

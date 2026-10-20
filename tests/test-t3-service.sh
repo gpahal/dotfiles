@@ -8,6 +8,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script ai_tools/t3-code/install.sh
 as_os ubuntu
+# The service alone, as on Ubuntu Server; test-t3-desktop-ubuntu.sh covers the desktop app
+replace_fn has_gnome_desktop 'false'
 answer no
 
 MANUAL_SERVER="304|t3|t3 serve"
@@ -187,7 +189,7 @@ assert_eq "302 ssh
 304 manual" "$(t3_code_other_servers | cut -d' ' -f1-2)" "the other servers"
 run status
 assert_eq 3 "$RUN_STATUS" "status's exit with other servers"
-assert_contains "$RUN_OUTPUT" "skipped    T3 Code desktop app and its settings: macOS only"
+assert_contains "$RUN_OUTPUT" "skipped    T3 Code desktop app: no GNOME desktop"
 assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 302, a server the Mac started over SSH"
 assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 304, a t3 serve started by hand ($HOME/.local/bin/t3 serve --port 3780)"
 assert_not_contains "$RUN_OUTPUT" "PID 305"
@@ -504,7 +506,7 @@ reset
 run main
 assert_eq 0 "$RUN_STATUS" "main's exit status"
 assert_file_contains "$STUB_LOG" "t3 service install"
-assert_not_contains "$RUN_OUTPUT" "desktop app"
+assert_contains "$RUN_OUTPUT" "No GNOME desktop, so no desktop app; the service runs the server."
 [ ! -e "$HOME/.profile" ] || assert_file_not_contains "$HOME/.profile" "T3CODE_TELEMETRY_ENABLED"
 
 reset

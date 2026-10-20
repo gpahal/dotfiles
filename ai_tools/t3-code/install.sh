@@ -4,6 +4,7 @@ set -euo pipefail
 # Install T3 Code and set its settings, and on Ubuntu run its server as a service.
 # Installs a cask and runs launchctl (macOS), or apt and systemctl --user (Ubuntu), whatever HOME
 # is; test in a macOS VM or spare Mac, and an Ubuntu VM with systemd such as an OrbStack machine.
+# On Ubuntu the desktop app connects to the service, with its own server off.
 # --status runs `t3 browser setup` without sudo, which changes nothing (T3 Code 0.1.0).
 
 # shellcheck source=../../lib/common.sh
@@ -23,9 +24,88 @@ T3_CODE_CLIENT_SETTINGS="$HOME/.t3/userdata/client-settings.json"
 # which the phone app needs, runs only while the app is open.
 T3_CODE_TELEMETRY_AGENT="$HOME/Library/LaunchAgents/dotfiles.t3code-telemetry-off.plist"
 
+# On Ubuntu GNOME starts apps with environment.d's variables, from the next login
+T3_CODE_ENVIRONMENT="$HOME/.config/environment.d/60-dotfiles-t3code.conf"
+
 # Not loaded now: it would open T3 Code, which must be quit for the settings merge.
 t3_code_files() {
-    "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
+    if is_macos; then
+        "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.t3code-telemetry-off.plist" "$T3_CODE_TELEMETRY_AGENT"
+    else
+        "$1" "$DOTFILES_DIR/ai_tools/t3-code/60-dotfiles-t3code.conf" "$T3_CODE_ENVIRONMENT"
+    fi
+}
+
+# Ubuntu's desktop app: its own server would share the service's data, which the server's lock
+# refuses, so it connects to the service instead. Only the desktop app reads this file.
+T3_CODE_DESKTOP_SETTINGS="$HOME/.t3/userdata/desktop-settings.json"
+T3_CODE_DESKTOP_FILTER='.localEnvironmentEnabled = false'
+T3_CODE_RELEASE_API=https://api.github.com/repos/pingdotgg/t3code/releases/latest
+
+t3_code_desktop_installed() {
+    apt_installed t3code
+}
+
+# The latest release's .deb, checked against GitHub's digest. It updates itself after, asking for
+# your password. Runs where set -e is off: each command checks its own failure.
+install_t3_code_desktop() {
+    local arch dir url digest status=0
+    arch="$(dpkg --print-architecture)" || return 1
+    dir="$(mktemp -d)" || return 1
+    if ! fetch "$T3_CODE_RELEASE_API" "$dir/release.json" "T3 Code's latest release"; then
+        rm -rf "$dir"
+        return 1
+    fi
+    read -r url digest < <(jq -r --arg suffix "-$arch.deb" \
+        '[.assets[] | select(.name | endswith($suffix))][0] // empty | "\(.browser_download_url) \(.digest // "")"' \
+        "$dir/release.json")
+    if [ -z "${url:-}" ] || [[ "${digest:-}" != sha256:* ]]; then
+        echo "  T3 Code's latest release has no $arch .deb with a digest, so nothing was installed." >&2
+        rm -rf "$dir"
+        return 1
+    fi
+    # apt reads the file as _apt
+    chmod 755 "$dir"
+    if ! fetch "$url" "$dir/t3code.deb" "T3 Code's .deb"; then
+        status=1
+    elif [ "$(sha256sum "$dir/t3code.deb" | cut -d' ' -f1)" != "${digest#sha256:}" ]; then
+        echo "  T3 Code's .deb doesn't match the digest GitHub lists for it, so it wasn't installed." >&2
+        status=1
+    else
+        chmod 644 "$dir/t3code.deb"
+        apt_get install -y "$dir/t3code.deb" || status=1
+    fi
+    rm -rf "$dir"
+    return "$status"
+}
+
+t3_code_desktop_items() {
+    items_reset
+    item --sudo "T3 Code desktop app" "Install the T3 Code desktop app from its latest GitHub release" \
+        t3_code_desktop_installed install_t3_code_desktop
+}
+
+# The settings go first, so the app's first launch doesn't try to start a server
+setup_t3_code_desktop_ubuntu() {
+    echo "Setting up the T3 Code desktop app..."
+    local result=0 pending=()
+    if ! has_gnome_desktop; then
+        echo "  No GNOME desktop, so no desktop app; the service runs the server."
+        return 0
+    fi
+    t3_code_files copy_file || result=1
+    merge_app_json t3code \
+        "The desktop app's own server is already off" \
+        "Turned off the desktop app's own server, so it connects to the service" \
+        "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER" || result=1
+    t3_code_desktop_items
+    items_pending
+    if [ ${#pending[@]} -eq 0 ]; then
+        echo "  The T3 Code desktop app is already installed; it updates itself."
+    elif confirm_sudo_changes "${pending[@]}"; then
+        items_apply || result=1
+    fi
+    return "$result"
 }
 # Not XDG_CONFIG_HOME: neither `t3 service install` nor the systemd user manager reads the shell's.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
@@ -737,7 +817,17 @@ status() {
         status_result
         return
     fi
-    status_item skipped "T3 Code desktop app and its settings: macOS only; on Ubuntu the service runs the server"
+    if ! has_gnome_desktop; then
+        status_item skipped "T3 Code desktop app: no GNOME desktop"
+    else
+        t3_code_desktop_items
+        items_status
+        t3_code_files status_file
+        if "$jq"; then
+            status_check "Desktop app's own server off in ~/.t3/userdata/desktop-settings.json" \
+                json_applied "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER"
+        fi
+    fi
     local have_cli=false ready=0
     [ -x "$HOME/.local/bin/t3" ] && have_cli=true
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
@@ -795,7 +885,10 @@ apply() {
         configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
+        local desktop_failed=0
+        setup_t3_code_desktop_ubuntu || desktop_failed=1
         configure_t3_code_ubuntu || return 1
+        return "$desktop_failed"
     fi
 }
 

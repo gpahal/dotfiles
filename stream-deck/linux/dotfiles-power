@@ -1,0 +1,51 @@
+#!/bin/bash
+set -uo pipefail
+
+# Writes the CPU package's and its cores' power, in watts, to /run/dotfiles-power every 2 s, for
+# the Stream Deck's Power key. Run as root by dotfiles-power.service, since the kernel made RAPL's
+# energy counters root-only (CVE-2020-8694); this shares only 2 s averages.
+
+RAPL="${DOTFILES_RAPL_DIR:-/sys/class/powercap}"
+OUT="${DOTFILES_POWER_FILE:-/run/dotfiles-power}"
+INTERVAL="${DOTFILES_POWER_INTERVAL:-2}"
+# The cores' figure is left off when the CPU has no core zone
+PACKAGE="$RAPL/intel-rapl:0"
+CORES="$RAPL/intel-rapl:0:0"
+
+read_uj() {
+    cat "$1/energy_uj" 2> /dev/null
+}
+
+# Watts between two readings, allowing for the counter wrapping at max_energy_range_uj
+watts() {
+    local before="$1" after="$2" range="$3" nanoseconds="$4" delta
+    delta=$((after - before))
+    [ "$delta" -ge 0 ] || delta=$((delta + range))
+    awk -v d="$delta" -v ns="$nanoseconds" 'BEGIN { printf "%.2f", d / 1e6 / (ns / 1e9) }'
+}
+
+main() {
+    local range pkg cores="" at now_pkg now_cores now line
+    if ! pkg="$(read_uj "$PACKAGE")"; then
+        echo "No RAPL package counter at $PACKAGE/energy_uj" >&2
+        return 1
+    fi
+    range="$(cat "$PACKAGE/max_energy_range_uj")" || return 1
+    [ ! -r "$CORES/energy_uj" ] || cores="$(read_uj "$CORES")"
+    at="$(date +%s%N)"
+    while sleep "$INTERVAL"; do
+        now_pkg="$(read_uj "$PACKAGE")" || continue
+        now="$(date +%s%N)"
+        line="$(watts "$pkg" "$now_pkg" "$range" $((now - at)))"
+        if [ -n "$cores" ] && now_cores="$(read_uj "$CORES")"; then
+            line="$line $(watts "$cores" "$now_cores" "$range" $((now - at)))"
+            cores="$now_cores"
+        fi
+        # Renamed into place, so a reader never sees half a line
+        printf '%s\n' "$line" > "$OUT.tmp" && chmod 644 "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT"
+        pkg="$now_pkg"
+        at="$now"
+    done
+}
+
+main "$@"

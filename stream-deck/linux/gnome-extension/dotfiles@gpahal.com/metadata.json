@@ -1,0 +1,7 @@
+{
+  "uuid": "dotfiles@gpahal.com",
+  "name": "Dotfiles",
+  "description": "Lets the dotfiles' Stream Deck keys and hotkeys read the focused window, focus and launch apps, and type keys, which Wayland keeps inside the shell",
+  "shell-version": ["50"],
+  "url": "https://github.com/gpahal/dotfiles"
+}

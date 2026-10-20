@@ -1,0 +1,14 @@
+{
+  "name": "dotfiles-stream-deck",
+  "private": true,
+  "description": "Drives the Stream Deck on Ubuntu with the Mac plugin's keys",
+  "license": "MIT",
+  "main": "daemon.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@elgato-stream-deck/node": "^7.8.0",
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

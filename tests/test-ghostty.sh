@@ -8,6 +8,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+terminfo="$SANDBOX/snap-terminfo"
+export DOTFILES_GHOSTTY_TERMINFO="$terminfo"
 load_script ghostty/install.sh
 as_os macos
 config="$HOME/.config/ghostty/config.ghostty"
@@ -45,4 +47,31 @@ stub snap 'exit 1'
 as_os ubuntu
 run status
 assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty"
+
+# Without the snap's terminfo, zsh over SSH from Ghostty can't move the cursor
+echo "compiled entry" > "$terminfo"
+run status
+assert_contains "$RUN_OUTPUT" "missing    xterm-ghostty terminfo in ~/.terminfo"
+
+# A declined snap install leaves the terminfo, which comes from the snap
+answer no
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Install Ghostty from its snap"
+[ ! -e "$HOME/.terminfo" ] || fail "terminfo copied with the snap declined"
+
+stub snap
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Installed the xterm-ghostty terminfo in ~/.terminfo."
+assert_eq "" "$(cmp "$terminfo" "$HOME/.terminfo/x/xterm-ghostty" 2>&1)" "terminfo copied"
+assert_not_contains "$(cat "$STUB_LOG")" "install" "commands run with the snap installed"
+
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Ghostty and its terminfo already installed."
+run status
+assert_contains "$RUN_OUTPUT" "ok         xterm-ghostty terminfo in ~/.terminfo"
+
+# A snap update brings a new entry
+echo "updated entry" > "$terminfo"
+assert_exit 0 main
+assert_eq "updated entry" "$(cat "$HOME/.terminfo/x/xterm-ghostty")" "terminfo after a snap update"
 test_done

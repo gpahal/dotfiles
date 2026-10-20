@@ -61,6 +61,11 @@ git-signing:
 touch-id:
     bash macos/setup-touch-id-sudo.sh
 
+# Point the monitor at the machine the USB switch serves (no arguments: list devices and codes)
+[positional-arguments]
+monitor-input *args:
+    bash monitor-input/setup.sh "$@"
+
 # Set up Ubuntu ntfy health alerts (test: fire test events)
 alerts mode="":
     @case {{quote(mode)}} in "") bash ubuntu/setup-alerts.sh ;; test) bash ubuntu/setup-alerts.sh --test ;; *) echo "Usage: just alerts [test]" >&2; exit 2 ;; esac

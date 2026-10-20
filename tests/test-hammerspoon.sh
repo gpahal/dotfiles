@@ -21,9 +21,10 @@ end
 
 state = { installed = { ["com.google.Chrome"] = true, ["com.anthropic.claudefordesktop"] = true, ["com.t3tools.t3code"] = true }, taskStarts = true, exitCode = 0 }
 hotkeys, delayed, watchers = {}, {}, {}
+usb, timers = { attached = {} }, {}
 
 hs = {
-    configdir = "/home/.hammerspoon",
+    configdir = os.getenv("HS_CONFIGDIR") or "/home/.hammerspoon",
     autoLaunch = function(on) record("autoLaunch " .. tostring(on)) end,
     reload = function() record("reload") end,
     alert = { show = function(s) record("alert " .. s) end },
@@ -34,8 +35,12 @@ hs = {
         function t:setEnvironment(env) self.env = env end
         function t:start()
             if not state.taskStarts then return false end
-            record("task " .. path .. " " .. table.concat(args, " ") .. " as " .. self.env.OPEN_IN_CALLER
-                .. ", logging to " .. self.env.OPEN_IN_LOG .. ", PATH " .. self.env.PATH)
+            if self.env.OPEN_IN_CALLER then
+                record("task " .. path .. " " .. table.concat(args, " ") .. " as " .. self.env.OPEN_IN_CALLER
+                    .. ", logging to " .. self.env.OPEN_IN_LOG .. ", PATH " .. self.env.PATH)
+            else
+                record("task " .. path .. " " .. table.concat(args, " "))
+            end
             -- The task's exit runs the callback later
             self.running = true
             delayed[#delayed + 1] = { fn = function() self.running = false; fn(state.exitCode, "", args[2] .. " from com.apple.finder: /tmp") end }
@@ -48,6 +53,28 @@ hs = {
         function w:start() watchers[#watchers + 1] = self; return self end
         return w
     end },
+    usb = {
+        attachedDevices = function() return usb.attached end,
+        watcher = { new = function(fn)
+            local w = {}
+            function w:start() usb.watcher = fn; return self end
+            return w
+        end },
+    },
+    timer = { doAfter = function(delay, fn)
+        local t = { delay = delay, fn = fn }
+        function t:stop() self.stopped = true end
+        timers[#timers + 1] = t
+        return t
+    end },
+    caffeinate = { watcher = {
+        systemDidWake = "didWake",
+        new = function(fn)
+            local w = {}
+            function w:start() usb.wake = fn; return self end
+            return w
+        end,
+    } },
     hotkey = { bind = function(mods, key, fn) hotkeys[table.concat(mods, "+") .. "+" .. key] = fn end },
     application = {
         launchOrFocusByBundleID = function(id)
@@ -62,6 +89,15 @@ function flush()
     local d = delayed
     delayed = {}
     for _, t in ipairs(d) do t.fn() end
+end
+
+-- Fire the timers still pending, printing each one's delay
+function fire()
+    local t = timers
+    timers = {}
+    for _, timer in ipairs(t) do
+        if not timer.stopped then print("after " .. timer.delay); timer.fn() end
+    end
 end
 
 -- The number of open-in tasks the config keeps
@@ -134,4 +170,61 @@ assert_eq "autoLaunch true
 /home/.hammerspoon
 --
 reload" "$RUN_OUTPUT" "reloading"
+
+run_lua 'watchers[1].fn({ "/home/.hammerspoon/monitor-input.conf" }); print(usb.watcher == nil)'
+assert_eq "autoLaunch true
+true
+reload" "$RUN_OUTPUT" "reloading on new monitor input settings, which stay off without them"
+
+# Usage: run_monitor <monitor-input.conf> <lua>
+run_monitor() {
+    mkdir -p "$SANDBOX/hs"
+    printf '%s\n' "$1" > "$SANDBOX/hs/monitor-input.conf"
+    HS_CONFIGDIR="$SANDBOX/hs" run_lua "$2"
+}
+
+CONF="# From just monitor-input
+device=19f5:2620
+input=27
+m1ddc=/opt/homebrew/bin/m1ddc"
+DONGLE='{ vendorID = 0x19f5, productID = 0x2620, productName = "Air75 V3 Dongle" }'
+MOUSE='{ vendorID = 0x046d, productID = 0xc548 }'
+
+# A burst of events switches once, after the last; a device that isn't the trigger does nothing
+run_monitor "$CONF" "usb.attached = { $MOUSE, $DONGLE }
+usb.watcher($MOUSE); fire(); print('--')
+usb.watcher($DONGLE); usb.watcher($MOUSE); usb.watcher($DONGLE); fire(); print_calls(); flush()
+print('tasks ' .. task_count())"
+assert_eq "autoLaunch true
+--
+after 1
+task /opt/homebrew/bin/m1ddc set input 27
+tasks 0" "$RUN_OUTPUT" "switching to the Mac when the device arrives"
+
+# It never switches away, so it can't undo the Ubuntu machine's switch
+run_monitor "$CONF" "usb.attached = { $MOUSE }
+usb.watcher($DONGLE); fire(); usb.wake('didWake'); fire(); usb.wake('willSleep'); fire()"
+assert_eq "autoLaunch true
+after 1
+after 3" "$RUN_OUTPUT" "the device leaving, and a wake without it"
+
+run_monitor "$CONF" "usb.attached = { $DONGLE }
+usb.wake('didWake'); fire(); print_calls(); flush()
+state.exitCode = 1; usb.watcher($DONGLE); fire(); print_calls(); flush(); print_calls()
+state.taskStarts = false; usb.watcher($DONGLE); fire()"
+assert_eq "autoLaunch true
+after 3
+task /opt/homebrew/bin/m1ddc set input 27
+after 1
+task /opt/homebrew/bin/m1ddc set input 27
+m1ddc: input from com.apple.finder: /tmp
+alert Couldn't switch the monitor to this Mac; see Hammerspoon's console
+after 1
+alert Couldn't run /opt/homebrew/bin/m1ddc; re-run the homebrew step" "$RUN_OUTPUT" "a wake with the device here, and m1ddc failing"
+
+run_monitor "device=19f5:2620
+input=USB-C" "print(usb.watcher == nil)"
+assert_eq "autoLaunch true
+alert Ignoring $SANDBOX/hs/monitor-input.conf; re-run just monitor-input
+true" "$RUN_OUTPUT" "settings it can't use"
 test_done

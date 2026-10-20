@@ -10,7 +10,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh
 MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon editorconfig
     macos manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed editorconfig ubuntu docker
-    chrome logitech manual-steps)
+    chrome logitech monitor-input manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR"
 

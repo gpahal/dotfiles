@@ -51,6 +51,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only |
 | `logitech` | Installs Solaar in place of Logi Options+. Ubuntu only |
+| `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
@@ -149,6 +150,16 @@ macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 - `T` Ghostty and `E` Zed, at the folder in front.
 - `N` a new Chrome tab, with the clipboard's text pasted and selected.
 
+### Monitor input
+
+A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the Ubuntu desktop, and the monitor's input follows them over DDC/CI. Each machine switches the monitor to itself when the devices arrive. Ubuntu also hands the monitor back to the Mac when the devices leave it, so switching works while the Mac sleeps.
+
+1. Pick a device the switch moves, such as the keyboard's receiver. `just monitor-input` lists the attached devices' `vendor:product` IDs, and the common input codes.
+2. On the Mac: `just monitor-input <vendor:product> <Mac's input>`, such as `just monitor-input 19f5:2620 27` for USB-C.
+3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <Mac's input>`, such as `just monitor-input 19f5:2620 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
+
+`just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the Mac shows failures in Hammerspoon's console.
+
 ### tmux
 
 Prefix `Ctrl+a`. `|` and `-` split, `hjkl` move, `HJKL` resize, `Ctrl+h`/`Ctrl+l` switch windows, `v` copy mode, `S` new session, `X` kill session, `f` `tmux-sessionizer`. vim-tmux-navigator takes `Ctrl+hjkl`, so clear the screen with `prefix+Ctrl+k`.
@@ -189,23 +200,25 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 11. In Stream Deck, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from **Dotfiles** onto keys. Press **Overview** and install the **System** page. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
 12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
 
+13. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
+
 **Shell**
 
-13. Run `atuin import auto`, and `:GoInstallBinaries` in vim.
+14. Run `atuin import auto`, and `:GoInstallBinaries` in vim.
 
 **Accounts and keys**
 
-14. Sign in to Tailscale with the account your Ubuntu machine and phone use.
-15. Add your Google account to Calendar and Contacts.
-16. In Chrome, sign in to the sites you want agents to use.
-17. If you skipped the GitHub login, run `gh auth login`, then `gh auth setup-git`.
-18. Run `just git-signing` and the `gh` commands it prints.
+15. Sign in to Tailscale with the account your Ubuntu machine and phone use.
+16. Add your Google account to Calendar and Contacts.
+17. In Chrome, sign in to the sites you want agents to use.
+18. If you skipped the GitHub login, run `gh auth login`, then `gh auth setup-git`.
+19. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
 
-19. Optional: `just touch-id`.
-20. Turn on FileVault and the firewall. `bash setup.sh --status macos` reports both.
-21. Back up off the Mac, and restore a file once to check it.
+20. Optional: `just touch-id`.
+21. Turn on FileVault and the firewall. `bash setup.sh --status macos` reports both.
+22. Back up off the Mac, and restore a file once to check it.
 
 ### Ubuntu
 
@@ -228,15 +241,16 @@ Once:
 9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the desktop, open Solaar and pair your devices.
-12. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-13. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
-14. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
+12. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
+13. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
+14. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
+15. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
     3. At the machine, `sudo rtcwake -m off -s 120` should start it 2 minutes later. If not, only the BIOS setting brings it back.
     4. Run `just alerts test` again.
-15. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
-16. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
+16. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
+17. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 
 When needed:
 

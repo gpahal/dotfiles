@@ -76,7 +76,7 @@ done
 # shellcheck disable=SC2034 # missing_ubuntu_commands reads it
 UBUNTU_COMMANDS=(sh)
 expected=""
-for cmd in locale-gen fc-cache; do
+for cmd in locale-gen fc-cache wl-copy; do
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin command -v "$cmd" &>/dev/null ||
         expected="$expected $cmd"
 done

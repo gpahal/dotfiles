@@ -17,5 +17,6 @@ STEPS_DIR="$DOTFILES_DIR"
 runner_main dotfiles "--quick skips its slowest checks: whether the Brewfile's
 formulae are all installed, and on Ubuntu, firmware updates and Docker's disk usage." "$@"
 if [ ${#RUNNER_STEPS[@]} -eq 0 ] || [[ " ${RUNNER_STEPS[*]} " == *" zsh "* ]]; then
-    echo "Open a new terminal or run: source ~/.zshrc"
+    # Not source ~/.zshrc: setup runs from bash on a fresh Ubuntu, and bash can't read zsh's config
+    echo "Open a new terminal or run: exec zsh -l"
 fi

@@ -24,6 +24,8 @@ ubuntu_step() {
     local config="$HOME/.config/Claude/claude_desktop_config.json"
     local autostart="$HOME/.config/autostart/claude-desktop.desktop"
     as_os ubuntu
+    # The real check finds gnome-shell only on a desktop, which CI runners aren't
+    replace_fn has_gnome_desktop 'true'
     assert_eq "$config" "$(claude_desktop_config)" "config path on Ubuntu"
     stub dpkg-query '[ "${*: -1}" == claude-desktop ] && [ -e "$SANDBOX/installed" ] && printf "install ok installed"'
     stub apt-get '[ "${*: -1}" != claude-desktop ] || touch "$SANDBOX/installed"'
@@ -69,6 +71,15 @@ X-GNOME-Autostart-enabled=true' "$(cat "$autostart")" "the autostart file Claude
     assert_exit 0 main
     assert_contains "$RUN_OUTPUT" "claude-desktop is running and must be quit to change its settings"
     assert_eq "$(cat "$SANDBOX/changed.json")" "$(cat "$config")" "config while Claude runs"
+
+    # Ubuntu Server has no desktop to run it
+    replace_fn has_gnome_desktop 'false'
+    assert_exit 0 status
+    assert_contains "$RUN_OUTPUT" "skipped    Claude desktop app: no GNOME desktop"
+    : > "$STUB_LOG"
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "No GNOME desktop, so no desktop app."
+    assert_eq "" "$(cat "$STUB_LOG")" "commands run without a desktop"
 }
 subtest ubuntu_step
 

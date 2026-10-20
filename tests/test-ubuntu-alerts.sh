@@ -122,6 +122,8 @@ assert_contains "$RUN_OUTPUT" "The test push failed. Check the topic, then run j
 assert_eq https://ntfy.sh/other-topic "$(cat "$NTFY_URL_FILE")" "the saved URL"
 rm "$SANDBOX/curl-fails"
 
+# Point at the sandbox first, so a notifier installed on this machine is never run
+UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
 assert_exit 1 main --test
 assert_contains "$RUN_OUTPUT" "isn't installed"
 mkdir -p "$(dirname "$SMARTD_HOOK")"
@@ -132,7 +134,6 @@ assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo env SMARTD_SUBJECT=Test: SMART warning on"
 assert_file_contains "$STUB_LOG" "curl -q -fsS"
 
-UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
 stub id '[ "$*" != nut ] || [ -e "'"$SANDBOX"'/nut-user" ]'
 assert_exit 0 main --test
 assert_contains "$RUN_OUTPUT" "The UPS notifier isn't installed (no UPS set up yet); skipping its test."

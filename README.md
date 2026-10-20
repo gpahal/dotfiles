@@ -51,7 +51,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only |
-| `logitech` | Installs Solaar in place of Logi Options+. Ubuntu only |
+| `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
 

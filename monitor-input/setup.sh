@@ -50,8 +50,12 @@ usb_devices() {
     fi | sort -u
 }
 
+# Not usb_devices | grep -q: grep exits at the first match, and under pipefail the writer's SIGPIPE
+# fails the pipeline
 device_attached() {
-    usb_devices | grep -q "^$1 "
+    local devices
+    devices="$(usb_devices)"
+    grep -q "^$1 " <<< "$devices"
 }
 
 # Connected outputs with a DDC channel, without the card prefix: HDMI-A-1
@@ -100,7 +104,7 @@ setup_mac() {
     fi
     require_cmd m1ddc || return 1
     m1ddc="$(command -v m1ddc)"
-    if ! m1ddc display list 2>/dev/null | grep -q .; then
+    if [ -z "$(m1ddc display list 2>/dev/null)" ]; then
         echo "m1ddc finds no external display. Connect the monitor and re-run." >&2
         return 1
     fi
@@ -139,7 +143,7 @@ setup_ubuntu() {
             return 1
         fi
         connector="$connectors"
-    elif ! ddc_connectors | grep -qxF "$connector"; then
+    elif ! grep -qxF "$connector" <<< "$(ddc_connectors)"; then
         echo "$connector isn't a connected output with DDC. Connected: $(ddc_connectors | join_lines ', ')." >&2
         return 1
     fi

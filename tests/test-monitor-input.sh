@@ -189,7 +189,8 @@ EOF'
     hide m1ddc
     assert_exit 1 main 19f5:2620 27
     assert_contains "$RUN_OUTPUT" "m1ddc isn't installed"
-    stub m1ddc '[ "$*" != "display list" ] || [ -e "$SANDBOX/no-display" ] || echo "[1] DELL S2722QC (57670C1C)"'
+    # Many lines, as a grep -q reading them would leave m1ddc writing to a closed pipe
+    stub m1ddc '[ "$*" != "display list" ] || [ -e "$SANDBOX/no-display" ] || for i in $(seq 5000); do echo "[$i] DELL S2722QC (57670C1C)"; done'
 
     assert_exit 0 main
     assert_contains "$RUN_OUTPUT" "  19f5:2620 Air75 V3 Dongle"

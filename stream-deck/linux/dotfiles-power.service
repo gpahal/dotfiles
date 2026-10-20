@@ -1,0 +1,17 @@
+# From the dotfiles stream-deck step: the Stream Deck's Power key reads what this writes
+[Unit]
+Description=Write CPU power to /run/dotfiles-power for the Stream Deck
+
+[Service]
+ExecStart=/usr/local/libexec/dotfiles-power
+Restart=on-failure
+RestartSec=10
+# It reads sysfs and writes one file in /run
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

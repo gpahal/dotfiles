@@ -26,7 +26,7 @@ bash ai_tools/setup.sh codex skills # only these
 bash ai_tools/setup.sh --status     # report only
 ```
 
-The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu skips `claude-desktop`. Each is `ai_tools/<step>/install.sh`, except `ai_tools/manual-steps.sh`.
+The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`, except `ai_tools/manual-steps.sh`.
 
 It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, or footer you set is kept unless you agree to replace it. On macOS it asks to quit the Claude, ChatGPT, and T3 Code apps, which overwrite their settings, and skips their settings while they run. It adds no MCP servers.
 
@@ -72,6 +72,8 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 ### Desktop app
 
 The Claude app opens at login through a LaunchAgent **(script)**, with no menu bar icon, Option+Space quick entry, keep-awake while working, 30-day session archiving, and Cowork's browser tools and scheduled tasks on. To keep the Cowork ones off, set `coworkBrowserToolsEnabled` or `coworkScheduledTasksEnabled` to `false` in [`claude-desktop/install.sh`](./claude-desktop/install.sh).
+
+On Ubuntu it installs from Anthropic's apt repo, so `apt upgrade` updates it, and its own **open at login** setting is on **(script)**. The settings are the same, without quick entry, since GNOME uses Alt+Space for the window menu. Computer use and dictation aren't on Linux yet.
 
 ## Codex
 
@@ -147,7 +149,7 @@ The `skills` step copies each into `~/.agents/skills` and links it from `~/.clau
 
 ## Ubuntu
 
-The same steps, without desktop apps or computer use. The `codex` step installs `bubblewrap` and, if needed, an AppArmor profile **(script)**; test with `codex sandbox -- /bin/true`. Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json`, readable only by you, since the keyring is locked over SSH.
+The same steps, without the ChatGPT app or computer use. The `codex` step installs `bubblewrap` and, if needed, an AppArmor profile **(script)**; test with `codex sandbox -- /bin/true`. Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json`, readable only by you, since the keyring is locked over SSH.
 
 ### Notifications over SSH
 
@@ -162,6 +164,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 - The service gets the same [app settings](#app-settings), and the script asks before restarting it.
 - Agents get the `docker` group after the first reboot. It's root-equivalent.
 - When T3 Code's browser needs root setup, the script prints the command instead of running it, since `~/.local/bin/t3` is user-writable.
+- **Desktop app (script).** On Ubuntu Desktop, the latest release's `.deb`, checked against the digest GitHub lists, with its own server off so it connects to the service, and telemetry off from the next login. It updates itself, asking for your password.
 
 ## Manual steps
 
@@ -194,6 +197,8 @@ Over SSH, logins print a link to open on the Mac.
    - In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
    - Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
    - After an agent first opens T3 Code's browser, re-run `bash ai_tools/setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
+   - At the desktop, run `t3 pair` and paste the link in the T3 Code app (**Settings → Connections → Add environment**).
+6. **Claude app.** At the desktop, open Claude and sign in.
 
 ## Check it works
 
@@ -215,6 +220,8 @@ Over SSH from the Mac:
 - In tmux, `bash scripts/test-notification.sh` notifies on the Mac.
 - After a reboot, `systemctl --user status t3code` is `active (running)`, T3 Code on the Mac reconnects, and an agent can run `docker ps`.
 
+At the desktop, the T3 Code app shows the service's threads, and Claude opens signed in.
+
 ### Phone
 
 - A turn on the Ubuntu server ends with a T3 Code push.
@@ -230,7 +237,7 @@ These apps don't document every key the steps write, so each was checked against
 | App | Checked against | Key source |
 | :- | :- | :- |
 | Claude Code | 2.1.296 | [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt), checked by `scripts/check-ai-settings.sh` |
-| Claude desktop app | 2.19675.0 | Its `claude_desktop_config.json` |
+| Claude desktop app | 2.19675.0, and 2.42304.2 on Linux | Its `claude_desktop_config.json` |
 | ChatGPT app | 26.930.21537 | The `[desktop]` table it writes in `~/.codex/config.toml` |
 | T3 Code | 0.1.0 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/contracts/src/settings.ts), checked by `scripts/check-t3-settings.sh` |
 

@@ -1,13 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Stream Deck plugin, and restart Stream Deck to load it.
-# A temp HOME doesn't isolate it: it restarts the running Stream Deck when the plugin changed.
+# Install the Stream Deck plugin on macOS, or on Ubuntu the daemon that drives the deck.
+# On macOS a temp HOME doesn't isolate it: it restarts the running Stream Deck when the plugin
+# changed. On Ubuntu it installs a root service with sudo and turns on a GNOME extension and a user
+# service in your session whatever HOME is: test it in an Ubuntu VM with a GNOME desktop.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 
-STEP_OS=macos
+# pnpm, from Homebrew, and Node, from mise, run the Ubuntu daemon
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew runtimes"
 
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
@@ -72,7 +78,14 @@ restart_stream_deck() {
     echo "  Restarted Stream Deck to load the plugin."
 }
 
+# shellcheck source=lib/ubuntu.sh
+source "$DOTFILES_DIR/stream-deck/lib/ubuntu.sh"
+
 status() {
+    if is_ubuntu; then
+        status_ubuntu
+        return
+    fi
     local file
     each_plugin_file status_file
     while IFS= read -r file; do
@@ -82,6 +95,10 @@ status() {
 }
 
 apply() {
+    if is_ubuntu; then
+        apply_ubuntu
+        return
+    fi
     echo "Installing the Stream Deck plugin..."
     local status=0
     COPIED=false

@@ -1,6 +1,7 @@
 name: Check
 
 # Weekly: upstream packages and AI tools release without a repo change.
+# A push to main skips the checks when the merged PR was up to date and passed (gpahal/ci).
 on:
   push:
     branches: [main]
@@ -35,6 +36,13 @@ defaults:
     shell: bash
 
 jobs:
+  gate:
+    uses: gpahal/ci/.github/workflows/skip-if-tested.yml@6505abd9637546b881119d2bf45bb9d520cb4045 # v1.0.0
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+
   changes:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -75,7 +83,8 @@ jobs:
           printf 'brew=%s\nai=%s\n' "$brew" "$ai" >> "$GITHUB_OUTPUT"
 
   check:
-    if: github.event_name != 'schedule'
+    needs: gate
+    if: github.event_name != 'schedule' && needs.gate.outputs.tested != 'true'
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -152,8 +161,8 @@ jobs:
           TEST_FAIL_ON_SKIP: 1
 
   brew-packages:
-    needs: changes
-    if: needs.changes.outputs.brew == 'true'
+    needs: [gate, changes]
+    if: needs.gate.outputs.tested != 'true' && needs.changes.outputs.brew == 'true'
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
@@ -165,8 +174,8 @@ jobs:
 
   # Unpinned on purpose, so a release that renames or rejects a setting fails here.
   ai-settings:
-    needs: changes
-    if: needs.changes.outputs.ai == 'true'
+    needs: [gate, changes]
+    if: needs.gate.outputs.tested != 'true' && needs.changes.outputs.ai == 'true'
     timeout-minutes: 15
     strategy:
       fail-fast: false

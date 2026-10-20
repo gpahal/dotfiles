@@ -5,13 +5,17 @@ set -uo pipefail
 # once it's gone, as /etc/dotfiles/monitor-input.conf says. Run as root by
 # dotfiles-monitor-input.service, which the udev rule restarts on each of the device's events, so
 # a run still settling is dropped for the newer one. The Mac only switches the monitor to itself,
-# so when the devices leave both machines this one alone switches it, to the Mac.
+# so when the devices leave both machines this one alone switches it, to the Mac. The monitor
+# sometimes misses a command, so each run reads the input back and retries until it switches.
 
 CONF="${MONITOR_INPUT_CONF:-/etc/dotfiles/monitor-input.conf}"
 USB_DEVICES_DIR="${USB_DEVICES_DIR:-/sys/bus/usb/devices}"
 DRM_DIR="${DRM_DIR:-/sys/class/drm}"
 # The switch moves its devices one by one; this outlasts that
 SETTLE="${MONITOR_INPUT_SETTLE:-1}"
+# How long the monitor takes to switch before it reports the new input
+VERIFY_DELAY="${MONITOR_INPUT_VERIFY_DELAY:-2}"
+TRIES=5
 
 conf_get() {
     sed -n "s/^$1=//p" "$CONF" | tail -n 1
@@ -39,8 +43,17 @@ ddc_bus() {
     return 1
 }
 
+# The input the monitor shows, in decimal
+current_input() {
+    local out
+    out="$(ddcutil --bus "$1" getvcp 60 --brief 2>/dev/null)" || return 1
+    # VCP 60 SNC x1b
+    [[ "$out" =~ \ x([0-9a-fA-F]+)$ ]] || return 1
+    echo $((16#${BASH_REMATCH[1]}))
+}
+
 main() {
-    local device input other connector bus target
+    local device input other connector bus target try now=""
     [ -r "$CONF" ] || exit 0
     device="$(conf_get device)"
     input="$(conf_get input)"
@@ -60,9 +73,21 @@ main() {
         echo "No DDC bus for the $connector connector; check the monitor's cable, then re-run just monitor-input." >&2
         exit 1
     fi
-    # --noverify: reading the input back can fail once the monitor shows the other machine
     echo "Switching the monitor's input to $target (the trigger device is $([ "$target" == "$input" ] && echo here || echo away))."
-    ddcutil --bus "$bus" --noverify setvcp 60 "$target"
+    for ((try = 1; try <= TRIES; try++)); do
+        [ "$try" -eq 1 ] || echo "The monitor shows input ${now:-(unreadable)}; trying again ($try of $TRIES)."
+        # --noverify: ddcutil reads back at once, before the monitor has switched
+        if ddcutil --bus "$bus" --noverify setvcp 60 "$target"; then
+            sleep "$VERIFY_DELAY"
+            now="$(current_input "$bus")" || now=""
+            [ "$now" != "$target" ] || return 0
+        else
+            now=""
+            sleep "$VERIFY_DELAY"
+        fi
+    done
+    echo "The monitor didn't switch to input $target after $TRIES tries." >&2
+    exit 1
 }
 
 main "$@"

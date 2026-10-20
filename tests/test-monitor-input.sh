@@ -246,11 +246,30 @@ subtest setup_on_mac
 switcher() {
     : > "$STUB_LOG"
     assert_exit "$1" env MONITOR_INPUT_CONF="$SANDBOX/switcher.conf" USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" \
-        MONITOR_INPUT_SETTLE=0 "$BASH" "$REPO_DIR/monitor-input/dotfiles-monitor-input"
+        MONITOR_INPUT_SETTLE=0 MONITOR_INPUT_VERIFY_DELAY=0 "$BASH" "$REPO_DIR/monitor-input/dotfiles-monitor-input"
+}
+
+# A monitor that shows the last input set, except that it ignores as many sets as the drops file
+# holds
+stub_monitor() {
+    echo 27 > "$SANDBOX/monitor-shows"
+    echo 0 > "$SANDBOX/monitor-drops"
+    stub ddcutil 'shows="$SANDBOX/monitor-shows" drops="$SANDBOX/monitor-drops"
+case "$*" in
+    *getvcp\ 60*) printf "VCP 60 SNC x%02x\n" "$(cat "$shows")" ;;
+    *setvcp\ 60*)
+        if [ "$(cat "$drops")" -gt 0 ]; then
+            echo $(($(cat "$drops") - 1)) > "$drops"
+        else
+            echo "${*: -1}" > "$shows"
+        fi
+        ;;
+esac'
 }
 
 the_switcher() {
     output card1-HDMI-A-1 connected 4
+    stub_monitor
     switcher 0
     assert_file_not_contains "$STUB_LOG" "ddcutil"
 
@@ -261,22 +280,43 @@ the_switcher() {
 
     printf '%s\n' "# a comment" device=19f5:2620 input=17 other=27 connector=HDMI-A-1 > "$SANDBOX/switcher.conf"
     switcher 0
-    assert_eq "ddcutil --bus 4 --noverify setvcp 60 17" "$(cat "$STUB_LOG")" "ddcutil with the device here"
+    assert_eq "ddcutil --bus 4 --noverify setvcp 60 17
+ddcutil --bus 4 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device here"
+    assert_eq 17 "$(cat "$SANDBOX/monitor-shows")" "the input with the device here"
 
     # The bus comes from the connector each run, since it can change across boots
     rm -rf "$USB/1-2"
     output card1-HDMI-A-1 connected 9
     switcher 0
-    assert_eq "ddcutil --bus 9 --noverify setvcp 60 27" "$(cat "$STUB_LOG")" "ddcutil with the device away"
+    assert_eq "ddcutil --bus 9 --noverify setvcp 60 27
+ddcutil --bus 9 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device away"
+    assert_eq 27 "$(cat "$SANDBOX/monitor-shows")" "the input with the device away"
+
+    # A command the monitor misses is sent again
+    usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+    echo 2 > "$SANDBOX/monitor-drops"
+    switcher 0
+    assert_contains "$RUN_OUTPUT" "The monitor shows input 27; trying again (3 of 5)."
+    assert_eq 3 "$(grep -c "setvcp 60 17" "$STUB_LOG")" "sets with two missed"
+    assert_eq 17 "$(cat "$SANDBOX/monitor-shows")" "the input after two missed sets"
+
+    echo 27 > "$SANDBOX/monitor-shows"
+    echo 9 > "$SANDBOX/monitor-drops"
+    switcher 1
+    assert_contains "$RUN_OUTPUT" "The monitor didn't switch to input 17 after 5 tries."
+    assert_eq 5 "$(grep -c "setvcp 60 17" "$STUB_LOG")" "sets with every one missed"
 
     rm "$DRM/card1-HDMI-A-1/ddc"
     switcher 1
     assert_contains "$RUN_OUTPUT" "No DDC bus for the HDMI-A-1 connector"
     assert_file_not_contains "$STUB_LOG" "ddcutil"
 
+    # A failed set is retried too
     output card1-HDMI-A-1 connected 4
     stub ddcutil 'exit 1'
     switcher 1
+    assert_contains "$RUN_OUTPUT" "The monitor shows input (unreadable); trying again (2 of 5)."
+    assert_eq 5 "$(grep -c "setvcp 60 17" "$STUB_LOG")" "sets when ddcutil fails"
 }
 subtest the_switcher
 

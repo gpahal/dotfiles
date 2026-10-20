@@ -19,6 +19,11 @@ is_ubuntu() {
     [ "$(uname -s)" == "Linux" ] && grep -qE '^ID="?ubuntu"?$' /etc/os-release 2>/dev/null
 }
 
+# Ubuntu Desktop, rather than Server, which has no apps to open
+has_gnome_desktop() {
+    command -v gnome-shell &>/dev/null
+}
+
 locale_installed() {
     locale -a 2>/dev/null | grep -qiE '^en_US\.utf-?8$'
 }
@@ -357,6 +362,11 @@ join_lines() {
         sep="$1"
     done
     printf '%s\n' "$out"
+}
+
+# A path for a unit's ExecStart, which expands % and $
+systemd_quote() {
+    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
 }
 
 # Replaces a differing file without asking or backing up. Sets COPIED=true when it copies.

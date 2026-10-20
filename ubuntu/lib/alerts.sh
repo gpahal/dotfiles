@@ -1,11 +1,6 @@
 # shellcheck shell=bash
 # Health alert user units for the ubuntu step. ubuntu/install.sh sets the constants.
 
-# systemd expands % and $ in ExecStart
-systemd_quote() {
-    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
-}
-
 health_unit() {
     local script
     script="$(systemd_quote "$DOTFILES_DIR/ubuntu/health-alert.sh")"

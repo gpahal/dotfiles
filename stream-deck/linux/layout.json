@@ -1,0 +1,31 @@
+{
+  "columns": 5,
+  "rows": 3,
+  "brightness": 60,
+  "pages": {
+    "main": {
+      "0,0": "overview",
+      "1,0": "editor",
+      "2,0": "terminal",
+      "3,0": "files",
+      "0,1": "chrome",
+      "1,1": "chrome-tab",
+      "2,1": "gmail",
+      "3,1": "t3-code",
+      "4,1": "claude"
+    },
+    "system": {
+      "0,0": "back",
+      "1,0": "cpu",
+      "2,0": "memory",
+      "3,0": "swap",
+      "4,0": "activity-monitor",
+      "0,1": "top",
+      "1,1": "gpu",
+      "2,1": "temperature",
+      "3,1": "power",
+      "4,1": "disk",
+      "0,2": "network"
+    }
+  }
+}

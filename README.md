@@ -43,8 +43,9 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
-| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin. macOS only |
+| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin, or on Ubuntu the daemon that drives the deck |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
+| `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets [macOS defaults](./macos/install.sh) and, if needed, the hostname. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
@@ -64,7 +65,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## Ubuntu
 
-Run setup as your own user, not root. On Ubuntu Server, name the steps to leave out `ghostty`, `zed`, `logitech`, and `chrome`, and install `upower` for UPS detection.
+Run setup as your own user, not root. On Ubuntu Server, name the steps to leave out `ghostty`, `zed`, `stream-deck`, `logitech`, and `chrome`, and install `upower` for UPS detection.
 
 - Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
 - Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
@@ -134,13 +135,25 @@ Claude Code, Codex, and long builds notify through Ghostty, inside tmux too:
 
 ### Stream Deck
 
-macOS only. The **Dotfiles** category has keys that act on the folder of the app in front (Ghostty tab, Zed file, Finder selection, or T3 Code thread):
+The **Dotfiles** keys act on the folder of the app in front:
 
-- **Editor** opens Zed, **Terminal** Ghostty, and **Files** Finder there.
+- **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
-- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. GPU, temperature, and power need macmon.
+- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats.
 
 [`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
+
+On macOS, a plugin adds the keys to Elgato's Stream Deck app. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread. GPU, temperature, and power need macmon.
+
+Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user service draws the same keys, and a GNOME extension lets it read and focus windows. Unlike on macOS:
+
+- [`stream-deck/linux/layout.json`](stream-deck/linux/layout.json) places the keys. Edit it and re-run the step.
+- The folder comes from a Ghostty tab, a Zed file, or a file manager window's folder, not its selected file. With T3 Code in front, the keys open a new window.
+- **Terminal** opens a Ghostty window, not a tab.
+- **Gmail** opens in its own Chrome window, and the stat keys open Resources.
+- **Power** shows the CPU package, its cores, and the GPU, with no figure for the whole machine.
+- Keys that open apps do nothing while the screen is locked.
+- `journalctl --user -u dotfiles-stream-deck` shows its log.
 
 ### Hammerspoon
 
@@ -149,6 +162,8 @@ macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 - `Space` Claude, `B` Chrome, `C` T3 Code.
 - `T` Ghostty and `E` Zed, at the folder in front.
 - `N` a new Chrome tab, with the clipboard's text pasted and selected.
+
+On Ubuntu, the `hotkeys` step adds the same shortcuts on `Ctrl+Alt+Super`, which run the [Stream Deck](#stream-deck)'s actions. A shortcut of yours on the same keys keeps them, and `--status` names it. `journalctl --user -t dotfiles-hotkeys` shows their log.
 
 ### Monitor input
 
@@ -241,16 +256,17 @@ Once:
 9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the desktop, open Solaar and pair your devices.
-12. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
-13. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-14. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
-15. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
+12. **Stream Deck.** Log out of the desktop and back in once, so GNOME loads the extension the `stream-deck` step turned on.
+13. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
+14. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
+15. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
+16. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
     3. At the machine, `sudo rtcwake -m off -s 120` should start it 2 minutes later. If not, only the BIOS setting brings it back.
     4. Run `just alerts test` again.
-16. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
-17. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
+17. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
+18. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 
 When needed:
 
@@ -278,6 +294,11 @@ Over SSH from the Mac:
 - `command -v brew mise node` prints three paths, and a test commit is signed.
 - After a reboot, `ssh <alias>` connects, `docker ps` works without `sudo`, `tmux ls` lists the old sessions, and the phone gets the boot notice.
 
+At the desktop, with the Stream Deck switched to it:
+
+- The keys show, and **Overview** opens the **System** page.
+- With a file open in Zed, **Terminal** and `Ctrl+Alt+Super+T` open Ghostty at its folder.
+
 ## Updating
 
 `upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
@@ -291,7 +312,8 @@ Over SSH from the Mac:
 - `just copy-back [dry-run]` copies installed configs that differ back into the repo for review with `git diff`. It skips repo files with uncommitted changes.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
-- After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh` and commit both. To load the change, delete the **System** profile in Stream Deck and press **Overview**.
+- After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh`, match the System page in `stream-deck/linux/layout.json`, and commit them. To load the change, delete the **System** profile in Stream Deck and press **Overview**.
+- To update the Ubuntu Stream Deck's packages, run `pnpm update` in `stream-deck/linux`, commit `pnpm-lock.yaml`, and re-run `bash setup.sh stream-deck`.
 - [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.
 
 ## License

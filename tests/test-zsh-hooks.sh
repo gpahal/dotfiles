@@ -110,10 +110,13 @@ else
     wait "$client_pid" 2> /dev/null || true
 fi
 mkdir -p "$HOME/proj"
-title_script='autoload -U add-zsh-hook; source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
+title_script='OSTYPE=$3; autoload -U add-zsh-hook; source "$1/zsh/title.zsh"; cd ~/proj; _title_precmd; _title_preexec "$2" "$2"'
 assert_eq "$(printf '\033]2;~/proj\a\033]2;echo a  b\a')" \
-    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" $'echo a\n b')" "the titles"
+    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" $'echo a\n b' darwin25.0)" "the titles on macOS"
+# On Linux the folder follows the command, for the Stream Deck's open-in; a % stays literal
+assert_eq "$(printf '\033]2;~/proj\a\033]2;echo %%~ b — ~/proj\a')" \
+    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" 'echo %~ b' linux-gnu)" "the titles on Linux"
 # A leading space, which history skips, keeps the prompt's title
 assert_eq "$(printf '\033]2;~/proj\a')" \
-    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" ' export TOKEN=secret')" "a hidden command's title"
+    "$(TERM=xterm-256color zsh -f -c "$title_script" zsh "$REPO_DIR" ' export TOKEN=secret' linux-gnu)" "a hidden command's title"
 test_done

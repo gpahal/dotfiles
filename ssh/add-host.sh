@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Add a keepalive and connection-sharing block for a host to ~/.ssh/config. Setup doesn't run it.
-# Usage: bash ssh/add-host.sh <alias> [hostname], e.g. bash ssh/add-host.sh box box.tail1234.ts.net
+# Usage: bash ssh/add-host.sh <alias> [hostname], e.g. bash ssh/add-host.sh desktop garvits-desktop.
+# The hostname defaults to the alias; without MagicDNS, give the full <machine>.<tailnet>.ts.net name.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

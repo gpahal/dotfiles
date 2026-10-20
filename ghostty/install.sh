@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the Ghostty config and reload it, and on Ubuntu install the Ghostty snap.
+# Copy and reload the Ghostty config, and on Ubuntu install the Ghostty snap and terminfo.
 # A temp HOME doesn't isolate the reload signal or Ubuntu's sudo snap install: test Ubuntu in a VM.
 
 # shellcheck source=../lib/common.sh
@@ -26,25 +26,48 @@ install_ghostty_snap() {
     fi
 }
 
+# Ghostty sets TERM=xterm-ghostty, which Ubuntu's ncurses lacks, so zsh can't move the cursor over
+# SSH. Copied, not compiled: Homebrew's tic comes first in PATH and writes to its own ncurses.
+GHOSTTY_TERMINFO="${DOTFILES_GHOSTTY_TERMINFO:-/snap/ghostty/current/share/terminfo/x/xterm-ghostty}"
+
+ghostty_terminfo_installed() {
+    cmp -s "$GHOSTTY_TERMINFO" "$HOME/.terminfo/x/xterm-ghostty"
+}
+
+install_ghostty_terminfo() {
+    if [ ! -r "$GHOSTTY_TERMINFO" ]; then
+        echo "  No xterm-ghostty terminfo at $GHOSTTY_TERMINFO." >&2
+        return 1
+    fi
+    mkdir -p "$HOME/.terminfo/x" &&
+        cp "$GHOSTTY_TERMINFO" "$HOME/.terminfo/x/xterm-ghostty" &&
+        echo "  Installed the xterm-ghostty terminfo in ~/.terminfo."
+}
+
 ghostty_items() {
     items_reset
     item --sudo "Ghostty snap installed" "Install Ghostty from its snap (classic confinement)" \
         ghostty_snap_installed install_ghostty_snap
+    # shellcheck disable=SC2088 # shown, not expanded
+    item "xterm-ghostty terminfo in ~/.terminfo" "Copy the xterm-ghostty terminfo to ~/.terminfo" \
+        ghostty_terminfo_installed install_ghostty_terminfo
 }
 
 install_ghostty() {
     local pending=()
     ghostty_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Ghostty already installed."
+    if items_ok; then
+        echo "  Ghostty and its terminfo already installed."
         return 0
     fi
-    if ! command -v snap &>/dev/null; then
-        echo "  Installing Ghostty needs snapd. Install it with: sudo apt-get install snapd" >&2
-        return 1
+    items_pending
+    if [ ${#pending[@]} -gt 0 ]; then
+        if ! command -v snap &>/dev/null; then
+            echo "  Installing Ghostty needs snapd. Install it with: sudo apt-get install snapd" >&2
+            return 1
+        fi
+        confirm_sudo_changes "${pending[@]}" || return 0
     fi
-    confirm_sudo_changes "${pending[@]}" || return 0
     items_apply
 }
 

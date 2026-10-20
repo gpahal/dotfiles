@@ -41,7 +41,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `zsh` | Copies the zsh and starship config, hooks it into the startup files, and offers zsh as the login shell |
 | `vim` | Copies the vim config and vim-plug, and moves installed plugins to their pins |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
-| `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap |
+| `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin. macOS only |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
@@ -219,7 +219,7 @@ Once:
 6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, and remove `root` from `users` in its `ssh` rules.
 7. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
-   2. `just ssh-host <alias> <tailnet-name>`.
+   2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
    3. `ssh-copy-id <alias>`.
    4. `ssh -O exit <alias>`.
 

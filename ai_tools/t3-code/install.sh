@@ -175,7 +175,6 @@ t3_code_server_filter() {
       end
     | .defaultRuntimeMode = "auto"
     | .defaultThreadEnvMode = "worktree"
-    | .newWorktreesStartFromOrigin = false
     | .addProjectBaseDirectory = "~/Dev"
     | .branchNamingMode = "semantic"
     | .defaultAutoPull = true

@@ -122,7 +122,7 @@ A LaunchAgent opens T3 Code at login with telemetry off **(script)**.
 
 Merged into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
-- New threads use Claude Opus 5.5 at medium effort with a 1M context window, in auto mode, each in a worktree under `~/.t3/worktrees` branched from the local base. Your own model or effort is kept.
+- New threads use Claude Opus 5.5 at medium effort with a 1M context window, in auto mode, each in a worktree under `~/.t3/worktrees`. T3 fetches the base branch first and branches from origin's copy, or from the local branch when origin lacks it. Your own model or effort is kept.
 - Worktree setup actions that existed when the script ran block the agent; a later one needs `"async": false`.
 - T3 removes its worktrees 30 days after last activity, 15 after settling, after merge, or when their last thread is deleted, skipping ones in use or with uncommitted or untracked files. Ignored files such as `.env` go too, unless **Settings → Storage → Keep worktrees with local changes** is **Any local files**.
 - Projects auto-pull, threads settle after 10 idle days, and PRs squash-merge.

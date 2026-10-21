@@ -635,6 +635,21 @@ update_t3_code_server() {
     fi
 }
 
+# Run after wait_for_t3_code_service. Restarting a launcher that serves nothing stops no thread, so
+# it doesn't ask. Sets the caller's changed=true when it restarts.
+restart_t3_code_service_serving_nothing() {
+    t3_code_service_serving_nothing || return 0
+    systemctl --user restart t3code.service || true
+    wait_for_t3_code_service || return 1
+    if t3_code_service_serving_nothing; then
+        echo "  The T3 Code service runs no server. Check $T3_CODE_SERVICE_LOG" >&2
+        return 1
+    fi
+    echo "  Restarted the T3 Code service, which ran no server, as when another server had its"
+    echo "  data as it started"
+    changed=true
+}
+
 ensure_t3_code_service() {
     local changed=false
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
@@ -645,6 +660,7 @@ ensure_t3_code_service() {
         fi
         "$HOME/.local/bin/t3" service install || true
         wait_for_t3_code_service || return 1
+        restart_t3_code_service_serving_nothing || return 1
         echo "  Installed the T3 Code service, which starts at boot"
     else
         if ! t3_code_lingering; then
@@ -664,18 +680,7 @@ ensure_t3_code_service() {
             changed=true
         fi
         wait_for_t3_code_service || return 1
-        # Restarting a launcher that serves nothing stops no thread, so don't ask
-        if t3_code_service_serving_nothing; then
-            systemctl --user restart t3code.service || true
-            wait_for_t3_code_service || return 1
-            if t3_code_service_serving_nothing; then
-                echo "  The T3 Code service runs no server. Check $T3_CODE_SERVICE_LOG" >&2
-                return 1
-            fi
-            echo "  Restarted the T3 Code service, which ran no server, as when another server had its"
-            echo "  data as it started"
-            changed=true
-        fi
+        restart_t3_code_service_serving_nothing || return 1
         if "$changed"; then
             echo "  The T3 Code service is running"
         else

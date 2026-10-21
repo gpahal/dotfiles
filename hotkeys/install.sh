@@ -80,6 +80,10 @@ status() {
 apply() {
     echo "Adding GNOME shortcuts..."
     require_cmd gsettings || return 1
+    if [ ! -x "$OPEN_IN" ]; then
+        echo "  The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck" >&2
+        return 1
+    fi
     local hotkey key target name clash status=0 changed=false
     for hotkey in "${HOTKEYS[@]}"; do
         read -r key target name <<< "$hotkey"

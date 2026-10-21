@@ -263,6 +263,23 @@ touch "$STATE/active" "$STATE/enabled" "$STATE/always-idle"
 assert_exit 1 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "The T3 Code service runs no server. Check ~/.t3/userdata/logs/boot-service.log"
 
+# A first install whose launcher runs no server is restarted too
+reset
+touch "$STATE/idle"
+assert_exit 0 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "t3 service install"
+assert_file_contains "$STUB_LOG" "systemctl --user restart t3code.service"
+assert_contains "$RUN_OUTPUT" "Restarted the T3 Code service, which ran no server"
+assert_contains "$RUN_OUTPUT" "Installed the T3 Code service, which starts at boot"
+[ ! -e "$STATE/idle" ] || fail "the idle service wasn't restarted after its install"
+
+reset
+touch "$STATE/always-idle"
+assert_exit 1 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "t3 service install"
+assert_contains "$RUN_OUTPUT" "The T3 Code service runs no server. Check ~/.t3/userdata/logs/boot-service.log"
+assert_not_contains "$RUN_OUTPUT" "Installed the T3 Code service"
+
 reset
 installed_unit
 stub systemctl '

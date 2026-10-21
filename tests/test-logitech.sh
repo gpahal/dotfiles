@@ -49,6 +49,13 @@ assert_contains "$RUN_OUTPUT" "missing    Only Solaar taken from the Solaar team
 assert_contains "$RUN_OUTPUT" "missing    The Solaar team's PPA's apt source ($SOLAAR_SOURCES): missing"
 assert_contains "$RUN_OUTPUT" "missing    Solaar 1.1.20 or later; older ones fail"
 
+# Adding the PPA needs gpg, so without it the step changes nothing
+hide gpg
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "gpg"
+[ ! -e "$SOLAAR_PIN" ] || fail "the pin was written without gpg"
+stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $SOLAAR_KEY_FPR"
+
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Install Solaar from the Solaar team's PPA"
@@ -85,6 +92,12 @@ assert_contains "$RUN_OUTPUT" "ok         The Solaar team's PPA's apt source"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Solaar 1.1.20 is already installed."
 assert_file_not_contains "$STUB_LOG" "sudo"
+# Once the PPA is added, neither gpg nor curl is needed
+hide gpg curl
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Solaar 1.1.20 is already installed."
+stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $SOLAAR_KEY_FPR"
+stub curl 'cat "$SANDBOX/http-status"'
 
 # Ubuntu's older Solaar is upgraded from the PPA
 echo "1.1.19-1" > "$SANDBOX/solaar-version"
@@ -97,6 +110,8 @@ assert_eq "1.1.20+202607061356~ubuntu26.04.1" "$(cat "$SANDBOX/solaar-version")"
 echo "VERSION_CODENAME=stonking" > "$OS_RELEASE"
 echo 404 > "$SANDBOX/http-status"
 rm -f "$SOLAAR_SOURCES" "$SANDBOX/solaar-version"
+# Ubuntu's Solaar needs no gpg
+hide gpg
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "hasn't published packages for Ubuntu stonking yet"
 assert_eq "1.1.19-1" "$(cat "$SANDBOX/solaar-version")" "the version without the PPA"

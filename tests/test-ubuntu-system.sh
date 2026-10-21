@@ -248,6 +248,43 @@ APT::Periodic::Enable "1";' "$(cat "$AUTO_UPGRADES_CONF")" "20auto-upgrades afte
 run main
 assert_file_not_contains "$STUB_LOG" "tee $AUTO_UPGRADES_CONF"
 
+# APT takes several statements on a line; only ours are replaced, the rest kept in order
+assert_eq 'APT::Periodic::Enable "1"; APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";' \
+    "$(merged_auto_upgrades 'APT::Periodic::Enable "0"; APT::Periodic::AutocleanInterval "7";')" \
+    "a line with our key first"
+assert_eq '  APT::Periodic::AutocleanInterval "7";  APT::Periodic::Update-Package-Lists "1"; // ours
+Foo::Note "a; b"; APT::Periodic::Unattended-Upgrade "1";
+Foo::One "1"; Foo::Two "2";
+APT::Periodic::Enable "1";' \
+    "$(merged_auto_upgrades '  APT::Periodic::AutocleanInterval "7";  apt::periodic::update-package-lists "0"; // ours
+Foo::Note "a; b"; APT::Periodic::Unattended-Upgrade "0";
+Foo::One "1"; Foo::Two "2";')" \
+    "lines with our key second, a ; in quotes, and no key of ours"
+# A line it can't split stays, and ours follow it, since it could set or clear them
+assert_eq 'APT::Periodic::Enable "1";
+APT::Periodic { Enable "0"; };
+/* APT::Periodic::Update-Package-Lists "0"; */
+# APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::Enable "1";
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";' \
+    "$(merged_auto_upgrades 'APT::Periodic::Enable "0";
+APT::Periodic { Enable "0"; };
+/* APT::Periodic::Update-Package-Lists "0"; */
+# APT::Periodic::Unattended-Upgrade "0";')" \
+    "a scope and comments"
+assert_eq 'APT::Periodic::Enable
+    "0";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Enable "1";
+APT::Periodic::Update-Package-Lists "1";' \
+    "$(merged_auto_upgrades 'APT::Periodic::Enable
+    "0";
+APT::Periodic::Unattended-Upgrade "0";')" \
+    "a statement over two lines"
+
 # Only root can read 20auto-upgrades, so apt-config skips it. The sudo stub makes it readable while it runs.
 stub sudo '[ "${1:-}" != -n ] || { [ -e "'"$SANDBOX"'/cached" ] || exit 1; shift; }
 f="'"$AUTO_UPGRADES_CONF"'"

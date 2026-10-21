@@ -242,6 +242,21 @@ m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
 }
 subtest setup_on_mac
 
+# Decimal codes are decimal even with a leading zero, which bash arithmetic would read as octal
+input_codes() {
+    load_script monitor-input/setup.sh
+    assert_eq 17 "$(input_code 17)" "17"
+    assert_eq 17 "$(input_code 017)" "017"
+    assert_eq 8 "$(input_code 08)" "08"
+    assert_eq 27 "$(input_code 0x1b)" "0x1b"
+    assert_eq 27 "$(input_code 0X1B)" "0X1B"
+    local code
+    for code in 0 000 256 0x0 0x100 1b x1b 0x 1234 -1 ""; do
+        ! input_code "$code" > /dev/null 2>&1 || fail "input_code accepted $code"
+    done
+}
+subtest input_codes
+
 # The installed switcher reads its paths from the environment only in a test
 switcher() {
     : > "$STUB_LOG"
@@ -250,13 +265,20 @@ switcher() {
 }
 
 # A monitor that shows the last input set, except that it ignores as many sets as the drops file
-# holds
+# holds. With the mute file, it answers reads only while it shows this machine's input, 17.
 stub_monitor() {
     echo 27 > "$SANDBOX/monitor-shows"
     echo 0 > "$SANDBOX/monitor-drops"
+    rm -f "$SANDBOX/monitor-mute"
     stub ddcutil 'shows="$SANDBOX/monitor-shows" drops="$SANDBOX/monitor-drops"
 case "$*" in
-    *getvcp\ 60*) printf "VCP 60 SNC x%02x\n" "$(cat "$shows")" ;;
+    *getvcp\ 60*)
+        if [ -e "$SANDBOX/monitor-mute" ] && [ "$(cat "$shows")" != 17 ]; then
+            echo "DDC communication failed" >&2
+            exit 1
+        fi
+        printf "VCP 60 SNC x%02x\n" "$(cat "$shows")"
+        ;;
     *setvcp\ 60*)
         if [ "$(cat "$drops")" -gt 0 ]; then
             echo $(($(cat "$drops") - 1)) > "$drops"
@@ -305,6 +327,26 @@ ddcutil --bus 9 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device
     switcher 1
     assert_contains "$RUN_OUTPUT" "The monitor didn't switch to input 17 after 5 tries."
     assert_eq 5 "$(grep -c "setvcp 60 17" "$STUB_LOG")" "sets with every one missed"
+
+    # A monitor that stops answering once it shows the other machine has switched away
+    touch "$SANDBOX/monitor-mute"
+    echo 17 > "$SANDBOX/monitor-shows"
+    echo 0 > "$SANDBOX/monitor-drops"
+    rm -rf "$USB/1-2"
+    switcher 0
+    assert_contains "$RUN_OUTPUT" "taking it as switched"
+    assert_eq 1 "$(grep -c "setvcp 60 27" "$STUB_LOG")" "sets away from a monitor that stops answering"
+    assert_eq 27 "$(cat "$SANDBOX/monitor-shows")" "the input away from a monitor that stops answering"
+
+    # Switching here, though, an unreadable input means the monitor missed the command
+    usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+    echo 1 > "$SANDBOX/monitor-drops"
+    switcher 0
+    assert_contains "$RUN_OUTPUT" "The monitor shows input (unreadable); trying again (2 of 5)."
+    assert_not_contains "$RUN_OUTPUT" "taking it as switched"
+    assert_eq 2 "$(grep -c "setvcp 60 17" "$STUB_LOG")" "sets here with one missed on a monitor that stops answering"
+    assert_eq 17 "$(cat "$SANDBOX/monitor-shows")" "the input here on a monitor that stops answering"
+    rm "$SANDBOX/monitor-mute"
 
     rm "$DRM/card1-HDMI-A-1/ddc"
     switcher 1

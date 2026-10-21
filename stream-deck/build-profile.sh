@@ -15,10 +15,13 @@ for page in "$tmp"/*.sdProfile/Profiles/*/; do
     mkdir -p "$page/Images"
 done
 mkdir -p "$(dirname "$OUT")"
-rm -f "$OUT"
+# Absolute, since zip runs in $tmp
+OUT="$(CDPATH='' cd -- "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 # Reproducible bytes: fixed modes and UTC times, sorted entries, -X, and -0 since zlib builds
 # deflate differently
 chmod -R u=rwX,go=rX "$tmp"
 find "$tmp" -exec env TZ=UTC touch -t 202001010000 {} +
-(cd "$tmp" && find -- *.sdProfile | LC_ALL=C sort | TZ=UTC zip -q -X -0 "$OUT" -@)
+# Built beside the profile, then moved, so a failed build leaves the previous one
+(cd "$tmp" && find -- *.sdProfile | LC_ALL=C sort | TZ=UTC zip -q -X -0 "$tmp/out.zip" -@)
+mv -f "$tmp/out.zip" "$OUT"
 echo "Built $OUT"

@@ -37,6 +37,16 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
 assert_contains "$RUN_OUTPUT" "missing    Ctrl+Alt+Super+Space opens Claude"
 
+# Without open-in, the shortcuts would do nothing, so the step changes nothing
+: > "$STUB_LOG"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck"
+assert_file_not_contains "$STUB_LOG" "gsettings set"
+
+open_in="$HOME/.local/share/dotfiles/stream-deck/bin/open-in"
+mkdir -p "$(dirname "$open_in")"
+printf '#!/bin/bash\necho "$OPEN_IN_CALLER|$OPEN_IN_LOG|$*"\n' > "$open_in"
+chmod +x "$open_in"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+Space opens Claude"
@@ -45,14 +55,10 @@ assert_eq "['$DIR/custom0/', '$DIR/dotfiles-claude/', '$DIR/dotfiles-chrome/', '
     "$(gsettings get "$MEDIA" custom-keybindings)" "the shortcut list, with yours kept"
 assert_eq "'<Control><Alt><Super>t'" "$(gsettings get "$MEDIA.custom-keybinding:$DIR/dotfiles-terminal/" binding)" \
     "Terminal's keys"
-open_in="$HOME/.local/share/dotfiles/stream-deck/bin/open-in"
 assert_eq "\"systemd-cat -t dotfiles-hotkeys env OPEN_IN_CALLER=Hotkeys 'OPEN_IN_LOG=journalctl --user -t dotfiles-hotkeys' /bin/bash '$open_in' chrome-tab\"" \
     "$(gsettings get "$MEDIA.custom-keybinding:$DIR/dotfiles-chrome-tab/" command)" "New Tab's command"
 
 # The command splits as a shell would, and runs open-in with its target
-mkdir -p "$(dirname "$open_in")"
-printf '#!/bin/bash\necho "$OPEN_IN_CALLER|$OPEN_IN_LOG|$*"\n' > "$open_in"
-chmod +x "$open_in"
 stub systemd-cat 'shift 2; exec "$@"'
 cmd="$(gsettings get "$MEDIA.custom-keybinding:$DIR/dotfiles-claude/" command)"
 cmd="${cmd#\"}"

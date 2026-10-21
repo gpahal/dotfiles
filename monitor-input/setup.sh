@@ -81,11 +81,16 @@ list() {
     echo "$INPUT_CODES"
 }
 
-# Prints the code in decimal; accepts 0x hex
+# Prints the code in decimal; accepts 0x hex. 10# reads 017 as 17, not octal.
 input_code() {
     local code
-    [[ "$1" =~ ^(0[xX][0-9a-fA-F]{1,2}|[0-9]{1,3})$ ]] || return 1
-    code=$(($1))
+    if [[ "$1" =~ ^0[xX][0-9a-fA-F]{1,2}$ ]]; then
+        code=$(($1))
+    elif [[ "$1" =~ ^[0-9]{1,3}$ ]]; then
+        code=$((10#$1))
+    else
+        return 1
+    fi
     [ "$code" -ge 1 ] && [ "$code" -le 255 ] || return 1
     echo "$code"
 }

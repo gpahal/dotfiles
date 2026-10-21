@@ -60,31 +60,93 @@ enable_apt_timers() {
     sudo systemctl enable --now "${APT_TIMERS[@]}"
 }
 
-# Replaces or appends our keys and keeps others, such as Software & Updates' AutocleanInterval
+# Replaces or appends our keys and keeps others, such as Software & Updates' AutocleanInterval.
+# APT allows several statements on a line, so each ;-terminated statement is replaced on its own,
+# keeping the others, their order, the indentation, and any trailing comment. A line this can't
+# split safely stays as it is: one inside or opening a scope ({ }), one with part of a statement
+# that runs onto another line, one with a statement and a /* */ comment, and #clear or #include.
+# Each could set or clear our keys, so ours are appended after the last such line too, where apt's
+# later-wins rule makes them take effect; for an unrelated one, that only repeats the same value.
 merged_auto_upgrades() {
     # BSD awk's -v rejects a newline
     printf '%s' "$1" | AUTO_UPGRADES_LINES="$AUTO_UPGRADES_CONTENT" awk '
-        function key_of(line) {
-            sub(/^[ \t]+/, "", line)
-            sub(/[ \t"].*/, "", line)
-            return tolower(line)
+        function key_of(statement) {
+            sub(/^[ \t]+/, "", statement)
+            sub(/[ \t";].*/, "", statement)
+            return tolower(statement)
         }
         BEGIN {
             n = split(ENVIRON["AUTO_UPGRADES_LINES"], want, "\n")
             for (i = 1; i <= n; i++) key[i] = key_of(want[i])
         }
         {
-            k = key_of($0)
-            for (i = 1; i <= n; i++) {
-                if (k == key[i]) {
-                    print want[i]
-                    done[i] = 1
-                    next
+            # Split at each ; outside quotes and comments; apt has no escapes inside quotes
+            line = $0
+            m = 0
+            start = 1
+            in_quote = 0
+            code = 0
+            block = in_block
+            opaque = (depth != 0 || cont)
+            len = length(line)
+            for (p = 1; p <= len; p++) {
+                c = substr(line, p, 1)
+                if (in_block) {
+                    if (substr(line, p, 2) == "*/") { in_block = 0; p++ }
+                } else if (in_quote) {
+                    if (c == "\"") in_quote = 0
+                } else if (c == "\"") {
+                    in_quote = 1
+                    code = 1
+                } else if (substr(line, p, 2) == "//") {
+                    break
+                } else if (substr(line, p, 2) == "/*") {
+                    in_block = 1
+                    block = 1
+                    p++
+                } else if (c == "#") {
+                    # As in apt, # starts a comment unless it starts a directive
+                    if (substr(line, p, 6) == "#clear" || substr(line, p, 8) == "#include") opaque = 1
+                    break
+                } else if (c == "{" || c == "}") {
+                    opaque = 1
+                    depth += (c == "{") ? 1 : -1
+                } else if (c == ";") {
+                    statement[++m] = substr(line, start, p - start + 1)
+                    start = p + 1
+                    code = 0
+                } else if (c != " " && c != "\t") {
+                    code = 1
                 }
             }
-            print
+            # An unterminated statement continues on the next line
+            cont = (code || in_quote)
+            if (cont || (block && m > 0)) opaque = 1
+            if (opaque) {
+                last_opaque = NR
+                print
+                next
+            }
+            out = ""
+            for (j = 1; j <= m; j++) {
+                s = statement[j]
+                k = key_of(s)
+                for (i = 1; i <= n; i++) {
+                    if (k == key[i]) {
+                        indent = s
+                        sub(/[^ \t].*/, "", indent)
+                        s = indent want[i]
+                        replaced[i] = NR
+                        break
+                    }
+                }
+                out = out s
+            }
+            print out substr(line, start)
         }
-        END { for (i = 1; i <= n; i++) if (!done[i]) print want[i] }'
+        END {
+            for (i = 1; i <= n; i++) if (!replaced[i] || replaced[i] < last_opaque) print want[i]
+        }'
 }
 
 # dpkg-reconfigure needs a terminal and reads $AUTO_UPGRADES_CONF back, so merge into the file

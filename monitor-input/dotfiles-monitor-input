@@ -7,6 +7,8 @@ set -uo pipefail
 # a run still settling is dropped for the newer one. The Mac only switches the monitor to itself,
 # so when the devices leave both machines this one alone switches it, to the Mac. The monitor
 # sometimes misses a command, so each run reads the input back and retries until it switches.
+# Once it shows the other machine, the monitor can stop answering reads (writes still work), so
+# an unreadable input after switching away counts as switched.
 
 CONF="${MONITOR_INPUT_CONF:-/etc/dotfiles/monitor-input.conf}"
 USB_DEVICES_DIR="${USB_DEVICES_DIR:-/sys/bus/usb/devices}"
@@ -79,8 +81,14 @@ main() {
         # --noverify: ddcutil reads back at once, before the monitor has switched
         if ddcutil --bus "$bus" --noverify setvcp 60 "$target"; then
             sleep "$VERIFY_DELAY"
-            now="$(current_input "$bus")" || now=""
-            [ "$now" != "$target" ] || return 0
+            if now="$(current_input "$bus")"; then
+                [ "$now" != "$target" ] || return 0
+            elif [ "$target" != "$input" ]; then
+                echo "The monitor no longer answers, as when it shows the other machine; taking it as switched."
+                return 0
+            else
+                now=""
+            fi
         else
             now=""
             sleep "$VERIFY_DELAY"

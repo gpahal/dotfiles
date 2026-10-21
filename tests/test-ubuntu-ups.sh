@@ -41,7 +41,10 @@ usb_device usb1 1d6b 0002
 usb_device 1-2 046d c52b
 
 stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
-stub nut-scanner 'cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
+# The real one warns on stderr about missing optional libraries even when it succeeds
+stub nut-scanner 'echo "Cannot load XML library (libneon-gnutls.so.27) : file not found. XML search disabled." >&2
+[ ! -e "'"$SANDBOX"'/scan-fails" ] || { echo "Error: libusb_init() failed" >&2; exit 42; }
+cat "'"$SANDBOX"'/scan" 2> /dev/null || true'
 # NUT 2.8.2 and later name alternative drivers in a trailing comment
 ups_scan() {
     printf '%s\n' "[nutdev-usb1]" "	driver = \"$1\"	# alternately: apc_modbus" '	port = "auto"' "	vendorid = \"$2\"" \
@@ -93,6 +96,21 @@ assert_contains "$RUN_OUTPUT" "No UPS found on USB"
 [ -z "$(ls "$NUT_DIR")" ] || fail "NUT's config was written for a UPS nut-scanner didn't find"
 [ ! -e "$UPS_NOTIFY" ] || fail "the notifier was installed for a UPS nut-scanner didn't find"
 assert_file_not_contains "$STUB_LOG" "systemctl"
+assert_not_contains "$RUN_OUTPUT" "Cannot load XML library"
+# A scan that fails, unlike one that finds nothing, fails the step and shows nut-scanner's stderr
+touch "$SANDBOX/scan-fails"
+TMP_FILES="$(ls "$TMPDIR")"
+: > "$STUB_LOG"
+assert_exit 1 setup_ups
+assert_contains "$RUN_OUTPUT" "  nut-scanner -U failed (exit 42), so NUT isn't set up:
+    Cannot load XML library (libneon-gnutls.so.27) : file not found. XML search disabled.
+    Error: libusb_init() failed"
+assert_not_contains "$RUN_OUTPUT" "No UPS found"
+assert_eq "" "$(setup_ups 2> /dev/null)" "setup_ups's stdout when nut-scanner fails"
+assert_eq "$TMP_FILES" "$(ls "$TMPDIR")" "temp files after a failed scan"
+[ -z "$(ls "$NUT_DIR")" ] || fail "NUT's config was written after nut-scanner failed"
+assert_file_not_contains "$STUB_LOG" "systemctl"
+rm "$SANDBOX/scan-fails"
 ups_scan usbhid-ups 0764 0501
 assert_contains "$(ups_todo)" "UPS: set up NUT for the UPS on USB (0764:0501)"
 run status_ups

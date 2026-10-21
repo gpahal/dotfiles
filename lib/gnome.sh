@@ -1,0 +1,101 @@
+# Helpers for GNOME Shell extensions and custom shortcuts, for the stream-deck, hotkeys, and vicinae
+# steps. Source after lib/common.sh. They need gsettings, and busctl and jq to ask GNOME Shell what
+# it loaded.
+# shellcheck shell=bash
+
+# GNOME Shell's ExtensionState
+GNOME_EXTENSION_ACTIVE=1
+GNOME_EXTENSION_ERROR=3
+GNOME_EXTENSION_OUT_OF_DATE=4
+
+# Whether you're logged in at the desktop, not only over SSH
+gnome_session_running() {
+    systemctl --user is-active --quiet graphical-session.target 2> /dev/null
+}
+
+# gsettings_list <schema> <key>: one item a line. gsettings prints a GVariant: @as [] or ['a', 'b'].
+gsettings_list() {
+    gsettings get "$1" "$2" | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
+        tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
+}
+
+gnome_extension_enabled() {
+    gsettings_list org.gnome.shell enabled-extensions | grep -qxF "$1"
+}
+
+# Adds this one, keeping the rest. GNOME loads it at the next login.
+gnome_enable_extension() {
+    local list
+    list="$({ gsettings_list org.gnome.shell enabled-extensions; echo "$1"; } | sed "s/.*/'&'/" | join_lines ', ')"
+    gsettings set org.gnome.shell enabled-extensions "[$list]"
+}
+
+# Prints the extension's state number and, after a tab, its error; nothing when GNOME Shell doesn't
+# know it. Fails when GNOME Shell isn't running, as over SSH with no desktop login.
+gnome_extension_state() {
+    local info
+    busctl --user status org.gnome.Shell &> /dev/null || return 1
+    info="$(busctl --user --json=short call org.gnome.Shell /org/gnome/Shell org.gnome.Shell.Extensions \
+        GetExtensionInfo s "$1" 2> /dev/null)" || return 1
+    jq -r '.data[0] | select(.state) | "\(.state.data | floor)\t\(.error.data // "")"' <<< "$info"
+}
+
+# status_gnome_extension <uuid> <dir> <label>. Whether GNOME loaded it matters only once it's
+# installed in <dir> and enabled.
+status_gnome_extension() {
+    local uuid="$1" dir="$2" label="$3" state="" error
+    status_check "$label $uuid enabled" gnome_extension_enabled "$uuid"
+    [ -f "$dir/metadata.json" ] && gnome_extension_enabled "$uuid" || return 0
+    if ! state="$(gnome_extension_state "$uuid")"; then
+        status_item unverified "$label loaded: GNOME Shell isn't running; check at the desktop"
+        return 0
+    fi
+    error="${state#*$'\t'}"
+    state="${state%%$'\t'*}"
+    case "$state" in
+        "$GNOME_EXTENSION_ACTIVE") status_item ok "$label loaded" ;;
+        "$GNOME_EXTENSION_OUT_OF_DATE") status_item missing "$label loaded: it doesn't list this GNOME version in metadata.json" ;;
+        "$GNOME_EXTENSION_ERROR") status_item missing "$label loaded: it failed: ${error:-no error given}" ;;
+        "") status_item missing "$label loaded: log out and back in, since GNOME loads a new extension at login" ;;
+        *) status_item missing "$label loaded: it's in state $state, not running; log out and back in" ;;
+    esac
+}
+
+GNOME_MEDIA_KEYS=org.gnome.settings-daemon.plugins.media-keys
+# shellcheck disable=SC2034 # the hotkeys and vicinae steps read it
+GNOME_KEYBINDING_DIR=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
+
+# gnome_keybinding_get <path> <key>: the custom shortcut's name, command, or binding, quoted as
+# gsettings prints it
+gnome_keybinding_get() {
+    gsettings get "$GNOME_MEDIA_KEYS.custom-keybinding:$1" "$2" 2> /dev/null
+}
+
+gnome_keybinding_paths() {
+    gsettings_list "$GNOME_MEDIA_KEYS" custom-keybindings
+}
+
+# gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
+# same keys, which GNOME would run instead
+gnome_keybinding_clash() {
+    local binding="$1" own="$2" path
+    while IFS= read -r path; do
+        [ "$path" != "$own" ] || continue
+        if [ "$(gnome_keybinding_get "$path" binding)" == "'$binding'" ]; then
+            echo "$path"
+            return 0
+        fi
+    done < <(gnome_keybinding_paths)
+    return 1
+}
+
+# gnome_set_keybinding <path> <name> <command> <binding>, adding the path to the list, keeping yours
+gnome_set_keybinding() {
+    local path="$1" list
+    gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" name "$2" &&
+        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" command "$3" &&
+        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" binding "$4" || return 1
+    gnome_keybinding_paths | grep -qxF "$path" && return 0
+    list="$({ gnome_keybinding_paths; echo "$path"; } | sed "s/.*/'&'/" | join_lines ', ')"
+    gsettings set "$GNOME_MEDIA_KEYS" custom-keybindings "[$list]"
+}

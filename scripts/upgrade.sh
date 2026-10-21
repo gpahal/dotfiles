@@ -278,6 +278,13 @@ upgrade() {
             _stage_failed "tmux plugins" "$?"
     fi
 
+    # Vicinae's installer moves it to the latest release; extensions.gnome.org has its extension
+    if ! is_macos && [ -x ~/.local/bin/vicinae ]; then
+        # shellcheck disable=SC2016 # expanded by the inner bash
+        "$BASH" -c 'source "$1/vicinae/install.sh" && update_vicinae' bash "$DOTFILES_DIR" ||
+            _stage_failed vicinae "$?"
+    fi
+
     # From ~, so a project's mise.toml isn't used. PATH still has the old Node, so apply the hook
     # (--force, else it skips when no config changed) before npm.
     local node_stale=false hook rc

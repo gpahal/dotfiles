@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Google Chrome from Google's apt repo.
+# Install Google Chrome from Google's apt repo, and remove Firefox, which it replaces.
 # Adds an apt repo and packages with sudo whatever HOME is: test it in an Ubuntu VM.
 
 # shellcheck source=../lib/common.sh
@@ -76,6 +76,20 @@ readd_google_repo() {
     return 1
 }
 
+# Ubuntu's firefox .deb is a stub that installs the snap; ubuntu-desktop-minimal only recommends it
+firefox_removed() {
+    ! snap list firefox &>/dev/null && ! apt_installed firefox
+}
+
+remove_firefox() {
+    if snap list firefox &>/dev/null; then
+        sudo snap remove --purge firefox || return 1
+    fi
+    if apt_installed firefox; then
+        apt_get purge -y firefox || return 1
+    fi
+}
+
 # Installing Chrome isn't an item: it branches on whether a .deb exists for this CPU.
 chrome_items() {
     items_reset
@@ -84,6 +98,8 @@ chrome_items() {
         google_source_exists readd_google_repo
     item --sudo "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" \
         "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" auto_updates_configured write_auto_updates
+    item --sudo "Firefox removed, since Chrome replaces it" \
+        "Remove Firefox, which Chrome replaces: its snap and the firefox .deb that installs it" firefox_removed remove_firefox
 }
 
 status() {
@@ -101,6 +117,8 @@ status() {
     fi
     chrome_items
     items_status google_source_exists auto_updates_configured
+    # Only once Chrome is in, so the machine always has a browser
+    ! apt_installed google-chrome-stable || items_status firefox_removed
     status_result
 }
 
@@ -129,16 +147,18 @@ apply() {
     ! apt_installed google-chrome-stable || installed=true
     chrome_items
     if "$installed"; then
-        items_pending google_source_exists auto_updates_configured
+        items_pending google_source_exists auto_updates_configured firefox_removed
     else
         pending+=("Install google-chrome-stable from Google's .deb, which adds Google's apt repo")
-        items_pending auto_updates_configured
+        items_pending auto_updates_configured firefox_removed
     fi
     if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
         if "$installed"; then
-            items_apply google_source_exists auto_updates_configured || result=1
+            items_apply google_source_exists auto_updates_configured firefox_removed || result=1
+        elif install_chrome; then
+            items_apply auto_updates_configured firefox_removed || result=1
         else
-            install_chrome || result=1
+            result=1
             items_apply auto_updates_configured || result=1
         fi
         [ "$result" -ne 0 ] || echo "  Applied. A running Chrome keeps the old version until you restart it."

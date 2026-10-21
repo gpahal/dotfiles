@@ -36,6 +36,8 @@ ubuntu_sandbox_paths() {
     TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
     TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
     CRYPTTAB="$SANDBOX/crypttab"
+    WIFI_POWERSAVE_CONF="$SANDBOX/NetworkManager/conf.d/${WIFI_POWERSAVE_CONF##*/}"
+    CLOUD_INIT_DISABLED="$SANDBOX/cloud/cloud-init.disabled"
     _ubuntu_system_paths_left
 }
 

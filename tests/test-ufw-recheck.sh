@@ -38,6 +38,9 @@ replace_fn locale_installed true
 replace_fn unattended_upgrades_running true
 replace_fn apt_timers_enabled true
 replace_fn sshd_enabled true
+replace_fn cloud_init_off true
+replace_fn cups_browsed_off true
+replace_fn wifi_powersave_off true
 touch "$SANDBOX/linger"
 
 # sudo -n succeeds only while $SANDBOX/cached exists; sudo install makes $SSHD_RUN_DIR, not /run.

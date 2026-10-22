@@ -39,13 +39,19 @@ stub killall
 stub activateSettings
 stub pgrep '[ -e "'"$SANDBOX"'/running" ]'
 stub osascript 'rm -f "'"$SANDBOX"'/running"'
-# test-diagnostics-macos.sh and test-macos-hostname.sh cover these
+# test-diagnostics-macos.sh, test-macos-hostname.sh, and test-macos-security.sh cover these
 stub fdesetup 'echo "FileVault is On."'
 stub scutil 'echo Garvits-MacBook-Pro'
-stub socketfilterfw 'echo "Firewall is enabled. (State = 1)"'
+
+security_on() {
+    replace_fn firewall_on 'return 0'
+    replace_fn stealth_mode_on 'return 0'
+    replace_fn app_store_auto_updates 'return 0'
+}
 
 load_script macos/install.sh
 as_os macos
+security_on
 SHOW_CATEGORY="$DEFAULTS_DIR/com.apple.ActivityMonitor.ShowCategory"
 
 touch "$SANDBOX/running"
@@ -76,6 +82,7 @@ rm -f "$DEFAULTS_DIR"/*
 : > "$STUB_LOG"
 load_script macos/install.sh
 as_os macos
+security_on
 
 HOTKEYS="$DEFAULTS_DIR/com.apple.symbolichotkeys.AppleSymbolicHotKeys"
 

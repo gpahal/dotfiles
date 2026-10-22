@@ -31,6 +31,10 @@ fail_defaults() {
 load_script macos/install.sh
 as_os macos
 replace_fn hotkey_off true
+# test-macos-security.sh covers these sudo items
+replace_fn firewall_on true
+replace_fn stealth_mode_on true
+replace_fn app_store_auto_updates true
 
 fail_defaults com.apple.finder
 assert_exit 1 main

@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set macOS defaults, free Cmd+Space for Raycast, and set the hostname when needed.
-# Changes the real preferences and hostname whatever HOME is: test it in a macOS VM or spare Mac.
+# Set macOS defaults, the firewall, and App Store updates, and free Cmd+Space for Raycast.
+# Also sets the hostname when needed. Changes the real preferences, firewall, and hostname whatever
+# HOME is: test it in a macOS VM or spare Mac.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -12,6 +13,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
 STEP_OS=macos
 
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
+APP_STORE_PREFS=/Library/Preferences/com.apple.commerce
+SOFTWARE_UPDATE_PREFS=/Library/Preferences/com.apple.SoftwareUpdate
 
 # activateSettings applies changed shortcuts without a logout
 SYSTEM_ADMIN_DIR=/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources
@@ -182,20 +185,53 @@ firewall_cmd() {
     PATH="$PATH:$APP_FIREWALL_DIR" command -v socketfilterfw
 }
 
-status_app_firewall() {
-    local cmd out
-    if ! cmd="$(firewall_cmd)"; then
-        status_item info "Application firewall: couldn't tell, since $APP_FIREWALL_DIR/socketfilterfw is missing"
-        return 0
-    fi
-    out="$(run_bounded 10 "$cmd" --getglobalstate 2>&1)" || true
-    case "$out" in
-        *"State = 2"* | *"blocking all"*) status_item info "Application firewall: on, blocking all incoming connections" ;;
-        *"State = 1"* | *"is enabled"*) status_item info "Application firewall: on" ;;
-        *"State = 0"* | *"is disabled"*) status_item info "Application firewall: off (System Settings → Network → Firewall turns it on)" ;;
-        *root* | *[Pp]ermission*) status_item unverified "Application firewall: reading it needs more privilege; check it with sudo $cmd --getglobalstate" ;;
-        *) status_item info "Application firewall: couldn't tell from socketfilterfw --getglobalstate (${out%%$'\n'*})" ;;
+# State 2 also blocks all incoming connections
+firewall_on() {
+    local cmd
+    cmd="$(firewall_cmd)" || return 1
+    case "$(run_bounded 10 "$cmd" --getglobalstate 2>/dev/null)" in
+        *"State = 1"* | *"State = 2"*) return 0 ;;
     esac
+    return 1
+}
+
+enable_firewall() {
+    local cmd
+    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setglobalstate on > /dev/null; then
+        echo "  Couldn't turn on the application firewall." >&2
+        return 1
+    fi
+    echo "  Turned on the application firewall"
+}
+
+# Stealth mode leaves pings and probes of closed ports unanswered
+stealth_mode_on() {
+    local cmd
+    cmd="$(firewall_cmd)" || return 1
+    [[ "$(run_bounded 10 "$cmd" --getstealthmode 2>/dev/null)" == *"stealth mode is on"* ]]
+}
+
+enable_stealth_mode() {
+    local cmd
+    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setstealthmode on > /dev/null; then
+        echo "  Couldn't turn on the firewall's stealth mode." >&2
+        return 1
+    fi
+    echo "  Turned on the firewall's stealth mode"
+}
+
+app_store_auto_updates() {
+    [ "$(defaults read "$APP_STORE_PREFS" AutoUpdate 2>/dev/null)" == 1 ] &&
+        [ "$(defaults read "$SOFTWARE_UPDATE_PREFS" AutomaticallyInstallAppUpdates 2>/dev/null)" == 1 ]
+}
+
+enable_app_store_auto_updates() {
+    if ! sudo defaults write "$APP_STORE_PREFS" AutoUpdate -bool true ||
+        ! sudo defaults write "$SOFTWARE_UPDATE_PREFS" AutomaticallyInstallAppUpdates -bool true; then
+        echo "  Couldn't turn on automatic App Store updates." >&2
+        return 1
+    fi
+    echo "  Turned on automatic App Store updates"
 }
 
 # Without a HostName, macOS may use one with colons, which breaks OSC 7's URL. LocalHostName is
@@ -234,6 +270,11 @@ macos_items() {
     item "$HOME/Screenshots directory" "Create $HOME/Screenshots" screenshots_dir make_screenshots_dir
     item --sudo "Hostname set, so Ghostty's shell can report its folder" \
         "Set the hostname to $name, so Ghostty's shell can report its folder" hostname_valid set_hostname
+    item --sudo "Application firewall on" "Turn on the application firewall" firewall_on enable_firewall
+    item --sudo "Firewall stealth mode on, so the Mac ignores pings and port probes" \
+        "Turn on the firewall's stealth mode" stealth_mode_on enable_stealth_mode
+    item --sudo "App Store apps update automatically" "Turn on automatic App Store updates" \
+        app_store_auto_updates enable_app_store_auto_updates
 }
 
 status() {
@@ -245,7 +286,7 @@ status() {
     # Optional (just touch-id)
     status_touch_id skipped
     status_filevault
-    status_app_firewall
+    items_status firewall_on stealth_mode_on app_store_auto_updates
     status_disk_space "$HOME"
     status_result
 }
@@ -254,7 +295,7 @@ apply() {
     echo "Setting macOS defaults..."
     local status=0 pending=()
     macos_items
-    items_pending hostname_valid
+    items_pending
     if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
         items_apply || status=1
     else

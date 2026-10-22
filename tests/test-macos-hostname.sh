@@ -12,7 +12,9 @@ as_os macos
 replace_fn each_default
 replace_fn hotkey_off 'return 0'
 replace_fn status_filevault
-replace_fn status_app_firewall
+replace_fn firewall_on 'return 0'
+replace_fn stealth_mode_on 'return 0'
+replace_fn app_store_auto_updates 'return 0'
 
 stub scutil 'case "$1 $2" in
     "--get HostName") [ -n "${HOST_NAME:-}" ] && echo "$HOST_NAME" ;;

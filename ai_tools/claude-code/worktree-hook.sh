@@ -165,11 +165,6 @@ create() {
     cd "${cwd:-.}"
     GIT_SSH_COMMAND="$(batch_ssh_command)"
     export GIT_SSH_COMMAND
-    if [ "$(base_ref)" = head ]; then
-        base=HEAD
-    else
-        fetch_default_branch
-    fi
     # A branch checked out elsewhere can't be checked out again; fall back to Claude Code's
     # worktree-<name>. git prints resolved paths, so compare the resolved one too.
     other="$(branch_worktree "$name")"
@@ -179,8 +174,12 @@ create() {
         name="worktree-$name"
     fi
     git show-ref --verify --quiet "refs/heads/$name" && existed=true
-    # Without a base, git wt add would track a branch origin has, which the fetch didn't update
-    if [ -z "$base" ] && ! "$existed"; then
+    # git wt add ignores the base for an existing branch, so only a new one needs the fetch.
+    # Without a base, git wt add would track a branch origin has, which the fetch didn't update.
+    if [ "$(base_ref)" = head ]; then
+        base=HEAD
+    elif ! "$existed"; then
+        fetch_default_branch
         base="$(git wt base)"
     fi
     path="$(git wt add "$name" ${base:+"$base"})"

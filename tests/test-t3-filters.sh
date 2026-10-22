@@ -95,7 +95,7 @@ assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
 json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
 replace_fn is_interactive 'false'
-replace_fn confirm 'false'
+answer no
 
 claude_work='{"instanceId":"claude_work","model":"claude-opus-5-5","options":[{"id":"effort","value":"high"}]}'
 choose "{\"defaultModelSelection\": $claude_work}"
@@ -114,12 +114,33 @@ choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude
 assert_eq "$ours" "$(selection)" "the model selection without a context window"
 # Replacing your effort or model also sets the repo's context window
 replace_fn is_interactive 'true'
-replace_fn confirm 'true'
+answer yes
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your effort"
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-sonnet-5", "options": [{"id": "effort", "value": "medium"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your model"
 replace_fn is_interactive 'false'
-replace_fn confirm 'false'
+answer no
+
+# Worktrees from origin's tip and auto-pull are reported when off, never set: T3 drops the default
+fresh_bases() {
+    printf '%s\n' "$1" > "$settings"
+    json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
+    run t3_code_status_fresh_bases
+}
+fresh_bases '{}'
+assert_contains "$RUN_OUTPUT" "ok         New worktrees start from origin's tip (newWorktreesStartFromOrigin)"
+assert_contains "$RUN_OUTPUT" "ok         Auto-pull on for every project (defaultAutoPull)"
+assert_eq null "$(jq '.newWorktreesStartFromOrigin' "$settings")" "newWorktreesStartFromOrigin after a merge"
+fresh_bases '{"newWorktreesStartFromOrigin": false}'
+assert_contains "$RUN_OUTPUT" "missing    New worktrees start from origin's tip (newWorktreesStartFromOrigin): off; in T3 Code's settings, turn on New worktrees start from remote"
+assert_eq false "$(jq '.newWorktreesStartFromOrigin' "$settings")" "your newWorktreesStartFromOrigin after a merge"
+fresh_bases '{"projectSettingsOverrides": {"p1": {"newWorktreesStartFromOrigin": false, "defaultAutoPull": false}, "p2": {"defaultAutoPull": false}, "p3": {"defaultAutoPull": true}}}'
+assert_contains "$RUN_OUTPUT" "missing    New worktrees start from origin's tip (newWorktreesStartFromOrigin): off for projects p1;"
+assert_contains "$RUN_OUTPUT" "missing    Auto-pull on for every project (defaultAutoPull): off for projects p1, p2; with each selected in T3 Code's Settings → Source Control, turn on Automatically pull"
+assert_eq "false false" "$(jq -r '[.projectSettingsOverrides[] | .defaultAutoPull] | .[0:2] | join(" ")' "$settings")" "project overrides after a merge"
+echo "not json" > "$settings"
+run t3_code_status_fresh_bases
+assert_eq "" "$RUN_OUTPUT" "the report for a broken settings.json"
 
 test_done

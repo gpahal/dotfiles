@@ -27,7 +27,7 @@ case "$2" in
     start | restart)
         [ ! -e "$state/start-limit-hit" ] || exit 1
         touch "$state/active"
-        rm -f "$state/old-env" "$state/old-env-host" "$state/idle"
+        rm -f "$state/stale-env" "$state/stale-env-host" "$state/idle"
         ;;
     daemon-reload)
         rm -f "$state/reload-needed"
@@ -90,15 +90,15 @@ replace_fn t3_code_in_service_cgroup 'false'
 replace_fn t3_code_lingering 'true'
 # always-idle survives a start.
 replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] && [ ! -e "$STATE/always-idle" ]'
-# old-env predates the telemetry line, old-env-host the host line.
+# The running server lacks the drop-in's environment: stale-env all of it, stale-env-host its host.
 replace_fn t3_code_process_environ '
-if [ -e "$STATE/old-env" ]; then
+if [ -e "$STATE/stale-env" ]; then
     echo T3CODE_TELEMETRY_ENABLED=true
     return
 fi
 echo T3CODE_TELEMETRY_ENABLED=false
 echo T3CODE_PORT=3773
-[ -e "$STATE/old-env-host" ] || echo T3CODE_HOST=127.0.0.1'
+[ -e "$STATE/stale-env-host" ] || echo T3CODE_HOST=127.0.0.1'
 
 different_drop_in() {
     echo "# different" > "$T3_CODE_SERVICE_DROP_IN"
@@ -133,7 +133,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user start"
 reset
 installed_unit
 different_drop_in
-touch "$STATE/old-env"
+touch "$STATE/stale-env"
 touch "$STATE/active" "$STATE/enabled"
 echo "$MANUAL_SERVER" > "$SANDBOX/procs"
 assert_exit 0 configure_t3_code_ubuntu
@@ -378,7 +378,7 @@ reset
 installed_unit
 different_drop_in
 echo '{}' > "$T3_CODE_SETTINGS"
-touch "$STATE/old-env" "$STATE/active" "$STATE/enabled"
+touch "$STATE/stale-env" "$STATE/active" "$STATE/enabled"
 : > "$STUB_LOG"
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq 1 "$(grep -c 'Restart the T3 Code service' <<< "$RUN_OUTPUT")" "restart questions"
@@ -414,7 +414,7 @@ assert_not_contains "$RUN_OUTPUT" "restarted for its drop-in"
 reset
 installed_unit
 different_drop_in
-touch "$STATE/old-env" "$STATE/active" "$STATE/enabled"
+touch "$STATE/stale-env" "$STATE/active" "$STATE/enabled"
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Wrote the drop-in; it applies at the next restart of the T3 Code service"
 assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its drop-in. Re-run from a terminal"
@@ -433,7 +433,7 @@ stub systemctl "$SYSTEMCTL_STUB"
 
 reset
 installed_unit
-touch "$STATE/active" "$STATE/enabled" "$STATE/old-env"
+touch "$STATE/active" "$STATE/enabled" "$STATE/stale-env"
 assert_exit 0 t3_code_restart_pending
 assert_exit 0 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Left the T3 Code service running, without its drop-in."
@@ -452,7 +452,7 @@ assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
 assert_exit 1 t3_code_restart_pending
 
 different_drop_in
-touch "$STATE/reload-needed" "$STATE/old-env"
+touch "$STATE/reload-needed" "$STATE/stale-env"
 stub systemctl '[ "$2" != daemon-reload ] || exit 1
 '"$SYSTEMCTL_STUB"
 assert_exit 1 conditional_configure
@@ -479,7 +479,7 @@ assert_exit 1 t3_code_drop_in_loaded
 assert_exit 0 configure_t3_code_ubuntu
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 assert_exit 1 t3_code_restart_pending
-touch "$STATE/old-env-host"
+touch "$STATE/stale-env-host"
 assert_exit 0 t3_code_restart_pending
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in"
@@ -518,6 +518,56 @@ replace_fn t3_code_lingering 'false'
 run status
 assert_contains "$RUN_OUTPUT" 'missing    Linger enabled for T3 Code to start without login'
 replace_fn t3_code_lingering 'true'
+
+# On Ubuntu Desktop, the app's own server runs its Electron binary on app.asar's server entry. While
+# it may hold the data, a full apply leaves the server settings and the service pending.
+desktop_app() {
+    local backend="/opt/T3 Code (Beta)/t3code --require /opt/T3 Code (Beta)/resources/app.asar/apps/desktop/dist-electron/compileCache.cjs /opt/T3 Code (Beta)/resources/app.asar/apps/server/dist/bin.mjs --bootstrap-fd 3"
+    replace_fn has_gnome_desktop 'true'
+    replace_fn t3_code_desktop_installed 'true'
+    replace_fn running_inside 'false'
+
+    printf '%s\n' "400|t3code|/opt/T3 Code (Beta)/t3code" "401|t3code|$backend" > "$SANDBOX/procs"
+    assert_eq "401 desktop" "$(t3_code_other_servers | cut -d' ' -f1-2)" "the desktop app's server"
+    run apply
+    assert_eq 0 "$RUN_STATUS" "apply while the desktop app runs its own server"
+    assert_contains "$RUN_OUTPUT" "PID 401, the desktop app's own server"
+    run status
+    assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 401, the desktop app's own server"
+    assert_contains "$RUN_OUTPUT" "to fix it, quit T3 Code, then re-run the t3-code step"
+
+    # Its server may not have started yet
+    echo "400|t3code|/opt/T3 Code (Beta)/t3code" > "$SANDBOX/procs"
+    run apply
+    assert_eq 0 "$RUN_STATUS" "apply while the desktop app runs without its settings"
+    assert_contains "$RUN_OUTPUT" "t3code is running and must be quit to change its settings"
+    assert_contains "$RUN_OUTPUT" "the server settings and the
+  service are pending until you quit it. Quit T3 Code, then re-run the t3-code step."
+    [ ! -e "$T3_CODE_SETTINGS" ] || fail "server settings were written while the desktop app ran"
+    [ ! -e "$T3_CODE_DESKTOP_SETTINGS" ] || fail "the desktop app's settings were written while it ran"
+    assert_file_not_contains "$STUB_LOG" "t3 service install"
+    assert_file_not_contains "$STUB_LOG" "systemctl --user start"
+    run status
+    assert_eq 3 "$RUN_STATUS" "status while the server settings are pending"
+    assert_contains "$RUN_OUTPUT" "missing    T3 Code server settings and service: pending while the desktop app runs with its own server on; quit T3 Code"
+    assert_contains "$RUN_OUTPUT" "missing    App settings in ~/.t3/userdata/client-settings.json"
+
+    # Once it's quit, its own server goes off and the service starts
+    rm "$SANDBOX/procs"
+    run apply
+    assert_eq 0 "$RUN_STATUS" "apply once the desktop app is quit"
+    assert_eq false "$(jq -r .localEnvironmentEnabled "$T3_CODE_DESKTOP_SETTINGS")" "the desktop app's own server"
+    assert_eq steer "$(jq -r .followUpBehavior "$T3_CODE_CLIENT_SETTINGS")" "the desktop app's follow-up behavior"
+    assert_file_contains "$STUB_LOG" "t3 service install"
+    assert_file_contains "$T3_CODE_SETTINGS" "claude-opus-5-5"
+    echo "400|t3code|/opt/T3 Code (Beta)/t3code" > "$SANDBOX/procs"
+    run status
+    assert_contains "$RUN_OUTPUT" "ok         App settings in ~/.t3/userdata/client-settings.json"
+    assert_not_contains "$RUN_OUTPUT" "pending"
+    rm -rf "$SANDBOX/procs" "$HOME/.t3/userdata" "$HOME/.config/environment.d"
+}
+reset
+subtest desktop_app
 
 reset
 run main

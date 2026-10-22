@@ -19,7 +19,7 @@ Skills that write documents put them in `.scratch/` at the repo root, which the 
     tickets/<NN>-<ticket-slug>.md   # to-tickets, worked by implement
 ```
 
-`implement` keeps its worktrees under `~/.worktrees/<group>/<repo>/` ([Code layout](../../AGENTS.md#code-layout)).
+`implement` makes its worktrees with `git wt` ([Code layout](../../AGENTS.md#code-layout)).
 
 ## Acknowledgements
 

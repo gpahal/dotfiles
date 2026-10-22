@@ -58,7 +58,7 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Not opening"
 assert_eq "" "$(cat "$STUB_LOG" | grep -v '^plutil' || true)" "commands run without a yes"
 
-replace_fn confirm 'true'
+answer yes
 run open_manual_steps <<< $'\n\n'
 assert_eq 0 "$RUN_STATUS" "exit status after opening the settings"
 assert_eq "open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.anthropic.claudefordesktop

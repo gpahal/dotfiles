@@ -2,8 +2,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The t3-code step's desktop app on Ubuntu: its own server off before it's installed, telemetry
-# off through environment.d, and the latest release's .deb checked against GitHub's digest.
+# The t3-code step's desktop app on Ubuntu: its own server off and its app settings set before it's
+# installed, telemetry off through environment.d, and the latest release's .deb checked against
+# GitHub's digest.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -49,16 +50,18 @@ assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code desktop app"
 assert_contains "$RUN_OUTPUT" "missing    ~/.config/environment.d/60-dotfiles-t3code.conf"
 assert_contains "$RUN_OUTPUT" "missing    Desktop app's own server off in ~/.t3/userdata/desktop-settings.json"
+assert_contains "$RUN_OUTPUT" "missing    App settings in ~/.t3/userdata/client-settings.json"
 
 answer no
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_eq "false" "$(jq -r .localEnvironmentEnabled "$SETTINGS")" "the desktop app's own server, before the install"
+assert_eq "steer" "$(jq -r .followUpBehavior "$HOME/.t3/userdata/client-settings.json")" "the desktop app's follow-up behavior"
 
 answer yes
 : > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
-assert_contains "$RUN_OUTPUT" "The desktop app's own server is already off"
+assert_contains "$RUN_OUTPUT" "The desktop app's own server is already off, and its app settings are set"
 assert_file_contains "$STUB_LOG" "curl -fsSL --proto =https --tlsv1.2 --connect-timeout 15 --speed-limit 1 --speed-time 60 --retry 3 --retry-delay 2 -o"
 assert_file_contains "$STUB_LOG" "install -y"
 [ -e "$SANDBOX/installed" ] || fail "the .deb wasn't installed"
@@ -69,6 +72,7 @@ run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code desktop app"
 assert_contains "$RUN_OUTPUT" "ok         ~/.config/environment.d/60-dotfiles-t3code.conf"
 assert_contains "$RUN_OUTPUT" "ok         Desktop app's own server off"
+assert_contains "$RUN_OUTPUT" "ok         App settings in ~/.t3/userdata/client-settings.json"
 
 # Installed: it updates itself, so nothing is fetched again
 : > "$STUB_LOG"

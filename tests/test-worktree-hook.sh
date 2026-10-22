@@ -158,10 +158,10 @@ EOF
 chmod +x "$HOME/.local/bin/git"
 rm -f "$stamp"
 started=$SECONDS
-WORKTREE_HOOK_FETCH_DEADLINE=2 create stalled "$repo"
+WORKTREE_HOOK_FETCH_DEADLINE=1 create stalled "$repo"
 elapsed=$((SECONDS - started))
 assert_eq "0 $dir/stalled" "$status $out" "create after stalled fetch"
-[ "$elapsed" -ge 1 ] && [ "$elapsed" -lt 12 ] || fail "stalled fetch took $elapsed seconds, not 2"
+[ "$elapsed" -ge 1 ] && [ "$elapsed" -lt 12 ] || fail "stalled fetch took $elapsed seconds, not 1"
 assert_file_contains "$SANDBOX/stderr" "branching from the local copy"
 child="$(cat "$SANDBOX/fetch-child")"
 child_state="$(ps -o stat= -p "$child" 2>/dev/null || true)"
@@ -255,8 +255,12 @@ assert_eq 0 "$status" "remove hook's exit status for a missing worktree"
 
 git -C "$repo" branch my-feature
 git -C "$repo" push -q origin my-feature
+# git wt add ignores the base for an existing branch, so there's nothing to fetch
+touch -t 202001010000 "$stamp"
+: > "$SANDBOX/fetch.log"
 create my-feature "$repo"
 assert_eq "0 $dir/my-feature" "$status $out" "create hook on an existing branch"
+assert_eq "" "$(cat "$SANDBOX/fetch.log")" "fetches for an existing branch"
 remove "$dir/my-feature"
 assert_eq 0 "$status" "remove hook's exit status for an existing branch"
 [ ! -e "$dir/my-feature" ] || fail "remove hook left $dir/my-feature"

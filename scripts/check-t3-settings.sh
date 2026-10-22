@@ -16,11 +16,15 @@ command -v curl &>/dev/null || { echo "curl isn't installed" >&2; exit 1; }
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# GITHUB_TOKEN lifts the API rate limit in CI
+# GITHUB_TOKEN lifts the API rate limit in CI. The header goes through stdin, since any local user
+# can read a command line.
 download() {
-    local auth=()
-    [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-    curl -fsSL --proto '=https' --retry 3 --retry-delay 2 ${auth[@]+"${auth[@]}"} -o "$2" "$1"
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL --proto '=https' --retry 3 --retry-delay 2 -o "$2" "$1"
+    else
+        printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" |
+            curl -fsSL --proto '=https' --retry 3 --retry-delay 2 -H @- -o "$2" "$1"
+    fi
 }
 
 tag="${1:-}"

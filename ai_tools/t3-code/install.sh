@@ -5,7 +5,7 @@ set -euo pipefail
 # Installs a cask and runs launchctl (macOS), or apt and systemctl --user (Ubuntu), whatever HOME
 # is; test in a macOS VM or spare Mac, and an Ubuntu VM with systemd such as an OrbStack machine.
 # On Ubuntu the desktop app connects to the service, with its own server off.
-# --status runs `t3 browser setup` without sudo, which changes nothing (T3 Code 0.1.0).
+# --status runs `t3 browser setup` without sudo, which changes nothing (T3 Code 0.1.1).
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -95,9 +95,10 @@ setup_t3_code_desktop_ubuntu() {
     fi
     t3_code_files copy_file || result=1
     merge_app_json t3code \
-        "The desktop app's own server is already off" \
-        "Turned off the desktop app's own server, so it connects to the service" \
-        "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER" || result=1
+        "The desktop app's own server is already off, and its app settings are set" \
+        "Turned off the desktop app's own server, so it connects to the service, and set its app settings" \
+        "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER" \
+        "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER" || result=1
     t3_code_desktop_items
     items_pending
     if [ ${#pending[@]} -eq 0 ]; then
@@ -107,6 +108,13 @@ setup_t3_code_desktop_ubuntu() {
     fi
     return "$result"
 }
+
+# The desktop app may run its own server on the service's data while it runs without its settings
+t3_code_desktop_server_pending() {
+    has_gnome_desktop && ! json_applied "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER" &&
+        pgrep -x t3code > /dev/null 2>&1
+}
+
 # Not XDG_CONFIG_HOME: neither `t3 service install` nor the systemd user manager reads the shell's.
 T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # A drop-in, since `t3 service install` and `t3 update` rewrite the unit. The port is pinned because
@@ -233,6 +241,37 @@ t3_code_status_custom_values() {
 t3_code_status_server_settings() {
     status_check "Server settings in ~/.t3/userdata/settings.json" json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"
     t3_code_status_custom_values
+    t3_code_status_fresh_bases
+}
+
+# Project IDs whose override sets key $1 to false, comma-separated
+t3_code_projects_with_false() {
+    jq -r --arg key "$1" '[.projectSettingsOverrides // {} | to_entries[]
+        | select(.value[$key] == false) | .key] | join(", ")' "$T3_CODE_SETTINGS" 2>/dev/null
+}
+
+# Reported, not set: newWorktreesStartFromOrigin is on by T3's default, which T3 drops from the
+# file, so writing it would never settle. A project's override can turn either off.
+t3_code_status_fresh_bases() {
+    local name projects
+    # The server settings line reports a missing or broken file
+    jq -e 'type == "object"' "$T3_CODE_SETTINGS" &> /dev/null || return 0
+    name="New worktrees start from origin's tip (newWorktreesStartFromOrigin)"
+    projects="$(t3_code_projects_with_false newWorktreesStartFromOrigin)"
+    if [ "$(jq -r '.newWorktreesStartFromOrigin' "$T3_CODE_SETTINGS" 2>/dev/null)" == false ]; then
+        status_item missing "$name: off; in T3 Code's settings, turn on New worktrees start from remote"
+    elif [ -n "$projects" ]; then
+        status_item missing "$name: off for projects $projects; with each selected in T3 Code's settings, turn on New worktrees start from remote"
+    else
+        status_item ok "$name"
+    fi
+    name="Auto-pull on for every project (defaultAutoPull)"
+    projects="$(t3_code_projects_with_false defaultAutoPull)"
+    if [ -n "$projects" ]; then
+        status_item missing "$name: off for projects $projects; with each selected in T3 Code's Settings → Source Control, turn on Automatically pull"
+    else
+        status_item ok "$name"
+    fi
 }
 
 T3_CODE_CLIENT_FILTER='
@@ -243,6 +282,10 @@ T3_CODE_CLIENT_FILTER='
     | .diffFilesCollapsed = false
     | .wordWrap = false
 '
+
+t3_code_status_client_settings() {
+    status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
+}
 
 # The app's name changes between releases, so fall back to any non-nightly T3 Code*.app.
 # Usage: t3_code_app_path [cask_app_path output, to skip asking brew again]
@@ -326,16 +369,19 @@ configure_t3_code() {
     return "$result"
 }
 
-# A server started by hand, or over SSH from the Mac via ~/.t3/ssh-launch and ~/.t3/runtime (0.1.0)
+# A server started by hand, over SSH from the Mac via ~/.t3/ssh-launch and ~/.t3/runtime, or by the
+# desktop app, which runs its own Electron binary on app.asar's server entry with --bootstrap-fd
+# (T3 Code 0.1.1)
 T3_CODE_HOME_RE="$(regex_escape "$HOME")"
-T3_CODE_CLI_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/.* serve( |\$)|(^|/)t3 (serve|start)( |\$)"
 T3_CODE_SSH_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/"
+T3_CODE_DESKTOP_SERVER_PATTERN="/app\.asar/apps/server/dist/bin\.mjs --bootstrap-fd( |\$)"
+T3_CODE_CLI_SERVER_PATTERN="$T3_CODE_SSH_SERVER_PATTERN.* serve( |\$)|(^|/)t3 (serve|start)( |\$)|$T3_CODE_DESKTOP_SERVER_PATTERN"
 
 t3_code_in_service_cgroup() {
     grep -q '/t3code\.service$' "/proc/$1/cgroup" 2>/dev/null
 }
 
-# Print "<pid> ssh|manual <command line>" per T3 Code server outside the service
+# Print "<pid> desktop|ssh|manual <command line>" per T3 Code server outside the service
 t3_code_other_servers() {
     local line pid cmd kind
     while IFS= read -r line; do
@@ -344,8 +390,13 @@ t3_code_other_servers() {
         if [ -z "$pid" ] || t3_code_in_service_cgroup "$pid"; then
             continue
         fi
-        kind=manual
-        [[ "$cmd" =~ $T3_CODE_SSH_SERVER_PATTERN ]] && kind=ssh
+        if [[ "$cmd" =~ $T3_CODE_DESKTOP_SERVER_PATTERN ]]; then
+            kind=desktop
+        elif [[ "$cmd" =~ $T3_CODE_SSH_SERVER_PATTERN ]]; then
+            kind=ssh
+        else
+            kind=manual
+        fi
         echo "$pid $kind $cmd"
     done < <(pgrep -a -u "$(id -u)" -f "$T3_CODE_CLI_SERVER_PATTERN" || true)
 }
@@ -357,6 +408,10 @@ t3_code_describe_server() {
     cmd="${kind#* }"
     kind="${kind%% *}"
     case "$kind" in
+        desktop)
+            name="the desktop app's own server"
+            fix="quit T3 Code, then re-run the t3-code step, which turns that server off"
+            ;;
         ssh)
             name="a server the Mac started over SSH"
             fix="remove this host's SSH connection in T3 Code on the Mac, connect over Tailscale instead (see ai_tools/README.md → Manual steps), stop the server (kill $pid), then re-run the t3-code step"
@@ -385,13 +440,20 @@ t3_code_launcher_has_server() {
     pgrep -P "$1" > /dev/null 2>&1
 }
 
-# Active with no server: in 0.1.0 a server that finds ~/.t3/userdata locked exits, and the
+# Prints the service's main PID; fails when it has none
+t3_code_main_pid() {
+    local pid
+    pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" || return 1
+    case "$pid" in '' | 0 | *[!0-9]*) return 1 ;; esac
+    echo "$pid"
+}
+
+# Active with no server: in 0.1.1 a server that finds ~/.t3/userdata locked exits, and the
 # launcher idles until restarted. Checks 3 times since a swap (update) briefly has none too.
 t3_code_service_serving_nothing() {
     local pid check
     for check in 1 2 3; do
-        pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null || true)"
-        case "$pid" in '' | 0 | *[!0-9]*) return 1 ;; esac
+        pid="$(t3_code_main_pid)" || return 1
         ! t3_code_launcher_has_server "$pid" || return 1
         if [ "$check" -lt 3 ] && ! status_quick; then
             sleep 1
@@ -417,8 +479,8 @@ start_t3_code_service() {
 wait_for_t3_code_service() {
     local _ pid last="" polls=0
     for _ in $(seq 1 20); do
-        pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null || true)"
-        if t3_code_service_active && [ "${pid:-0}" != 0 ] && [ "$pid" == "$last" ]; then
+        pid="$(t3_code_main_pid || true)"
+        if t3_code_service_active && [ -n "$pid" ] && [ "$pid" == "$last" ]; then
             polls=$((polls + 1))
             [ "$polls" -ge 4 ] && return 0
         else
@@ -509,13 +571,12 @@ t3_code_process_environ() {
 
 t3_code_running_env_current() {
     local pid environment
-    pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" || return 1
-    case "$pid" in '' | 0 | *[!0-9]*) return 1 ;; esac
+    pid="$(t3_code_main_pid)" || return 1
     environment="$(t3_code_process_environ "$pid" 2>/dev/null)" || return 1
     grep -qxF 'T3CODE_TELEMETRY_ENABLED=false' <<< "$environment" &&
         grep -qxF "T3CODE_PORT=$T3_CODE_PORT" <<< "$environment" &&
         grep -qxF "T3CODE_HOST=$T3_CODE_HOST" <<< "$environment" &&
-        [ "$pid" == "$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" ]
+        [ "$pid" == "$(t3_code_main_pid)" ]
 }
 
 # Unreadable process state counts as pending
@@ -542,6 +603,9 @@ configure_t3_code_ubuntu() {
     other="$(t3_code_other_servers | head -1)"
     if [ -n "$other" ]; then
         t3_code_print_other_server "$other"
+    elif t3_code_desktop_server_pending; then
+        echo "  The T3 Code desktop app is running with its own server on, so the server settings and the"
+        echo "  service are pending until you quit it. Quit T3 Code, then re-run the t3-code step."
     else
         update_t3_code_server || update_status=$?
         [ "$update_status" -eq 0 ] || step_failed=true
@@ -700,8 +764,7 @@ warn_t3_code_service_docker_group() {
     local gid pid groups
     [[ " $(id -nG "$(id -un)" 2>/dev/null) " == *" docker "* ]] || return 0
     gid="$(getent group docker 2>/dev/null | cut -d: -f3)"
-    pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null || true)"
-    [ -n "$gid" ] && [ "${pid:-0}" != 0 ] || return 0
+    [ -n "$gid" ] && pid="$(t3_code_main_pid)" || return 0
     groups="$(t3_code_process_groups "$pid")" || return 0
     [[ " $groups " == *" $gid "* ]] && return 0
     echo "  The T3 Code service's agents can't use docker yet: the systemd user manager that starts the"
@@ -812,7 +875,7 @@ status() {
         fi
         if "$jq"; then
             t3_code_status_server_settings
-            status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
+            t3_code_status_client_settings
         fi
         t3_code_files status_file
         t3_code_macos_items
@@ -830,6 +893,10 @@ status() {
         if "$jq"; then
             status_check "Desktop app's own server off in ~/.t3/userdata/desktop-settings.json" \
                 json_applied "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER"
+            t3_code_status_client_settings
+            if t3_code_desktop_server_pending; then
+                status_item missing "T3 Code server settings and service: pending while the desktop app runs with its own server on; quit T3 Code, then re-run the t3-code step"
+            fi
         fi
     fi
     local have_cli=false ready=0

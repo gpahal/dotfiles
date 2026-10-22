@@ -9,7 +9,7 @@ command -v jq &> /dev/null || skip "jq isn't installed"
 load_script homebrew/install.sh
 export DOTFILES_STATUS_QUICK=1
 replace_fn command_line_tools_installed 'return 0'
-# zed is installed outside Homebrew; raycast's app was deleted
+# zed is installed outside Homebrew; vicinae's app was deleted
 mkdir -p "$SANDBOX/Zed.app" "$SANDBOX/Ghostty.app"
 zed_outside_homebrew() {
     [ "$1" != zed ] || echo "$SANDBOX/Zed.app"
@@ -19,14 +19,14 @@ CASK_PKG_APPS=()
 eval "real_$(declare -f cask_app_path)"
 replace_fn cask_app_path 'zed_outside_homebrew "$1"'
 stub brew 'S="'"$SANDBOX"'"
-[ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nraycast\n"; exit; }
+[ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nvicinae\n"; exit; }
 [ "$*" != --caskroom ] || { echo "$S/caskroom"; exit; }
 [ "$*" == "info --json=v2 --installed --cask" ] || exit 1
 cat << JSON
 {"casks": [
     {"token": "ghostty", "artifacts": [{"uninstall": []}, {"app": ["Ghostty.app"], "target": "$S/Ghostty.app"}]},
     {"token": "font-monaspace", "artifacts": [{"font": ["a.otf"], "target": "$S/a.otf"}]},
-    {"token": "raycast", "artifacts": [{"app": ["Raycast.app"], "target": "$S/Raycast.app"}, ["x"]]}
+    {"token": "vicinae", "artifacts": [{"app": ["Vicinae.app"], "target": "$S/Vicinae.app"}, ["x"]]}
 ]}
 JSON'
 
@@ -37,7 +37,7 @@ brew_calls() {
 as_os macos
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 run status
-# One for every cask, and one for raycast's install receipt
+# One for every cask, and one for vicinae's install receipt
 assert_eq 2 "$(brew_calls)" "brew calls on macOS"
 assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on macOS"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps (sign in to the App Store, buy the paid ones there once, then re-run the homebrew step)"
@@ -46,7 +46,7 @@ assert_contains "$RUN_OUTPUT" "ok         ghostty (cask)"
 assert_not_contains "$RUN_OUTPUT" "ghostty (cask), installed outside Homebrew"
 assert_contains "$RUN_OUTPUT" "ok         font-monaspace (cask)"
 assert_contains "$RUN_OUTPUT" "ok         zed (cask), installed outside Homebrew"
-assert_contains "$RUN_OUTPUT" "missing    raycast (cask): brew lists it, but its app is gone; run brew reinstall --cask raycast"
+assert_contains "$RUN_OUTPUT" "missing    vicinae (cask): brew lists it, but its app is gone; run brew reinstall --cask vicinae"
 assert_contains "$RUN_OUTPUT" "missing    rectangle (cask)"
 assert_contains "$RUN_OUTPUT" "info       Dato (App Store) isn't installed. It's optional"
 

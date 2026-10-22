@@ -1,0 +1,14 @@
+{
+  "favorites": ["clipboard:history"],
+  "fallbacks": ["files:search"],
+  "keybinding": "default",
+  "keybinds": {},
+  "theme": {
+    "light": { "name": "vicinae-light", "icon_theme": "auto" },
+    "dark": { "name": "vicinae-dark", "icon_theme": "auto" }
+  },
+  "font": { "normal": { "family": "auto" } },
+  "launcher_window": { "size": { "width": 770, "height": 480 } },
+  "providers": {},
+  "telemetry": { "system_info": false }
+}

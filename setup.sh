@@ -7,8 +7,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 # On the Mac, OrbStack provides Docker, and the homebrew step installs Chrome and Logi Options+
-MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon editorconfig
-    macos manual-steps)
+MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon vicinae
+    editorconfig macos manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hotkeys gnome vicinae
     editorconfig ubuntu docker chrome logitech monitor-input manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it

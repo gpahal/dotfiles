@@ -41,9 +41,8 @@ CASKS=(
     google-chrome       # Browser, which the AI tools also control; Ubuntu gets it from the chrome step
     orbstack            # Docker containers and Linux machines
     tailscale-app       # Private network to reach the Ubuntu machine from anywhere
-    raycast             # Launcher
+    vicinae             # Launcher, with the vicinae step's settings; Ubuntu gets it from that step
     rectangle           # Window management
-    stats               # Menu bar memory pressure, CPU, GPU, network, and sensors
     appcleaner          # App uninstaller
     the-unarchiver      # Opens any archive format
     logi-options+       # Logitech device settings; Ubuntu gets Solaar from the logitech step

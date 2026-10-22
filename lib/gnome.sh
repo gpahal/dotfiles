@@ -13,10 +13,23 @@ gnome_session_running() {
     systemctl --user is-active --quiet graphical-session.target 2> /dev/null
 }
 
-# gsettings_list <schema> <key>: one item a line. gsettings prints a GVariant: @as [] or ['a', 'b'].
+# gsettings_list <schema> <key>: one item a line; fails when gsettings can't read the key.
+# gsettings prints a GVariant: @as [] or ['a', 'b'].
 gsettings_list() {
-    gsettings get "$1" "$2" | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
+    local value
+    value="$(gsettings get "$1" "$2")" || return 1
+    printf '%s\n' "$value" | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
         tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
+}
+
+# gsettings_set_list <schema> <key>: writes the items on stdin, one a line, skipping blank lines.
+# Capture the gsettings_list it edits first and return on failure, so a failed read never
+# becomes a write that drops your items.
+gsettings_set_list() {
+    local list
+    list="$({ grep -v '^$' || true; } | sed "s/.*/'&'/" | join_lines ', ')"
+    if [ -n "$list" ]; then list="[$list]"; else list="@as []"; fi
+    gsettings set "$1" "$2" "$list"
 }
 
 gnome_extension_enabled() {
@@ -25,9 +38,9 @@ gnome_extension_enabled() {
 
 # Adds this one, keeping the rest. GNOME loads it at the next login.
 gnome_enable_extension() {
-    local list
-    list="$({ gsettings_list org.gnome.shell enabled-extensions; echo "$1"; } | sed "s/.*/'&'/" | join_lines ', ')"
-    gsettings set org.gnome.shell enabled-extensions "[$list]"
+    local current
+    current="$(gsettings_list org.gnome.shell enabled-extensions)" || return 1
+    printf '%s\n' "$current" "$1" | gsettings_set_list org.gnome.shell enabled-extensions
 }
 
 # Prints the extension's state number and, after a tab, its error; nothing when GNOME Shell doesn't
@@ -75,6 +88,23 @@ gnome_keybinding_paths() {
     gsettings_list "$GNOME_MEDIA_KEYS" custom-keybindings
 }
 
+# A string as gsettings prints it: in single quotes, or double quotes when it holds a single one
+_gsettings_string() {
+    case "$1" in
+        *"'"*) printf '"%s"\n' "$1" ;;
+        *) printf "'%s'\n" "$1" ;;
+    esac
+}
+
+# gnome_keybinding_is <path> <name> <command> <binding>: the custom shortcut is listed and set so
+gnome_keybinding_is() {
+    local paths
+    paths="$(gnome_keybinding_paths)" && grep -qxF "$1" <<< "$paths" &&
+        [ "$(gnome_keybinding_get "$1" name)" == "$(_gsettings_string "$2")" ] &&
+        [ "$(gnome_keybinding_get "$1" command)" == "$(_gsettings_string "$3")" ] &&
+        [ "$(gnome_keybinding_get "$1" binding)" == "$(_gsettings_string "$4")" ]
+}
+
 # gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
 # same keys, which GNOME would run instead
 gnome_keybinding_clash() {
@@ -91,11 +121,11 @@ gnome_keybinding_clash() {
 
 # gnome_set_keybinding <path> <name> <command> <binding>, adding the path to the list, keeping yours
 gnome_set_keybinding() {
-    local path="$1" list
+    local path="$1" paths
+    paths="$(gnome_keybinding_paths)" || return 1
     gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" name "$2" &&
         gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" command "$3" &&
         gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" binding "$4" || return 1
-    gnome_keybinding_paths | grep -qxF "$path" && return 0
-    list="$({ gnome_keybinding_paths; echo "$path"; } | sed "s/.*/'&'/" | join_lines ', ')"
-    gsettings set "$GNOME_MEDIA_KEYS" custom-keybindings "[$list]"
+    ! grep -qxF "$path" <<< "$paths" || return 0
+    printf '%s\n' "$paths" "$path" | gsettings_set_list "$GNOME_MEDIA_KEYS" custom-keybindings
 }

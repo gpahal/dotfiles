@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set macOS defaults, the firewall, and App Store updates, and free Cmd+Space for Raycast.
+# Set macOS defaults, the firewall, and App Store updates, and free Cmd+Space for Vicinae.
 # Also sets the hostname when needed. Changes the real preferences, firewall, and hostname whatever
 # HOME is: test it in a macOS VM or spare Mac.
 
@@ -26,7 +26,7 @@ hotkey_off_plist() {
 
 # <hotkey id> <modifiers> <description> <app taking it>; Cmd is 1048576
 symbolic_hotkeys() {
-    "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Raycast"
+    "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Vicinae"
 }
 
 # " domain:key" per change; " domain key," per failure. Sandboxed failures need Full Disk Access.

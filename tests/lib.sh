@@ -295,6 +295,30 @@ test_done() {
     TEST_DONE=true
 }
 
+# A gsettings keeping each key in a file, printing values as gsettings does: a list as set, and a
+# string in single quotes, or double quotes when it holds a single one. Unset keys print GNOME's
+# defaults for the lists the steps edit, else ''.
+stub_gsettings() {
+    mkdir -p "$SANDBOX/gsettings"
+    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")"'
+file="$dir/${2//\//_}.$3"
+case "$1" in
+    get)
+        if [ -e "$file" ]; then cat "$file"
+        else case "$3" in
+            enabled-extensions | custom-keybindings) echo "@as []" ;;
+            switch-input-source) echo "['"'"'<Super>space'"'"', '"'"'XF86Keyboard'"'"']" ;;
+            *) echo "'"''"'" ;;
+        esac; fi ;;
+    set)
+        case "$4" in
+            "["* | "@as"*) printf "%s\n" "$4" > "$file" ;;
+            *"'"'"'"*) printf "\"%s\"\n" "$4" > "$file" ;;
+            *) printf "'"'"'%s'"'"'\n" "$4" > "$file" ;;
+        esac ;;
+esac'
+}
+
 # The sandbox has no git identity
 git_commit() {
     local repo="$1"

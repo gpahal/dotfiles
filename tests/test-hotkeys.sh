@@ -2,29 +2,15 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The hotkeys step: GNOME custom shortcuts that run the Stream Deck's open-in. A gsettings stub keeps
-# each key in a file and prints values as gsettings does.
+# The hotkeys step: GNOME custom shortcuts that run the Stream Deck's open-in; and lib/gnome.sh's
+# list writes, which a failed read mustn't turn into a list that drops your items.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-export SANDBOX
-# A string prints in single quotes, or double quotes when it holds a single one
-stub gsettings 'file="$SANDBOX/gsettings/${2//\//_}.$3"
-case "$1" in
-    get)
-        if [ -e "$file" ]; then cat "$file"
-        elif [ "$3" == custom-keybindings ]; then echo "@as []"
-        else echo "'"''"'"; fi ;;
-    set)
-        mkdir -p "$SANDBOX/gsettings"
-        case "$3:$4" in
-            custom-keybindings:*) printf "%s\n" "$4" > "$file" ;;
-            *"'"'"'"*) printf "\"%s\"\n" "$4" > "$file" ;;
-            *) printf "'"'"'%s'"'"'\n" "$4" > "$file" ;;
-        esac ;;
-esac'
+stub_gsettings
+stub gnome-shell 'echo "GNOME Shell 50.1"'
 load_script hotkeys/install.sh
 as_os ubuntu
 MEDIA=org.gnome.settings-daemon.plugins.media-keys
@@ -79,5 +65,28 @@ assert_contains "$RUN_OUTPUT" "Your shortcut at $DIR/custom0/ has Ctrl+Alt+Super
 assert_eq "'<Control><Alt><Super>e'" "$(gsettings get "$MEDIA.custom-keybinding:$DIR/custom0/" binding)" "your shortcut"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Ctrl+Alt+Super+E for Editor: your shortcut at $DIR/custom0/ has it; change one"
+
+# A failed read writes nothing, rather than a list holding only the new item
+paths="$(gsettings get "$MEDIA" custom-keybindings)"
+stub gsettings '[ "$1" != get ] || exit 1'
+: > "$STUB_LOG"
+run gnome_set_keybinding "$DIR/dotfiles-new/" New new "<Super>n"
+assert_eq 1 "$RUN_STATUS" "gnome_set_keybinding's status when gsettings can't read"
+run gnome_enable_extension new@example.com
+assert_eq 1 "$RUN_STATUS" "gnome_enable_extension's status when gsettings can't read"
+assert_file_not_contains "$STUB_LOG" "gsettings set"
+stub_gsettings
+assert_eq "$paths" "$(gsettings get "$MEDIA" custom-keybindings)" "the shortcut list after failed reads"
+: | gsettings_set_list org.gnome.shell enabled-extensions
+assert_eq "@as []" "$(gsettings get org.gnome.shell enabled-extensions)" "an emptied list"
+
+# Ubuntu Server: no GNOME, nothing to do
+hide gnome-shell
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "No GNOME desktop, so skipped."
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "skipped    GNOME shortcuts: no GNOME desktop"
+assert_eq "" "$(cat "$STUB_LOG")" "commands run without GNOME"
 
 test_done

@@ -278,7 +278,8 @@ upgrade() {
             _stage_failed "tmux plugins" "$?"
     fi
 
-    # Vicinae's installer moves it to the latest release; extensions.gnome.org has its extension
+    # On Ubuntu, Vicinae's installer moves it to the latest release, and extensions.gnome.org has
+    # its extension. brew upgrade updates the Mac's cask.
     if ! is_macos && [ -x ~/.local/bin/vicinae ]; then
         # shellcheck disable=SC2016 # expanded by the inner bash
         "$BASH" -c 'source "$1/vicinae/install.sh" && update_vicinae' bash "$DOTFILES_DIR" ||

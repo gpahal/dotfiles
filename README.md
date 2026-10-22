@@ -47,7 +47,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
-| `vicinae` | Installs [Vicinae](#vicinae), a launcher like Raycast, on `Super+Space`. Ubuntu only |
+| `vicinae` | Installs the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
@@ -180,13 +180,15 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 
 ### Vicinae
 
-Ubuntu only, in place of Raycast. `Super+Space` opens [Vicinae](https://docs.vicinae.com/), which launches apps, keeps clipboard history, and runs many Raycast extensions.
+[Vicinae](https://docs.vicinae.com/) launches apps, keeps clipboard history, and runs many Raycast extensions. `Cmd+Space` opens it on the Mac, and `Super+Space` on Ubuntu.
 
-- Vicinae's installer puts it in `~/.local`, without sudo. `upgrade` moves it to the latest release.
-- Paste into the active window and snippets are off, since its input helper would need root's access to every file. Pick a clipboard entry to copy it, then press `Ctrl+V`.
+- Both machines share [`vicinae/dotfiles.json`](vicinae/dotfiles.json): favorites, fallbacks, keybindings, theme, font, window size, and extension settings, with telemetry off. The step copies it to `~/.config/vicinae/` and adds it to the `imports` in `~/.config/vicinae/settings.json`.
+- Vicinae's settings window saves to `settings.json`, whose values win over the shared file. `--status` names each shared setting that `settings.json` overrides. To share a change, move it to `vicinae/dotfiles.json` and delete it from `settings.json`.
+- On the Mac, the homebrew step installs it and `upgrade` updates it. Paste into the active window and snippets are on, and need the Accessibility permission.
+- On Ubuntu, Vicinae's installer puts it in `~/.local`, without sudo, and `upgrade` moves it to the latest release. Paste into the active window and snippets are off, since they need root. Pick a clipboard entry to copy it, then press `Ctrl+V`.
 - Its GNOME extension, from extensions.gnome.org, gives it the clipboard and the window list. GNOME loads it at the next login.
-- `Super+Space` no longer switches keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
-- A shortcut of yours on `Super+Space` keeps it, and `--status` names it. `journalctl --user -u vicinae` shows Vicinae's log.
+- `Super+Space` doesn't switch keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
+- A shortcut of yours on `Super+Space` keeps it, and `--status` names it. `journalctl --user -u vicinae` shows Vicinae's log on Ubuntu.
 
 ### Monitor input
 
@@ -231,10 +233,10 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 4. Set Google Chrome as the default browser.
 5. Open Logi Options+, grant its permissions, and pair your devices.
 6. Open OrbStack once and finish its setup.
-7. Open Raycast, grant permissions, and set its hotkey to `Cmd+Space`.
+7. Open Vicinae and finish its onboarding. Grant Accessibility, which paste and snippets need, and keep Launch at login on. Full Disk Access is optional; file search needs it to cover every folder.
 8. Open Rectangle, grant accessibility, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato.
-10. Optional: turn on Stats modules, AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
+9. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
+10. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
 11. In Stream Deck, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from **Dotfiles** onto keys. Press **Overview** and install the **System** page. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
 12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
 
@@ -317,6 +319,7 @@ The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 - In a scratch repo, `git commit --allow-empty -m test && git log --show-signature -1` shows `Good "git" signature`, also after a reboot without a passphrase prompt.
 - After `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, in tmux too.
 - With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
+- `Cmd+Space` opens Vicinae, and `Cmd+Space` again closes it.
 
 ### Ubuntu
 

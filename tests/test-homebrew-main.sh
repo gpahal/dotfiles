@@ -165,12 +165,12 @@ assert_exit 0 main
 assert_eq "brew install --cask zed" "$(installs)" "installs on a re-run"
 assert_contains "$RUN_OUTPUT" "Brew formulae already installed."
 
-rm -rf "$SANDBOX/apps/raycast.app"
+rm -rf "$SANDBOX/apps/vicinae.app"
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_eq "brew reinstall --cask raycast" "$(installs)" "installs with raycast's app deleted"
-assert_contains "$RUN_OUTPUT" "brew lists raycast, but its app is gone; reinstalling it..."
-[ -d "$SANDBOX/apps/raycast.app" ] || fail "raycast's app wasn't reinstalled"
+assert_eq "brew reinstall --cask vicinae" "$(installs)" "installs with vicinae's app deleted"
+assert_contains "$RUN_OUTPUT" "brew lists vicinae, but its app is gone; reinstalling it..."
+[ -d "$SANDBOX/apps/vicinae.app" ] || fail "vicinae's app wasn't reinstalled"
 
 reset
 touch "$SANDBOX/bundle-ok"

@@ -108,14 +108,17 @@ status() {
 
 apply() {
     echo "Setting up Logitech devices..."
-    require_cmd curl || return 1
-    # add_apt_repo needs it; fail before changing anything
-    require_cmd gpg || return 1
     # Without the PPA for this release, the next run adds it, and Ubuntu's Solaar stands in
     local pending=() wanted=(solaar_pinned solaar_source_ok solaar_current)
-    if ! solaar_source_ok && ! apt_repo_published "The Solaar team's PPA" "$(solaar_release_url)"; then
-        wanted=(solaar_current)
-        ! apt_installed solaar || return 0
+    if ! solaar_source_ok; then
+        require_cmd curl || return 1
+        if apt_repo_published "The Solaar team's PPA" "$(solaar_release_url)"; then
+            # add_apt_repo needs it; fail before the pin goes in
+            require_cmd gpg || return 1
+        else
+            wanted=(solaar_current)
+            ! apt_installed solaar || return 0
+        fi
     fi
     logitech_items
     items_pending "${wanted[@]}"

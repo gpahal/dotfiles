@@ -3,7 +3,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The chrome step on Ubuntu (amd64).
+# The chrome step on Ubuntu (amd64), and the Firefox it removes once Chrome is in.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -17,7 +17,15 @@ GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
 URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 
 stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
-stub dpkg-query '[ ! -e "'"$SANDBOX"'/installed" ] || echo "install ok installed"'
+# Firefox's snap and its .deb are there while $SANDBOX/firefox-snap and firefox-deb are
+stub dpkg-query 'case "${!#}" in
+    google-chrome-stable) [ ! -e "'"$SANDBOX"'/installed" ] || echo "install ok installed" ;;
+    firefox) [ ! -e "'"$SANDBOX"'/firefox-deb" ] || echo "install ok installed" ;;
+esac'
+stub snap 'case "$*" in
+    "list firefox") [ -e "'"$SANDBOX"'/firefox-snap" ] ;;
+    "remove --purge firefox") rm "'"$SANDBOX"'/firefox-snap" ;;
+esac'
 CHROME_DEFAULTS="$SANDBOX/default-google-chrome"
 # Fails unless the .deb is world-readable. Like Google's .deb, adds its apt source on first
 # install, later only when repo_add_once="true".
@@ -62,10 +70,14 @@ assert_exit 1 main
 [ ! -e "$SANDBOX/installed" ] || fail "Chrome was installed without its .deb"
 rm "$SANDBOX/fetch-fails"
 
+# A fresh install removes Firefox's snap once Chrome is in
+touch "$SANDBOX/firefox-snap"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $URL"
+assert_file_contains "$STUB_LOG" "sudo snap remove --purge firefox"
+[ ! -e "$SANDBOX/firefox-snap" ] || fail "Firefox's snap wasn't removed after installing Chrome"
 assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y"
 [ -e "$SANDBOX/installed" ] || fail "Chrome wasn't installed"
 deb="$(cat "$SANDBOX/deb-path")"
@@ -104,6 +116,41 @@ rm "$GOOGLE_SOURCES"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Add it by hand"
 touch "$GOOGLE_SOURCES"
+
+# Firefox, as Ubuntu installs it: the snap, and the .deb stub that installs it
+stub apt-get '[ "$*" != "-o DPkg::Lock::Timeout=300 purge -y firefox" ] || rm "'"$SANDBOX"'/firefox-deb"'
+touch "$SANDBOX/firefox-snap" "$SANDBOX/firefox-deb"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Firefox removed, since Chrome replaces it"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Remove Firefox, which Chrome replaces: its snap and the firefox .deb that installs it"
+assert_file_contains "$STUB_LOG" "sudo snap remove --purge firefox"
+assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 purge -y firefox"
+[ ! -e "$SANDBOX/firefox-snap" ] && [ ! -e "$SANDBOX/firefox-deb" ] || fail "Firefox is still installed"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Firefox removed, since Chrome replaces it"
+
+# The .deb stub can bring the snap back; only the snap is removed then
+touch "$SANDBOX/firefox-snap"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo snap remove --purge firefox"
+assert_file_not_contains "$STUB_LOG" "purge -y firefox"
+
+# Without Chrome, Firefox stays, so the machine keeps a browser
+rm "$SANDBOX/installed"
+touch "$SANDBOX/firefox-snap"
+answer no
+assert_exit 3 main --status
+assert_not_contains "$RUN_OUTPUT" "Firefox"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_file_not_contains "$STUB_LOG" "snap remove"
+answer yes
+touch "$SANDBOX/installed"
+rm "$SANDBOX/firefox-snap"
 
 rm -f "$GOOGLE_SOURCES" "$CHROME_DEFAULTS"
 hide curl

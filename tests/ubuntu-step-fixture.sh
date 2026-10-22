@@ -152,7 +152,17 @@ ubuntu_step_setup() {
         "-t -e no -f UUID,TYPE,NAME connection show") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired connection 1" "2222-bbbb:802-11-wireless:Home:5G" ;;
         *"-g 802-3-ethernet.wake-on-lan connection show uuid 1111-aaaa") cat "'"$SANDBOX"'/wol" ;;
         "connection modify uuid 1111-aaaa 802-3-ethernet.wake-on-lan magic") echo magic > "'"$SANDBOX"'/wol" ;;
+        "-t -f DEVICE,TYPE device") printf "%s\n" "enp6s0:ethernet" "wlp5s0:wifi" ;;
     esac'
+    # Ubuntu's drop-in turns Wi-Fi power save on (3). NetworkManager reads a directory's drop-ins in
+    # name order, and the last value wins.
+    mkdir -p "$(dirname "$WIFI_POWERSAVE_CONF")"
+    printf '%s\n' "[connection]" "wifi.powersave = 3" > "$(dirname "$WIFI_POWERSAVE_CONF")/default-wifi-powersave-on.conf"
+    stub NetworkManager 'LC_ALL=C
+        [ "$1" == --print-config ] || exit 1
+        echo "[connection]"
+        cat "'"$(dirname "$WIFI_POWERSAVE_CONF")"'"/*.conf | sed -n "s/^wifi.powersave *= */wifi.powersave=/p" | tail -n 1'
+    stub iw
     echo default > "$SANDBOX/wol"
     mkdir "$SANDBOX/units" "$SANDBOX/user-units"
     # shellcheck disable=SC2034 # test-ubuntu-step.sh reads it

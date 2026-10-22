@@ -28,6 +28,8 @@ source "$UBUNTU_LIB_DIR/alerts.sh"
 source "$UBUNTU_LIB_DIR/ups.sh"
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
+# shellcheck source=lib/services.sh
+source "$UBUNTU_LIB_DIR/services.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -118,6 +120,15 @@ TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 CRYPTTAB=/etc/crypttab
+# Sorts after Ubuntu's default-wifi-powersave-on.conf, which turns it on, so NetworkManager reads it last
+WIFI_POWERSAVE_CONF=/etc/NetworkManager/conf.d/dotfiles-wifi-powersave-off.conf
+WIFI_POWERSAVE_CONTENT='# From the dotfiles ubuntu step: Wi-Fi power save off (2). With it on, the access point holds
+# packets until the radio wakes, which makes SSH lag.
+[connection]
+wifi.powersave = 2'
+CLOUD_INIT_DISABLED=/etc/cloud/cloud-init.disabled
+CLOUD_INIT_DISABLED_CONTENT='# From the dotfiles ubuntu step: cloud-init only sets up a fresh install, so it stays off at boot'
+CUPS_BROWSED_UNIT=cups-browsed.service
 
 ubuntu_files() {
     "$1" "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF"
@@ -169,6 +180,14 @@ ubuntu_items() {
     item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
         "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
+    in_vm || item --sudo "cloud-init off, since it only sets up a fresh install ($CLOUD_INIT_DISABLED)" \
+        "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off turn_off_cloud_init
+    item --sudo "cups-browsed masked, so network printers aren't added by themselves" \
+        "Mask cups-browsed, which adds network printers by itself; cups still prints" cups_browsed_off mask_cups_browsed
+    ! command -v nmcli &>/dev/null ||
+        item --sudo "Wi-Fi power save off, so SSH over Wi-Fi doesn't lag ($WIFI_POWERSAVE_CONF)" \
+            "Turn off Wi-Fi power save, which makes SSH over Wi-Fi lag: write $WIFI_POWERSAVE_CONF" \
+            wifi_powersave_off turn_off_wifi_powersave
     # Driven only once openssh-server is installed
     item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
         "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
@@ -264,7 +283,7 @@ status() {
     status_unattended_upgrades
     items_status keep_conffiles_written
     status_held_back
-    items_status apt_timers_enabled
+    items_status apt_timers_enabled cloud_init_off cups_browsed_off
     if [ -e "$REBOOT_REQUIRED" ]; then
         packages="$(reboot_packages)"
         status_item missing "Reboot pending for updates${packages:+: $packages}; reboot when no agent runs"
@@ -295,6 +314,7 @@ status() {
             status_check "Wake-on-LAN on \"$name\" (also needs the BIOS settings in the README)" wake_on_lan_on "$uuid"
         done < <(wired_connections)
         "$wired" || status_item skipped "Wake-on-LAN: no wired connection"
+        items_status wifi_powersave_off
         while IFS=$'\t' read -r uuid name; do
             status_check "Wi-Fi \"$name\" connects at boot, without a login (bash setup.sh ubuntu says how)" \
                 wifi_connects_at_boot "$uuid"
@@ -354,7 +374,8 @@ apply() {
     else
         items_pending unattended_upgrades_running
     fi
-    items_pending keep_conffiles_written apt_timers_enabled openssh_installed
+    items_pending keep_conffiles_written apt_timers_enabled openssh_installed cloud_init_off cups_browsed_off \
+        wifi_powersave_off
     ! openssh_installed || items_pending sshd_enabled
     local key_only_todo="" key_only_why="" drop_in_lines
     if key_only_todo="$(key_only_todo)" && [ -n "$key_only_todo" ] &&
@@ -415,7 +436,7 @@ apply() {
         items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
         items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
-            apt_timers_enabled openssh_installed || result=1
+            apt_timers_enabled openssh_installed cloud_init_off cups_browsed_off wifi_powersave_off || result=1
         ! openssh_installed || items_apply sshd_enabled || result=1
         sshd_configured || configure_sshd || result=1
         if "$tailscale_repo"; then
@@ -459,6 +480,32 @@ apply() {
     warn_wifi_needs_login
     warn_disk_encryption
     return "$result"
+}
+
+wifi_devices() {
+    nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "wifi" { print $1 }'
+}
+
+# The value NetworkManager reads, so a drop-in sorting later that turns it back on shows up
+wifi_powersave_off() {
+    local nm
+    file_is "$WIFI_POWERSAVE_CONF" "$WIFI_POWERSAVE_CONTENT" && nm="$(sbin_cmd NetworkManager)" || return 1
+    [ "$("$nm" --print-config 2>/dev/null |
+        awk -F= '/^\[/ { section = $0 } section == "[connection]" && $1 == "wifi.powersave" { v = $2 } END { print v }')" == 2 ]
+}
+
+# NetworkManager applies the drop-in when Wi-Fi next connects; iw turns it off now, without
+# dropping an SSH session over Wi-Fi
+turn_off_wifi_powersave() {
+    local iw dev
+    write_root_file "$WIFI_POWERSAVE_CONF" "$WIFI_POWERSAVE_CONTENT" && sudo nmcli general reload conf || return 1
+    if ! iw="$(sbin_cmd iw)"; then
+        echo "  Wi-Fi power save goes off when Wi-Fi next connects; install iw to turn it off now."
+        return 0
+    fi
+    for dev in $(wifi_devices); do
+        sudo "$iw" dev "$dev" set power_save off || return 1
+    done
 }
 
 # A user-limited connection, or psk-flags 1 or 2 (password not kept by the system), waits for a

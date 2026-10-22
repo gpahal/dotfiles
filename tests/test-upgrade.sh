@@ -448,4 +448,20 @@ mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
 run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
 assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
+
+# Vicinae, on Ubuntu with it installed: upgrade runs its installer, and a failed one fails the stage
+stub gnome-shell 'echo "GNOME Shell 50.1"'
+stub curl 'exit 7'
+printf '#!/bin/sh\necho v0.29.2\n' > "$HOME/.local/bin/vicinae"
+chmod +x "$HOME/.local/bin/vicinae"
+: > "$STUB_LOG"
+run env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" UNAME_S=Linux \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
+assert_file_contains "$STUB_LOG" "https://vicinae.com/install"
+assert_contains "$RUN_OUTPUT" "Couldn't download Vicinae's installer."
+assert_contains "$(grep '^Failed' <<< "$RUN_OUTPUT")" "vicinae"
+: > "$STUB_LOG"
+run env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" UNAME_S=Darwin \
+    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
+assert_file_not_contains "$STUB_LOG" "vicinae.com"
 test_done

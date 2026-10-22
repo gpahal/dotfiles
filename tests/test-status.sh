@@ -81,6 +81,8 @@ replace_fn health_units_written true
 replace_fn health_units_loaded true
 replace_fn sshd_enabled true
 replace_fn ufw_enabled true
+replace_fn cloud_init_off true
+replace_fn wifi_powersave_off true
 echo IPV6=yes > "$UFW_DEFAULTS"
 stub systemctl '[ "$1" != is-enabled ] || echo masked'
 stub systemd-detect-virt 'exit 1'

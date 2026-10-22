@@ -276,14 +276,26 @@ restart_nut() {
 
 setup_ups() {
     local scan driver vendor product password file content changed=false notifier=false rtc=false
-    local target=false
+    local target=false scan_err scan_status=0
     if ! nut_installed; then
         apt_get install -y "${NUT_PACKAGES[@]}" || return 1
         # nut-server's postinst re-runs udev only if /etc/init.d/udev exists, which Ubuntu lacks,
         # so a plugged-in UPS wouldn't get the nut group
         sudo udevadm trigger --settle --subsystem-match=usb --action=change || return 1
     fi
-    scan="$(sudo nut-scanner -U -q 2>/dev/null | ups_scan_parse)" || true
+    # NUT 2.8.4's nut-scanner exits 0 whether or not it finds a device (main's end in
+    # tools/nut-scanner/nut-scanner.c), and prints library warnings on stderr even then. So only a
+    # non-zero exit, as from a fatal error or sudo, is a failure, and only then is stderr shown.
+    scan_err="$(mktemp)" || return 1
+    scan="$(sudo nut-scanner -U -q 2>"$scan_err")" || scan_status=$?
+    if [ "$scan_status" -ne 0 ]; then
+        echo "  nut-scanner -U failed (exit $scan_status), so NUT isn't set up:" >&2
+        sed 's/^/    /' "$scan_err" >&2
+        rm -f "$scan_err"
+        return 1
+    fi
+    rm -f "$scan_err"
+    scan="$(ups_scan_parse <<< "$scan")" || return 1
     if [ -z "$scan" ]; then
         echo "  No UPS found on USB. Plug in the UPS's USB cable and re-run the step."
         return 0

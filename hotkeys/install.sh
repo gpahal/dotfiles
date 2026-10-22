@@ -8,14 +8,14 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/gnome.sh
+source "$DOTFILES_DIR/lib/gnome.sh"
 
 STEP_OS=ubuntu
 # The shortcuts run its open-in, which needs its GNOME extension
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="stream-deck"
 
-MEDIA_KEYS=org.gnome.settings-daemon.plugins.media-keys
-KEYBINDING_DIR=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
 OPEN_IN="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/stream-deck/bin/open-in"
 # <key> <open-in target> <name>, as in hammerspoon/init.lua
 HOTKEYS=(
@@ -33,7 +33,7 @@ key_label() {
 }
 
 hotkey_path() {
-    echo "$KEYBINDING_DIR/dotfiles-$1/"
+    echo "$GNOME_KEYBINDING_DIR/dotfiles-$1/"
 }
 
 # The command field is split like a shell's; systemd-cat sends open-in's log to the journal
@@ -42,48 +42,22 @@ hotkey_command() {
         "$OPEN_IN" "$1"
 }
 
-# gsettings prints strings quoted, and a list as a GVariant: @as [] or ['a', 'b']
-binding_get() {
-    gsettings get "$MEDIA_KEYS.custom-keybinding:$1" "$2" 2> /dev/null
-}
-
-keybinding_paths() {
-    gsettings get "$MEDIA_KEYS" custom-keybindings | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
-        tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
-}
-
 hotkey_current() {
     local key="$1" target="$2" name="${3//_/ }" path
     path="$(hotkey_path "$target")"
-    keybinding_paths | grep -qxF "$path" &&
-        [ "$(binding_get "$path" name)" == "'$name'" ] &&
-        [ "$(binding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ] &&
-        [ "$(binding_get "$path" command)" == "\"$(hotkey_command "$target")\"" ]
+    gnome_keybinding_paths | grep -qxF "$path" &&
+        [ "$(gnome_keybinding_get "$path" name)" == "'$name'" ] &&
+        [ "$(gnome_keybinding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ] &&
+        [ "$(gnome_keybinding_get "$path" command)" == "\"$(hotkey_command "$target")\"" ]
 }
 
-# Another custom shortcut on the same keys, which GNOME would run instead
 hotkey_clash() {
-    local key="$1" own path
-    own="$(hotkey_path "$2")"
-    while IFS= read -r path; do
-        [ "$path" != "$own" ] || continue
-        if [ "$(binding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ]; then
-            echo "$path"
-            return 0
-        fi
-    done < <(keybinding_paths)
-    return 1
+    gnome_keybinding_clash "<Control><Alt><Super>$1" "$(hotkey_path "$2")"
 }
 
 set_hotkey() {
-    local key="$1" target="$2" name="${3//_/ }" path list
-    path="$(hotkey_path "$target")"
-    gsettings set "$MEDIA_KEYS.custom-keybinding:$path" name "$name" &&
-        gsettings set "$MEDIA_KEYS.custom-keybinding:$path" command "$(hotkey_command "$target")" &&
-        gsettings set "$MEDIA_KEYS.custom-keybinding:$path" binding "<Control><Alt><Super>$key" || return 1
-    keybinding_paths | grep -qxF "$path" && return 0
-    list="$({ keybinding_paths; echo "$path"; } | sed "s/.*/'&'/" | join_lines ', ')"
-    gsettings set "$MEDIA_KEYS" custom-keybindings "[$list]"
+    local key="$1" target="$2" name="${3//_/ }"
+    gnome_set_keybinding "$(hotkey_path "$target")" "$name" "$(hotkey_command "$target")" "<Control><Alt><Super>$key"
 }
 
 status() {
@@ -106,6 +80,10 @@ status() {
 apply() {
     echo "Adding GNOME shortcuts..."
     require_cmd gsettings || return 1
+    if [ ! -x "$OPEN_IN" ]; then
+        echo "  The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck" >&2
+        return 1
+    fi
     local hotkey key target name clash status=0 changed=false
     for hotkey in "${HOTKEYS[@]}"; do
         read -r key target name <<< "$hotkey"

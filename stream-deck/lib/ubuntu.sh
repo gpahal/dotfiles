@@ -22,10 +22,6 @@ DEV_DIR=/dev
 # Chrome names an --app window's class after its URL, without the fragment
 GMAIL_URL=https://mail.google.com/mail/u/0/#inbox
 GMAIL_CLASS=chrome-mail.google.com__mail_u_0_-Default
-# GNOME Shell's ExtensionState
-EXTENSION_ACTIVE=1
-EXTENSION_ERROR=3
-EXTENSION_OUT_OF_DATE=4
 
 stream_deck_ubuntu_files() {
     local file status=0
@@ -67,37 +63,6 @@ deck_deps_current() {
 install_deck_deps() {
     (cd "$DECK_DIR" && pnpm install --frozen-lockfile --prod --config.confirmModulesPurge=false) || return 1
     cp "$LINUX_SRC/pnpm-lock.yaml" "$DECK_DEPS_STAMP"
-}
-
-# The enabled list as one UUID a line. gsettings prints a GVariant: @as [] or ['a', 'b'].
-enabled_extensions() {
-    gsettings get org.gnome.shell enabled-extensions | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
-        tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
-}
-
-extension_enabled() {
-    enabled_extensions | grep -qxF "$EXTENSION_UUID"
-}
-
-# Adds this one, keeping the rest. GNOME loads it at the next login.
-enable_extension() {
-    local list
-    list="$({ enabled_extensions; echo "$EXTENSION_UUID"; } | sed "s/.*/'&'/" | join_lines ', ')"
-    gsettings set org.gnome.shell enabled-extensions "[$list]"
-}
-
-# Prints the extension's state number and, after a tab, its error; nothing when GNOME Shell doesn't
-# know it. Fails when GNOME Shell isn't running, as over SSH with no desktop login.
-extension_state() {
-    local info
-    busctl --user status org.gnome.Shell &> /dev/null || return 1
-    info="$(busctl --user --json=short call org.gnome.Shell /org/gnome/Shell org.gnome.Shell.Extensions \
-        GetExtensionInfo s "$EXTENSION_UUID" 2> /dev/null)" || return 1
-    jq -r '.data[0] | select(.state) | "\(.state.data | floor)\t\(.error.data // "")"' <<< "$info"
-}
-
-session_running() {
-    systemctl --user is-active --quiet graphical-session.target 2> /dev/null
 }
 
 deck_unit_enabled() {
@@ -167,33 +132,13 @@ stream_deck_ubuntu_items() {
         power_service_on start_power_service
 }
 
-# Whether GNOME loaded it matters only once it's installed and enabled
-status_extension() {
-    local state="" error
-    status_check "GNOME extension $EXTENSION_UUID enabled" extension_enabled
-    [ -f "$EXTENSION_DIR/metadata.json" ] && extension_enabled || return 0
-    if ! state="$(extension_state)"; then
-        status_item unverified "GNOME extension loaded: GNOME Shell isn't running; check at the desktop"
-        return 0
-    fi
-    error="${state#*$'\t'}"
-    state="${state%%$'\t'*}"
-    case "$state" in
-        "$EXTENSION_ACTIVE") status_item ok "GNOME extension loaded" ;;
-        "$EXTENSION_OUT_OF_DATE") status_item missing "GNOME extension loaded: it doesn't list this GNOME version in metadata.json" ;;
-        "$EXTENSION_ERROR") status_item missing "GNOME extension loaded: it failed: ${error:-no error given}" ;;
-        "") status_item missing "GNOME extension loaded: log out and back in, since GNOME loads a new extension at login" ;;
-        *) status_item missing "GNOME extension loaded: it's in state $state, not running; log out and back in" ;;
-    esac
-}
-
 status_daemon() {
     status_check "Stream Deck daemon's dependencies in $DECK_DIR" deck_deps_current
     status_check "Stream Deck daemon's service ($DECK_UNIT)" file_is "$DECK_UNIT" "$(deck_unit)"
     [ -x "$DECK_NODE" ] || status_item missing "Node LTS at $DECK_NODE, which the daemon runs: bash setup.sh runtimes"
     [ -f "$DECK_UNIT" ] || return 0
     status_check "Stream Deck daemon starts at login" deck_unit_enabled
-    if ! session_running; then
+    if ! gnome_session_running; then
         status_item unverified "Stream Deck daemon running: no desktop session; it starts at the next login"
     elif systemctl --user is-active --quiet "$DECK_UNIT_NAME" 2> /dev/null; then
         status_item ok "Stream Deck daemon running"
@@ -224,7 +169,7 @@ status_ubuntu() {
     status_check "Gmail app window ($GMAIL_DESKTOP)" file_is "$GMAIL_DESKTOP" "$(gmail_desktop)"
     status_daemon
     if status_require_cmd gsettings "GNOME extension"; then
-        status_extension
+        status_gnome_extension "$EXTENSION_UUID" "$EXTENSION_DIR" "GNOME extension"
     fi
     stream_deck_ubuntu_items
     items_status
@@ -235,10 +180,10 @@ status_ubuntu() {
 
 # A running GNOME Shell keeps the extension it loaded at login
 setup_extension() {
-    if ! extension_enabled; then
-        enable_extension || return 1
+    if ! gnome_extension_enabled "$EXTENSION_UUID"; then
+        gnome_enable_extension "$EXTENSION_UUID" || return 1
         echo "  Turned on the GNOME extension $EXTENSION_UUID. It loads at your next login."
-    elif "$EXTENSION_COPIED" && extension_state > /dev/null; then
+    elif "$EXTENSION_COPIED" && gnome_extension_state "$EXTENSION_UUID" > /dev/null; then
         echo "  The GNOME extension changed; log out and back in to load it."
     fi
 }
@@ -259,7 +204,7 @@ setup_deck_service() {
         systemctl --user daemon-reload || return 1
     fi
     deck_unit_enabled || systemctl --user enable "$DECK_UNIT_NAME" || return 1
-    if ! session_running; then
+    if ! gnome_session_running; then
         echo "  No desktop session, so the daemon starts at your next login."
     elif "$changed"; then
         systemctl --user restart "$DECK_UNIT_NAME" || return 1

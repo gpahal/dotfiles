@@ -13,7 +13,9 @@ as_os ubuntu
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 printf '%s\n' "$UNATTENDED_CONTENT" > "$UNATTENDED_CONF"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
-stub dpkg-query 'echo "install ok installed"'
+# Firefox is already gone, as the chrome step leaves it
+stub dpkg-query '[ "${!#}" == firefox ] || echo "install ok installed"'
+stub snap 'exit 1'
 periodic() {
     stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
 echo "APT::Periodic::Update-Package-Lists \"1\";"

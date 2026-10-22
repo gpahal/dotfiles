@@ -46,11 +46,13 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin, or on Ubuntu the daemon that drives the deck |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
+| `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
+| `vicinae` | Installs [Vicinae](#vicinae), a launcher like Raycast, on `Super+Space`. Ubuntu only |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
-| `chrome` | Installs Google Chrome from Google's apt repo. Ubuntu only |
+| `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
 | `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
@@ -87,6 +89,8 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 - ufw lets SSH in only from private ranges and the tailnet.
 - Docker's published ports listen on `127.0.0.1` unless given an address. Joining the `docker` group is root-equivalent, so the step asks.
 - Wired connections wake on LAN, with the BIOS setting on.
+- Wi-Fi power save is off, so SSH over Wi-Fi doesn't lag.
+- cloud-init is off outside a VM, since it only sets up a fresh install. cups-browsed is masked, so network printers aren't added by themselves; printing still works.
 
 ## What's included
 
@@ -164,6 +168,25 @@ macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 - `N` a new Chrome tab, with the clipboard's text pasted and selected.
 
 On Ubuntu, the `hotkeys` step adds the same shortcuts on `Ctrl+Alt+Super`, which run the [Stream Deck](#stream-deck)'s actions. A shortcut of yours on the same keys keeps them, and `--status` names it. `journalctl --user -t dotfiles-hotkeys` shows their log.
+
+### GNOME
+
+Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Dock, and the keyboard, where GNOME has a match:
+
+- Keys repeat after 225 ms, then every 30 ms.
+- Files shows hidden files and opens folders in list view. File choosers show hidden files too.
+- The dock hides until the pointer reaches the screen's edge.
+- Space in Files previews the selected file, as Quick Look does (gnome-sushi).
+
+### Vicinae
+
+Ubuntu only, in place of Raycast. `Super+Space` opens [Vicinae](https://docs.vicinae.com/), which launches apps, keeps clipboard history, and runs many Raycast extensions.
+
+- Vicinae's installer puts it in `~/.local`, without sudo. `upgrade` moves it to the latest release.
+- Paste into the active window and snippets are off, since its input helper would need root's access to every file. Pick a clipboard entry to copy it, then press `Ctrl+V`.
+- Its GNOME extension, from extensions.gnome.org, gives it the clipboard and the window list. GNOME loads it at the next login.
+- `Super+Space` no longer switches keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
+- A shortcut of yours on `Super+Space` keeps it, and `--status` names it. `journalctl --user -u vicinae` shows Vicinae's log.
 
 ### Monitor input
 
@@ -263,7 +286,7 @@ Once:
 9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the desktop, open Solaar and pair your devices.
-12. **Stream Deck.** Log out of the desktop and back in once, so GNOME loads the extension the `stream-deck` step turned on.
+12. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
 13. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
 14. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
 15. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
@@ -274,11 +297,13 @@ Once:
     4. Run `just alerts test` again.
 17. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
 18. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
+19. **Display scale.** In **Settings → Displays**, set **Scale** to **200%**. Whole-number scaling is sharper than 150% and lighter on the CPU's built-in GPU.
 
 When needed:
 
 - Reboot when `just status` says one is pending.
 - Install firmware updates it lists: `fwupdmgr refresh && fwupdmgr update`.
+- If `fwupdmgr refresh` times out, run `curl -sSI --max-time 15 https://cdn.fwupd.org/downloads/firmware.xml.zst.jcat` and `curl -sSI --max-time 15 https://fwupd.org`. When only the first fails, your network blocks the firmware CDN. Refresh on another network, such as a phone hotspot, or through a Tailscale exit node.
 - After a release upgrade, re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
 
 ## Check it works
@@ -300,15 +325,25 @@ Over SSH from the Mac:
 - `sudo -v && just status` prints no **Needs attention** line.
 - `command -v brew mise node` prints three paths, and a test commit is signed.
 - After a reboot, `ssh <alias>` connects, `docker ps` works without `sudo`, `tmux ls` lists the old sessions, and the phone gets the boot notice.
+- `iw dev <device> get power_save` prints `Power save: off` for the Wi-Fi device `nmcli device` lists, also after a reboot.
+- `systemctl is-enabled cups-browsed` prints `masked`, and `cloud-init status` prints `status: disabled` after a reboot.
+- `snap list firefox` and `dpkg -s firefox` both say Firefox isn't installed, and `xdg-settings get default-web-browser` prints `google-chrome.desktop`.
+- `fwupdmgr refresh --force` finishes without a timeout. If it times out, see **When needed** in the [manual steps](#ubuntu-2).
 
 At the desktop, with the Stream Deck switched to it:
 
 - The keys show, and **Overview** opens the **System** page.
 - With a file open in Zed, **Terminal** and `Ctrl+Alt+Super+T` open Ghostty at its folder.
+- `Super+Space` opens Vicinae. Typing an app's name and pressing `Enter` opens the app, and `Super+Space` again closes Vicinae.
+- Copy two bits of text, open **Clipboard History** in Vicinae, and pick the first. `Ctrl+V` in a text field then pastes it.
+- Holding a key in a text field repeats it after about a quarter of a second.
+- Files lists folders in list view and shows hidden files, such as `.config` in your home folder. Selecting a file and pressing `Space` previews it, and `Space` again closes the preview.
+- The dock stays hidden until the pointer reaches the screen's left edge, also with no window open.
+- After the **Display scale** manual step, **Settings → Displays** shows **Scale** at **200%**, and text is sharp.
 
 ## Updating
 
-`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.

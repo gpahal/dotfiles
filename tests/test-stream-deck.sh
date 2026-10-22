@@ -114,6 +114,13 @@ if command -v zip &> /dev/null && command -v jq &> /dev/null; then
     assert_exit 0 bash "$REPO_DIR/stream-deck/build-profile.sh" "$SANDBOX/System.streamDeckProfile"
     cmp -s "$src/profiles/System.streamDeckProfile" "$SANDBOX/System.streamDeckProfile" ||
         fail "the System profile is out of date; run stream-deck/build-profile.sh"
+    # A relative path is the caller's, though zip runs elsewhere
+    mkdir -p "$SANDBOX/cwd"
+    echo stale > "$SANDBOX/cwd/rel.streamDeckProfile"
+    # shellcheck disable=SC2016 # the inner shell expands them
+    assert_exit 0 bash -c 'cd "$1" && bash "$2" rel.streamDeckProfile' _ "$SANDBOX/cwd" "$REPO_DIR/stream-deck/build-profile.sh"
+    cmp -s "$SANDBOX/System.streamDeckProfile" "$SANDBOX/cwd/rel.streamDeckProfile" ||
+        fail "build-profile.sh with a relative path didn't build there"
     for action in $(cat "$profile_src"/*.sdProfile/Profiles/*/manifest.json | jq -r '.Controllers[].Actions // {} | .[].UUID'); do
         jq -e --arg uuid "$action" '.Actions | any(.UUID == $uuid)' "$src/manifest.json" > /dev/null ||
             fail "the System profile has $action, which the manifest lacks"

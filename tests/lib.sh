@@ -333,27 +333,43 @@ test_done() {
 }
 
 # A gsettings keeping each key in a file, printing values as gsettings does: a list as set, and a
-# string in single quotes, or double quotes when it holds a single one. Unset keys print GNOME's
-# defaults for the lists the steps edit, else ''.
+# string in single quotes, or double quotes when it holds a single one. set takes a string quoted
+# that way too, and, like gsettings, fails on a quoted string followed by more. Unset keys print
+# GNOME's defaults for the lists the steps edit, else ''.
 stub_gsettings() {
+    local body
     mkdir -p "$SANDBOX/gsettings"
-    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")"'
+    # Not a heredoc in $(...): bash 3.2 misparses the case patterns' ) there
+    IFS= read -r -d '' body << 'STUB' || true
 file="$dir/${2//\//_}.$3"
 case "$1" in
     get)
         if [ -e "$file" ]; then cat "$file"
         else case "$3" in
             enabled-extensions | custom-keybindings) echo "@as []" ;;
-            switch-input-source) echo "['"'"'<Super>space'"'"', '"'"'XF86Keyboard'"'"']" ;;
-            *) echo "'"''"'" ;;
+            switch-input-source) echo "['<Super>space', 'XF86Keyboard']" ;;
+            *) echo "''" ;;
         esac; fi ;;
     set)
         case "$4" in
             "["* | "@as"*) printf "%s\n" "$4" > "$file" ;;
-            *"'"'"'"*) printf "\"%s\"\n" "$4" > "$file" ;;
-            *) printf "'"'"'%s'"'"'\n" "$4" > "$file" ;;
+            \'* | \"*)
+                # Without its escapes, a quoted string has its quote only at the end
+                quote="${4:0:1}" rest="${4:1}"
+                rest="${rest//\\\\/}"
+                rest="${rest//\\$quote/}"
+                if [ "${rest%%"$quote"*}$quote" != "$rest" ]; then
+                    echo "expected end of input:" >&2
+                    exit 1
+                fi
+                printf "%s\n" "$4" > "$file" ;;
+            *"'"*) printf '"%s"\n' "$4" > "$file" ;;
+            *) printf "'%s'\n" "$4" > "$file" ;;
         esac ;;
-esac'
+esac
+STUB
+    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")
+$body"
 }
 
 # The sandbox has no git identity

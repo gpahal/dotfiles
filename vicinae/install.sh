@@ -6,13 +6,16 @@ set -euo pipefail
 # its settings window's changes to settings.json, whose values win over imports, so the step only
 # adds the import and this OS's settings there, and --status names the repo's keys it overrides.
 # On macOS the homebrew step installs the app and the step only writes ~/.config/vicinae. On Ubuntu
-# it installs into ~/.local with Vicinae's installer, then turns on its GNOME extension, user
-# service, and shortcut in your session whatever HOME is: test that in an Ubuntu VM with GNOME.
+# it installs libopengl0 with sudo and Vicinae into ~/.local with Vicinae's installer, then turns on
+# its GNOME extension, user service, and shortcut in your session whatever HOME is: test that in an
+# Ubuntu VM with GNOME.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/gnome.sh
 source "$DOTFILES_DIR/lib/gnome.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 
 # The cask on macOS; on Ubuntu, curl and jq for the installer, which it installs with apt
 # shellcheck disable=SC2034 # run_steps reads it
@@ -28,6 +31,8 @@ DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 VICINAE_PREFIX="$HOME/.local"
 VICINAE_BIN="$VICINAE_PREFIX/bin/vicinae"
 VICINAE_INSTALLER=https://vicinae.com/install
+# The installer's bundled Qt links against libOpenGL.so.0, which Ubuntu's desktop install lacks
+VICINAE_APT_PACKAGE=libopengl0
 VICINAE_UNIT_NAME=vicinae.service
 # Where the installer writes it for a prefix under HOME
 VICINAE_UNIT="$DATA_HOME/systemd/user/$VICINAE_UNIT_NAME"
@@ -197,6 +202,21 @@ status_settings() {
     [ -z "$overrides" ] || status_item info "$file overrides the repo's $VICINAE_IMPORT for: $overrides"
 }
 
+libopengl_installed() {
+    apt_installed "$VICINAE_APT_PACKAGE"
+}
+
+install_libopengl() {
+    apt_install_fresh "$VICINAE_APT_PACKAGE"
+}
+
+vicinae_items() {
+    items_reset
+    item --sudo "$VICINAE_APT_PACKAGE, which Vicinae needs to start" \
+        "Install $VICINAE_APT_PACKAGE, the OpenGL library Vicinae needs to start" \
+        libopengl_installed install_libopengl
+}
+
 # The installer installs or updates to the latest release, and does nothing when it's current.
 # It runs tput under set -e, which fails without TERM.
 run_vicinae_installer() {
@@ -333,6 +353,8 @@ status_ubuntu() {
     local clash
     status_require_cmd gsettings "Vicinae's GNOME extension and shortcut" || return 0
     status_check "Vicinae ($VICINAE_BIN)" vicinae_installed
+    vicinae_items
+    items_status
     status_service
     status_check "Vicinae's GNOME extension installed ($VICINAE_EXTENSION_DIR)" extension_installed
     status_gnome_extension "$VICINAE_EXTENSION_UUID" "$VICINAE_EXTENSION_DIR" "Vicinae's GNOME extension"
@@ -366,7 +388,12 @@ apply_ubuntu() {
     require_cmd jq || return 1
     require_cmd gsettings || return 1
     require_cmd gnome-extensions || return 1
-    local result=0 changed=false
+    local result=0 changed=false pending=()
+    vicinae_items
+    items_pending
+    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
+        items_apply || result=1
+    fi
     if ! vicinae_installed; then
         if run_vicinae_installer; then
             changed=true

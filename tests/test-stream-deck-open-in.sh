@@ -107,8 +107,9 @@ case "$script" in
 esac'
 stub open
 stub zed-cli
+# Many lines after the match, as a grep -q reading them would leave mdls writing to a closed pipe
 stub mdls 'case "$4" in
-    *.app) printf "(\n    \"com.apple.application-bundle\",\n    \"com.apple.package\"\n)\n" ;;
+    *.app) printf "(\n    \"com.apple.package\",\n"; for i in $(seq 5000); do echo "    \"type.$i\","; done; echo ")" ;;
     *) printf "(\n    \"public.folder\"\n)\n" ;;
 esac'
 export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" GHOSTTY_RUNNING=1 GHOSTTY_CWD="" ZED_TITLE="" \

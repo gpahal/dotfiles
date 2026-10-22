@@ -170,9 +170,12 @@ read_context_path() {
     [ -n "$CONTEXT_PATH" ] && [ -e "$CONTEXT_PATH" ] || CONTEXT_PATH=""
 }
 
-# Opening a package (e.g. an app) would launch it
+# Opening a package (e.g. an app) would launch it. Not mdls | grep -q: grep exits at the first
+# match, and under pipefail the writer's SIGPIPE fails the pipeline
 is_package() {
-    mdls -raw -name kMDItemContentTypeTree "$1" 2>/dev/null | grep -q '"com.apple.package"'
+    local types
+    types="$(mdls -raw -name kMDItemContentTypeTree "$1" 2>/dev/null)"
+    grep -qF '"com.apple.package"' <<< "$types"
 }
 
 open_finder() {

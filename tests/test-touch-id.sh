@@ -193,6 +193,7 @@ reset
 put_reattach
 answer yes
 WATCHID_LINE="auth       sufficient     pam_watchid.so"
+touch "$DOTFILES_PAM_MODULES_DIR/pam_watchid.so.2"
 printf '%s\n' "$HEADER" "auth       optional       $SOURCE ignore_ssh" "#auth       sufficient     pam_tid.so" \
     "$WATCHID_LINE" "$TID_LINE" "auth optional $MODULE debug" > "$SUDO_LOCAL"
 assert_exit 3 main --status

@@ -186,6 +186,9 @@ assert_eq ok "$(env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/sh -lc 'echo ok' < /
     "sh -lc without profile.sh"
 mv "$SANDBOX/profile.sh" "$HOME/.zsh/profile.sh"
 
+# The login zsh below is this machine's. On macOS, /etc/zprofile's path_helper reorders PATH after
+# ~/.zshenv, so add the ~/.zprofile line the macOS step adds.
+[ "$(uname -s)" != Darwin ] || echo "$PATH_ZSH_LINE" >> "$HOME/.zprofile"
 # ssh host cmd starts a zsh that's neither login nor interactive, so ~/.zshenv sources path.zsh
 zshenv_path() {
     env -i HOME="$HOME" TERM=dumb PATH="${ZSHENV_PATH:-/usr/bin:/bin}" "$ZSH_BIN" "$@" \

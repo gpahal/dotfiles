@@ -229,7 +229,7 @@ status_touch_id() {
         if [[ "$module" == */pam_reattach.so ]]; then
             status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so Touch ID in tmux doesn't work and sudo may fail; run brew install pam-reattach, then just touch-id. $rescue"
         else
-            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so sudo may fail; just touch-id rewrites the file without it. $rescue"
+            status_item missing "$SUDO_LOCAL loads $module, which doesn't exist, so sudo may fail; remove that line from it, or install the module. $rescue"
         fi
     done < <(sudo_local_modules)
 }

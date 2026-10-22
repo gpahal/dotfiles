@@ -193,6 +193,8 @@ mkdir -p "$(dirname "$NTFY_URL_FILE")"
 url_label="ntfy URL for the disk, UPS, health, and boot alerts"
 # Only you, nut, and root may read the topic, and it must be long enough not to be guessed
 echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
+# macOS gives a new file its directory's group, wheel under /tmp
+chgrp "$(id -gn)" "$NTFY_URL_FILE"
 chmod 644 "$NTFY_URL_FILE"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): it's $(id -un) $(id -gn) 644 (owner, group, mode), not $(id -un) $(id -gn) 640; run just alerts to save it again"

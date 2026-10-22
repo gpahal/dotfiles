@@ -43,12 +43,8 @@ hotkey_command() {
 }
 
 hotkey_current() {
-    local key="$1" target="$2" name="${3//_/ }" path
-    path="$(hotkey_path "$target")"
-    gnome_keybinding_paths | grep -qxF "$path" &&
-        [ "$(gnome_keybinding_get "$path" name)" == "'$name'" ] &&
-        [ "$(gnome_keybinding_get "$path" binding)" == "'<Control><Alt><Super>$key'" ] &&
-        [ "$(gnome_keybinding_get "$path" command)" == "\"$(hotkey_command "$target")\"" ]
+    local key="$1" target="$2" name="${3//_/ }"
+    gnome_keybinding_is "$(hotkey_path "$target")" "$name" "$(hotkey_command "$target")" "<Control><Alt><Super>$key"
 }
 
 hotkey_clash() {
@@ -62,6 +58,10 @@ set_hotkey() {
 
 status() {
     local hotkey key target name clash
+    if ! has_gnome_desktop; then
+        status_item skipped "GNOME shortcuts: no GNOME desktop"
+        return 0
+    fi
     status_require_cmd gsettings "GNOME shortcuts" || { status_result; return; }
     if [ ! -x "$OPEN_IN" ]; then
         status_item missing "The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
@@ -79,6 +79,10 @@ status() {
 
 apply() {
     echo "Adding GNOME shortcuts..."
+    if ! has_gnome_desktop; then
+        echo "  No GNOME desktop, so skipped."
+        return 0
+    fi
     require_cmd gsettings || return 1
     if [ ! -x "$OPEN_IN" ]; then
         echo "  The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck" >&2

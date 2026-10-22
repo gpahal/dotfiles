@@ -56,19 +56,4 @@ printf ': 1:0;echo other\n' > "$HOME/.zsh_history"
 assert_exit 1 interactive please
 assert_contains "$RUN_OUTPUT" "no earlier command"
 assert_eq "" "$(cat "$STUB_LOG")" "please in a new shell"
-
-# A shell started before please became a function still has the old alias when it re-sources ~/.zshrc
-probe_alias() {
-    zsh -fc '
-        unset HOMEBREW_PREFIX
-        compdef() { :; }
-        alias please='\''sudo zsh -c "$(fc -ln -1)"'\''
-        autoload -U add-zsh-hook
-        source "$1/zsh/functions.zsh"
-        unalias please
-        whence -w please g
-    ' zsh "$REPO_DIR"
-}
-assert_exit 0 probe_alias
-assert_eq "$(printf '%s\n' 'please: function' 'g: function')" "$RUN_OUTPUT" "please after the old alias"
 test_done

@@ -43,14 +43,8 @@ replace_fn cups_browsed_off true
 replace_fn wifi_powersave_off true
 touch "$SANDBOX/linger"
 
-# sudo -n succeeds only while $SANDBOX/cached exists; sudo install makes $SSHD_RUN_DIR, not /run.
-stub_sudo_exec 'if [ "${1:-}" == -n ]; then
-    [ -e "'"$SANDBOX"'/cached" ] || exit 1
-    shift
-fi
-[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
-cached() { touch "$SANDBOX/cached"; }
-not_cached() { rm -f "$SANDBOX/cached"; }
+# sudo install makes $SSHD_RUN_DIR, not /run
+stub_sudo_cacheable '[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
 
 stub systemctl 'case "$1" in
     is-enabled) if [ "$*" == "is-enabled -q ufw.service" ]; then [ ! -e "'"$SANDBOX"'/ufw-unit-disabled" ]; else echo masked; fi ;;
@@ -62,7 +56,8 @@ echo 22 > "$SANDBOX/socket-ports"
 stub dpkg-query 'echo "install ok installed"'
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
-    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
+    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": false}" ;;
+    funnel) echo "{}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 stub sshd '[ "$1" != -T ] || { echo "port 22"; awk "{ print tolower(\$1), \$2 }" "'"$SANDBOX"'/10-dotfiles.conf"; }'
@@ -116,31 +111,24 @@ rules_missing() {
     { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-rules"
 }
 
-no_prompting_sudo() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "the step ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-}
-
 # Nothing else pending, credentials not cached: no prompt, only a hint
 rules_present
-not_cached
+cache_sudo no
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_not_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 
 # Credentials cached: rules checked up front
-cached
+cache_sudo yes
 rules_present
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_not_contains "$RUN_OUTPUT" "sudo -v"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 rules_missing
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules, so ufw denies incoming connections but SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp, and denies SSH on Docker's bridges"
@@ -152,7 +140,7 @@ assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw, so ufw denies 
 ufw_on
 
 # Something else pending and approved, credentials not cached: rules checked after the confirm
-not_cached
+cache_sudo no
 export DOTFILES_ASSUME_YES=1
 rm -f "$SANDBOX/linger"
 rules_present
@@ -170,21 +158,24 @@ assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 
 
 # Without $SSHD_RUN_DIR the rules can't be read even with cached credentials
 unset DOTFILES_ASSUME_YES
-cached
+cache_sudo yes
 rmdir "$SSHD_RUN_DIR"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_contains "$RUN_OUTPUT" "first SSH connection"
 [ ! -e "$SSHD_RUN_DIR" ] || fail "main created $SSHD_RUN_DIR without asking"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 
 # Hand-added rules don't fail the check and aren't deleted
 mkdir -p "$SSHD_RUN_DIR"
-cached
+cache_sudo yes
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+: > "$STUB_LOG"
 assert_exit 0 status
+assert_eq 1 "$(grep -c '^sudo -n ufw status$' "$STUB_LOG")" "sudo ufw status runs in one status"
+assert_eq 1 "$(grep -c '^sudo -n .*sshd -T$' "$STUB_LOG")" "sudo sshd -T runs in one status"
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
@@ -302,10 +293,11 @@ sessions() {
 }
 logins() { printf '%s\n' "$@" > "$SANDBOX/logins"; }
 no_sessions() { rm -f "$SANDBOX"/ss-[0-9]* "$SANDBOX/logins"; }
+# configure_ufw alone, since main's other changes don't depend on it
 firewall_run() {
     ufw_off
     : > "$STUB_LOG"
-    run main
+    run configure_ufw
 }
 firewall_unchanged() {
     assert_file_not_contains "$STUB_LOG" "ufw --force enable"
@@ -313,7 +305,7 @@ firewall_unchanged() {
     assert_file_not_contains "$STUB_LOG" "ufw allow"
 }
 export DOTFILES_ASSUME_YES=1
-cached
+cache_sudo yes
 rules_present
 
 # Console run: ufw goes on, and ss runs without sudo
@@ -355,10 +347,10 @@ assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 [ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
 assert_exit 0 status
 touch "$SANDBOX/ufw-stopped"
-not_cached
+cache_sudo no
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
-cached
+cache_sudo yes
 rm "$SANDBOX/ufw-stopped"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -393,9 +385,7 @@ assert_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_contains "$RUN_OUTPUT" "the machine, over SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, or over Tailscale."
 assert_contains "$RUN_OUTPUT" "If the Mac connects over IPv6 (e.g. to $(hostname).local), connect to the machine's IPv4"
 assert_contains "$RUN_OUTPUT" "address (ip -4 addr) or, once Tailscale is up, its tailnet name, and re-run."
-assert_file_contains "$STUB_LOG" "loginctl enable-linger"
 firewall_unchanged
-assert_not_contains "$RUN_OUTPUT" "  Applied."
 
 # ssh.socket also on 2222, which sshd -T doesn't report
 printf '%s\n' 22 2222 > "$SANDBOX/socket-ports"
@@ -454,14 +444,17 @@ assert_not_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_exit 0 ufw_configured -n
 no_sessions
 
-# ss failing: ufw unchanged, the rest still runs
+# ss failing: ufw unchanged, and main still makes its other changes
 touch "$SANDBOX/ss-fails"
 rm -f "$SANDBOX/linger"
-firewall_run
+ufw_off
+: > "$STUB_LOG"
+run main
 assert_eq 1 "$RUN_STATUS" "the step without the connections"
 assert_contains "$RUN_OUTPUT" "Couldn't list the established SSH connections"
 firewall_unchanged
 assert_file_contains "$STUB_LOG" "loginctl enable-linger"
+assert_not_contains "$RUN_OUTPUT" "  Applied."
 rm "$SANDBOX/ss-fails"
 
 firewall_run

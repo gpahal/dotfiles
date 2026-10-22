@@ -6,7 +6,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
-command -v script &>/dev/null || skip "script isn't installed"
+in_terminal_available || skip "script isn't installed"
 # CLAUDECODE turns off the terminal-only options and reminders
 unset CLAUDECODE
 stub_login_shell_zsh
@@ -20,16 +20,9 @@ WORK="$SANDBOX/work"
 mkdir -p "$WORK"
 ERR="$SANDBOX/stderr"
 
-# Usage: in_terminal <TERM> <commands>; stderr goes to $ERR
-in_terminal() {
-    local cmd
-    cmd="$(printf '%q ' /bin/sh -c 'cd "$1" && TERM=$2 exec zsh -lic "$3" 2> "$4"' sh "$WORK" "$@" "$ERR")"
-    if [[ "$OSTYPE" == darwin* ]]; then
-        script -q /dev/null /bin/sh -c "$cmd"
-    else
-        # script runs the command with $SHELL, and %q output is bash quoting
-        SHELL=/bin/bash script -qec "$cmd" /dev/null
-    fi < /dev/null | tr -d '\r'
+# Usage: zsh_in_terminal <TERM> <commands>; stderr goes to $ERR
+zsh_in_terminal() {
+    in_terminal /bin/sh -c 'cd "$1" && TERM=$2 exec zsh -lic "$3" 2> "$4"' sh "$WORK" "$@" "$ERR"
 }
 
 # CI doesn't install bat or eza
@@ -54,7 +47,7 @@ for line in "Error: database is locked" "[WARN] - (starship::config): bad key" \
     ! zsh_errors <<< "$line" || fail "zsh_errors counted a tool's output: $line"
 done
 for term in xterm-256color dumb; do
-    output="$(in_terminal "$term" "$checks")"
+    output="$(zsh_in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
     assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
     if zsh_errors < "$ERR"; then

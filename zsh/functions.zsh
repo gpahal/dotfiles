@@ -17,8 +17,7 @@ mcd() {
 
 # please reruns the previous line as root. A zshaddhistory hook records lines as typed, since
 # history can't: share_history mixes in other shells, hist_ignore_space drops lines, fc -n mangles \n.
-# `function` keyword: a shell still holding the old please alias would mangle `please()`.
-function _please_addhistory {
+_please_addhistory() {
     local line=${1%$'\n'}
     local -a words=(${(z)line})
     # 0 keeps the line in history
@@ -32,7 +31,7 @@ function _please_addhistory {
 }
 add-zsh-hook zshaddhistory _please_addhistory
 
-function please {
+please() {
     local c
     if [[ -n ${_please_skipped-} ]]; then
         c=${_please_line-}

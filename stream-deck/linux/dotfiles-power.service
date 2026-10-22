@@ -1,16 +1,21 @@
 # From the dotfiles stream-deck step: the Stream Deck's Power key reads what this writes
 [Unit]
-Description=Write CPU power to /run/dotfiles-power for the Stream Deck
+Description=Write CPU power to /run/dotfiles-power/watts for the Stream Deck
 
 [Service]
 ExecStart=/usr/local/libexec/dotfiles-power
 Restart=on-failure
 RestartSec=10
-# It reads sysfs and writes one file in /run
+# It reads sysfs and writes one file in /run/dotfiles-power, which goes when it stops. Root reads
+# the 0400 counters as their owner, so it needs no capabilities.
+RuntimeDirectory=dotfiles-power
+CapabilityBoundingSet=
 ProtectSystem=strict
-ReadWritePaths=/run
 ProtectHome=true
 PrivateTmp=true
+PrivateNetwork=yes
+RestrictAddressFamilies=none
+SystemCallFilter=@system-service
 NoNewPrivileges=true
 
 [Install]

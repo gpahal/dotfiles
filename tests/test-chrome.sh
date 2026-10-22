@@ -27,6 +27,10 @@ stub snap 'case "$*" in
     "remove --purge firefox") rm "'"$SANDBOX"'/firefox-snap" ;;
 esac'
 CHROME_DEFAULTS="$SANDBOX/default-google-chrome"
+GOOGLE_KEYRING="$SANDBOX/google-chrome.gpg"
+# The key the .deb installed has the fingerprint in $SANDBOX/google-key
+echo "$GOOGLE_KEY_FPR" > "$SANDBOX/google-key"
+stub gpg 'printf "pub:-\nfpr:::::::::%s:\nsub:-\nfpr:::::::::0F06FF86BEEAF4E71866EE5232EE5355A6BC6E42:\n" "$(cat "'"$SANDBOX"'/google-key")"'
 # Fails unless the .deb is world-readable. Like Google's .deb, adds its apt source on first
 # install, later only when repo_add_once="true".
 stub apt-get 'deb="${!#}"
@@ -92,6 +96,21 @@ assert_contains "$RUN_OUTPUT" "Chrome is already installed and updates automatic
 assert_file_not_contains "$STUB_LOG" "sudo"
 assert_file_not_contains "$STUB_LOG" "curl"
 assert_eq "$before" "$(/bin/ls -li "$UNATTENDED_CONF")" "the unattended-upgrades file after a re-run"
+
+# Google's key comes over TLS alone, so the step checks it against the pinned fingerprint
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Google's apt key ($GOOGLE_KEYRING) is the one the step pins"
+assert_file_contains "$STUB_LOG" "gpg --show-keys --with-colons $GOOGLE_KEYRING"
+echo 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/google-key"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Google's apt key ($GOOGLE_KEYRING) is the one the step pins: $GOOGLE_KEYRING has the fingerprint 0123456789ABCDEF0123456789ABCDEF01234567, not $GOOGLE_KEY_FPR."
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Google's apt key isn't the one the step pins"
+echo "$GOOGLE_KEY_FPR" > "$SANDBOX/google-key"
+hide gpg
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "gpg"
+stub gpg 'printf "pub:-\nfpr:::::::::%s:\n" "$(cat "'"$SANDBOX"'/google-key")"'
 
 echo "// edited" > "$UNATTENDED_CONF"
 : > "$STUB_LOG"

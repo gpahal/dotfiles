@@ -62,10 +62,6 @@ install_ghostty() {
     fi
     items_pending
     if [ ${#pending[@]} -gt 0 ]; then
-        if ! command -v snap &>/dev/null; then
-            echo "  Installing Ghostty needs snapd. Install it with: sudo apt-get install snapd" >&2
-            return 1
-        fi
         confirm_sudo_changes "${pending[@]}" || return 0
     fi
     items_apply
@@ -107,8 +103,10 @@ ghostty_overrides_status() {
 
 status() {
     if is_ubuntu; then
-        ghostty_items
-        items_status
+        if status_require_cmd snap "Ghostty snap"; then
+            ghostty_items
+            items_status
+        fi
     else
         status_item skipped "Ghostty snap: the homebrew step installs Ghostty on macOS"
     fi
@@ -120,6 +118,7 @@ status() {
 apply() {
     echo "Setting up Ghostty..."
     local installed=0
+    ! is_ubuntu || require_cmd snap || return 1
     if is_ubuntu; then
         install_ghostty || installed=$?
     fi

@@ -49,8 +49,11 @@ zsh_items() {
     items_reset
     item "main.zsh sourced in ~/.zshrc" "Add the main.zsh source line to ~/.zshrc" \
         zshrc_sources_main source_main_in_zshrc
-    item "path.zsh sourced in ~/.zprofile" "Add the path.zsh source line to ~/.zprofile" \
-        zprofile_sources_path source_path_in_zprofile
+    # After macOS's /etc/zprofile, whose path_helper reorders PATH. Ubuntu's ~/.zshenv covers it.
+    if is_macos; then
+        item "path.zsh sourced in ~/.zprofile" "Add the path.zsh source line to ~/.zprofile" \
+            zprofile_sources_path source_path_in_zprofile
+    fi
     is_ubuntu || return 0
     item "path.zsh sourced in ~/.zshenv" "Add the path.zsh source line to ~/.zshenv" \
         zshenv_sources_path source_path_in_zshenv
@@ -126,7 +129,9 @@ status() {
     zsh_files status_file
     zsh_items
     items_status
-    if ! is_ubuntu; then
+    if is_ubuntu; then
+        status_item skipped "path.zsh sourced in ~/.zprofile: macOS only"
+    else
         status_item skipped "profile.sh in ~/.zsh: Ubuntu only"
         status_item skipped "path.zsh sourced in ~/.zshenv: Ubuntu only"
         status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"

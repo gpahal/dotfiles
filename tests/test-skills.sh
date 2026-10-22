@@ -94,32 +94,33 @@ mkdir -p "$AGENTS_DIR/old-skill"
 printf -- '---\nname: old-skill\n---\n' > "$AGENTS_DIR/old-skill/SKILL.md"
 ln -s "$AGENTS_DIR/old-skill" "$CLAUDE_DIR/old-skill"
 ln -s "$AGENTS_DIR/gone" "$CLAUDE_DIR/gone"
-touch "$AGENTS_DIR/.DS_Store"
 step_status
 assert_eq 3 "$RUN_STATUS" "status with extra entries"
 assert_contains "$RUN_OUTPUT" "missing    ~/.agents/skills/old-skill, which isn't a skill in ai_tools/skills; the step removes it"
 assert_contains "$RUN_OUTPUT" "missing    ~/.claude/skills/gone, which isn't a skill in ai_tools/skills"
-assert_contains "$RUN_OUTPUT" "missing    ~/.agents/skills/.DS_Store"
 step
 assert_eq 0 "$RUN_STATUS" "status after removing extra entries"
 assert_contains "$RUN_OUTPUT" "Removed ~/.agents/skills/old-skill, which isn't a skill in ai_tools/skills"
-for path in "$AGENTS_DIR/old-skill" "$CLAUDE_DIR/old-skill" "$CLAUDE_DIR/gone" "$AGENTS_DIR/.DS_Store"; do
+for path in "$AGENTS_DIR/old-skill" "$CLAUDE_DIR/old-skill" "$CLAUDE_DIR/gone"; do
     [ ! -e "$path" ] && [ ! -L "$path" ] || fail "$path is still there"
 done
 [ -f "$AGENTS_DIR/tdd/SKILL.md" ] || fail "a repo skill was removed with the extra entries"
 step_status
 assert_eq 0 "$RUN_STATUS" "status after removing extra entries"
 
-# Claude Code's own synced and dot-entries aren't extra
+# Claude Code's own synced, and dot-entries in either dir, aren't extra
 mkdir -p "$CLAUDE_DIR/synced/x" "$CLAUDE_DIR/.trash/y"
+touch "$AGENTS_DIR/.DS_Store"
 step_status
-assert_eq 0 "$RUN_STATUS" "status with Claude Code's own entries"
+assert_eq 0 "$RUN_STATUS" "status with Claude Code's own entries and dot-entries"
 assert_not_contains "$RUN_OUTPUT" "synced"
 assert_not_contains "$RUN_OUTPUT" ".trash"
+assert_not_contains "$RUN_OUTPUT" ".DS_Store"
 step
-assert_eq 0 "$RUN_STATUS" "a run with Claude Code's own entries"
+assert_eq 0 "$RUN_STATUS" "a run with Claude Code's own entries and dot-entries"
 [ -d "$CLAUDE_DIR/synced/x" ] && [ -d "$CLAUDE_DIR/.trash/y" ] || fail "the step removed Claude Code's own entries"
-rm -rf "$CLAUDE_DIR/synced" "$CLAUDE_DIR/.trash"
+[ -e "$AGENTS_DIR/.DS_Store" ] || fail "the step removed a dot-entry from ~/.agents/skills"
+rm -rf "$CLAUDE_DIR/synced" "$CLAUDE_DIR/.trash" "$AGENTS_DIR/.DS_Store"
 
 # Dirs that are one, through a symlink either way or nesting, fail before any change
 mv "$CLAUDE_DIR" "$SANDBOX/claude-skills"

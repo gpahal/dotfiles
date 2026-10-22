@@ -1,7 +1,9 @@
-// Gives stream-deck/linux/bin/open-in what Wayland keeps inside the shell: the focused window,
-// focusing and launching apps, and typing keys. Exports com.gpahal.Dotfiles at /com/gpahal/Dotfiles
-// on the session bus, under org.gnome.Shell, so any process in your session can call it, as any
-// can already type through /dev/uinput here.
+// Gives stream-deck/linux/bin/open-in what Wayland keeps inside the shell. Exports
+// com.gpahal.Dotfiles at /com/gpahal/Dotfiles on the session bus, under org.gnome.Shell, so any
+// process that can reach your session bus, a sandboxed app given access included, can call it to:
+// - read the focused window's class, and the title of a Ghostty, Zed, or Files window;
+// - focus or launch an app, and have the shell focus the next window of a class;
+// - send Ctrl+T, Ctrl+V, or Ctrl+A to Google Chrome while it's focused and the screen is unlocked.
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -38,11 +40,14 @@ const LAUNCH_FOCUS_MS = 10000;
 // marks it as wanting attention instead, and GNOME shows "… is ready".
 const now = () => global.display.get_current_time_roundtrip();
 
-const MODIFIER_KEYS = {
-    ctrl: Clutter.KEY_Control_L,
-    shift: Clutter.KEY_Shift_L,
-    alt: Clutter.KEY_Alt_L,
-    super: Clutter.KEY_Super_L,
+// open-in reads a path from these windows' titles; other windows' titles stay in the shell
+const TITLED_CLASSES = new Set(['com.mitchellh.ghostty', 'dev.zed.Zed', 'org.gnome.Nautilus']);
+// New Tab's keys, the only ones SendKeys sends, and only to Chrome
+const KEYS_CLASS = 'google-chrome';
+const KEYS = {
+    'ctrl+t': [Clutter.KEY_Control_L, Clutter.KEY_t],
+    'ctrl+v': [Clutter.KEY_Control_L, Clutter.KEY_v],
+    'ctrl+a': [Clutter.KEY_Control_L, Clutter.KEY_a],
 };
 const MODIFIER_MASK = Clutter.ModifierType.CONTROL_MASK | Clutter.ModifierType.SHIFT_MASK |
     Clutter.ModifierType.MOD1_MASK | Clutter.ModifierType.SUPER_MASK | Clutter.ModifierType.MOD4_MASK |
@@ -95,12 +100,13 @@ class Dotfiles {
 
     FocusedWindow() {
         const window = global.display.get_focus_window();
-        if (!window)
+        if (!window || Main.sessionMode.isLocked)
             return '{}';
-        const app = Shell.WindowTracker.get_default().get_window_app(window);
+        const wmClass = window.get_wm_class() ?? '';
+        if (!TITLED_CLASSES.has(wmClass))
+            return JSON.stringify({wmClass});
         return JSON.stringify({
-            wmClass: window.get_wm_class() ?? '',
-            appId: app?.get_id() ?? '',
+            wmClass,
             title: window.get_title() ?? '',
             gtkObjectPath: window.get_gtk_window_object_path() ?? '',
         });
@@ -133,10 +139,10 @@ class Dotfiles {
         return (mods & MODIFIER_MASK) !== 0;
     }
 
-    // One combination, such as "ctrl+t": presses each key in order, then releases them in reverse
+    // Presses each key in order, then releases them in reverse
     SendKeys(keys) {
-        const keyvals = keys.split('+').map(name => MODIFIER_KEYS[name] ?? Clutter[`KEY_${name}`]);
-        if (keyvals.length === 0 || keyvals.some(keyval => keyval === undefined))
+        const keyvals = Object.hasOwn(KEYS, keys) ? [...KEYS[keys]] : null;
+        if (!keyvals || Main.sessionMode.isLocked || global.display.get_focus_window()?.get_wm_class() !== KEYS_CLASS)
             return false;
         let time = GLib.get_monotonic_time();
         for (const keyval of keyvals)

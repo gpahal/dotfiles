@@ -3,10 +3,12 @@ set -euo pipefail
 
 # Check each skill's frontmatter, agents/openai.yaml, invocation across files and README, and links.
 
-SKILLS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../ai_tools/skills" && pwd)"
+SCRIPTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_DIR="$(cd "$SCRIPTS_DIR/../ai_tools/skills" && pwd)"
 # shellcheck source=lib/markdown.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/markdown.sh"
-errors=0
+source "$SCRIPTS_DIR/lib/markdown.sh"
+# shellcheck source=lib/check.sh
+source "$SCRIPTS_DIR/lib/check.sh"
 
 # Ubuntu's apt yq is a different tool, with another syntax
 if ! yq --version 2>/dev/null | grep -q mikefarah; then
@@ -14,9 +16,9 @@ if ! yq --version 2>/dev/null | grep -q mikefarah; then
     exit 1
 fi
 
-fail() {
-    echo "${1#"$SKILLS_DIR"/}: $2" >&2
-    errors=$((errors + 1))
+# fail_in <file> <problem>
+fail_in() {
+    fail "${1#"$SKILLS_DIR"/}: $2"
 }
 
 # Fails when line 1 isn't --- or nothing closes it.
@@ -69,11 +71,11 @@ readme_headings() {
 while IFS= read -r skill_md; do
     dir="$(dirname "$skill_md")"
     if ! fm="$(frontmatter_text "$skill_md")"; then
-        fail "$skill_md" "no frontmatter closed by ---"
+        fail_in "$skill_md" "no frontmatter closed by ---"
         continue
     fi
     if ! yaml_error="$(printf '%s\n' "$fm" | yq -e 'tag == "!!map"' 2>&1 >/dev/null)"; then
-        fail "$skill_md" "the frontmatter isn't a YAML mapping${yaml_error:+: $yaml_error}"
+        fail_in "$skill_md" "the frontmatter isn't a YAML mapping${yaml_error:+: $yaml_error}"
         continue
     fi
     # yq's length counts bytes; split("") counts characters.
@@ -83,12 +85,12 @@ while IFS= read -r skill_md; do
     case "$fields" in *$'\n'*) fields="${fields#*$'\n'}" ;; *) fields="" ;; esac
     name="$(field name)"
     if [ "$name" != "$(basename "$dir")" ]; then
-        fail "$skill_md" "the name \"$name\" differs from the directory name \"$(basename "$dir")\""
+        fail_in "$skill_md" "the name \"$name\" differs from the directory name \"$(basename "$dir")\""
     fi
     if ! [[ "$(field description)" =~ [^[:space:]] ]]; then
-        fail "$skill_md" "no description in the frontmatter"
+        fail_in "$skill_md" "no description in the frontmatter"
     elif [ "$description_length" -gt 1024 ]; then
-        fail "$skill_md" "the description is $description_length characters, over 1024"
+        fail_in "$skill_md" "the description is $description_length characters, over 1024"
     fi
 
     if [ "$(field disable-model-invocation)" == true ]; then
@@ -98,25 +100,25 @@ while IFS= read -r skill_md; do
     fi
     yaml="$dir/agents/openai.yaml"
     if [ ! -f "$yaml" ]; then
-        fail "$dir" "no agents/openai.yaml"
+        fail_in "$dir" "no agents/openai.yaml"
     elif ! implicit="$(yq '.policy.allow_implicit_invocation' "$yaml" 2>&1)"; then
-        fail "$yaml" "isn't valid YAML: $implicit"
+        fail_in "$yaml" "isn't valid YAML: $implicit"
     elif [ "$implicit" == false ]; then
-        [ "$want" == User-invoked ] || fail "$yaml" "allow_implicit_invocation is false, but SKILL.md has no disable-model-invocation: true"
+        [ "$want" == User-invoked ] || fail_in "$yaml" "allow_implicit_invocation is false, but SKILL.md has no disable-model-invocation: true"
     else
-        [ "$want" == Model-invoked ] || fail "$yaml" "SKILL.md has disable-model-invocation: true, but policy.allow_implicit_invocation isn't false"
+        [ "$want" == Model-invoked ] || fail_in "$yaml" "SKILL.md has disable-model-invocation: true, but policy.allow_implicit_invocation isn't false"
     fi
     readme="$(dirname "$dir")/README.md"
     if [ ! -f "$readme" ]; then
-        fail "$readme" "is missing, so nothing lists $(basename "$dir")"
+        fail_in "$readme" "is missing, so nothing lists $(basename "$dir")"
     else
         headings="$(readme_headings "$readme" "$(basename "$dir")")"
         if [ -z "$headings" ]; then
-            fail "$readme" "doesn't list $(basename "$dir"), under \"$want\""
+            fail_in "$readme" "doesn't list $(basename "$dir"), under \"$want\""
         elif [ "$(printf '%s\n' "$headings" | wc -l | tr -d ' ')" -gt 1 ]; then
-            fail "$readme" "lists $(basename "$dir") more than once, under: $(printf '%s\n' "$headings" | paste -sd, - | sed 's/,/, /g')"
+            fail_in "$readme" "lists $(basename "$dir") more than once, under: $(printf '%s\n' "$headings" | paste -sd, - | sed 's/,/, /g')"
         elif [ "$headings" != "$want" ]; then
-            fail "$readme" "lists $(basename "$dir") under \"$headings\", not \"$want\""
+            fail_in "$readme" "lists $(basename "$dir") under \"$headings\", not \"$want\""
         fi
     fi
 
@@ -127,7 +129,7 @@ while IFS= read -r skill_md; do
             target="${target%%#*}"
             [ -n "$target" ] || continue
             if [ ! -e "$md_dir/$target" ]; then
-                fail "$md" "broken link to $target"
+                fail_in "$md" "broken link to $target"
                 continue
             fi
             path="$(normalize_path "${md_dir#"$dir"}/$target")"
@@ -140,14 +142,14 @@ while IFS= read -r skill_md; do
                     ;;
                 *) outside=false ;;
             esac
-            ! "$outside" || fail "$md" "a link outside the skill to $target, which breaks once installed"
+            ! "$outside" || fail_in "$md" "a link outside the skill to $target, which breaks once installed"
         done < <(local_links "$md")
     done < <(find "$dir" -name '*.md')
 done < <(find "$SKILLS_DIR" -mindepth 3 -maxdepth 3 -name SKILL.md | sort)
 
 while IFS= read -r readme; do
     while IFS= read -r problem; do
-        fail "$readme" "$problem"
+        fail_in "$readme" "$problem"
     done < <(broken_links "$readme")
 done < <(find "$SKILLS_DIR" -maxdepth 2 -name README.md | sort)
 

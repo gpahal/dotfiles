@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Homebrew and the formulae, casks, and App Store apps the step lists.
+# Install Homebrew, the Brewfile's formulae, and the step's casks and App Store apps.
 # Installs into the real Homebrew prefix whatever HOME is: test it in a VM or on a spare machine.
 # Rule breaks: failed App Store apps only warn (a new Mac isn't signed in), and declining the apt
 # packages fails the step, since every later step needs them.
@@ -41,9 +41,8 @@ CASKS=(
     google-chrome       # Browser, which the AI tools also control; Ubuntu gets it from the chrome step
     orbstack            # Docker containers and Linux machines
     tailscale-app       # Private network to reach the Ubuntu machine from anywhere
-    raycast             # Launcher
+    vicinae             # Launcher, with the vicinae step's settings; Ubuntu gets it from that step
     rectangle           # Window management
-    stats               # Menu bar memory pressure, CPU, GPU, network, and sensors
     appcleaner          # App uninstaller
     the-unarchiver      # Opens any archive format
     logi-options+       # Logitech device settings; Ubuntu gets Solaar from the logitech step
@@ -107,9 +106,9 @@ install_ubuntu_packages() {
 
 homebrew_prefix() {
     if is_ubuntu; then
-        echo /home/linuxbrew/.linuxbrew
+        echo "${HOMEBREW_PREFIXES[1]}"
     else
-        echo /opt/homebrew
+        echo "${HOMEBREW_PREFIXES[0]}"
     fi
 }
 

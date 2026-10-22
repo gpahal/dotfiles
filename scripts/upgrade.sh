@@ -21,21 +21,46 @@ _brew_casks_outdated() {
     return 1
 }
 
+_installed_casks() {
+    brew list --cask -1 2>/dev/null
+}
+
 _cask_listed() {
     awk -F / -v cask="$1" '$NF == cask { found = 1 } END { exit !found }'
+}
+
+# Stops upgrade on an interrupt, which brew reports by exiting 130 rather than dying of SIGINT
+_exit_if_interrupted() {
+    interrupted_status "$1" || return 0
+    echo "Interrupted; stopping." >&2
+    exit "$1"
+}
+
+# _run <cmd> [arg...]: returns the command's status, exiting on an interrupt
+_run() {
+    local rc=0
+    "$@" || rc=$?
+    _exit_if_interrupted "$rc"
+    return "$rc"
+}
+
+# _capture <var> <cmd> [arg...]: sets <var> to the command's output, as _run does its status
+_capture() {
+    local _capture_out _capture_rc=0
+    _capture_out="$("${@:2}")" || _capture_rc=$?
+    _exit_if_interrupted "$_capture_rc"
+    printf -v "$1" '%s' "$_capture_out"
+    return "$_capture_rc"
 }
 
 # Upgrade outdated casks, skipping running apps, which replacing would break.
 # An app's name can gain or lose a " (...)" suffix between releases, so match up to " (".
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
-    local rerun="$1" entry cask process info path app running installed outdated one status rc
+    local rerun="$1" entry cask process info path app running installed outdated one
     local exit_status=0 listed=() names=()
     shift
-    rc=0
-    installed="$(brew list --cask -1 2>/dev/null)" || rc=$?
-    ! interrupted_status "$rc" || return "$rc"
-    if [ "$rc" -ne 0 ]; then
+    if ! _capture installed _installed_casks; then
         echo "Couldn't list the installed casks: brew list --cask failed." >&2
         return 1
     fi
@@ -46,17 +71,11 @@ _upgrade_self_updating_casks() {
         fi
     done
     [ ${#listed[@]} -gt 0 ] || return 0
-    rc=0
-    outdated="$(_brew_casks_outdated "${names[@]}")" || rc=$?
-    ! interrupted_status "$rc" || return "$rc"
-    if [ "$rc" -ne 0 ]; then
+    if ! _capture outdated _brew_casks_outdated "${names[@]}"; then
         # One unknown cask fails the whole query, so ask each alone
         outdated=""
         for cask in "${names[@]}"; do
-            rc=0
-            one="$(_brew_casks_outdated "$cask")" || rc=$?
-            ! interrupted_status "$rc" || return "$rc"
-            if [ "$rc" -eq 0 ]; then
+            if _capture one _brew_casks_outdated "$cask"; then
                 outdated+="$one"$'\n'
             else
                 echo "Couldn't check whether $cask is up to date: brew outdated failed." >&2
@@ -75,10 +94,8 @@ _upgrade_self_updating_casks() {
             ! pgrep -x "$process" &>/dev/null || running=true
         else
             # A failed brew info mustn't pass for a cask with no app (empty path)
-            rc=0
-            info="$(brew info --json=v2 --cask "$cask")" || rc=$?
-            ! interrupted_status "$rc" || return "$rc"
-            if [ "$rc" -ne 0 ] || ! path="$(jq -er ".casks[0] | $CASK_APP_JQ" <<< "$info")"; then
+            if ! _capture info brew info --json=v2 --cask "$cask" ||
+                ! path="$(jq -er ".casks[0] | $CASK_APP_JQ" <<< "$info")"; then
                 echo "Couldn't read $cask's metadata; leaving it alone." >&2
                 exit_status=1
                 continue
@@ -86,10 +103,7 @@ _upgrade_self_updating_casks() {
             app="${path##*/}"
             app="${app%.app}"
             if [ -n "$app" ] && _cask_app_renamed "$cask" "$path"; then
-                status=0
-                _readopt_renamed_cask "$cask" "$path" || status=$?
-                ! interrupted_status "$status" || return "$status"
-                [ "$status" -eq 0 ] || exit_status=1
+                _run _readopt_renamed_cask "$cask" "$path" || exit_status=1
                 continue
             fi
             app="${app%% (*}"
@@ -101,10 +115,7 @@ _upgrade_self_updating_casks() {
         if "$running"; then
             echo "$app is running; quit it and run $rerun again to update it."
         else
-            status=0
-            brew upgrade --cask --greedy "$cask" || status=$?
-            ! interrupted_status "$status" || return "$status"
-            [ "$status" -eq 0 ] || exit_status=1
+            _run brew upgrade --cask --greedy "$cask" || exit_status=1
         fi
     done
     return "$exit_status"
@@ -132,25 +143,16 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# Subshell, since the step sets -euo pipefail
-_homebrew_step() (
-    # Not followed: shellcheck would flag lib/common.sh's variables as lost
-    # shellcheck source=/dev/null
-    source "$DOTFILES_DIR/homebrew/install.sh" && "$1"
-)
-
-_stage_failed() {
-    if interrupted_status "$2"; then
-        echo "Interrupted; stopping." >&2
-        exit "$2"
-    fi
-    failed+=("$1")
+# _step_fn <step> <fn>: runs a step's function in a new bash, where the step's set -e holds; a
+# subshell tested with || would ignore it
+_step_fn() {
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    "$BASH" -c 'source "$1/$2/install.sh" && "$3"' bash "$DOTFILES_DIR" "$1" "$2"
 }
 
-_upgrade_report() {
-    [ "$#" -gt 0 ] || return 0
-    echo "Failed: $(printf '%s\n' "$@" | join_lines ', ')" >&2
-    return 1
+_stage_failed() {
+    _exit_if_interrupted "$2"
+    failed+=("$1")
 }
 
 _claude_marketplace_versions() {
@@ -237,7 +239,7 @@ _upgrade_ai_tools_stages() {
 upgrade_ai_tools() {
     local failed=()
     _upgrade_ai_tools_stages
-    _upgrade_report ${failed[@]+"${failed[@]}"}
+    report_failed ${failed[@]+"${failed[@]}"}
 }
 
 upgrade() {
@@ -249,8 +251,8 @@ upgrade() {
     fi
 
     { brew update && HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1 brew upgrade; } || _stage_failed brew "$?"
-    _homebrew_step install_bundle || _stage_failed "brew bundle" "$?"
-    _homebrew_step install_casks || _stage_failed casks "$?"
+    _step_fn homebrew install_bundle || _stage_failed "brew bundle" "$?"
+    _step_fn homebrew install_casks || _stage_failed casks "$?"
     if ! is_macos; then
         # Homebrew doesn't refresh fontconfig's cache for fonts it upgrades on Linux
         if command -v fc-cache &>/dev/null; then
@@ -271,18 +273,14 @@ upgrade() {
     if [ -f ~/.vimrc ] && [ -f ~/.vim/autoload/plug.vim ]; then
         vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa || _stage_failed "vim plugins" "$?"
     fi
-    # Own bash, since the step sets shell options and re-sources lib/common.sh
     if [ -d ~/.tmux/plugins/tpm ]; then
-        # shellcheck disable=SC2016 # expanded by the inner bash
-        "$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$DOTFILES_DIR" ||
-            _stage_failed "tmux plugins" "$?"
+        _step_fn tmux sync_tmux_plugins || _stage_failed "tmux plugins" "$?"
     fi
 
-    # Vicinae's installer moves it to the latest release; extensions.gnome.org has its extension
+    # On Ubuntu, Vicinae's installer moves it to the latest release, and extensions.gnome.org has
+    # its extension. brew upgrade updates the Mac's cask.
     if ! is_macos && [ -x ~/.local/bin/vicinae ]; then
-        # shellcheck disable=SC2016 # expanded by the inner bash
-        "$BASH" -c 'source "$1/vicinae/install.sh" && update_vicinae' bash "$DOTFILES_DIR" ||
-            _stage_failed vicinae "$?"
+        _step_fn vicinae update_vicinae || _stage_failed vicinae "$?"
     fi
 
     # From ~, so a project's mise.toml isn't used. PATH still has the old Node, so apply the hook
@@ -321,7 +319,7 @@ upgrade() {
     # Last, so every old version upgraded above goes now
     brew cleanup || _stage_failed "brew cleanup" "$?"
 
-    _upgrade_report ${failed[@]+"${failed[@]}"}
+    report_failed ${failed[@]+"${failed[@]}"}
 }
 
 main() {

@@ -40,7 +40,8 @@ unplug() { rm -f "$SANDBOX/udev/$1" "$SANDBOX/udev/$1-hiddev"; }
 usb_device usb1 1d6b 0002
 usb_device 1-2 046d c52b
 
-stub_sudo_exec '[ "${1:-}" != -n ] || [ ! -e "'"$SANDBOX"'/no-sudo" ] || exit 1'
+stub_sudo_cacheable
+cache_sudo yes
 # The real one warns on stderr about missing optional libraries even when it succeeds
 stub nut-scanner 'echo "Cannot load XML library (libneon-gnutls.so.27) : file not found. XML search disabled." >&2
 [ ! -e "'"$SANDBOX"'/scan-fails" ] || { echo "Error: libusb_init() failed" >&2; exit 42; }
@@ -243,14 +244,14 @@ assert_file_not_contains "$STUB_LOG" "restart"
 
 # Without cached sudo, an unreadable file is unverified; the step won't ask for sudo just to read it
 if [ "$(id -u)" -ne 0 ]; then
-    touch "$SANDBOX/no-sudo"
+    cache_sudo no
     chmod 000 "$NUT_DIR/upsd.users"
     assert_exit 2 nut_files_current
     run status_ups
     assert_contains "$RUN_OUTPUT" "unverified UPS on USB (0764:0501) monitored by NUT: can't read NUT configuration files in $NUT_DIR without sudo; run sudo -v, then status, to check them"
     assert_eq "" "$(ups_todo)" "what the UPS part needs when upsd.users can't be read"
     chmod 640 "$NUT_DIR/upsd.users"
-    rm "$SANDBOX/no-sudo"
+    cache_sudo yes
 fi
 
 # A wrong group, as a failed chgrp leaves it: only that file is rewritten

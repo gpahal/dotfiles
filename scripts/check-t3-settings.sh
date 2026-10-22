@@ -13,14 +13,19 @@ if [ $# -gt 1 ]; then
 fi
 command -v curl &>/dev/null || { echo "curl isn't installed" >&2; exit 1; }
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# shellcheck source=lib/check.sh
+source "$REPO_DIR/scripts/lib/check.sh"
+make_tmp
 
-# GITHUB_TOKEN lifts the API rate limit in CI
+# GITHUB_TOKEN lifts the API rate limit in CI. The header goes through stdin, since any local user
+# can read a command line.
 download() {
-    local auth=()
-    [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-    curl -fsSL --proto '=https' --retry 3 --retry-delay 2 ${auth[@]+"${auth[@]}"} -o "$2" "$1"
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL --proto '=https' --retry 3 --retry-delay 2 -o "$2" "$1"
+    else
+        printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" |
+            curl -fsSL --proto '=https' --retry 3 --retry-delay 2 -H @- -o "$2" "$1"
+    fi
 }
 
 tag="${1:-}"
@@ -40,12 +45,6 @@ get packages/contracts/src/project.ts
 
 # shellcheck source=../ai_tools/t3-code/install.sh
 source "$REPO_DIR/ai_tools/t3-code/install.sh"
-
-errors=0
-fail() {
-    echo "FAIL: $1" >&2
-    errors=$((errors + 1))
-}
 
 # Strip jq comments first, so "e.g." can't yield a key g.
 keys_of() {

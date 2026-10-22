@@ -12,8 +12,9 @@ for cmd in claude codex jq yq; do
 done
 echo "$(claude --version), $(codex --version)"
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# shellcheck source=lib/check.sh
+source "$REPO_DIR/scripts/lib/check.sh"
+make_tmp
 # shellcheck source=lib/ai-settings.sh
 source "$REPO_DIR/scripts/lib/ai-settings.sh"
 temp_tool_home "$tmp"
@@ -24,12 +25,6 @@ cd "$HOME"
 source "$REPO_DIR/ai_tools/claude-code/install.sh"
 # shellcheck source=../ai_tools/codex/install.sh
 source "$REPO_DIR/ai_tools/codex/install.sh"
-
-errors=0
-fail() {
-    echo "FAIL: $1" >&2
-    errors=$((errors + 1))
-}
 
 claude_invalid_settings() {
     claude doctor < /dev/null 2>&1 | sed -n '/^Invalid settings/,/^$/p'

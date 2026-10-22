@@ -2,7 +2,8 @@
 set -euo pipefail
 # serial
 
-# The Ubuntu Stream Deck daemon, with a fake deck, sampler, and open-in, and its layout.json.
+# The Ubuntu Stream Deck daemon, with a fake deck, sampler, and open-in, the plugin's layout.json,
+# and the fonts it hands resvg.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -10,7 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v node &> /dev/null || skip "node isn't installed"
 DAEMON="$REPO_DIR/stream-deck/linux/daemon.js"
-LAYOUT="$REPO_DIR/stream-deck/linux/layout.json"
+PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"
 
 # Runs $1 with: d (the daemon), decks (what listDecks finds), deck() (a fake 5×3 deck), drawn(i)
 # (key i's last image), runs (open-in targets), logs, and until(what, test).
@@ -18,8 +19,11 @@ daemon_js() {
     node -e "(async () => {
 const { EventEmitter } = require('node:events');
 const { createDaemon, ALERT, BLANK } = require(process.argv[1]);
-const realStats = require(process.argv[3]);
-const layout = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+const plugin = process.argv[2];
+const realStats = require(plugin + '/stats.js');
+const layout = require(plugin + '/layout.json');
+const manifest = require(plugin + '/manifest.json');
+const actions = new Set(manifest.Actions.map((a) => a.UUID.split('.').pop()));
 const logs = [];
 const runs = [];
 const pending = [];
@@ -39,7 +43,6 @@ const deck = (columns = 5, rows = 3) => {
   d.log = [];
   d.fail = false;
   d.fillKeyBuffer = async (i, svg) => { if (d.fail) throw new Error('write failed'); fills.push([d, i, svg]); };
-  d.setBrightness = async (b) => d.log.push('brightness ' + b);
   d.close = async () => d.log.push('close');
   d.resetToLogo = async () => d.log.push('logo');
   return d;
@@ -57,7 +60,7 @@ const until = async (what, test) => {
 };
 const press = (i) => opened.at(-1).emit('down', { type: 'button', index: i });
 const d = createDaemon({
-  layout, stats, sampler,
+  layout, actions, keys: require(plugin + '/keys.js'), stats, sampler,
   keyImage: (a) => 'icon:' + a,
   rasterize: (svg) => svg,
   listDecks: async () => decks.map((x, i) => ({ path: '/dev/hidraw' + i })),
@@ -68,17 +71,17 @@ const d = createDaemon({
 });
 $1
 process.exit(0);
-})().catch((e) => { console.error(e); process.exit(1); });" "$DAEMON" "$LAYOUT" "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js"
+})().catch((e) => { console.error(e); process.exit(1); });" "$DAEMON" "$PLUGIN_SRC"
 }
 
 # The main page: icons where layout.json puts actions, blank keys elsewhere, then Overview's stats
 out="$(daemon_js "decks = [deck()];
 await d.start();
-console.log(JSON.stringify(d.state()), opened[0].log.join());
+console.log(JSON.stringify(d.state()), opened[0].log.length);
 console.log([0, 1, 2, 3, 4, 5, 9, 10].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
 console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
-assert_eq '{"connected":true,"page":"main"} brightness 60
+assert_eq '{"connected":true,"page":"main"} 0
 icon:overview icon:editor icon:terminal icon:files blank icon:chrome icon:claude blank
 stat:overview:1 overview 1' "$out" "the main page"
 
@@ -134,7 +137,7 @@ await until('the reconnect', () => d.state().connected && drawn(1, second) === '
 second.emit('error', new Error('unplugged'));
 await until('the second disconnect', () => !d.state().connected);
 console.log(opened.length, logs.filter((l) => l.startsWith('Stream Deck')).join('|'));")"
-assert_eq "brightness 60,close Stream Deck disconnected: write failed
+assert_eq "close Stream Deck disconnected: write failed
 true 1
 2 Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: write failed|Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: unplugged" \
     "$out" "a deck that goes away and comes back"
@@ -150,26 +153,15 @@ await until('the 15-key deck', () => d.state().connected);
 await d.stop();
 console.log(opened.at(-1).log.join());")"
 assert_eq "false 1 close The Stream Deck MK.2 has 8×4 keys; layout.json is for 5×3
-brightness 60,logo,close" "$out" "another model, then stop"
+logo,close" "$out" "another model, then stop"
 
-# An action layout.json names that doesn't exist is logged and left blank
+# An action layout.json names that the manifest lacks is logged and left blank
 out="$(node -e "const { createDaemon } = require(process.argv[1]);
 const logs = [];
-createDaemon({ layout: { columns: 5, rows: 3, pages: { main: { '0,0': 'nope' } } }, stats: { isStat: () => false },
-  log: (m) => logs.push(m) });
-console.log(logs.join());" "$DAEMON")"
+createDaemon({ layout: { columns: 5, rows: 3, links: { overview: 'main' }, pages: { main: { '0,0': 'nope', '1,0': 'overview', '2,0': 'cpu' } } },
+  actions: new Set(['cpu']), keys: require(process.argv[2]), log: (m) => logs.push(m) });
+console.log(logs.join());" "$DAEMON" "$PLUGIN_SRC/keys.js")"
 assert_eq "ERROR layout.json's main page has nope at 0,0, which isn't an action" "$out" "an unknown action"
-
-# The System page matches the Mac plugin's System profile, key for key
-mac="$(node -e "const fs = require('node:fs');
-const dir = process.argv[1];
-const page = fs.readdirSync(dir)[0];
-const actions = JSON.parse(fs.readFileSync(dir + '/' + page + '/manifest.json', 'utf8')).Controllers[0].Actions;
-console.log(Object.entries(actions).map(([k, v]) => k + '=' + v.UUID.split('.').pop()).sort().join(' '));" \
-    "$(echo "$REPO_DIR"/stream-deck/profile/*.sdProfile/Profiles)")"
-linux="$(node -e "const l = require(process.argv[1]);
-console.log(Object.entries(l.pages.system).map(([k, v]) => k + '=' + v).sort().join(' '));" "$LAYOUT")"
-assert_eq "$mac" "$linux" "layout.json's System page and the Mac's System profile"
 
 # Each key's icon: an SVG, a PNG wrapped in SVG, or blank
 images="$SANDBOX/images"
@@ -181,11 +173,43 @@ const load = imageLoader(process.argv[2]);
 console.log(load('cpu').trim(), load('editor').includes('href=\"data:image/png;base64,cG5n\"'), load('nope') === BLANK);" \
     "$DAEMON" "$images")"
 assert_eq "<svg>cpu</svg> true true" "$out" "key icons"
-for action in $(node -e "const l = require(process.argv[1]);
-console.log([...new Set(Object.values(l.pages).flatMap(Object.values))].join(' '));" "$LAYOUT"); do
-    plugin_images="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/images"
-    [ -f "$plugin_images/key-$action.svg" ] || [ -f "$plugin_images/key-$action@2x.png" ] ||
-        fail "layout.json's $action has no key-$action image in the plugin"
-done
+
+# resvg gets the matched family's OpenType files only, not every system font; with no fontconfig,
+# the system fonts
+out="$(node -e "const { fontOptions } = require(process.argv[1]);
+const calls = [];
+const run = (file, args) => {
+  calls.push(file + ' ' + args.join(' '));
+  if (file === 'fc-match') return 'Nimbus Sans-Narrow';
+  return ['/f/NimbusSans-Regular.otf', '/f/NimbusSans-Regular.t1', '/f/NimbusSans-Bold.otf', ''].join('\n');
+};
+console.log(JSON.stringify(fontOptions(run)));
+console.log(calls.join('|'));
+console.log(JSON.stringify(fontOptions(() => { throw new Error('ENOENT'); })));" "$DAEMON")"
+assert_eq '{"loadSystemFonts":false,"fontFiles":["/f/NimbusSans-Bold.otf","/f/NimbusSans-Regular.otf"],"defaultFontFamily":"Nimbus Sans-Narrow","sansSerifFamily":"Nimbus Sans-Narrow"}
+fc-match -f %{family[0]} Helvetica:charset=2191 2193 b0 b7 2026 2014|fc-list -f %{file}
+ Nimbus Sans\-Narrow
+{"loadSystemFonts":true,"defaultFontFamily":"DejaVu Sans","sansSerifFamily":"DejaVu Sans"}' "$out" "the fonts resvg loads"
+
+# With the daemon's packages installed (pnpm install in stream-deck/linux) and fontconfig, the
+# network and temperature keys' symbols render with those fonts
+resvg="$REPO_DIR/stream-deck/linux/node_modules/@resvg/resvg-js"
+if [ -d "$resvg" ] && command -v fc-match &> /dev/null; then
+    out="$(node -e "const { Resvg } = require(process.argv[1]);
+const { fontOptions } = require(process.argv[2]);
+const font = fontOptions();
+// Lit pixels of one glyph, white on black
+const ink = (c) => {
+  const svg = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"144\" height=\"144\"><rect width=\"144\" height=\"144\"/>' +
+    '<text x=\"72\" y=\"100\" font-family=\"Helvetica Neue, Helvetica, Arial, sans-serif\" font-size=\"80\" fill=\"#fff\">' + c + '</text></svg>';
+  const px = new Resvg(svg, { font }).render().pixels;
+  let lit = 0;
+  for (let i = 0; i < px.length; i += 4) if (px[i] > 128) lit++;
+  return lit;
+};
+console.log(font.loadSystemFonts, ['↑', '↓', '°', '·', '—'].filter((c) => ink(c) === 0).join(' ') || 'all drawn');" \
+        "$resvg" "$DAEMON")"
+    assert_eq "false all drawn" "$out" "the keys' symbols with the resolved fonts"
+fi
 
 test_done

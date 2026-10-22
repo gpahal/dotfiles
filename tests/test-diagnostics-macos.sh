@@ -2,26 +2,15 @@
 set -euo pipefail
 # os: macos
 
-# The macos step's read-only status diagnostics, and run_bounded without timeout(1).
+# The macos step's read-only status diagnostics.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=diagnostics-fixture.sh
+source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
 load_script lib/common.sh
-
-read_only() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-    : > "$STUB_LOG"
-}
-
-diag() {
-    "$@"
-    status_result
-}
 
 # info doesn't need attention
 report() {
@@ -34,28 +23,6 @@ report() {
 assert_exit 0 report ok info skipped
 assert_contains "$RUN_OUTPUT" "  info       item"
 
-run_bounded_without_timeout() {
-    local start=$SECONDS
-    hide timeout
-    assert_exit 124 run_bounded 1 sleep 10
-    [ $((SECONDS - start)) -lt 5 ] || fail "run_bounded without timeout(1) waited out the command"
-    assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
-    assert_eq out "$RUN_OUTPUT" "run_bounded's output without timeout(1)"
-    # 142 (SIGALRM) or 143 from the command itself isn't a timeout
-    assert_exit 142 run_bounded 5 sh -c 'exit 142'
-    assert_exit 143 run_bounded 5 sh -c 'kill -TERM $$'
-}
-subtest run_bounded_without_timeout
-
-df_lines() {
-    printf '%s\n' "$@" > "$SANDBOX/df-table"
-    stub df 'path="${!#}"
-echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-line="$(grep -F " $path" "'"$SANDBOX"'/df-table" | head -n 1)"
-[ -n "$line" ] || line="$(head -n 1 "'"$SANDBOX"'/df-table")"
-echo "$line"'
-}
-GIB=1048576
 # Spaces in the mount point and the filesystem name (macOS's automounter)
 df_lines "map auto_home $((100 * GIB)) $((10 * GIB)) $((90 * GIB)) 11% /Volumes/My Disk"
 assert_exit 0 diag status_disk_space "/Volumes/My Disk"
@@ -112,8 +79,9 @@ touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
 printf '%s\n' "auth       sufficient     /usr/local/lib/pam/pam_watchid.so" "$TID_LINE" > "$SUDO_LOCAL"
 assert_exit 3 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads /usr/local/lib/pam/pam_watchid.so, which doesn't exist"
-assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL differs"
-assert_not_contains "$RUN_OUTPUT" "pam-reattach"
+assert_not_contains "$RUN_OUTPUT" "brew install pam-reattach"
+# Your own line beside the repo's is fine
+assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 # Root reads any file
 chmod 000 "$SUDO_LOCAL"
 if [ ! -r "$SUDO_LOCAL" ]; then

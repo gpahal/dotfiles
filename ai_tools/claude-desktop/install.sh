@@ -18,12 +18,14 @@ source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
 STEP_NEEDS="homebrew"
 
 CLAUDE_DESKTOP_MACOS_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-CLAUDE_DESKTOP_UBUNTU_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json"
+# Not XDG_CONFIG_HOME on Ubuntu: GNOME starts the app and its autostart without the shell's
+CLAUDE_DESKTOP_UBUNTU_CONFIG="$HOME/.config/Claude/claude_desktop_config.json"
 # Opens Claude at login. Claude's own setting uses SMAppService, which no command can turn on.
 CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
 CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
-# On Ubuntu, the file Claude's own "open at login" setting writes, byte for byte, so it shows on
-CLAUDE_DESKTOP_AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/claude-desktop.desktop"
+# On Ubuntu, the file Claude's own "open at login" setting writes, byte for byte, so Claude's own
+# toggle shows it on
+CLAUDE_DESKTOP_AUTOSTART="$HOME/.config/autostart/claude-desktop.desktop"
 
 # Anthropic's apt source as the claude-desktop package writes it, marker lines included, so the
 # package treats it as its own and keeps it unchanged

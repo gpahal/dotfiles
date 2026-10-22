@@ -7,15 +7,10 @@ set -euo pipefail
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/brew.sh
 source "$REPO_DIR/scripts/lib/brew.sh"
+# shellcheck source=lib/check.sh
+source "$REPO_DIR/scripts/lib/check.sh"
 FORMULA_API=https://formulae.brew.sh/api/formula
-errors=0
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-
-fail() {
-    echo "$1" >&2
-    errors=$((errors + 1))
-}
+make_tmp
 
 for cmd in brew jq curl; do
     command -v "$cmd" &>/dev/null || { echo "check-brew-packages.sh needs $cmd" >&2; exit 1; }

@@ -76,7 +76,7 @@ fi
 stub mise 'exit 1'
 : > "$STUB_LOG"
 # path_helper puts Homebrew ahead of the stubs, so put them back first
-cp "$HOME/.zprofile" "$SANDBOX/zprofile"
+cp "$HOME/.zprofile" "$SANDBOX/zprofile" 2> /dev/null || : > "$SANDBOX/zprofile"
 printf '%s\n' "path=(\"$STUB_DIR\" \$path)" | cat - "$SANDBOX/zprofile" > "$HOME/.zprofile"
 output="$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" STUB_LOG="$STUB_LOG" PATH="$STUB_DIR:/usr/bin:/bin" \
     "$ZSH_BIN" -lc 'print -rl -- $path' < /dev/null 2> /dev/null)"
@@ -93,11 +93,13 @@ macos_profile() {
     as_os macos
     # shellcheck disable=SC2016 # expanded when it runs
     replace_fn login_zsh_path 'echo "$ZSH_BIN"'
-    rm -f "$HOME/.zsh/profile.sh"
+    rm -f "$HOME/.zsh/profile.sh" "$HOME/.zprofile"
     assert_exit 0 apply
     [ ! -e "$HOME/.zsh/profile.sh" ] || fail "apply copied profile.sh on macOS"
+    assert_file_contains "$HOME/.zprofile" "$PATH_ZSH_LINE"
     run status
     assert_contains "$RUN_OUTPUT" "skipped    profile.sh in ~/.zsh: Ubuntu only"
+    assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zprofile"
 }
 subtest macos_profile
 as_os ubuntu
@@ -119,7 +121,8 @@ startup_files() {
     done
 }
 assert_exit 0 apply
-expected="$(printf '%s\n' "== .zshrc" "# mine" "$ZSHRC_LINE" "== .zprofile" "# mine" "$PATH_ZSH_LINE" \
+# ~/.zshenv already sources path.zsh, so ~/.zprofile is left alone
+expected="$(printf '%s\n' "== .zshrc" "# mine" "$ZSHRC_LINE" "== .zprofile" "# mine" \
     "== .zshenv" "$PATH_ZSH_LINE" "== .profile" "$stock" "$PROFILE_LINE")"
 assert_eq "$expected" "$(startup_files)" "the startup files"
 assert_exit 0 apply
@@ -128,6 +131,7 @@ assert_eq "$expected" "$(startup_files)" "the startup files after a second run"
 run status
 assert_contains "$RUN_OUTPUT" "ok         profile.sh sourced in ~/.profile"
 assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zshenv"
+assert_contains "$RUN_OUTPUT" "skipped    path.zsh sourced in ~/.zprofile: macOS only"
 assert_eq "" "$(grep -E '^ *missing ' <<< "$RUN_OUTPUT" | grep -v "login shell" || true)" "missing items after a run"
 
 # Without HOMEBREW_PREFIX, a shell gets brew shellenv's environment without running brew
@@ -182,6 +186,9 @@ assert_eq ok "$(env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/sh -lc 'echo ok' < /
     "sh -lc without profile.sh"
 mv "$SANDBOX/profile.sh" "$HOME/.zsh/profile.sh"
 
+# The login zsh below is this machine's. On macOS, /etc/zprofile's path_helper reorders PATH after
+# ~/.zshenv, so add the ~/.zprofile line the macOS step adds.
+[ "$(uname -s)" != Darwin ] || echo "$PATH_ZSH_LINE" >> "$HOME/.zprofile"
 # ssh host cmd starts a zsh that's neither login nor interactive, so ~/.zshenv sources path.zsh
 zshenv_path() {
     env -i HOME="$HOME" TERM=dumb PATH="${ZSHENV_PATH:-/usr/bin:/bin}" "$ZSH_BIN" "$@" \

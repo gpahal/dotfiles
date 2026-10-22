@@ -43,7 +43,8 @@ assert_exit 0 configure_t3_code
 assert_file_contains "$T3_CODE_TELEMETRY_AGENT" "<string>dotfiles.t3code-telemetry-off</string>"
 assert_file_contains "$T3_CODE_TELEMETRY_AGENT" "<string>/bin/launchctl setenv T3CODE_TELEMETRY_ENABLED false; exec /usr/bin/open --env T3CODE_TELEMETRY_ENABLED=false -b com.t3tools.t3code</string>"
 assert_file_contains "$T3_CODE_TELEMETRY_AGENT" "<key>RunAtLoad</key>"
-if command -v plutil &>/dev/null; then
+# plutil comes with macOS, so only a run there lints the plist
+if [ "$(uname -s)" == Darwin ]; then
     plutil -lint "$T3_CODE_TELEMETRY_AGENT" > /dev/null || fail "the LaunchAgent isn't a valid plist"
 fi
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"

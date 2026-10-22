@@ -14,10 +14,20 @@ replace_fn running_inside 'false'
 # Keep the real /Applications/Claude.app out of the cask checks
 APP="$HOME/Applications/Claude.app"
 replace_fn cask_app_path 'echo "$APP"'
-eval "real_$(declare -f cask_state)"
-replace_fn cask_state 'real_cask_state "$1" "$APP"'
+wrap_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
+
+# GNOME starts the app and its autostart without a shell's XDG_CONFIG_HOME
+xdg_config_home() {
+    export XDG_CONFIG_HOME="$SANDBOX/xdg"
+    load_script ai_tools/claude-desktop/install.sh
+    assert_eq "$HOME/.config/Claude/claude_desktop_config.json" "$CLAUDE_DESKTOP_UBUNTU_CONFIG" \
+        "config path with XDG_CONFIG_HOME set"
+    assert_eq "$HOME/.config/autostart/claude-desktop.desktop" "$CLAUDE_DESKTOP_AUTOSTART" \
+        "autostart path with XDG_CONFIG_HOME set"
+}
+subtest xdg_config_home
 
 # Ubuntu: Anthropic's apt repo, Claude's own autostart file, and the settings without the Mac's
 ubuntu_step() {

@@ -74,7 +74,12 @@ read_key_login() {
     echo "$found"
 }
 
+# SSHD_DROP_IN_STATUS, which status_sshd sets, keeps one read through a status run
 current_sshd_drop_in() {
+    if [ -n "${SSHD_DROP_IN_STATUS:-}" ]; then
+        printf '%s\n' "$SSHD_DROP_IN_CACHE"
+        return "$SSHD_DROP_IN_STATUS"
+    fi
     read_root_file "$SSHD_DROP_IN" -n
 }
 
@@ -107,6 +112,8 @@ sshd_drop_in() {
     echo "PermitRootLogin no"
     echo "ClientAliveInterval 60"
     echo "ExposeAuthInfo yes"
+    echo "X11Forwarding no"
+    echo "MaxAuthTries 3"
     [ "$(id -u)" != 0 ] || root=true
     "$root" || echo "AllowUsers $(id -un)"
     if key_only_in "$current" || { ! "$root" && key_only_reason > /dev/null; }; then
@@ -210,7 +217,7 @@ sshd_settings_problems() {
         while read -r key want; do
             case "$key" in
                 AllowUsers) have="$(awk '$1 == "allowusers" { print $2 }' <<< "$config" | join_lines ' ')" ;;
-                PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication)
+                PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication | X11Forwarding | MaxAuthTries)
                     have="$(awk -v key="$(tr '[:upper:]' '[:lower:]' <<< "$key")" '$1 == key { print $2; exit }' <<< "$config")"
                     ;;
                 *) continue ;;
@@ -289,7 +296,7 @@ configure_sshd() {
     fi
     sshd_settings_problems "$new" || checked=false
     problems="$SSHD_PROBLEMS"
-    if key_only_in "$new" && ! key_only_in "$old" && ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
+    if "$checked" && key_only_in "$new" && ! key_only_in "$old" && ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         # Not ssh -O exit: this session may run through the shared connection
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
@@ -310,7 +317,8 @@ PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 
 # status declares the items first (ubuntu_items)
 status_sshd() {
-    local installed=false item problems="" others todo
+    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_STATUS=0
+    SSHD_DROP_IN_CACHE="$(read_root_file "$SSHD_DROP_IN" -n)" || SSHD_DROP_IN_STATUS=$?
     openssh_installed && installed=true
     items_status openssh_installed
     ! "$installed" || items_status sshd_enabled

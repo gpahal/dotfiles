@@ -6,6 +6,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
+# shellcheck source=diagnostics-fixture.sh
+source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -14,50 +16,7 @@ stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
 echo "APT::Periodic::Unattended-Upgrade \"1\";"'
 
-read_only() {
-    local log
-    log="$(cat "$STUB_LOG")"
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-    if grep -qE '^systemctl ([^ ]+ )*(start|restart|try-restart|reload|enable|stop)( |$)|^fwupdmgr (refresh|update|install|upgrade)|^smartctl .*( -t | --test)|^docker ([^ ]+ )*(prune|stop|start|rm|kill)( |$)' <<< "$log"; then
-        fail "status changed something:"
-        _show "$log"
-    fi
-    : > "$STUB_LOG"
-}
-
-diag() {
-    "$@"
-    status_result
-}
-
-# --- run_bounded with timeout(1) ---
-assert_exit 124 run_bounded 1 sleep 10
-assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
-assert_eq out "$RUN_OUTPUT" "run_bounded's output"
-# timeout -k 5 exits 137 after SIGKILL; run_bounded reports 124 only past the deadline
-run_bounded_killed() {
-    stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; [ "$3" -lt 2 ] || exit 137; sleep "$3"; exit 137'
-    assert_exit 124 run_bounded 1 sleep 10
-    assert_exit 137 run_bounded 5 sleep 10
-    rm "$STUB_DIR/timeout"
-}
-subtest run_bounded_killed
-
 # --- free space (status_disk_space) ---
-df_lines() {
-    printf '%s\n' "$@" > "$SANDBOX/df-table"
-    : > "$SANDBOX/df-fails"
-    stub df 'path="${!#}"
-! grep -qxF -- "$path" "'"$SANDBOX"'/df-fails" || { echo "df: $path: No such file or directory" >&2; exit 1; }
-echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-line="$(grep -F " $path" "'"$SANDBOX"'/df-table" | head -n 1)"
-[ -n "$line" ] || line="$(head -n 1 "'"$SANDBOX"'/df-table")"
-echo "$line"'
-}
-GIB=1048576
 df_lines "/dev/sda2 $((500 * GIB)) $((380 * GIB)) $((120 * GIB)) 76% /"
 assert_exit 0 diag status_disk_space /
 assert_contains "$RUN_OUTPUT" "ok         Free space on /: 120.0 GiB of 500.0 GiB (24%)"
@@ -227,11 +186,10 @@ fwupd() {
 mkdir -p "$FWUPD_METADATA_DIRS/lvfs"
 touch "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
 
-# fwupd 1.9's and 2.0's wording
-fwupd 'Devices with no available firmware updates:\n • System Firmware\nNo updates available\n' 2
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available"
 if command -v jq &> /dev/null; then
+    fwupd '{\n  "Devices": [\n  ]\n}\n'
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available, by metadata from the last 30 days"
     fwupd '{\n  "Devices" : [\n    {\n      "Name" : "System Firmware",\n      "Version" : "1.2.3",\n      "Releases" : [ { "Version" : "1.2.4" } ]\n    },\n    {\n      "Name" : "UEFI dbx",\n      "Version" : "371",\n      "Releases" : [ { "Version" : "377" } ]\n    }\n  ]\n}\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: available for System Firmware (1.2.3 to 1.2.4), UEFI dbx (371 to 377)"
@@ -244,6 +202,12 @@ if command -v jq &> /dev/null; then
     fwupd '{ "Devices" : [ { "Name" : "Disk", "Version" : "1", "Releases" : [] } ] }\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available"
+    touch -t 202001010000 "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "metadata over 30 days old (fwupdmgr refresh updates it)"
+    rm "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "metadata of unknown age"
 else
     skip_rest "jq isn't installed, so fwupdmgr's JSON can't be read"
 fi
@@ -257,13 +221,6 @@ subtest firmware_without_jq
 fwupd 'No updatable devices\n' 2
 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "info       Firmware updates: no device here that fwupd updates"
-touch -t 202001010000 "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
-fwupd 'No updates available\n' 2
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "metadata over 30 days old (fwupdmgr refresh updates it)"
-rm "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "metadata of unknown age"
 fwupd 'Failed to connect to daemon: Error calling StartServiceByName\n' 1
 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "info       Firmware updates: couldn't check (Failed to connect to daemon"
@@ -333,7 +290,7 @@ docker_df() {
     printf '%b' "$1" > "$SANDBOX/docker-df"
     echo "${2:-0}" > "$SANDBOX/docker-df.status"
 }
-# Docker 24's and 28's formats
+# With space to reclaim, and with none
 docker_df 'Images\t12\t8.1GB\t3.2GB (39%)\nContainers\t3\t120MB\t0B (0%)\nLocal Volumes\t2\t1.5GB\t0B (0%)\nBuild Cache\t40\t2.3GB\t2.3GB\n'
 assert_exit 0 diag status_docker_usage
 assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 12, 8.1GB (3.2GB reclaimable); containers 3, 120MB; local volumes 2, 1.5GB; build cache 40, 2.3GB (2.3GB reclaimable)"
@@ -382,10 +339,10 @@ assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
 # Ports on every address bypass ufw; 127.0.0.1, other given addresses, and unpublished ports are fine
 printf '%b\n' 'web\t0.0.0.0:8080->80/tcp, [::]:8080->80/tcp, 127.0.0.1:9000->9000/tcp' \
-    'db\t5432/tcp' 'old\t:::2222->22/tcp' 'local\t127.0.0.1:3000->3000/tcp, 192.168.1.5:53->53/udp' > "$SANDBOX/docker-ps"
+    'db\t5432/tcp' 'local\t127.0.0.1:3000->3000/tcp, 192.168.1.5:53->53/udp' > "$SANDBOX/docker-ps"
 : > "$STUB_LOG"
 assert_exit 3 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp, web [::]:8080->80/tcp, old :::2222->22/tcp; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
+assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp, web [::]:8080->80/tcp; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
 assert_file_contains "$STUB_LOG" "docker ps --format {{.Names}}"
 printf '%b\n' 'db\t5432/tcp' 'local\t127.0.0.1:3000->3000/tcp' > "$SANDBOX/docker-ps"
 assert_exit 0 diag status_docker_ports

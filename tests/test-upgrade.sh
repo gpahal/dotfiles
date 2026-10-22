@@ -62,7 +62,7 @@ mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
 fake_tmux_plugins
 "$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$REPO_DIR" > /dev/null
-# uname -s says UNAME_S, Darwin by default, for is_macos; unlike a stub, it doesn't log
+# uname -s says UNAME_S, Darwin by default, when lib/common.sh loads; unlike a stub, it doesn't log
 printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || { echo "${UNAME_S:-Darwin}"; exit; }' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
 chmod +x "$STUB_DIR/uname"
 
@@ -187,7 +187,7 @@ stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
 : > "$STUB_LOG"
 if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1; then
+    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1; then
     fail "upgrade succeeded with failed stages"
 fi
 assert_file_contains "$STUB_LOG" "rustup update"
@@ -199,7 +199,7 @@ stub sudo
 stub claude '[ "$*" != "plugin list --json" ] || exit 2'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" 'claude plugin list'
 assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
 
@@ -219,7 +219,7 @@ stub claude 'case "$*" in
     "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
 esac'
 assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
   m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
   dir: -
@@ -232,7 +232,7 @@ assert_not_contains "$RUN_OUTPUT" "c@m"
 stub claude '[ "$*" != "plugin list --json" ] || exit 130'
 : > "$STUB_LOG"
 assert_exit 130 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade_ai_tools' bash "$REPO_DIR"
+    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
 assert_file_not_contains "$STUB_LOG" "t3 "
 assert_file_not_contains "$STUB_LOG" "codex "
@@ -251,7 +251,7 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
 stub mise '[ "$1" != hook-env ] || exit 1'
 : > "$STUB_LOG"
 assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; export UNAME_S=Linux; upgrade' bash "$REPO_DIR"
+    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
 assert_contains "$RUN_OUTPUT" "mise hook-env"
 assert_file_not_contains "$STUB_LOG" "npm"
 assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
@@ -366,7 +366,7 @@ assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_not_contains "$RUN_OUTPUT" "is running"
 
-# An app that renamed itself (T3 Code Alpha to Beta) is re-recorded, since brew upgrade stops on
+# An app that renamed itself is re-recorded, since brew upgrade stops on
 # the recorded app being gone; a receipt that does more than remove the app gets the usual upgrade
 mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/Applications/T3 Code (Beta).app"
 receipt() {

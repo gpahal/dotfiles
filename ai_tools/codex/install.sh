@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Install the Codex CLI and the ChatGPT app, and set Codex's config and instructions.
-# Installs casks (macOS) or apt packages and an AppArmor profile (Ubuntu) whatever HOME is; test
-# in a macOS VM or spare Mac, and an Ubuntu VM.
+# Installs casks, and on Ubuntu installs apt packages and loads AppArmor's bwrap profile, whatever
+# HOME is; test in a macOS VM or spare Mac, and an Ubuntu VM.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"

@@ -22,11 +22,6 @@ smartd_ready() {
     smartd_enabled && { in_vm || smartd_active; }
 }
 
-# Never search the user's PATH: sudo would run a planted command from e.g. ~/.cargo/bin as root.
-sbin_cmd() {
-    PATH="$SBIN_PATH" command -v "$1"
-}
-
 # smartctl's exit bits: 1 bad args or sudo refused, 2 open failed or asleep, 4 SMART command
 # failed, 8 failing, 16 prefail attribute at threshold, 32 was before, 64 error log, 128 self-test log.
 # A status from 125 up without smartctl's banner is timeout's or a signal's, not those bits.
@@ -148,8 +143,6 @@ status_firmware() {
         esac
     elif grep -qiE 'No (updatable|supported) devices' <<< "$out"; then
         status_item info "$label: no device here that fwupd updates"
-    elif [ "$status" -eq 2 ] || grep -qiE 'No updates available|no available firmware updates' <<< "$out"; then
-        status_item info "$label: none available, by $age"
     elif [ "$status" -eq 124 ]; then
         status_item info "$label: couldn't check (fwupdmgr didn't answer within 60 s)"
     else

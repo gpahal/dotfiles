@@ -3,7 +3,8 @@ set -uo pipefail
 
 # Run every tests/test-*.sh, or the named ones, $TEST_JOBS at a time, under this script's bash.
 # - A "# serial" line: the test runs alone, after the others.
-# - "# os: macos" in the first 20 lines: left out of a full run on Ubuntu.
+# - "# os: macos" or "# os: ubuntu" in the first 20 lines: left out of a full run on the other
+#   OS, and skipped there when named.
 # - Exit 77 skips; TEST_FAIL_ON_SKIP=1 (CI) makes a skip fail.
 # - A test over $TEST_TIMEOUT seconds (default 120) is killed and fails.
 
@@ -69,13 +70,24 @@ fi
 
 on_macos=false
 [ "$(uname -s)" != Darwin ] || on_macos=true
+
+# Prints the OS a test's "# os:" mark names, and succeeds, when it isn't this one
+other_os() {
+    case "$(sed -n '1,20s/^# os: \(.*\)$/\1/p' "$1" | head -n 1)" in
+        macos) ! "$on_macos" && echo macOS ;;
+        ubuntu) "$on_macos" && echo Ubuntu ;;
+        *) return 1 ;;
+    esac
+}
+
 tests=()
-macos_only=0
+other_os_left_out=0
+other_os_named=()
 if [ $# -eq 0 ]; then
     for t in test-*.sh; do
         [ -e "$t" ] || continue
-        if ! "$on_macos" && sed -n '1,20p' "$t" | grep -qx '# os: macos'; then
-            macos_only=$((macos_only + 1))
+        if other_os "$t" > /dev/null; then
+            other_os_left_out=$((other_os_left_out + 1))
             continue
         fi
         tests+=("$t")
@@ -88,6 +100,10 @@ else
         if [ ! -f "$t" ]; then
             echo "No test $t in tests/" >&2
             exit 1
+        fi
+        if os="$(other_os "$t")"; then
+            other_os_named+=("$t $os")
+            continue
         fi
         tests+=("$t")
     done
@@ -129,12 +145,6 @@ for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
             ;;
     esac
 done
-# test-ubuntu-sandbox.sh's copies in /var/tmp outlive a killed test
-find /var/tmp/ -maxdepth 1 -type d -name 'dotfiles-test.*' -user "$(id -u)" -mtime +0 2>/dev/null |
-    while IFS= read -r dir; do
-        chmod -R u+w "$dir" 2>/dev/null
-        rm -rf "$dir"
-    done
 # /tmp keeps TMUX_TMPDIR under macOS's socket path limit
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 
@@ -242,6 +252,19 @@ run_batch() {
     xargs_pid=""
 }
 
+for named in ${other_os_named[@]+"${other_os_named[@]}"}; do
+    t="${named%% *}"
+    if [ "${TEST_FAIL_ON_SKIP:-}" == 1 ]; then
+        echo "FAIL  $t"
+        echo "    Skipped, as it runs only on ${named#* }, and TEST_FAIL_ON_SKIP=1 fails a skip"
+        failed+=("$t")
+    else
+        echo "SKIP  $t"
+        echo "    It runs only on ${named#* }"
+        skipped=$((skipped + 1))
+    fi
+done
+
 pool=()
 serial=()
 for i in "${!tests[@]}"; do
@@ -255,7 +278,7 @@ run_batch "$jobs" ${pool[@]+"${pool[@]}"}
 run_batch 1 ${serial[@]+"${serial[@]}"}
 
 echo ""
-echo "$((${#tests[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"
-[ "$macos_only" -eq 0 ] || echo "$macos_only left out, as they need commands only macOS ships"
+echo "$((${#tests[@]} + ${#other_os_named[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"
+[ "$other_os_left_out" -eq 0 ] || echo "$other_os_left_out left out, as they need commands only the other OS ships"
 [ "$broken" -eq 0 ] || echo "$broken script(s) with a syntax error"
 [ ${#failed[@]} -eq 0 ] && [ "$broken" -eq 0 ]

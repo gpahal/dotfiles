@@ -115,17 +115,17 @@ linked_skill_dir() {
     return 1
 }
 
-# Print the path of each entry in the skills dirs that isn't a repo skill, one per line. Claude
-# Code writes its own entries to ~/.claude/skills, synced for the skills claude.ai syncs and
-# dot-entries such as .trash, so those aren't extra.
+# Print the path of each entry in the skills dirs that isn't a repo skill, one per line.
+# Dot-entries, such as Claude Code's .trash or Finder's .DS_Store, aren't extra, and neither is
+# ~/.claude/skills/synced, where Claude Code keeps the skills claude.ai syncs.
 extra_skill_entries() {
     local dir entry
     while IFS= read -r dir; do
         [ -d "$dir" ] || continue
         while IFS= read -r entry; do
-            [ -n "$entry" ] || continue
-            if [ "$dir" == "$CLAUDE_SKILLS" ]; then
-                case "$entry" in .* | synced) continue ;; esac
+            case "$entry" in '' | .*) continue ;; esac
+            if [ "$dir" == "$CLAUDE_SKILLS" ] && [ "$entry" == synced ]; then
+                continue
             fi
             case " ${SKILL_NAMES[*]-} " in
                 *" $entry "*) ;;

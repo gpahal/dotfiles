@@ -7,10 +7,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 script="$REPO_DIR/ai_tools/claude-code/statusline.sh"
 
-command -v jq &> /dev/null || {
-    echo "jq isn't installed" >&2
-    exit 1
-}
+command -v jq &> /dev/null || skip "jq isn't installed"
 
 git init -q -b feat "$SANDBOX/repo"
 input="$(printf '{"model":{"display_name":"Opus 5.5"},"effort":{"level":"medium"},"context_window":{"used_percentage":42.6},"rate_limits":{"five_hour":{"used_percentage":24.2}},"workspace":{"current_dir":"%s"}}' "$SANDBOX/repo")"

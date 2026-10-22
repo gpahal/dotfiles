@@ -21,6 +21,12 @@ GOOGLE_SOURCES=/etc/apt/sources.list.d/google-chrome.sources
 CHROME_DEFAULTS=/etc/default/google-chrome
 UNATTENDED_CONTENT='// From the dotfiles chrome step: install Chrome updates with the daily security updates
 Unattended-Upgrade::Origins-Pattern { "origin=Google LLC,suite=stable"; };'
+# Written by the .deb's postinst
+GOOGLE_KEYRING=/usr/share/keyrings/google-chrome.gpg
+# The primary key's fingerprint, as $GOOGLE_LINUX_KEYS_URL lists it. To re-verify, compare that
+# page with gpg --show-keys /usr/share/keyrings/google-chrome.gpg.
+GOOGLE_KEY_FPR=EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796
+GOOGLE_LINUX_KEYS_URL=https://www.google.com/linuxrepositories/
 
 deb_url() {
     echo "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb"
@@ -46,6 +52,15 @@ install_chrome() {
         apt_get install -y "$@" "$deb" || status=1
     rm -rf "$(dirname "$deb")"
     return "$status"
+}
+
+# The .deb's key arrives over TLS alone, and unattended-upgrades trusts it as root. Prints what's
+# wrong, or nothing.
+google_key_problem() {
+    local fingerprint
+    fingerprint="$(apt_key_fingerprint "$GOOGLE_KEYRING" | join_lines ', ')"
+    [ "$fingerprint" != "$GOOGLE_KEY_FPR" ] || return 0
+    echo "$GOOGLE_KEYRING has the fingerprint ${fingerprint:-(none)}, not $GOOGLE_KEY_FPR. If $GOOGLE_LINUX_KEYS_URL lists it, update the step's pinned one; if not, remove the key and $GOOGLE_SOURCES"
 }
 
 auto_updates_configured() {
@@ -102,6 +117,17 @@ chrome_items() {
         "Remove Firefox, which Chrome replaces: its snap and the firefox .deb that installs it" firefox_removed remove_firefox
 }
 
+status_google_key() {
+    local label="Google's apt key ($GOOGLE_KEYRING) is the one the step pins" problem
+    status_require_cmd gpg "$label" || return 0
+    problem="$(google_key_problem)"
+    if [ -z "$problem" ]; then
+        status_item ok "$label"
+    else
+        status_item missing "$label: $problem"
+    fi
+}
+
 status() {
     if apt_installed google-chrome-stable; then
         status_item ok "google-chrome-stable from Google's .deb"
@@ -118,7 +144,10 @@ status() {
     chrome_items
     items_status google_source_exists auto_updates_configured
     # Only once Chrome is in, so the machine always has a browser
-    ! apt_installed google-chrome-stable || items_status firefox_removed
+    if apt_installed google-chrome-stable; then
+        items_status firefox_removed
+        status_google_key
+    fi
     status_result
 }
 
@@ -143,7 +172,8 @@ apply() {
     if apt_installed google-chrome-stable && ! google_source_exists; then
         require_cmd curl || return 1
     fi
-    local pending=() result=0 installed=false
+    require_cmd gpg || return 1
+    local pending=() result=0 installed=false problem
     ! apt_installed google-chrome-stable || installed=true
     chrome_items
     if "$installed"; then
@@ -164,6 +194,13 @@ apply() {
         [ "$result" -ne 0 ] || echo "  Applied. A running Chrome keeps the old version until you restart it."
     elif [ ${#pending[@]} -eq 0 ]; then
         echo "  Chrome is already installed and updates automatically."
+    fi
+    if apt_installed google-chrome-stable; then
+        problem="$(google_key_problem)"
+        if [ -n "$problem" ]; then
+            echo "  Google's apt key isn't the one the step pins: $problem." >&2
+            result=1
+        fi
     fi
     return "$result"
 }

@@ -169,7 +169,7 @@
     {
       "Name": "Back",
       "UUID": "com.gpahal.dotfiles.back",
-      "Tooltip": "Return to the profile before the system stats page",
+      "Tooltip": "Return to the main page",
       "Icon": "images/back",
       "States": [{ "Image": "images/key-back" }],
       "Controllers": ["Keypad"],
@@ -178,11 +178,18 @@
   ],
   "Profiles": [
     {
+      "Name": "profiles/Main",
+      "DeviceType": 0,
+      "AutoInstall": true,
+      "DontAutoSwitchWhenInstalled": false,
+      "Readonly": true
+    },
+    {
       "Name": "profiles/System",
       "DeviceType": 0,
       "AutoInstall": false,
       "DontAutoSwitchWhenInstalled": true,
-      "Readonly": false
+      "Readonly": true
     }
   ]
 }

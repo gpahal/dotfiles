@@ -45,10 +45,7 @@ assert_exit 0 sudo_cached
 assert_file_contains "$STUB_LOG" "sudo -n true"
 
 no_prompting_sudo() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
+    assert_sudo_noninteractive
     if [ -s "$SANDBOX/mutations" ]; then
         fail "status ran sudo to change something:"
         _show "$(cat "$SANDBOX/mutations")"
@@ -89,7 +86,8 @@ stub systemd-detect-virt 'exit 1'
 stub dpkg-query 'echo "install ok installed"'
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
-    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
+    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": false}" ;;
+    funnel) echo "{}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"

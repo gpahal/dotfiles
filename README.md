@@ -29,7 +29,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## How setup works
 
-`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh`, except `manual-steps.sh`, and also runs on its own:
 
 | Step | What it does |
 | :- | :- |
@@ -43,11 +43,11 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
-| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin, or on Ubuntu the daemon that drives the deck |
+| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and profiles, or on Ubuntu the daemon that drives the deck |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
-| `vicinae` | Installs [Vicinae](#vicinae), a launcher like Raycast, on `Super+Space`. Ubuntu only |
+| `vicinae` | Installs the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
@@ -67,7 +67,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## Ubuntu
 
-Run setup as your own user, not root. On Ubuntu Server, name the steps to leave out `ghostty`, `zed`, `stream-deck`, `logitech`, and `chrome`, and install `upower` for UPS detection.
+Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` naming every step except `ghostty`, `zed`, `stream-deck`, `hotkeys`, `logitech`, and `chrome`, and install `upower` for UPS detection.
 
 - Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
 - Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
@@ -85,8 +85,8 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 - Security, Chrome, and Docker updates install daily without rebooting.
 - User services, such as the T3 Code server and tmux, start at boot without a login.
 - sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.
-- You can run `tailscale serve`, `funnel`, and `set --ssh` without `sudo`.
-- ufw lets SSH in only from private ranges and the tailnet.
+- You can run `tailscale serve` and `funnel` without `sudo`. `--status` flags an active funnel, and Tailscale SSH being on.
+- ufw lets SSH in only from private ranges, and lets the tailnet reach every port. The tailnet's access rules are what protect the machine, so keep them tight.
 - Docker's published ports listen on `127.0.0.1` unless given an address. Joining the `docker` group is root-equivalent, so the step asks.
 - Wired connections wake on LAN, with the BIOS setting on.
 - Wi-Fi power save is off, so SSH over Wi-Fi doesn't lag.
@@ -96,7 +96,7 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 
 ### git
 
-Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig`, which git reads after this config. Signing setup and `gh` write there too.
+Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig` or `~/.gitconfig.local`, which git reads after this config. Signing setup and `gh` write to `~/.gitconfig`.
 
 - `git dft`, `git dd`, `git dlog`: difftastic diffs.
 - `git cob`, `git cobr`: pick a local or remote branch with fzf.
@@ -119,7 +119,7 @@ Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in
 [`zsh/`](zsh/), copied to `~/.zsh/`, with starship. The login shell is the system zsh, so it survives a broken Homebrew. Put secrets and per-machine settings in `~/.zshrc.local`.
 
 - `Ctrl+T` files, `Alt+C` directories, `Ctrl+R` and Up search history (atuin).
-- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `ts` (`tmux-sessionizer`).
+- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `zshrc` (edits `~/.zshrc`), `ts` (`tmux-sessionizer`).
 - `rm` deletes immediately. On macOS, `trash` can be undone.
 
 ### Ghostty
@@ -143,15 +143,14 @@ The **Dotfiles** keys act on the folder of the app in front:
 
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
-- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats.
+- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 
-[`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
+[`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. Setup leaves the deck's brightness alone. [`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
 
-On macOS, a plugin adds the keys to Elgato's Stream Deck app. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread. GPU, temperature, and power need macmon.
+On macOS, a plugin adds the keys to Elgato's Stream Deck app, with a read-only profile for each page. Stream Deck shows the main page when it starts and when the deck comes back from Ubuntu, and setup deletes any other profile for the deck. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread.
 
 Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user service draws the same keys, and a GNOME extension lets it read and focus windows. Unlike on macOS:
 
-- [`stream-deck/linux/layout.json`](stream-deck/linux/layout.json) places the keys. Edit it and re-run the step.
 - The folder comes from a Ghostty tab, a Zed file, or a file manager window's folder, not its selected file. With T3 Code in front, the keys open a new window.
 - **Terminal** opens a Ghostty window, not a tab.
 - **Gmail** opens in its own Chrome window, and the stat keys open Resources.
@@ -180,13 +179,15 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 
 ### Vicinae
 
-Ubuntu only, in place of Raycast. `Super+Space` opens [Vicinae](https://docs.vicinae.com/), which launches apps, keeps clipboard history, and runs many Raycast extensions.
+[Vicinae](https://docs.vicinae.com/) launches apps, keeps clipboard history, and runs many Raycast extensions. `Cmd+Space` opens it on the Mac, and `Super+Space` on Ubuntu.
 
-- Vicinae's installer puts it in `~/.local`, without sudo. `upgrade` moves it to the latest release.
-- Paste into the active window and snippets are off, since its input helper would need root's access to every file. Pick a clipboard entry to copy it, then press `Ctrl+V`.
+- Both machines share [`vicinae/dotfiles.json`](vicinae/dotfiles.json): favorites, fallbacks, keybindings, theme, font, window size, and extension settings, with telemetry off. The step copies it to `~/.config/vicinae/` and adds it to the `imports` in `~/.config/vicinae/settings.json`.
+- Vicinae's settings window saves to `settings.json`, whose values win over the shared file. `--status` names each shared setting that `settings.json` overrides. To share a change, move it to `vicinae/dotfiles.json` and delete it from `settings.json`.
+- On the Mac, the homebrew step installs it and `upgrade` updates it. Paste into the active window and snippets are on, and need the Accessibility permission.
+- On Ubuntu, Vicinae's installer puts it in `~/.local`, without sudo, and `upgrade` moves it to the latest release. Paste into the active window and snippets are off, since they need root. Pick a clipboard entry to copy it, then press `Ctrl+V`.
 - Its GNOME extension, from extensions.gnome.org, gives it the clipboard and the window list. GNOME loads it at the next login.
-- `Super+Space` no longer switches keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
-- A shortcut of yours on `Super+Space` keeps it, and `--status` names it. `journalctl --user -u vicinae` shows Vicinae's log.
+- `Super+Space` doesn't switch keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
+- A shortcut of yours on `Super+Space` keeps it, and `--status` names it. `journalctl --user -u vicinae` shows Vicinae's log on Ubuntu.
 
 ### Monitor input
 
@@ -208,7 +209,7 @@ The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS app
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
+`just touch-id` makes `sudo` take Touch ID, inside tmux too. It adds its lines at the top of `/etc/pam.d/sudo_local` and keeps yours. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
 
 ```sh
 osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'
@@ -231,13 +232,12 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 4. Set Google Chrome as the default browser.
 5. Open Logi Options+, grant its permissions, and pair your devices.
 6. Open OrbStack once and finish its setup.
-7. Open Raycast, grant permissions, and set its hotkey to `Cmd+Space`.
+7. Open Vicinae and finish its onboarding. Grant Accessibility, which paste and snippets need, and keep Launch at login on. Full Disk Access is optional; file search needs it to cover every folder.
 8. Open Rectangle, grant accessibility, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Raycast, Stats, Amphetamine, Tailscale, and Dato.
-10. Optional: turn on Stats modules, AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
-11. In Stream Deck, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from **Dotfiles** onto keys. Press **Overview** and install the **System** page. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
+9. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
+10. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
+11. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
 12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
-
 13. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
 
 **Shell**
@@ -249,7 +249,7 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 15. Sign in to Tailscale with the account your Ubuntu machine and phone use.
 16. Add your Google account to Calendar and Contacts.
 17. In Chrome, sign in to the sites you want agents to use.
-18. If you skipped the GitHub login, run `gh auth login`, then `gh auth setup-git`.
+18. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
 19. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
@@ -274,7 +274,7 @@ Once:
 3. **Disk encryption.** Store the recovery key off the machine.
 4. **Login shell.** `chsh -s /usr/bin/zsh`, if you skipped it.
 5. **Shell.** Run `atuin import auto`, and `:GoInstallBinaries` in vim.
-6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, and remove `root` from `users` in its `ssh` rules.
+6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, remove `root` from `users` in its `ssh` rules, and remove the `funnel` nodeAttr unless you use it.
 7. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
@@ -282,14 +282,14 @@ Once:
    4. `ssh -O exit <alias>`.
 
    Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
-8. **GitHub.** If you skipped it, run `gh auth login --insecure-storage --git-protocol https`, `gh auth setup-git`, then `bash setup.sh git`.
+8. **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
 9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the desktop, open Solaar and pair your devices.
 12. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
 13. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
 14. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-15. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
+15. **Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
 16. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
@@ -317,6 +317,7 @@ The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 - In a scratch repo, `git commit --allow-empty -m test && git log --show-signature -1` shows `Good "git" signature`, also after a reboot without a passphrase prompt.
 - After `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, in tmux too.
 - With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
+- `Cmd+Space` opens Vicinae, and `Cmd+Space` again closes it.
 
 ### Ubuntu
 
@@ -343,7 +344,7 @@ At the desktop, with the Stream Deck switched to it:
 
 ## Updating
 
-`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.
@@ -352,10 +353,10 @@ At the desktop, with the Stream Deck switched to it:
 ## Maintenance
 
 - `just copy-back [dry-run]` copies installed configs that differ back into the repo for review with `git diff`. It skips repo files with uncommitted changes.
-- `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills when next needed, so the next build, install, or test is slower.
+- `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills on next use.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
-- After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh`, match the System page in `stream-deck/linux/layout.json`, and commit them. To load the change, delete the **System** profile in Stream Deck and press **Overview**.
+- To change the Stream Deck's keys, edit `stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json`, run `bash stream-deck/build-profile.sh`, and commit both. Then re-run `bash setup.sh stream-deck` on each machine. On the Mac, accept Stream Deck's prompt for each changed profile, pressing **Overview** for the **System** profile.
 - To update the Ubuntu Stream Deck's packages, run `pnpm update` in `stream-deck/linux`, commit `pnpm-lock.yaml`, and re-run `bash setup.sh stream-deck`.
 - [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.
 

@@ -13,8 +13,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system
 source "$DOTFILES_DIR/monitor-input/lib/paths.sh"
 
 STEP_OS=ubuntu
-# shellcheck disable=SC2034 # run_steps reads it
-STEP_NEEDS="homebrew"
 
 SCRIPT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input"
 UNIT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input.service"
@@ -24,9 +22,7 @@ ddcutil_installed() {
 }
 
 install_ddcutil() {
-    # Stale lists can name a version the mirror no longer has
-    apt_get_update || return 1
-    apt_get install -y ddcutil
+    apt_install_fresh ddcutil
 }
 
 script_installed() {

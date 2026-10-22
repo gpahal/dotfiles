@@ -12,17 +12,25 @@ CACHE_NAMES=()
 CACHE_DIRS=()
 CACHE_CLEARS=()
 
-_clear_go() { go clean -cache; }
+# Each runs from ~, where collect_caches found the cache, and is given it where the tool takes one.
+# pnpm isn't: --store-dir wants the parent of the versioned dir that store path prints.
+_clear_go() { GOCACHE="$1" go clean -cache; }
 _clear_pnpm() { pnpm store prune; }
-_clear_npm() { npm cache clean --force; }
-_clear_brew() { brew cleanup --prune=all; }
+_clear_npm() { npm cache clean --force --cache "$1"; }
+_clear_brew() { HOMEBREW_CACHE="$1" brew cleanup --prune=all; }
 
-# A cache dir only: never empty, /, or HOME
+# A cache dir only, resolved first, as $HOME// or a symlink can name HOME: never /, HOME, or a dir
+# above it
 _clear_dir() {
-    case "${1%/}" in
-        "" | "$HOME") return 1 ;;
-    esac
-    rm -rf "$1"
+    local dir home
+    dir="$(cd -- "$1" 2> /dev/null && pwd -P)" || return 1
+    home="$(cd -- "$HOME" && pwd -P)" || return 1
+    # pwd -P can print // for /
+    if [ -z "${dir//\//}" ] || [[ "$home/" == "$dir/"* ]]; then
+        echo "Not clearing $1, which is / or holds your home folder." >&2
+        return 1
+    fi
+    rm -rf -- "$dir"
 }
 
 # _add_cache <name> <dir> <clear-fn>; skips a missing or empty dir
@@ -99,18 +107,14 @@ clean_caches() {
     _list_caches
     "$dry_run" && return 0
     if ! confirm "Clear them?"; then
-        if is_interactive; then
-            echo "Left unchanged."
-        else
-            echo "Left unchanged. Run it from a terminal to clear them."
-        fi
+        left_unchanged "" it "clear them"
         return 0
     fi
     before_kib="$total_kib"
     while [ "$i" -lt ${#CACHE_NAMES[@]} ]; do
         echo "Clearing the ${CACHE_NAMES[i]}..."
         rc=0
-        "${CACHE_CLEARS[i]}" "${CACHE_DIRS[i]}" || rc=$?
+        (cd ~ && "${CACHE_CLEARS[i]}" "${CACHE_DIRS[i]}") || rc=$?
         if interrupted_status "$rc"; then
             echo "Interrupted; stopping." >&2
             return "$rc"
@@ -125,10 +129,7 @@ clean_caches() {
         i=$((i + 1))
     done
     echo "Freed $(_human_kib $((before_kib > total_kib ? before_kib - total_kib : 0)))."
-    if [ ${#failed[@]} -gt 0 ]; then
-        echo "Failed: $(printf '%s\n' "${failed[@]}" | join_lines ', ')" >&2
-        return 1
-    fi
+    report_failed ${failed[@]+"${failed[@]}"}
 }
 
 main() {

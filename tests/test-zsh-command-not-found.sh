@@ -20,19 +20,14 @@ MISSING='OSTYPE=$1; source "$2/zsh/command-not-found.zsh"; _apt_command_not_foun
 missing() {
     zsh -f -c "$MISSING" zsh "$1" "$REPO_DIR" "$2" "$3" 2>&1
 }
-# Same, on a terminal. script ends lines with \r\n, and macOS's echoes the ^D it sends.
 missing_in_terminal() {
-    if [ "$(uname -s)" == Darwin ]; then
-        script -q /dev/null zsh -f -c "$MISSING" zsh "$1" "$REPO_DIR" "$2" "$3"
-    else
-        script -qec "$(printf '%q ' zsh -f -c "$MISSING" zsh "$1" "$REPO_DIR" "$2" "$3")" /dev/null
-    fi < /dev/null | tr -d '\r\b' | sed 's/^^D//'
+    in_terminal zsh -f -c "$MISSING" zsh "$1" "$REPO_DIR" "$2" "$3"
 }
 
 assert_eq "apt: brewtool
 status 127" "$(missing linux-gnu "$APT_CNF" brewtool)" "a command brew knows, piped, on Ubuntu"
 assert_file_not_contains "$STUB_LOG" "brew"
-if command -v script &>/dev/null; then
+if in_terminal_available; then
     assert_eq "brewtool: brew install brewtool
 status 127" "$(missing_in_terminal linux-gnu "$APT_CNF" brewtool)" "a command brew knows, on Ubuntu"
     assert_eq "apt: apttool

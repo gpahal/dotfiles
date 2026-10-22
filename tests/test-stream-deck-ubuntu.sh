@@ -30,7 +30,8 @@ esac'
 stub systemctl 'user=""
 [ "$1" != --user ] || { user=user-; shift; }
 case "$1" in
-    show-environment | daemon-reload | try-restart) ;;
+    show-environment | try-restart) ;;
+    daemon-reload) [ ! -e "$STATE/reload-fails" ] ;;
     is-enabled) [ -e "$STATE/$user${*: -1}.enabled" ] ;;
     is-active)
         case "${*: -1}" in
@@ -86,11 +87,13 @@ assert_contains "$RUN_OUTPUT" "Turned on the GNOME extension dotfiles@gpahal.com
 assert_contains "$RUN_OUTPUT" "No desktop session, so the daemon starts at your next login."
 assert_eq "['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com', 'dotfiles@gpahal.com']" "$(cat "$STATE/extensions")" \
     "the enabled extensions, with yours kept"
-for file in daemon.js layout.json package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
+for file in daemon.js package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
     cmp -s "$REPO_DIR/stream-deck/linux/$file" "$deck_dir/$file" || fail "$file wasn't copied"
 done
 [ -x "$deck_dir/bin/open-in" ] || fail "bin/open-in isn't executable"
-cmp -s "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js" "$deck_dir/stats.js" || fail "stats.js wasn't copied"
+for file in keys.js stats.js layout.json manifest.json; do
+    cmp -s "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/$file" "$deck_dir/$file" || fail "$file wasn't copied"
+done
 [ -f "$deck_dir/images/key-cpu.svg" ] && [ -f "$deck_dir/images/key-editor@2x.png" ] || fail "the images weren't copied"
 [ -f "$HOME/.local/share/gnome-shell/extensions/dotfiles@gpahal.com/extension.js" ] || fail "the extension wasn't copied"
 assert_file_contains "$STUB_LOG" "pnpm install --frozen-lockfile --prod --config.confirmModulesPurge=false"
@@ -152,6 +155,38 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "The GNOME extension changed; log out and back in to load it."
 assert_not_contains "$RUN_OUTPUT" "Restarted"
 
+# A failed reload leaves the restart pending, and the next run does it
+echo "// an edit" >> "$deck_dir/daemon.js"
+touch "$STATE/reload-fails"
+assert_exit 1 main
+assert_not_contains "$RUN_OUTPUT" "Restarted"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon restarted on its new files: re-run the stream-deck step"
+rm "$STATE/reload-fails"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
+assert_file_contains "$STUB_LOG" "systemctl --user restart dotfiles-stream-deck.service"
+assert_exit 0 main --status
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "The Stream Deck daemon is already running."
+
+# Files the repo no longer has go, as does a folder they leave empty, but not the packages
+mkdir -p "$deck_dir/old" "$deck_dir/node_modules/pkg/empty"
+touch "$deck_dir/images/key-old.svg" "$deck_dir/old/x.js" "$deck_dir/node_modules/pkg/index.js"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    ~/.local/share/dotfiles/stream-deck/images/key-old.svg: the repo no longer has it"
+assert_contains "$RUN_OUTPUT" "missing    ~/.local/share/dotfiles/stream-deck/old/x.js"
+assert_not_contains "$RUN_OUTPUT" "node_modules"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Removed images/key-old.svg, which the repo no longer has"
+assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
+[ ! -e "$deck_dir/images/key-old.svg" ] && [ ! -e "$deck_dir/old" ] || fail "the stale files weren't removed"
+[ -f "$deck_dir/node_modules/pkg/index.js" ] && [ -d "$deck_dir/node_modules/pkg/empty" ] ||
+    fail "the daemon's packages were changed"
+[ -f "$deck_dir/images/key-cpu.svg" ] || fail "a current image was removed"
+assert_exit 0 main --status
+
 # The extension's state, as GNOME Shell reports it
 SHELL_STATE=unknown assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: log out and back in, since GNOME loads a new extension at login"
@@ -183,20 +218,36 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Power key: this CPU has no RAPL power counter"
 assert_not_contains "$RUN_OUTPUT" "Power helper"
 
-# The power helper: watts from two readings, across the counter wrapping
-rapl="$SANDBOX/rapl"
-mkdir -p "$rapl/intel-rapl:0" "$rapl/intel-rapl:0:0"
-echo 100000000 > "$rapl/intel-rapl:0/max_energy_range_uj"
-echo 99000000 > "$rapl/intel-rapl:0/energy_uj"
-echo 5000000 > "$rapl/intel-rapl:0:0/energy_uj"
-stub date 'n=$(($(cat "$SANDBOX/date-n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$SANDBOX/date-n"; echo "$((n * 2000000000))"'
-# The second sleep fails, which ends the helper's loop
-stub sleep '[ -e "$SANDBOX/slept" ] && exit 1
-touch "$SANDBOX/slept"
-echo 19000000 > "$SANDBOX/rapl/intel-rapl:0/energy_uj"
-echo 35000000 > "$SANDBOX/rapl/intel-rapl:0:0/energy_uj"'
-DOTFILES_RAPL_DIR="$rapl" DOTFILES_POWER_FILE="$SANDBOX/power" assert_exit 0 bash "$REPO_DIR/stream-deck/linux/dotfiles-power"
-assert_eq "10.00 15.00" "$(cat "$SANDBOX/power")" "the package's and cores' watts over 2 s"
+# The power helper: watts from two readings, across each counter wrapping at its own range. The
+# cores are the zone named core, not the first child zone.
+rapl="$SANDBOX/rapl/intel-rapl:0"
+mkdir -p "$rapl" "$rapl:0" "$rapl:1"
+echo package-0 > "$rapl/name"
+echo 100000000 > "$rapl/max_energy_range_uj"
+echo 99000000 > "$rapl/energy_uj"
+echo dram > "$rapl:0/name"
+echo 1 > "$rapl:0/energy_uj"
+echo core > "$rapl:1/name"
+echo 50000000 > "$rapl:1/max_energy_range_uj"
+echo 45000000 > "$rapl:1/energy_uj"
+echo "100.00 1.00" > "$SANDBOX/uptime"
+# Each sleep logs the last line and sets the next readings, 2 s on. The cores' counter can't be
+# read in the second round, so the third spans 4 s for them. The fourth sleep ends the loop.
+stub sleep 'n=$(($(cat "$SANDBOX/sleeps" 2>/dev/null || echo 0) + 1))
+echo "$n" > "$SANDBOX/sleeps"
+r="$SANDBOX/rapl/intel-rapl:0"
+[ "$n" -eq 1 ] || cat "$SANDBOX/power" >> "$SANDBOX/power.log"
+case "$n" in
+    1) echo 19000000 > "$r/energy_uj"; echo 5000000 > "$r:1/energy_uj"; echo "102.00 1.00" > "$SANDBOX/uptime" ;;
+    2) echo 39000000 > "$r/energy_uj"; rm "$r:1/energy_uj"; echo "104.00 1.00" > "$SANDBOX/uptime" ;;
+    3) echo 59000000 > "$r/energy_uj"; echo 25000000 > "$r:1/energy_uj"; echo "106.00 1.00" > "$SANDBOX/uptime" ;;
+    *) exit 1 ;;
+esac'
+DOTFILES_RAPL_DIR="$SANDBOX/rapl" DOTFILES_POWER_FILE="$SANDBOX/power" DOTFILES_UPTIME_FILE="$SANDBOX/uptime" \
+    assert_exit 0 bash "$REPO_DIR/stream-deck/linux/dotfiles-power"
+assert_eq "10.00 5.00
+10.00
+10.00 5.00" "$(cat "$SANDBOX/power.log")" "the package's and cores' watts each round"
 [ -n "$(find "$SANDBOX/power" -perm 644)" ] || fail "the power file isn't world-readable"
 
 test_done

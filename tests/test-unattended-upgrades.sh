@@ -13,6 +13,10 @@ as_os ubuntu
 UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
 printf '%s\n' "$UNATTENDED_CONTENT" > "$UNATTENDED_CONF"
 GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
+# The key Google's .deb installed, with the pinned fingerprint
+GOOGLE_KEYRING="$SANDBOX/google-chrome.gpg"
+touch "$GOOGLE_KEYRING"
+stub gpg 'printf "pub:-\nfpr:::::::::%s:\n" "'"$GOOGLE_KEY_FPR"'"'
 # Firefox is already gone, as the chrome step leaves it
 stub dpkg-query '[ "${!#}" == firefox ] || echo "install ok installed"'
 stub snap 'exit 1'

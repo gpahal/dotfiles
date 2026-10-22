@@ -88,7 +88,7 @@ HOTKEYS="$DEFAULTS_DIR/com.apple.symbolichotkeys.AppleSymbolicHotKeys"
 
 # Ctrl+Opt+Space (61) stays on, since Hammerspoon's hotkeys add Cmd
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Spotlight's Cmd+Space shortcut off, so Raycast can take it"
+assert_contains "$RUN_OUTPUT" "missing    Spotlight's Cmd+Space shortcut off, so Vicinae can take it"
 assert_not_contains "$RUN_OUTPUT" "input source"
 assert_exit 0 main
 assert_eq 0 "$(cat "$HOTKEYS.64")" "hotkey 64's enabled"

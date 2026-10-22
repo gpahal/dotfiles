@@ -5,3 +5,25 @@ Description=Switch the monitor's input to follow the USB switch
 [Service]
 Type=oneshot
 ExecStart=/usr/local/libexec/dotfiles-monitor-input
+# Not root: ddcutil needs only /dev/i2c-*, which i2c-tools' udev rule gives the i2c group, and
+# reads of /sys and /etc/dotfiles/monitor-input.conf
+DynamicUser=yes
+SupplementaryGroups=i2c
+# ddcutil keeps its caches under XDG_CACHE_HOME
+CacheDirectory=dotfiles-monitor-input
+Environment=XDG_CACHE_HOME=%C/dotfiles-monitor-input
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

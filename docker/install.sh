@@ -15,7 +15,8 @@ STEP_NEEDS="homebrew"
 
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
-DOCKER_KEY_URL=https://download.docker.com/linux/ubuntu/gpg
+DOCKER_REPO=https://download.docker.com/linux/ubuntu
+DOCKER_KEY_URL="$DOCKER_REPO/gpg"
 # "Docker Release (CE deb)"
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
@@ -50,19 +51,7 @@ docker_auto_updates_configured() {
 }
 
 docker_sources() {
-    cat <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(ubuntu_codename)
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: $DOCKER_KEYRING
-EOF
-}
-
-# 404 until Docker publishes packages for this release
-docker_release_url() {
-    echo "https://download.docker.com/linux/ubuntu/dists/$(ubuntu_codename)/Release"
+    deb822_source "$DOCKER_REPO" stable "$DOCKER_KEYRING" "$(dpkg --print-architecture)"
 }
 
 docker_source_ok() {
@@ -212,10 +201,10 @@ status_docker_usage() {
     fi
 }
 
-# Docker lists IPv6 as [::]:<port>, or :::<port> before 26
+# Docker lists IPv4 as 0.0.0.0:<port> and IPv6 as [::]:<port>
 ports_on_every_address() {
     local nl=$'\n'
-    printf '%s\n' "${1//, /$nl}" | grep -E '^(0\.0\.0\.0|\[::\]|::):[^ ]*->' || true
+    printf '%s\n' "${1//, /$nl}" | grep -E '^(0\.0\.0\.0|\[::\]):[^ ]*->' || true
 }
 
 # Published ports bypass ufw. A stopped daemon isn't asked (docker.socket would start it), but
@@ -260,7 +249,7 @@ status() {
     docker_installed && installed=true
     docker_items
     items_status docker_installed
-    ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(docker_release_url)"
+    ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(apt_release_url "$DOCKER_REPO")"
     # Optional: apply asks once and a no lasts
     if in_docker_group; then
         status_item ok "$(id -un) in the docker group"
@@ -346,10 +335,10 @@ apply() {
     # A release upgrade disables the source; rewrite it once Docker publishes for the new release.
     local installed=false repair_source=false
     docker_installed && installed=true
-    if ! "$installed" && ! apt_repo_published Docker "$(docker_release_url)"; then
+    if ! "$installed" && ! apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
         return 0
     fi
-    if "$installed" && ! docker_source_ok && apt_repo_published Docker "$(docker_release_url)"; then
+    if "$installed" && ! docker_source_ok && apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
         repair_source=true
     fi
     local pending=()

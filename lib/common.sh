@@ -11,12 +11,23 @@ case "${BASH_SOURCE[1]:-}" in
     *) _SOURCED_BY="$PWD/${BASH_SOURCE[1]:-}" ;;
 esac
 
+# Worked out once, since status loops ask per cask. Tests switch it with as_os, or with a uname
+# stub before this file loads.
+case "$(uname -s)" in
+    Darwin) _DOTFILES_OS=macos ;;
+    Linux)
+        _DOTFILES_OS=linux
+        ! grep -qE '^ID="?ubuntu"?$' /etc/os-release 2>/dev/null || _DOTFILES_OS=ubuntu
+        ;;
+    *) _DOTFILES_OS=other ;;
+esac
+
 is_macos() {
-    [ "$(uname -s)" == "Darwin" ]
+    [ "$_DOTFILES_OS" == macos ]
 }
 
 is_ubuntu() {
-    [ "$(uname -s)" == "Linux" ] && grep -qE '^ID="?ubuntu"?$' /etc/os-release 2>/dev/null
+    [ "$_DOTFILES_OS" == ubuntu ]
 }
 
 # Ubuntu Desktop, rather than Server, which has no apps to open
@@ -74,16 +85,22 @@ file_is() {
     [ "$(cat "$1" 2>/dev/null)" == "$2" ]
 }
 
+# left_unchanged <indent> <what to run> <what that does>: after a declined confirm, which says no
+# without a terminal
+left_unchanged() {
+    if is_interactive; then
+        echo "${1}Left unchanged."
+    else
+        echo "${1}Left unchanged. Run $2 from a terminal to $3."
+    fi
+}
+
 # Returns nonzero when declined
 confirm_sudo_changes() {
     echo "  These need sudo:"
     printf '    - %s\n' "$@"
     confirm "  Apply them?" && return 0
-    if is_interactive; then
-        echo "  Left unchanged."
-    else
-        echo "  Left unchanged. Run this step from a terminal to apply them."
-    fi
+    left_unchanged "  " "this step" "apply them"
     return 1
 }
 
@@ -106,13 +123,17 @@ warn_untested_platform() {
     echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2
 }
 
+# Homebrew's default prefixes, macOS's then Linux's. zsh/path.zsh and zsh/profile.sh keep their own
+# copies, since they run without this file.
+HOMEBREW_PREFIXES=(/opt/homebrew /home/linuxbrew/.linuxbrew)
+
 load_brew() {
-    local brew
-# Set by the tests to hide Homebrew
+    local prefix
+    # Set by the tests to hide Homebrew
     [ -z "${DOTFILES_NO_LOAD_BREW:-}" ] || return 1
-    for brew in /opt/homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
-        if [ -x "$brew" ]; then
-            eval "$("$brew" shellenv)"
+    for prefix in "${HOMEBREW_PREFIXES[@]}"; do
+        if [ -x "$prefix/bin/brew" ]; then
+            eval "$("$prefix/bin/brew" shellenv)"
             return 0
         fi
     done
@@ -309,20 +330,26 @@ confirm() {
 # Installed with apt by the homebrew step on Ubuntu
 UBUNTU_COMMANDS=(cc make curl file git ps zsh lsof col unzip jq gpg)
 
+# Where to get a missing command; the homebrew step installs most
 missing_cmd_hint() {
-    local how=""
-    if [ "$1" == ssh-keygen ]; then
-        if is_macos; then
-            echo "ssh-keygen is part of macOS; check your PATH."
-        else
-            echo "ssh-keygen isn't installed. Install it with: sudo apt install openssh-client"
-        fi
-        return 0
-    fi
-    if is_ubuntu && [[ " ${UBUNTU_COMMANDS[*]} " == *" $1 "* ]]; then
-        how=", which installs it with apt"
-    fi
-    echo "$1 isn't installed. Run bash setup.sh homebrew first$how."
+    case "$1" in
+        ssh-keygen)
+            if is_macos; then
+                echo "ssh-keygen is part of macOS; check your PATH."
+            else
+                echo "ssh-keygen isn't installed. Install it with: sudo apt install openssh-client"
+            fi
+            ;;
+        gsettings | gnome-extensions) echo "$1 isn't installed. It needs the GNOME desktop: ubuntu-desktop." ;;
+        snap) echo "snap isn't installed. Install it with: sudo apt install snapd" ;;
+        *)
+            if is_ubuntu && [[ " ${UBUNTU_COMMANDS[*]} " == *" $1 "* ]]; then
+                echo "$1 isn't installed. Run bash setup.sh homebrew first, which installs it with apt."
+            else
+                echo "$1 isn't installed. Run bash setup.sh homebrew first."
+            fi
+            ;;
+    esac
 }
 
 require_cmd() {
@@ -362,6 +389,13 @@ join_lines() {
         sep="$1"
     done
     printf '%s\n' "$out"
+}
+
+# report_failed [name...]: lists what failed, and fails when anything did
+report_failed() {
+    [ $# -gt 0 ] || return 0
+    echo "Failed: $(printf '%s\n' "$@" | join_lines ', ')" >&2
+    return 1
 }
 
 # A path for a unit's ExecStart, which expands % and $
@@ -497,6 +531,20 @@ regex_escape() {
     printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g'
 }
 
+# git_head_is <dir> <sha>: the .git check stops git finding a repo above a plain dir
+git_head_is() {
+    [ -d "$1/.git" ] && [ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" == "$2" ]
+}
+
+# git_checkout_pin <dir> <remote> <sha>: fetches only the pinned commit when it's missing, as
+# shallow clones need
+git_checkout_pin() {
+    local dir="$1" remote="$2" sha="$3"
+    { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
+        GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "$remote" "$sha"; } &&
+        git -C "$dir" checkout -q --detach "$sha"
+}
+
 wait_until_quit() {
     for _ in $(seq 1 20); do
         pgrep "$@" &>/dev/null || return 0
@@ -508,7 +556,8 @@ wait_until_quit() {
 # Returns nonzero if the app is still running
 ensure_app_quit() {
     local app="$1" pattern
-# macOS pgrep -a matches this script's ancestors too; procps -a prints command lines, hidden here
+    # macOS pgrep -a matches this script's ancestors too; procps -a prints command lines, which
+    # are hidden here
     pattern="$(regex_escape "$app")"
     pgrep -ax "$pattern" &>/dev/null || return 0
     if running_inside "$app"; then
@@ -561,7 +610,7 @@ file_mode() {
 replace_file() {
     local src="$1" dest="$2" mode="$3" tmp target
     if [ -L "$dest" ]; then
-# On a dangling link macOS's readlink -f fails and GNU's succeeds, so check the target
+        # On a dangling link macOS's readlink -f fails and GNU's succeeds, so check the target
         if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
             return 1
         fi
@@ -601,7 +650,7 @@ json_merge() {
     local file="$1" filter="$2" tmp input="" values
     require_cmd jq || return 1
     ! json_applied "$file" "$filter" || return 0
-# An unreadable file, such as a dangling symlink, fails rather than start from {} and lose data
+    # An unreadable file, such as a dangling symlink, fails rather than start from {} and lose data
     if [ -e "$file" ] || [ -L "$file" ]; then
         if ! input="$(cat -- "$file")"; then
             echo "  Couldn't read $file, so it was left as it is." >&2
@@ -706,7 +755,7 @@ sudo_ready() {
 }
 
 # yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
-# shellcheck disable=SC2034 # they read it
+# shellcheck disable=SC2034 # the codex step and scripts/check-tool-versions.sh read it
 YQ_MIN_VERSION=4.54.1
 
 # Missing parts count as 0
@@ -728,7 +777,7 @@ run_bounded() {
     shift
     if command -v timeout &>/dev/null; then
         timeout -k 5 "$seconds" "$@" || status=$?
-# 137 means timeout had to SIGKILL
+        # 137 means timeout had to SIGKILL
         if [ "$status" -eq 137 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
             status=124
         fi
@@ -738,9 +787,9 @@ run_bounded() {
         "$@"
         return
     fi
-# exec's block form skips the shell; the alarm survives exec
+    # exec's block form skips the shell; the alarm survives exec
     perl -e 'alarm shift; exec { $ARGV[0] } @ARGV or exit 127' "$seconds" "$@" || status=$?
-# 142 is SIGALRM
+    # 142 is SIGALRM
     if [ "$status" -eq 142 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
         status=124
     fi
@@ -1025,14 +1074,14 @@ run_steps() {
     warn_untested_platform
     # shellcheck disable=SC2154 # STEPS is set by the caller
     [ $# -gt 0 ] || set -- "${STEPS[@]}"
-# bash takes a step that exits normally after Ctrl-C to have handled it
+    # bash takes a step that exits normally after Ctrl-C to have handled it
     trap 'interrupted=130' INT
     trap 'interrupted=143' TERM
     trap 'interrupted=129' HUP
     for step in "$@"; do
         script="$(step_script "$step")"
         status=0
-# An invalid STEP_OS is left for the step's own main to report
+        # An invalid STEP_OS is left for the step's own main to report
         if [ -n "$mode" ] && skipped="$(step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" --status 2>/dev/null)"; then
             printf '%s:\n%s\n' "$step" "$skipped"
             continue
@@ -1045,7 +1094,8 @@ run_steps() {
             continue
         fi
         if [ -n "$mode" ]; then
-# The header prints only before a first line. -e is off in the group, so read PIPESTATUS.
+            # The header prints only before a first line. -e is off in the group, so read
+            # PIPESTATUS.
             {
                 "$BASH" "$script" --status | _status_relay "$step:"
                 codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"

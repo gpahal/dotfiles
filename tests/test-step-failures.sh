@@ -55,14 +55,17 @@ fail_defaults
 rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
 
 # --- zsh ---
-# sudo_cached succeeds only with SUDO_CACHED set
-stub_sudo_exec '[ "$*" != "-n true" ] || [ -n "${SUDO_CACHED:-}" ] || exit 1'
+stub_sudo_cacheable
+assert_exit 1 sudo -n touch "$SANDBOX/by-sudo"
+[ ! -e "$SANDBOX/by-sudo" ] || fail "sudo -n ran touch without cached credentials"
+cache_sudo yes
 assert_exit 0 sudo -n touch "$SANDBOX/by-sudo"
 [ -e "$SANDBOX/by-sudo" ] || fail "the sudo stub didn't run touch"
 assert_exit 1 sudo install -m 0644 /dev/null /usr/lib/dotfiles-test/by-sudo
 assert_contains "$RUN_OUTPUT" "refused: /usr/lib/dotfiles-test/by-sudo is outside the sandbox"
 assert_exit 1 sudo env DEST=/etc/by-sudo true
 assert_contains "$RUN_OUTPUT" "refused: DEST=/etc/by-sudo is outside the sandbox"
+cache_sudo no
 stub chsh
 load_script zsh/install.sh
 replace_fn current_login_shell 'echo /bin/bash'
@@ -79,14 +82,14 @@ assert_file_contains "$STUB_LOG" "chsh -s $SANDBOX/bin/zsh"
 assert_file_not_contains "$STUB_LOG" "sudo -n chsh"
 
 : > "$STUB_LOG"
-export SUDO_CACHED=1
+cache_sudo yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo -n chsh -s $SANDBOX/bin/zsh $(id -un)"
 
 stub chsh 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Run manually: chsh -s $SANDBOX/bin/zsh"
-unset SUDO_CACHED
+cache_sudo no
 stub chsh
 unset DOTFILES_ASSUME_YES
 
@@ -116,10 +119,13 @@ stub pkill 'exit 1'
 load_script ghostty/install.sh
 as_os ubuntu
 
+# A missing prerequisite fails the step before it changes anything
 hide snap
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo apt-get install snapd"
-assert_eq "" "$(cmp "$REPO_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty" 2>&1)" "ghostty config copied"
+assert_contains "$RUN_OUTPUT" "snap isn't installed. Install it with: sudo apt install snapd"
+[ ! -e "$GHOSTTY_DIR/config.ghostty" ] || fail "the ghostty config was copied without snapd"
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Ghostty snap: snap isn't installed"
 
 stub snap 'exit 1'
 rm -f "$GHOSTTY_DIR/config.ghostty"

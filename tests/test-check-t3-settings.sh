@@ -12,6 +12,7 @@ unset GITHUB_TOKEN
 # The latest release is v9.9.9; a raw file comes from $SANDBOX/upstream
 mkdir -p "$SANDBOX/upstream"
 stub curl 'out="" url="${!#}"
+case " $* " in *" -H @- "*) cat >> "'"$SANDBOX"'/headers" ;; esac
 while [ $# -gt 0 ]; do
     [ "$1" != -o ] || out="$2"
     shift
@@ -48,6 +49,12 @@ assert_contains "$RUN_OUTPUT" "server settings: every key is in the schema"
 assert_contains "$RUN_OUTPUT" "client settings: every key is in the schema"
 assert_contains "$RUN_OUTPUT" "All checks passed"
 assert_not_contains "$RUN_OUTPUT" "WARNING"
+[ ! -e "$SANDBOX/headers" ] || fail "curl got a header without GITHUB_TOKEN"
+
+# The token goes to curl through stdin, not its command line, which any local user can read
+GITHUB_TOKEN=test-token check 0
+assert_file_not_contains "$STUB_LOG" "test-token"
+assert_eq "Authorization: Bearer test-token" "$(sort -u "$SANDBOX/headers")" "the headers curl read"
 
 # A key whose default is the value the step writes warns without failing
 assignment="$(

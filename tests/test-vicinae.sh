@@ -2,10 +2,10 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The vicinae step: Vicinae from its installer into ~/.local, its GNOME extension from
+# The vicinae step. On Ubuntu: Vicinae from its installer into ~/.local, its GNOME extension from
 # extensions.gnome.org, its user service, and Super+Space; and update_vicinae, which upgrade runs.
-# A fake installer writes what the real one does for a prefix under HOME. A gsettings stub keeps
-# each key in a file and prints values as gsettings does.
+# On both OSes: the shared settings file, settings.json's import and per-OS keys, and the keys it
+# overrides. A fake installer writes what the real one does for a prefix under HOME.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,25 +13,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
-export SANDBOX STATE
-mkdir -p "$STATE" "$SANDBOX/gsettings"
-# Lists print as stored; a string in single quotes, or double quotes when it holds a single one
-stub gsettings 'file="$SANDBOX/gsettings/${2//\//_}.$3"
-case "$1" in
-    get)
-        if [ -e "$file" ]; then cat "$file"
-        else case "$3" in
-            enabled-extensions | custom-keybindings) echo "@as []" ;;
-            switch-input-source) echo "['"'"'<Super>space'"'"', '"'"'XF86Keyboard'"'"']" ;;
-            *) echo "'"''"'" ;;
-        esac; fi ;;
-    set)
-        case "$4" in
-            "["* | "@as"*) printf "%s\n" "$4" > "$file" ;;
-            *"'"'"'"*) printf "\"%s\"\n" "$4" > "$file" ;;
-            *) printf "'"'"'%s'"'"'\n" "$4" > "$file" ;;
-        esac ;;
-esac'
+export STATE
+mkdir -p "$STATE"
+stub_gsettings
 stub gnome-shell 'echo "GNOME Shell 50.1"'
 # Installs the zip's version, as gnome-extensions install --force unpacks it
 stub gnome-extensions 'dir="$HOME/.local/share/gnome-shell/extensions/vicinae@dagimg-dot"
@@ -48,10 +32,13 @@ stub busctl 'case "$*" in
     *GetExtensionInfo*)
         echo "{\"type\":\"a{sv}\",\"data\":[{\"state\":{\"type\":\"d\",\"data\":$SHELL_STATE.0},\"error\":{\"type\":\"s\",\"data\":\"\"}}]}" ;;
 esac'
+# daemon-reload loads the unit
 stub systemctl '[ "$1" == --user ] || exit 1
 shift
 case "$1" in
-    show-environment | daemon-reload) ;;
+    show-environment) ;;
+    daemon-reload) touch "$STATE/loaded" ;;
+    show) if [ -e "$STATE/loaded" ]; then echo loaded; else echo not-found; fi ;;
     is-enabled) [ -e "$STATE/${*: -1}.enabled" ] ;;
     is-active)
         case "${*: -1}" in
@@ -68,6 +55,7 @@ as_os ubuntu
 bin="$HOME/.local/bin/vicinae"
 unit="$HOME/.local/share/systemd/user/vicinae.service"
 ext_dir="$HOME/.local/share/gnome-shell/extensions/vicinae@dagimg-dot"
+settings="$HOME/.config/vicinae/settings.json"
 binding=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dotfiles-vicinae/
 gs() { gsettings get "$@"; }
 # What the installer writes for --prefix ~/.local, the binary printing $STATE/vicinae-version
@@ -93,6 +81,9 @@ assert_contains "$RUN_OUTPUT" "missing    Vicinae ($bin)"
 assert_contains "$RUN_OUTPUT" "missing    Vicinae's GNOME extension vicinae@dagimg-dot enabled"
 assert_contains "$RUN_OUTPUT" "missing    Super+Space opens Vicinae"
 assert_contains "$RUN_OUTPUT" "missing    Super+Space doesn't switch keyboard layouts"
+assert_contains "$RUN_OUTPUT" "missing    ~/.config/vicinae/dotfiles.json"
+assert_contains "$RUN_OUTPUT" "missing    $settings imports dotfiles.json"
+assert_contains "$RUN_OUTPUT" "missing    Paste into the active window and snippets off (input_server.enabled): not set"
 
 # Over SSH, with no desktop session: it installs everything, and Vicinae starts at the next login
 unset TERM
@@ -105,6 +96,7 @@ assert_contains "$RUN_OUTPUT" "Installed Vicinae's GNOME extension 12. GNOME loa
 assert_eq "['ubuntu-dock@ubuntu.com', 'vicinae@dagimg-dot']" "$(gs org.gnome.shell enabled-extensions)" \
     "the enabled extensions, with yours kept"
 [ -e "$STATE/vicinae.service.enabled" ] || fail "Vicinae's service wasn't enabled"
+assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 assert_contains "$RUN_OUTPUT" "No desktop session, so Vicinae starts at your next login."
 assert_contains "$RUN_OUTPUT" "Freed Super+Space from switching keyboard layouts"
 assert_eq "['XF86Keyboard']" "$(gs org.gnome.desktop.wm.keybindings switch-input-source)" "the layout switch's keys"
@@ -114,6 +106,10 @@ assert_eq "\"'$bin' toggle\"" "$(gs "org.gnome.settings-daemon.plugins.media-key
     "Vicinae's command"
 assert_eq "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/', '$binding']" \
     "$(gs org.gnome.settings-daemon.plugins.media-keys custom-keybindings)" "the shortcut list, with yours kept"
+cmp -s "$REPO_DIR/vicinae/dotfiles.json" "$HOME/.config/vicinae/dotfiles.json" || fail "the shared settings weren't copied"
+assert_eq '{"imports":["dotfiles.json"],"input_server":{"enabled":false}}' "$(jq -c . "$settings")" "settings.json"
+assert_contains "$RUN_OUTPUT" "$settings imports dotfiles.json"
+assert_contains "$RUN_OUTPUT" "Paste into the active window and snippets off (input_server.enabled = false)"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae ($bin)"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae starts at login"
@@ -121,6 +117,10 @@ assert_contains "$RUN_OUTPUT" "unverified Vicinae running: no desktop session"
 assert_contains "$RUN_OUTPUT" "unverified Vicinae's GNOME extension loaded: GNOME Shell isn't running"
 assert_contains "$RUN_OUTPUT" "ok         Super+Space opens Vicinae"
 assert_contains "$RUN_OUTPUT" "ok         Super+Space doesn't switch keyboard layouts"
+assert_contains "$RUN_OUTPUT" "ok         ~/.config/vicinae/dotfiles.json"
+assert_contains "$RUN_OUTPUT" "ok         $settings imports dotfiles.json"
+assert_contains "$RUN_OUTPUT" "ok         Paste into the active window and snippets off (input_server.enabled): false"
+assert_not_contains "$RUN_OUTPUT" "overrides"
 
 # At the desktop it starts Vicinae; then a re-run changes nothing
 export SESSION=1 SHELL_STATE=1
@@ -129,13 +129,59 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Started Vicinae."
 assert_file_not_contains "$STUB_LOG" "installer"
 : > "$STUB_LOG"
+cp "$settings" "$SANDBOX/settings-before"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Vicinae is already running."
+assert_contains "$RUN_OUTPUT" "$settings already imports dotfiles.json and has this OS's settings"
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 assert_file_not_contains "$STUB_LOG" "fetch"
+assert_file_not_contains "$STUB_LOG" "daemon-reload"
+cmp -s "$settings" "$SANDBOX/settings-before" || fail "a re-run changed settings.json"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae running"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae's GNOME extension loaded"
+
+# Vicinae's own settings.json: a comment header, and its settings window's changes, which win.
+# Status names the repo's keys it overrides; with the import there, the step leaves it as it is.
+cat > "$settings" << 'EOF'
+// This configuration is merged with the default vicinae configuration file.
+// Learn more about configuration at https://docs.vicinae.com/config
+
+{
+  "favorites": ["clipboard:history", "applications:org.gnome.Nautilus"],
+  "imports": ["dotfiles.json"],
+  "input_server": { "enabled": false }, /* yours */
+  "theme": { "dark": { "name": "my // theme" } },
+  "providers": { "clipboard": { "preferences": {} } }
+}
+EOF
+cp "$settings" "$SANDBOX/settings-before"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "info       $settings overrides the repo's dotfiles.json for: favorites, theme.dark.name"
+assert_exit 0 main
+cmp -s "$settings" "$SANDBOX/settings-before" || fail "the step rewrote settings.json, which already had the import"
+# Without the import, it's added, and your keys stay
+grep -v '"imports"' "$settings" > "$SANDBOX/settings" && mv "$SANDBOX/settings" "$settings"
+assert_exit 0 main
+assert_eq '["dotfiles.json"]' "$(jq -c .imports "$settings")" "settings.json's imports"
+assert_eq '["clipboard:history","applications:org.gnome.Nautilus"]' "$(jq -c .favorites "$settings")" "your favorites"
+assert_eq '"my // theme"' "$(jq -c .theme.dark.name "$settings")" "your theme"
+# Your value for an OS key stays
+jq '.input_server.enabled = true' "$settings" > "$SANDBOX/settings" && mv "$SANDBOX/settings" "$settings"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Kept your input_server.enabled in $settings, true. The repo's is false."
+assert_eq true "$(jq -c .input_server.enabled "$settings")" "your input_server.enabled"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Paste into the active window and snippets off (input_server.enabled): yours, true (the repo's is false)"
+# Invalid JSON fails the step and stays as it is
+printf '{ "favorites": [\n' > "$settings"
+cp "$settings" "$SANDBOX/settings-before"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$settings isn't a JSON object, even without its comments, so it was left as it is."
+cmp -s "$settings" "$SANDBOX/settings-before" || fail "the step changed an invalid settings.json"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    $settings isn't a JSON object, even without its comments"
+rm "$settings"
 
 # Your own shortcut on Super+Space keeps it, and the step says so
 gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ \
@@ -196,10 +242,34 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Vicinae: no GNOME desktop"
 assert_file_not_contains "$STUB_LOG" "installer"
 
+# macOS: the homebrew step's app, and settings.json with Cmd+Space and paste on
 as_os macos
+rm -rf "$HOME/.config/vicinae"
+VICINAE_APP="$SANDBOX/Vicinae.app"
 : > "$STUB_LOG"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Vicinae isn't installed. Run bash setup.sh homebrew first."
+[ ! -e "$HOME/.config/vicinae" ] || fail "the step wrote settings without Vicinae"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Vicinae ($VICINAE_APP): bash setup.sh homebrew installs it"
+mkdir -p "$VICINAE_APP"
 assert_exit 0 main
-assert_eq "vicinae: skipped, Ubuntu only" "$RUN_OUTPUT" "the step on macOS"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the skipped step ran"
+assert_eq '{"imports":["dotfiles.json"],"global_shortcuts":{"toggle":"control+SPACE"},"input_server":{"enabled":true}}' \
+    "$(jq -c . "$settings")" "settings.json on macOS"
+assert_contains "$RUN_OUTPUT" 'Cmd+Space opens Vicinae (global_shortcuts.toggle = "control+SPACE")'
+assert_contains "$RUN_OUTPUT" "Paste into the active window and snippets on (input_server.enabled = true)"
+cmp -s "$REPO_DIR/vicinae/dotfiles.json" "$HOME/.config/vicinae/dotfiles.json" || fail "the shared settings weren't copied on macOS"
+assert_eq "" "$(cat "$STUB_LOG")" "commands the step ran on macOS"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Vicinae ($VICINAE_APP)"
+assert_contains "$RUN_OUTPUT" "ok         $settings imports dotfiles.json"
+assert_contains "$RUN_OUTPUT" 'ok         Cmd+Space opens Vicinae (global_shortcuts.toggle): "control+SPACE"'
+jq '.global_shortcuts.toggle = "alt+SPACE"' "$settings" > "$SANDBOX/settings" && mv "$SANDBOX/settings" "$settings"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Kept your global_shortcuts.toggle in $settings, \"alt+SPACE\". The repo's is \"control+SPACE\"."
+assert_eq '"alt+SPACE"' "$(jq -c .global_shortcuts.toggle "$settings")" "your shortcut"
+run update_vicinae
+assert_eq 0 "$RUN_STATUS" "update_vicinae's status on macOS"
+assert_eq "" "$(cat "$STUB_LOG")" "commands update_vicinae ran on macOS"
 
 test_done

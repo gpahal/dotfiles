@@ -15,9 +15,10 @@ ubuntu_step_load() {
     replace_fn ups_todo :
     replace_fn status_ups :
     replace_fn warn_no_ups :
+    # No nut group in a test
+    replace_fn ntfy_url_group 'id -gn'
     # This checkout may be a worktree
-    declare -F real_in_git_worktree > /dev/null || eval "real_$(declare -f in_git_worktree)"
-    replace_fn in_git_worktree false
+    wrap_fn in_git_worktree false
 }
 
 # Defaults match 26.04; files under $SANDBOX change unit state. $1 runs first.
@@ -65,8 +66,7 @@ esac'
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
-    not_cached_sudo
+    stub_sudo_cacheable
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'
@@ -88,11 +88,13 @@ ubuntu_step_setup() {
     stub_apt_config 'cat "'"$SANDBOX"'/apt.conf.d/"* 2> /dev/null | awk '"'"'{ values[$1] = $0 } END { for (key in values) print values[key] }'"'"''
     stub loginctl
     stub lsblk
-    # tailscale-reset: as after Tailscale's first login
+    # tailscale-reset: as after Tailscale's first login. tailscale-ssh turns Tailscale SSH on, and
+    # tailscale-serve holds the serve and funnel config.
     stub tailscale 'case "$1" in
         debug) if [ -e "'"$SANDBOX"'/tailscale-reset" ]; then echo "{}"
-            else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}"; fi ;;
+            else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": $([ -e "'"$SANDBOX"'/tailscale-ssh" ] && echo true || echo false)}"; fi ;;
         status) echo "{\"BackendState\": \"$(cat "'"$SANDBOX"'/tailscale-state")\"}" ;;
+        funnel) cat "'"$SANDBOX"'/tailscale-serve" 2> /dev/null || echo "{}" ;;
     esac'
     echo Running > "$SANDBOX/tailscale-state"
     # sshd -T takes the first value per key, Match blocks winning; test-ubuntu-sshd-real.sh checks
@@ -128,7 +130,7 @@ ubuntu_step_setup() {
                 }
                 inmatch && !matched { next }
                 k == "allowusers" { for (i = 2; i <= NF; i++) users = users " " $i; next }
-                k ~ /^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin)$/ {
+                k ~ /^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|x11forwarding|maxauthtries)$/ {
                     if (inmatch) { if (!(k in m)) m[k] = $2 } else if (!(k in v)) v[k] = $2
                 }
                 END {
@@ -136,6 +138,9 @@ ubuntu_step_setup() {
                     print "passwordauthentication", ("passwordauthentication" in v) ? v["passwordauthentication"] : "yes"
                     print "kbdinteractiveauthentication", ("kbdinteractiveauthentication" in v) ? v["kbdinteractiveauthentication"] : "yes"
                     print "permitrootlogin", ("permitrootlogin" in v) ? v["permitrootlogin"] : "without-password"
+                    # Ubuntu sets X11Forwarding yes in sshd_config
+                    print "x11forwarding", ("x11forwarding" in v) ? v["x11forwarding"] : "yes"
+                    print "maxauthtries", ("maxauthtries" in v) ? v["maxauthtries"] : "6"
                     n = split(users, u, " ")
                     for (i = 1; i <= n; i++) print "allowusers", u[i]
                 }'"'"' ;;

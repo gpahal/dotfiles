@@ -19,10 +19,8 @@ tmux_plugins() {
     awk '!/^#/ && NF { print $1, $2 }' "$PLUGINS_LOCK"
 }
 
-# The .git check stops git from finding a repo above a plain dir
 plugin_installed() {
-    local dir="$PLUGIN_DIR/${1##*/}"
-    [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$2" ]
+    git_head_is "$PLUGIN_DIR/${1##*/}" "$2"
 }
 
 install_tmux_plugin() {
@@ -33,9 +31,7 @@ install_tmux_plugin() {
         return 1
     fi
     if { [ -d "$dir/.git" ] || git init -q "$dir"; } &&
-        { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
-            GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$sha"; } &&
-        git -C "$dir" checkout -q --detach "$sha"; then
+        git_checkout_pin "$dir" "https://github.com/$repo" "$sha"; then
         echo "  Installed tmux plugin $repo at ${sha:0:7}"
         return 0
     fi

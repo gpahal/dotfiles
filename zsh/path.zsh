@@ -1,7 +1,8 @@
 # Stops Ubuntu's /etc/zsh/zshrc running a full compinit; basic-settings.zsh runs a cached one
 skip_global_compinit=1
 
-# Sourced repeatedly (~/.zprofile, main.zsh, Ubuntu's ~/.zshenv); -U makes re-runs a no-op
+# Sourced repeatedly (macOS's ~/.zprofile or Ubuntu's ~/.zshenv, then main.zsh); -U makes
+# re-runs a no-op
 typeset -U path fpath
 
 # A script inherits its parent's PATH, such as an activated venv's

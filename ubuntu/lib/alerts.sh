@@ -105,6 +105,39 @@ configure_health_alerts() {
     echo "  ntfy once just alerts saves a URL."
 }
 
+NTFY_TOPIC_MIN=20
+
+# ntfy.sh topics are public by name, so a short one can be guessed
+ntfy_topic_ok() {
+    [ "${#1}" -ge "$NTFY_TOPIC_MIN" ] && [ "${#1}" -le 64 ]
+}
+
+# The URL file is yours, in nut's group, mode 0640, so the health alerts read it as you, the UPS
+# notifier as nut, and the smartd hook as root. Simpler than an ACL or a group of your own, which
+# would need setfacl or a new login before services saw it. Until NUT is installed, there's no
+# nut, so it's in your own group, and status asks to save it again.
+ntfy_url_group() {
+    if id nut &>/dev/null; then
+        echo nut
+    else
+        id -gn
+    fi
+}
+
+# Prints what's wrong with the saved URL file, or nothing
+ntfy_url_file_problem() {
+    local meta want topic
+    meta="$(owner_group_mode "$NTFY_URL_FILE" 2>/dev/null)" || meta=""
+    want="$(id -un) $(ntfy_url_group) 640"
+    if [ "$meta" != "$want" ]; then
+        echo "it's ${meta:-unreadable} (owner, group, mode), not $want"
+    elif ! topic="$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)"; then
+        echo "it can't be read"
+    elif ! ntfy_topic_ok "${topic##*/}"; then
+        echo "its topic isn't $NTFY_TOPIC_MIN to 64 characters, so it can be guessed"
+    fi
+}
+
 # status_last_run <label> <unit>
 status_last_run() {
     local result
@@ -118,7 +151,7 @@ status_last_run() {
 
 status_health_alerts() {
     local label="The health alert's user units in ~/.config/systemd/user"
-    local url_label="ntfy URL for the disk, UPS, health, and boot alerts"
+    local url_label="ntfy URL for the disk, UPS, health, and boot alerts" problem
     if health_units_worktree && health_units_written; then
         status_item missing "$label: they run this git worktree, so the alerts stop when it's removed; re-run the ubuntu step from the main checkout"
     elif health_units_worktree && ! health_units_exist; then
@@ -138,6 +171,8 @@ status_health_alerts() {
     status_last_run "Boot notice's last run" dotfiles-boot-notice.service
     if [ ! -e "$NTFY_URL_FILE" ]; then
         status_item info "$url_label not set; just alerts sets it"
+    elif problem="$(ntfy_url_file_problem)" && [ -n "$problem" ]; then
+        status_item missing "$url_label ($NTFY_URL_FILE): $problem; run just alerts to save it again"
     else
         status_item info "$url_label set ($NTFY_URL_FILE)"
     fi

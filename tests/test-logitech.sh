@@ -62,6 +62,23 @@ assert_contains "$RUN_OUTPUT" "Install Solaar from the Solaar team's PPA"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 [ ! -e "$SOLAAR_PIN" ] && [ ! -e "$SOLAAR_SOURCES" ] || fail "the PPA was added though confirm declined"
 
+# Without the pin, apt would take any package from the PPA, so a failed pin stops it being added or used
+export DOTFILES_ASSUME_YES=1
+mkdir -p "$SOLAAR_PIN"
+: > "$STUB_LOG"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$SOLAAR_PIN isn't in place, so the Solaar team's PPA wasn't added."
+[ ! -e "$SOLAAR_SOURCES" ] || fail "the PPA was added without its pin"
+assert_eq "1.1.19-1" "$(cat "$SANDBOX/solaar-version")" "the Solaar installed without the PPA"
+rm "$SANDBOX/solaar-version"
+solaar_sources > "$SOLAAR_SOURCES"
+: > "$STUB_LOG"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "$SOLAAR_PIN isn't in place, so the Solaar team's PPA isn't used."
+assert_file_not_contains "$STUB_LOG" "install -y solaar"
+rm "$SOLAAR_SOURCES"
+rmdir "$SOLAAR_PIN"
+
 export DOTFILES_ASSUME_YES=1 APT_FAILS=1
 assert_exit 1 main
 [ ! -e "$SANDBOX/solaar-version" ] || fail "Solaar counts as installed after a failed install"

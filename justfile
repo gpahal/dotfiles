@@ -39,6 +39,10 @@ bump-plugins:
 copy-back mode="":
     @case {{quote(mode)}} in "") bash scripts/copy-back.sh ;; dry-run) bash scripts/copy-back.sh --dry-run ;; *) echo "Usage: just copy-back [dry-run]" >&2; exit 2 ;; esac
 
+# List build and download caches with their sizes, then clear them (dry-run: list only)
+clean-caches mode="":
+    @case {{quote(mode)}} in "") bash scripts/clean-caches.sh ;; dry-run) bash scripts/clean-caches.sh --dry-run ;; *) echo "Usage: just clean-caches [dry-run]" >&2; exit 2 ;; esac
+
 # Run setup.sh: all steps, or the named ones
 [positional-arguments]
 setup *steps:

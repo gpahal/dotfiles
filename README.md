@@ -49,7 +49,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
 | `vicinae` | Installs [Vicinae](#vicinae), a launcher like Raycast, on `Super+Space`. Ubuntu only |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets [macOS defaults](./macos/install.sh) and, if needed, the hostname. macOS only |
+| `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
@@ -255,8 +255,15 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 **Security and backups**
 
 20. Optional: `just touch-id`.
-21. Turn on FileVault and the firewall. `bash setup.sh --status macos` reports both.
+21. Turn on FileVault. `bash setup.sh --status macos` reports it.
 22. Back up off the Mac, and restore a file once to check it.
+
+**Performance and privacy**
+
+23. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
+24. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+25. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
+26. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
 ### Ubuntu
 
@@ -345,6 +352,7 @@ At the desktop, with the Stream Deck switched to it:
 ## Maintenance
 
 - `just copy-back [dry-run]` copies installed configs that differ back into the repo for review with `git diff`. It skips repo files with uncommitted changes.
+- `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills when next needed, so the next build, install, or test is slower.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
 - After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh`, match the System page in `stream-deck/linux/layout.json`, and commit them. To load the change, delete the **System** profile in Stream Deck and press **Overview**.

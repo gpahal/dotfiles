@@ -151,26 +151,26 @@ assert_exit 0 diag status_filevault
 assert_contains "$RUN_OUTPUT" "info       FileVault: couldn't tell from fdesetup status"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
+# firewall <--getglobalstate output> [<--getstealthmode output>]
 firewall() {
-    stub socketfilterfw "[ \"\$1\" == --getglobalstate ] || exit 1
-printf '%b' '$1'
-exit ${2:-0}"
+    stub socketfilterfw "case \"\$1\" in
+    --getglobalstate) printf '%b' '$1' ;;
+    --getstealthmode) printf '%b' '${2:-}' ;;
+    *) exit 1 ;;
+esac"
 }
 firewall 'Firewall is enabled. (State = 1)\n'
-assert_exit 0 diag status_app_firewall
-assert_contains "$RUN_OUTPUT" "info       Application firewall: on"
+firewall_on || fail "firewall state 1 read as off"
 firewall 'Firewall is blocking all non-essential incoming connections. (State = 2)\n'
-assert_exit 0 diag status_app_firewall
-assert_contains "$RUN_OUTPUT" "info       Application firewall: on, blocking all incoming connections"
+firewall_on || fail "firewall state 2, blocking all, read as off"
 firewall 'Firewall is disabled. (State = 0)\n'
-assert_exit 0 diag status_app_firewall
-assert_contains "$RUN_OUTPUT" "info       Application firewall: off"
-firewall 'Must be root to change settings.\n' 1
-assert_exit 0 diag status_app_firewall
-assert_contains "$RUN_OUTPUT" "unverified Application firewall"
-firewall 'Something else entirely\n'
-assert_exit 0 diag status_app_firewall
-assert_contains "$RUN_OUTPUT" "info       Application firewall: couldn't tell"
+! firewall_on || fail "firewall state 0 read as on"
+firewall 'Must be root to change settings.\n'
+! firewall_on || fail "an unreadable firewall state read as on"
+firewall '' 'Firewall stealth mode is on\n'
+stealth_mode_on || fail "stealth mode on read as off"
+firewall '' 'Firewall stealth mode is off\n'
+! stealth_mode_on || fail "stealth mode off read as on"
 # socketfilterfw isn't on PATH on macOS
 firewall_off_path() {
     hide socketfilterfw
@@ -187,12 +187,15 @@ replace_fn hotkey_off 'return 0'
 mkdir -p "$HOME/Screenshots"
 rm "$SUDO_LOCAL"
 filevault 'FileVault is Off.\n'
-firewall 'Firewall is disabled. (State = 0)\n'
+firewall 'Firewall is disabled. (State = 0)\n' 'Firewall stealth mode is off\n'
+stub defaults 'exit 1'
 df_lines "/dev/disk3s5 $((994 * GIB)) $((600 * GIB)) $((380 * GIB)) 62% /System/Volumes/Data"
-assert_exit 0 status
+assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo"
 assert_contains "$RUN_OUTPUT" "info       FileVault: off"
-assert_contains "$RUN_OUTPUT" "info       Application firewall: off"
+assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
+assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"
+assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
 assert_contains "$RUN_OUTPUT" "ok         Free space on /System/Volumes/Data"
 read_only
 printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"

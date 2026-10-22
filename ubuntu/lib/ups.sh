@@ -84,7 +84,7 @@ ups_scan_parse() {
 }
 
 # nut_config <file> <driver> <vendor> <product> <password>
-# The password is quoted, since one kept from an earlier setup may hold a space or #.
+# The password is quoted, since a hand-set one may hold a space or #.
 nut_config() {
     local type password
     password="$(nut_quote "$5")"
@@ -146,23 +146,13 @@ nut_password() {
     echo "$password"
 }
 
-# Probes stat's flavor as file_mode does: GNU takes -c; macOS's, which the tests use, takes -f.
-# Self-contained, since nut_file_current also runs it under sudo.
-owner_group_mode() {
-    if stat -c %a / &>/dev/null; then
-        stat -L -c '%U %G %a' "$1"
-    else
-        /usr/bin/stat -L -f '%Su %Sg %Lp' "$1"
-    fi
-}
-
 # nut_file_current <file> <content>: returns 2 when it can't be read without sudo
 nut_file_current() {
     local current meta
     current="$(nut_read "$1")" || return 2
     [ "$current" == "$2" ] || return 1
     meta="$({ owner_group_mode "$NUT_DIR/$1" ||
-        sudo -n bash -c "$(declare -f owner_group_mode)"'; owner_group_mode "$1"' _ "$NUT_DIR/$1"; } 2>/dev/null)"
+        sudo -n bash -c "$(declare -f file_mode owner_group_mode)"'; owner_group_mode "$1"' _ "$NUT_DIR/$1"; } 2>/dev/null)"
     [ -n "$meta" ] || return 2
     [ "$meta" == "$NUT_OWNER $NUT_GROUP 640" ]
 }

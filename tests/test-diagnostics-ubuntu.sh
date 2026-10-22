@@ -382,10 +382,10 @@ assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
 # Ports on every address bypass ufw; 127.0.0.1, other given addresses, and unpublished ports are fine
 printf '%b\n' 'web\t0.0.0.0:8080->80/tcp, [::]:8080->80/tcp, 127.0.0.1:9000->9000/tcp' \
-    'db\t5432/tcp' 'old\t:::2222->22/tcp' 'local\t127.0.0.1:3000->3000/tcp, 192.168.1.5:53->53/udp' > "$SANDBOX/docker-ps"
+    'db\t5432/tcp' 'local\t127.0.0.1:3000->3000/tcp, 192.168.1.5:53->53/udp' > "$SANDBOX/docker-ps"
 : > "$STUB_LOG"
 assert_exit 3 diag status_docker_ports
-assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp, web [::]:8080->80/tcp, old :::2222->22/tcp; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
+assert_contains "$RUN_OUTPUT" "missing    Container ports published on every address, which ufw doesn't filter: web 0.0.0.0:8080->80/tcp, web [::]:8080->80/tcp; recreate each with -p 127.0.0.1:<port>:<container port>, or on a network created since the docker step ran"
 assert_file_contains "$STUB_LOG" "docker ps --format {{.Names}}"
 printf '%b\n' 'db\t5432/tcp' 'local\t127.0.0.1:3000->3000/tcp' > "$SANDBOX/docker-ps"
 assert_exit 0 diag status_docker_ports

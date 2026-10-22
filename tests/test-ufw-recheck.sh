@@ -62,7 +62,8 @@ echo 22 > "$SANDBOX/socket-ports"
 stub dpkg-query 'echo "install ok installed"'
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
-    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
+    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": false}" ;;
+    funnel) echo "{}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 stub sshd '[ "$1" != -T ] || { echo "port 22"; awk "{ print tolower(\$1), \$2 }" "'"$SANDBOX"'/10-dotfiles.conf"; }'
@@ -184,7 +185,10 @@ mkdir -p "$SSHD_RUN_DIR"
 cached
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
+: > "$STUB_LOG"
 assert_exit 0 status
+assert_eq 1 "$(grep -c '^sudo -n ufw status$' "$STUB_LOG")" "sudo ufw status runs in one status"
+assert_eq 1 "$(grep -c '^sudo -n .*sshd -T$' "$STUB_LOG")" "sudo sshd -T runs in one status"
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
@@ -302,10 +306,11 @@ sessions() {
 }
 logins() { printf '%s\n' "$@" > "$SANDBOX/logins"; }
 no_sessions() { rm -f "$SANDBOX"/ss-[0-9]* "$SANDBOX/logins"; }
+# configure_ufw alone, since main's other changes don't depend on it
 firewall_run() {
     ufw_off
     : > "$STUB_LOG"
-    run main
+    run configure_ufw
 }
 firewall_unchanged() {
     assert_file_not_contains "$STUB_LOG" "ufw --force enable"
@@ -393,9 +398,7 @@ assert_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_contains "$RUN_OUTPUT" "the machine, over SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, or over Tailscale."
 assert_contains "$RUN_OUTPUT" "If the Mac connects over IPv6 (e.g. to $(hostname).local), connect to the machine's IPv4"
 assert_contains "$RUN_OUTPUT" "address (ip -4 addr) or, once Tailscale is up, its tailnet name, and re-run."
-assert_file_contains "$STUB_LOG" "loginctl enable-linger"
 firewall_unchanged
-assert_not_contains "$RUN_OUTPUT" "  Applied."
 
 # ssh.socket also on 2222, which sshd -T doesn't report
 printf '%s\n' 22 2222 > "$SANDBOX/socket-ports"
@@ -454,14 +457,17 @@ assert_not_contains "$RUN_OUTPUT" "203.0.113.9"
 assert_exit 0 ufw_configured -n
 no_sessions
 
-# ss failing: ufw unchanged, the rest still runs
+# ss failing: ufw unchanged, and main still makes its other changes
 touch "$SANDBOX/ss-fails"
 rm -f "$SANDBOX/linger"
-firewall_run
+ufw_off
+: > "$STUB_LOG"
+run main
 assert_eq 1 "$RUN_STATUS" "the step without the connections"
 assert_contains "$RUN_OUTPUT" "Couldn't list the established SSH connections"
 firewall_unchanged
 assert_file_contains "$STUB_LOG" "loginctl enable-linger"
+assert_not_contains "$RUN_OUTPUT" "  Applied."
 rm "$SANDBOX/ss-fails"
 
 firewall_run

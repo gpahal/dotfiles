@@ -29,6 +29,18 @@ assert_contains "$RUN_OUTPUT" "Turn on Tailscale's auto-update and make $(id -un
 assert_file_contains "$STUB_LOG" "sudo tailscale set --auto-update --operator=$(id -un)"
 rm "$SANDBOX/tailscale-reset"
 
+# Operator mode lets anything running as you publish a funnel or turn on Tailscale SSH
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "ok         No Tailscale funnel publishing a port to the internet"
+assert_contains "$RUN_OUTPUT" "ok         Tailscale SSH off"
+echo '{"AllowFunnel": {"m.ts.net:443": true, "m.ts.net:10000": false}, "Foreground": {"s": {"AllowFunnel": {"m.ts.net:8443": true}}}}' \
+    > "$SANDBOX/tailscale-serve"
+touch "$SANDBOX/tailscale-ssh"
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "missing    No Tailscale funnel publishing a port to the internet: m.ts.net:443, m.ts.net:8443 is published"
+assert_contains "$RUN_OUTPUT" "missing    Tailscale SSH off"
+rm "$SANDBOX/tailscale-serve" "$SANDBOX/tailscale-ssh"
+
 # A release upgrade leaves Tailscale's source on the old release; test-apt-sources.sh covers other states
 mkdir -p "$SANDBOX/keyrings"
 replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"

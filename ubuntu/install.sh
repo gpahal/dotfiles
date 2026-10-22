@@ -44,8 +44,6 @@ SSHD_RUN_DIR=/run/sshd
 SSHD_BIN=/usr/sbin/sshd
 # ssh.service, which this starts on the first connection, is the one that reloads sshd's config
 SSH_UNIT=ssh.socket
-# System dirs only, since sbin_cmd's result can run under sudo
-SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 # Masking alone doesn't stop GNOME offering suspend or trying it on UPS battery
 SLEEP_CONF=/etc/systemd/sleep.conf.d/10-dotfiles.conf
 SLEEP_CONF_CONTENT='# From the dotfiles ubuntu step: never sleep, alongside the masked sleep targets
@@ -180,6 +178,8 @@ ubuntu_items() {
     item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
         "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
+    item --sudo "qrencode, which just alerts shows the ntfy topic with" \
+        "Install qrencode, which just alerts uses to show the ntfy topic as QR codes" qrencode_installed install_qrencode
     in_vm || item --sudo "cloud-init off, since it only sets up a fresh install ($CLOUD_INIT_DISABLED)" \
         "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off turn_off_cloud_init
     item --sudo "cups-browsed masked, so network printers aren't added by themselves" \
@@ -217,6 +217,14 @@ configure_homebrew_env() {
         echo "  Couldn't reach your systemd user manager. User services get Homebrew on PATH"
         echo "  after the next reboot or login."
     fi
+}
+
+qrencode_installed() {
+    apt_installed qrencode
+}
+
+install_qrencode() {
+    apt_get install -y qrencode
 }
 
 install_locale() {
@@ -279,7 +287,7 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    items_status locale_installed
+    items_status locale_installed qrencode_installed
     status_unattended_upgrades
     items_status keep_conffiles_written
     status_held_back
@@ -297,13 +305,14 @@ status() {
     elif status_require_cmd jq "Tailscale's auto-update, operator, and connection"; then
         status_item ok "Tailscale"
         ! apt_installed tailscale ||
-            status_apt_source Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" ubuntu "$(tailscale_release_url)"
+            status_apt_source Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" ubuntu "$(apt_release_url "$TAILSCALE_REPO")"
         status_check "Tailscale auto-updates, with $(id -un) as its operator" tailscale_configured
         if tailscale_running; then
             status_item ok "Tailscale connected"
         else
             status_item missing "Tailscale connected (run sudo tailscale up)"
         fi
+        status_tailscale_exposure
     fi
     status_ufw
     if ! command -v nmcli &>/dev/null; then
@@ -342,7 +351,7 @@ apply() {
         require_cmd curl || return 1
         # add_apt_repo needs it, after other changes
         require_cmd gpg || return 1
-        ! apt_repo_published Tailscale "$(tailscale_release_url)" || tailscale_repo=true
+        ! apt_repo_published Tailscale "$(apt_release_url "$TAILSCALE_REPO")" || tailscale_repo=true
     fi
     cache_checks
     ups_state
@@ -368,7 +377,7 @@ apply() {
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
     # Root-only: checked with sudo only when other changes need it
     local auto_upgrades_unchecked=false
-    items_pending locale_installed
+    items_pending locale_installed qrencode_installed
     if auto_upgrades_unreadable && ! sudo_ready; then
         auto_upgrades_unchecked=true
     else
@@ -435,7 +444,7 @@ apply() {
         smartd_ready || install_smartd || result=1
         items_apply smartd_hook_ready || result=1
         [ -z "$ups_todo" ] || setup_ups || result=1
-        items_apply locale_installed unattended_upgrades_running keep_conffiles_written \
+        items_apply locale_installed qrencode_installed unattended_upgrades_running keep_conffiles_written \
             apt_timers_enabled openssh_installed cloud_init_off cups_browsed_off wifi_powersave_off || result=1
         ! openssh_installed || items_apply sshd_enabled || result=1
         sshd_configured || configure_sshd || result=1

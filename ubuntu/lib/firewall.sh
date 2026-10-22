@@ -10,10 +10,42 @@ ufw_enabled() {
         systemctl is-active -q ufw.service 2>/dev/null
 }
 
+# status_ufw runs sudo ufw status and sshd -T once each, through these: a cache_* function stores
+# the output and exit status in variables the caller declares local, and the reader then uses them.
+cache_ufw_status() {
+    local out status=0
+    out="$(sudo "$@" ufw status 2>/dev/null)" || status=$?
+    UFW_STATUS_CACHE="$out" UFW_STATUS_STATUS="$status"
+}
+
+# ufw_status <sudo flags>
+ufw_status() {
+    if [ -n "${UFW_STATUS_STATUS:-}" ]; then
+        printf '%s\n' "$UFW_STATUS_CACHE"
+        return "$UFW_STATUS_STATUS"
+    fi
+    sudo "$@" ufw status 2>/dev/null
+}
+
+cache_sshd_dump() {
+    local out status=0
+    out="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null)" || status=$?
+    SSHD_DUMP_CACHE="$out" SSHD_DUMP_STATUS="$status"
+}
+
+# sshd_dump <sudo flags>: sshd's effective config
+sshd_dump() {
+    if [ -n "${SSHD_DUMP_STATUS:-}" ]; then
+        printf '%s\n' "$SSHD_DUMP_CACHE"
+        return "$SSHD_DUMP_STATUS"
+    fi
+    sudo "$@" "$SSHD_BIN" -T 2>/dev/null
+}
+
 # ufw_stopped <sudo flags>: catches ufw-init stop, which ufw_enabled can't see
 ufw_stopped() {
     local out
-    out="$(sudo "$@" ufw status 2>/dev/null)" || return 1
+    out="$(ufw_status "$@")" || return 1
     [ "$(head -n 1 <<< "$out")" == "Status: inactive" ]
 }
 
@@ -32,7 +64,7 @@ ssh_socket_ports() {
 sshd_ports() {
     local config
     [ -d "$SSHD_RUN_DIR" ] || return 1
-    config="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null)" || return 1
+    config="$(sshd_dump "$@")" || return 1
     {
         awk '
             $1 == "port" { print $2 }
@@ -60,7 +92,9 @@ ufw_wanted_rules() {
 
 # Takes sudo's flags
 ufw_rules() {
-    sudo "$@" ufw status 2>/dev/null | sed -E 's/ +/ /g; s/ $//'
+    local out
+    out="$(ufw_status "$@")" || return 1
+    sed -E 's/ +/ /g; s/ $//' <<< "$out"
 }
 
 # Takes sudo's flags. Returns 2 when ufw is on but its rules can't be read, 1 when anything's missing.
@@ -320,7 +354,7 @@ configure_ufw() {
 }
 
 status_ufw() {
-    local ufw=0 from rule where
+    local ufw=0 from rule where UFW_STATUS_CACHE="" UFW_STATUS_STATUS="" SSHD_DUMP_CACHE="" SSHD_DUMP_STATUS=""
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denying it on Docker's bridges"
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
         status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
@@ -329,6 +363,7 @@ status_ufw() {
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
         return 0
     fi
+    ! sudo_ready || cache_ufw_status -n
     if sudo_ready && ufw_stopped -n; then
         status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
         return 0
@@ -346,6 +381,7 @@ status_ufw() {
         status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
         return 0
     fi
+    cache_sshd_dump -n
     ufw_configured -n || ufw=$?
     case "$ufw" in
         0) status_item ok "$rules" ;;

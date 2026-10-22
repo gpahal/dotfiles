@@ -1,15 +1,15 @@
 # Helpers for sudo changes: root-owned files and third-party apt repos. Source after lib/common.sh.
 # shellcheck shell=bash
 
-# install_root_file <src> <dest> [mode] [group]: writes a temp file and renames it, since sudo tee
-# could cut a drop-in short and lose a setting. The leading dot hides the temp file from run-parts
-# and *.conf globs. A dangling symlink fails: stat reads it as 777 and mv would replace the link.
-# A new directory gets 755 regardless of umask so hook users such as nut can read it.
+# install_root_file <src> <dest> [mode] [group] [owner]: writes a temp file and renames it, since
+# sudo tee could cut a drop-in short and lose a setting. The leading dot hides the temp file from
+# run-parts and *.conf globs. A dangling symlink fails: stat reads it as 777 and mv would replace
+# the link. A new directory gets 755 regardless of umask so hook users such as nut can read it.
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" dir tmp opts target
+    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" owner="${5:-}" dir tmp opts target
     dir="$(dirname "$dest")"
     sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
-# mv would move the new file into the directory, and succeed
+    # mv would move the new file into the directory, and succeed
     if sudo test -d "$dest"; then
         echo "  $dest is a directory; remove it and re-run." >&2
         return 1
@@ -23,7 +23,7 @@ install_root_file() {
         dest="$target"
         dir="$(dirname "$dest")"
     fi
-# Through sudo, since the file or its directory may be root-only
+    # Through sudo, since the file or its directory may be root-only
     if [ -z "$mode" ]; then
         mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
             return 1
@@ -31,6 +31,7 @@ install_root_file() {
     tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
     opts=(-m "${mode:-644}")
     [ -z "$group" ] || opts+=(-g "$group")
+    [ -z "$owner" ] || opts+=(-o "$owner")
     if sudo install "${opts[@]}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
         return 0
     fi
@@ -38,11 +39,11 @@ install_root_file() {
     return 1
 }
 
-# write_root_file <dest> <content> [mode] [group]
+# write_root_file <dest> <content> [mode] [group] [owner]
 write_root_file() {
     local src status=0
     src="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" "${4:-}" || status=1
+    printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" "${4:-}" "${5:-}" || status=1
     rm -f "$src"
     return "$status"
 }
@@ -64,9 +65,45 @@ read_root_file() {
     fi
 }
 
+# "<owner> <group> <mode>", following symlinks. To run it under sudo, pass both functions:
+# sudo bash -c "$(declare -f file_mode owner_group_mode)"'; owner_group_mode "$1"' _ <file>
+owner_group_mode() {
+    local mode names
+    mode="$(file_mode "$1")" && names="$(LC_ALL=C ls -ldL "$1")" || return 1
+    # ls -l's third and fourth fields on GNU and BSD alike
+    awk -v mode="$mode" '{ print $3, $4, mode; exit }' <<< "$names"
+}
+
+# System dirs only, since sbin_cmd's result can run under sudo
+SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+# Never search the user's PATH: sudo would run a planted command from e.g. ~/.cargo/bin as root.
+sbin_cmd() {
+    PATH="$SBIN_PATH" command -v "$1"
+}
+
+# Updates apt's lists first, since stale ones can name a version the mirror no longer has
+apt_install_fresh() {
+    apt_get_update || return 1
+    apt_get install -y "$@"
+}
+
 # 000 when the host can't be reached
 http_status() {
     curl -sIL --connect-timeout 15 --max-time 30 -o /dev/null -w '%{http_code}' "$1" || true
+}
+
+# deb822_source <uri> <components> <keyring> [architectures]: the source setup writes for this
+# release
+deb822_source() {
+    printf '%s\n' "Types: deb" "URIs: $1" "Suites: $(ubuntu_codename)" "Components: $2"
+    [ -z "${4:-}" ] || echo "Architectures: $4"
+    echo "Signed-By: $3"
+}
+
+# apt_release_url <uri>: 404s until the repo publishes packages for this release
+apt_release_url() {
+    echo "$1/dists/$(ubuntu_codename)/Release"
 }
 
 # Prints nothing when the file matches, as when a release upgrade hasn't commented it out
@@ -116,7 +153,7 @@ add_apt_repo() {
     local name="$1" file="$2" content="$3" key_url="$4" keyring="$5" fpr="$6"
     local key fingerprint old_key="" output="" previous="" reason="" untested=false
     require_cmd gpg || return 1
-# Read before the key changes, so failing to read changes nothing
+    # Read before the key changes, so failing to read changes nothing
     if [ -e "$file" ]; then
         previous="$(sudo cat "$file")" || return 1
     fi
@@ -137,7 +174,7 @@ add_apt_repo() {
         rm -f "$key"
         return 1
     fi
-# An untested source's key goes with it
+    # An untested source's key goes with it
     if ! "$untested" && [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
         rm -f "$key" "$old_key"
         return 1
@@ -147,8 +184,8 @@ add_apt_repo() {
         return 1
     fi
     rm -f "$key"
-# The key has changed, so a failed write gets the same rollback as a failed update. --error-on=any
-# fails on an unverifiable key, which apt-get update otherwise only warns about.
+    # The key has changed, so a failed write gets the same rollback as a failed update. --error-on=any
+    # fails on an unverifiable key, which apt-get update otherwise only warns about.
     if ! file_is "$file" "$content" && ! write_root_file "$file" "$content"; then
         reason="Writing $file failed"
     else
@@ -157,7 +194,7 @@ add_apt_repo() {
             -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0)"; then
             printf '%s\n' "$output" >&2
             reason="apt-get update failed with the new $file alone"
-# A lock still held after apt_get_update's tries says nothing about this source, so keep it
+            # A lock still held after apt_get_update's tries says nothing about this source, so keep it
             if apt_lists_locked <<< "$output"; then
                 echo "  Another apt-get update holds apt's lock, so $file was kept. Re-run once it finishes." >&2
                 rm -f "$old_key"

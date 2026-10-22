@@ -85,8 +85,8 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 - Security, Chrome, and Docker updates install daily without rebooting.
 - User services, such as the T3 Code server and tmux, start at boot without a login.
 - sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.
-- You can run `tailscale serve`, `funnel`, and `set --ssh` without `sudo`.
-- ufw lets SSH in only from private ranges and the tailnet.
+- You can run `tailscale serve` and `funnel` without `sudo`. `--status` flags an active funnel, and Tailscale SSH being on.
+- ufw lets SSH in only from private ranges, and lets the tailnet reach every port. The tailnet's access rules are what protect the machine, so keep them tight.
 - Docker's published ports listen on `127.0.0.1` unless given an address. Joining the `docker` group is root-equivalent, so the step asks.
 - Wired connections wake on LAN, with the BIOS setting on.
 - Wi-Fi power save is off, so SSH over Wi-Fi doesn't lag.
@@ -276,7 +276,7 @@ Once:
 3. **Disk encryption.** Store the recovery key off the machine.
 4. **Login shell.** `chsh -s /usr/bin/zsh`, if you skipped it.
 5. **Shell.** Run `atuin import auto`, and `:GoInstallBinaries` in vim.
-6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, and remove `root` from `users` in its `ssh` rules.
+6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, remove `root` from `users` in its `ssh` rules, and remove the `funnel` nodeAttr unless you use it.
 7. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
@@ -291,7 +291,7 @@ Once:
 12. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
 13. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
 14. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-15. **Phone alerts.** Subscribe the ntfy app to a long random topic, run `just alerts`, paste the topic or an `https://` URL, then `just alerts test`.
+15. **Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
 16. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.

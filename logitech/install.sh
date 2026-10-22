@@ -12,6 +12,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
 
 STEP_OS=ubuntu
+# shellcheck disable=SC2034 # run_steps reads it
+STEP_NEEDS="homebrew"
 
 SOLAAR_MIN_VERSION=1.1.20
 SOLAAR_PPA=https://ppa.launchpadcontent.net/solaar-unifying/stable/ubuntu
@@ -33,18 +35,7 @@ Pin: release o=LP-PPA-solaar-unifying-stable
 Pin-Priority: 500'
 
 solaar_sources() {
-    cat <<EOF
-Types: deb
-URIs: $SOLAAR_PPA
-Suites: $(ubuntu_codename)
-Components: main
-Signed-By: $SOLAAR_KEYRING
-EOF
-}
-
-# 404 until the PPA publishes packages for this release
-solaar_release_url() {
-    echo "$SOLAAR_PPA/dists/$(ubuntu_codename)/Release"
+    deb822_source "$SOLAAR_PPA" main "$SOLAAR_KEYRING"
 }
 
 # The upstream part of the installed version: 1.1.20 from 1.1.20+202607061356~ubuntu26.04.1
@@ -72,16 +63,25 @@ solaar_source_ok() {
     file_is "$SOLAAR_SOURCES" "$(solaar_sources)"
 }
 
+# pin_missing <what happens instead>. Without the pin, apt would take any package the PPA
+# publishes, as root through unattended-upgrades.
+pin_missing() {
+    solaar_pinned && return 1
+    echo "  $SOLAAR_PIN isn't in place, so the Solaar team's PPA $1. Fix the error above and re-run." >&2
+}
+
 add_solaar_repo() {
+    ! pin_missing "wasn't added" || return 1
     add_apt_repo "The Solaar team's PPA" "$SOLAAR_SOURCES" "$(solaar_sources)" "$SOLAAR_KEY_URL" \
         "$SOLAAR_KEYRING" "$SOLAAR_KEY_FPR"
 }
 
 # Runs where set -e is off: each command checks its own failure.
 install_solaar() {
-    # Stale lists can name a version the mirror no longer has
-    apt_get_update || return 1
-    apt_get install -y solaar || return 1
+    if [ -e "$SOLAAR_SOURCES" ] && pin_missing "isn't used"; then
+        return 1
+    fi
+    apt_install_fresh solaar || return 1
     echo "  Installed Solaar $(solaar_version). It starts with your desktop session; if it's running, quit it and open it again."
 }
 
@@ -101,7 +101,7 @@ logitech_items() {
 status() {
     logitech_items
     items_status solaar_pinned
-    status_apt_source "The Solaar team's PPA" "$SOLAAR_SOURCES" "$(solaar_sources)" logitech "$(solaar_release_url)"
+    status_apt_source "The Solaar team's PPA" "$SOLAAR_SOURCES" "$(solaar_sources)" logitech "$(apt_release_url "$SOLAAR_PPA")"
     items_status solaar_current
     status_result
 }
@@ -112,7 +112,7 @@ apply() {
     local pending=() wanted=(solaar_pinned solaar_source_ok solaar_current)
     if ! solaar_source_ok; then
         require_cmd curl || return 1
-        if apt_repo_published "The Solaar team's PPA" "$(solaar_release_url)"; then
+        if apt_repo_published "The Solaar team's PPA" "$(apt_release_url "$SOLAAR_PPA")"; then
             # add_apt_repo needs it; fail before the pin goes in
             require_cmd gpg || return 1
         else

@@ -194,10 +194,20 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "install $SMARTD_HOOK"
 cmp -s "$REPO_DIR/ubuntu/smartd-notify.sh" "$SMARTD_HOOK" || fail "the old hook wasn't replaced"
 mkdir -p "$(dirname "$NTFY_URL_FILE")"
-echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
+url_label="ntfy URL for the disk, UPS, health, and boot alerts"
+# Only you, nut, and root may read the topic, and it must be long enough not to be guessed
+echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
+chmod 644 "$NTFY_URL_FILE"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): it's $(id -un) $(id -gn) 644 (owner, group, mode), not $(id -un) $(id -gn) 640; run just alerts to save it again"
+chmod 640 "$NTFY_URL_FILE"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
-assert_contains "$RUN_OUTPUT" "info       ntfy URL for the disk, UPS, health, and boot alerts set ($NTFY_URL_FILE)"
+assert_contains "$RUN_OUTPUT" "info       $url_label set ($NTFY_URL_FILE)"
+echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): its topic isn't 20 to 64 characters, so it can be guessed;"
+echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
 # smartd runs the hook only through smartd-runner, which smartd.conf names
 cp "$SMARTD_CONF" "$SANDBOX/smartd.conf.orig"
 sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
@@ -260,6 +270,16 @@ assert_exit 0 in_git_worktree "$SANDBOX/git-wt"
 assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
 assert_exit 1 in_git_worktree "$SANDBOX"
 replace_fn in_git_worktree false
+
+# just alerts shows the ntfy topic as QR codes
+stub dpkg-query '[ "${!#}" == qrencode ] || echo "install ok installed"'
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    qrencode, which just alerts shows the ntfy topic with"
+: > "$STUB_LOG"
+DOTFILES_ASSUME_YES=1 assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Install qrencode, which just alerts uses to show the ntfy topic as QR codes"
+assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y qrencode"
+stub dpkg-query 'echo "install ok installed"'
 
 stub nmcli '[ "$*" != "-t -e no -f UUID,TYPE,NAME connection show" ] || echo "2222-bbbb:802-11-wireless:Home"'
 assert_exit 0 status

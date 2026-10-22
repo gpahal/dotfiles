@@ -13,7 +13,11 @@ add_host() {
 }
 config="$HOME/.ssh/config"
 
+# The block's ControlMaster socket lives in ~/.ssh, so only you may use it
+mkdir -m 755 "$HOME/.ssh"
 assert_exit 0 add_host box box.example.ts.net
+assert_eq drwx------ "$(/bin/ls -ld "$HOME/.ssh" | cut -c1-10)" "the mode of ~/.ssh"
+assert_eq -rw------- "$(/bin/ls -l "$config" | cut -c1-10)" "the config's mode"
 assert_contains "$RUN_OUTPUT" "ssh -O exit box closes it"
 assert_file_contains "$config" "Host box"
 assert_file_contains "$config" "  HostName box.example.ts.net"

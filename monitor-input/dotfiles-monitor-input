@@ -2,7 +2,7 @@
 set -uo pipefail
 
 # Switches the monitor to this machine while it has the trigger device, and to the other machine
-# once it's gone, as /etc/dotfiles/monitor-input.conf says. Run as root by
+# once it's gone, as /etc/dotfiles/monitor-input.conf says. Run by
 # dotfiles-monitor-input.service, which the udev rule restarts on each of the device's events, so
 # a run still settling is dropped for the newer one. The Mac only switches the monitor to itself,
 # so when the devices leave both machines this one alone switches it, to the Mac. The monitor

@@ -89,7 +89,8 @@ stub systemd-detect-virt 'exit 1'
 stub dpkg-query 'echo "install ok installed"'
 tailscale_list_line > "$TAILSCALE_LIST"
 stub tailscale 'case "$1" in
-    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\"}" ;;
+    debug) echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": false}" ;;
+    funnel) echo "{}" ;;
     status) echo "{\"BackendState\": \"Running\"}" ;;
 esac'
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SLEEP_CONF")" "$(dirname "$SYSCTL_CONF")"

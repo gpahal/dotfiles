@@ -20,6 +20,8 @@ echo "# old" > "$SSHD_DROP_IN"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "$(sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the new drop-in"
+assert_file_contains "$SSHD_DROP_IN" "X11Forwarding no"
+assert_file_contains "$SSHD_DROP_IN" "MaxAuthTries 3"
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
 
 echo '# old, working' > "$SSHD_DROP_IN"
@@ -138,6 +140,10 @@ assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
 assert_eq "PasswordAuthentication yes
 AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
+printf '%s\n' "X11Forwarding yes" "MaxAuthTries 6" > "$SANDBOX/sshd_config.d/00-local.conf"
+ubuntu_items
+run status_sshd
+assert_contains "$RUN_OUTPUT" "missing    $item (X11Forwarding is yes; MaxAuthTries is 6; $first)"
 rm "$SANDBOX/sshd_config.d/00-local.conf" "$SANDBOX/sshd_config.d/50-cloud-init.conf"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $item"
@@ -153,14 +159,16 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PasswordAuthentication is yes"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
-# Match Address: private, tailnet, and named addresses are each sampled
+# Match Address: private, tailnet, and named addresses are each sampled. status_sshd alone, after
+# one full status run.
 assert_exit 0 status
+ubuntu_items
 for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.0.113.7" \
     "192.168.5.0/24 192.168.5.1" "!10.9.9.9,192.168.7.0/24 192.168.7.1"; do
     addr="${match##* }"
     printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
     : > "$STUB_LOG"
-    assert_exit 3 status
+    run status_sshd
     assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr;"
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
@@ -168,7 +176,7 @@ assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
 # sshd matches the pattern as a string, so fd00:* also takes fd00::/8's sample
 printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
-assert_exit 3 status
+run status_sshd
 assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
 assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
@@ -196,7 +204,8 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed, so whether sshd takes $SSHD_DROP_IN is
   unchecked"
 assert_eq "$(DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in when sshd -T fails"
-assert_contains "$RUN_OUTPUT" "Password logins are off now"
+# Unchecked, so it doesn't claim they're off
+assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 assert_contains "$RUN_OUTPUT" "Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged"
 assert_file_not_contains "$STUB_LOG" "ufw default"
 assert_file_not_contains "$STUB_LOG" "ufw allow"

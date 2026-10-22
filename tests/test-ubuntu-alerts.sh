@@ -69,7 +69,10 @@ SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
 # Not stub_sudo_exec, which would refuse the test warning's SMARTD_DEVICE=/dev/test
 stub sudo 'for a in "$@"; do case "$a" in /etc/*) echo "refused: $a" >&2; exit 1 ;; esac; done
 exec "$@"'
-URL=https://ntfy.sh/my-topic
+# No nut group in a test
+replace_fn ntfy_url_group 'id -gn'
+TOPIC=my-topic-0123456789abc
+URL="https://ntfy.sh/$TOPIC"
 
 # The topic comes on stdin, never as an argument, which any user could read
 assert_exit 2 main "$URL"
@@ -78,49 +81,82 @@ assert_exit 2 main <<< "not a topic"
 assert_contains "$RUN_OUTPUT" "Not a ntfy topic name or https topic URL."
 assert_not_contains "$RUN_OUTPUT" "not a topic"
 assert_exit 2 main <<< "https://ntfy.sh/"
+# Empty, and generating one declined
 assert_exit 2 main <<< ""
 assert_exit 2 main <<< "$(printf 'x%.0s' $(seq 1 65))"
+# Anyone who guesses a short topic reads the alerts
+for short in my-topic https://ntfy.sh/my-topic "$(printf 'x%.0s' $(seq 1 19))"; do
+    assert_exit 2 main <<< "$short"
+    assert_contains "$RUN_OUTPUT" "A topic needs 20 to 64 characters, since anyone who knows it can read and send"
+done
 # The topic is a secret, so never over http
-assert_exit 2 main <<< "http://ntfy.sh/my-topic"
-assert_not_contains "$RUN_OUTPUT" "my-topic"
+assert_exit 2 main <<< "http://ntfy.sh/$TOPIC"
+assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 [ ! -e "$NTFY_URL_FILE" ] || fail "an invalid value was saved"
 assert_exit 0 main --help
 assert_contains "$RUN_OUTPUT" "Usage: bash ubuntu/setup-alerts.sh [--test] (or: just alerts [test])"
 assert_contains "$RUN_OUTPUT" "the UPS's events, the daily health alert, and the boot notice"
 
 : > "$STUB_LOG"
-assert_exit 0 main <<< my-topic
+assert_exit 0 main <<< "$TOPIC"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
 [ ! -e "$NTFY_URL_FILE" ] || fail "the URL was saved without a yes"
 assert_file_not_contains "$STUB_LOG" "curl"
 
-# The URL file is world-readable so the health alerts can read it
+# Only you, nut (the file's group), and root read the URL file
 export DOTFILES_ASSUME_YES=1
-assert_exit 0 main <<< "  my-topic "
+assert_exit 0 main <<< "  $TOPIC "
 assert_contains "$RUN_OUTPUT" "ntfy URL for the disk, UPS, health, and boot alerts ($NTFY_URL_FILE):"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
-assert_not_contains "$RUN_OUTPUT" "my-topic"
+assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-raw Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
-assert_eq 644 "$(file_mode "$NTFY_URL_FILE")" "the URL file's mode"
+assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file's owner, group, and mode"
 assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
-if grep '^curl -' "$STUB_LOG" | grep -q my-topic; then
+if grep '^curl -' "$STUB_LOG" | grep -q "$TOPIC"; then
     fail "the test push's curl arguments name the ntfy topic"
 fi
 
 : > "$STUB_LOG"
 assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "Already set"
-assert_not_contains "$RUN_OUTPUT" "my-topic"
+assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 assert_file_not_contains "$STUB_LOG" "curl"
+# Saved again when only the mode is wrong
+chmod 644 "$NTFY_URL_FILE"
+assert_exit 0 main <<< "$URL"
+assert_contains "$RUN_OUTPUT" "Saved."
+assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file after saving it again"
 
 touch "$SANDBOX/curl-fails"
-assert_exit 1 main <<< other-topic
+assert_exit 1 main <<< "other-$TOPIC"
 assert_contains "$RUN_OUTPUT" "The test push failed. Check the topic, then run just alerts test."
-assert_eq https://ntfy.sh/other-topic "$(cat "$NTFY_URL_FILE")" "the saved URL"
+assert_eq "https://ntfy.sh/other-$TOPIC" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 rm "$SANDBOX/curl-fails"
+
+# Left empty: a random topic, shown as QR codes for the Android app and for iPhone or a browser
+stub qrencode 'echo "[QR $3]"'
+assert_exit 0 main <<< ""
+generated="$(head -n 1 "$NTFY_URL_FILE")"
+generated="${generated#https://ntfy.sh/}"
+[[ "$generated" =~ ^[0-9a-f]{32}$ ]] || fail "the generated topic isn't 32 hex characters: $generated"
+assert_contains "$RUN_OUTPUT" "Topic: $generated
+  Android, in the ntfy app (ntfy://ntfy.sh/$generated):
+[QR ntfy://ntfy.sh/$generated]
+  iPhone or a browser (https://ntfy.sh/$generated):
+[QR https://ntfy.sh/$generated]"
+assert_file_contains "$STUB_LOG" "qrencode -t ANSIUTF8 ntfy://ntfy.sh/$generated"
+assert_contains "$RUN_OUTPUT" "Sent a test push"
+# A topic URL on another server keeps its host
+hide qrencode
+assert_exit 0 show_topic "https://ntfy.example.com/$TOPIC"
+assert_contains "$RUN_OUTPUT" "Topic: $TOPIC"
+assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs qrencode"
+stub qrencode 'echo "[QR $3]"'
+assert_exit 0 show_topic "https://ntfy.example.com/$TOPIC"
+assert_contains "$RUN_OUTPUT" "[QR ntfy://ntfy.example.com/$TOPIC]"
 
 # Point at the sandbox first, so a notifier installed on this machine is never run
 UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"

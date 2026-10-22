@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-# serial
+
+# stats.js's parsers, samplers, and keys; keys.js's update loop; and the Mac plugin's key presses
+# and pages, with a fake WebSocket.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -287,6 +289,10 @@ gpu {"usage":37}
 temperature {"cpu":55.5,"gpu":41}
 power {"package":45.25,"cores":30.5,"gpu":9}
 network {"rx":2000,"tx":200}' "$out" "the Linux sampler"
+# k10temp without Tctl: its first core complex
+rm "$LINUX/sys/class/hwmon/hwmon1/temp1_label"
+out="$(linux_sampler "console.log(JSON.stringify((await sampler.sample(['temperature'])).temperature));")"
+assert_eq '{"cpu":61,"gpu":41}' "$out" "the CPU temperature from Tccd1"
 
 # A stale or missing power file and missing sensors leave dashes with Linux hints, not macmon's
 out="$(linux_sampler "fs.utimesSync(root + '/power', new Date(t / 1000 - 60), new Date(t / 1000 - 60));
@@ -301,19 +307,39 @@ no sensors
 needs helper' "$out" "Linux keys with no data"
 assert_contains "$(render power '{"power": {"package": 45.25, "cores": 30.5, "gpu": 9}}')" ">Core 31 · GPU 9</text>"
 assert_contains "$(render power '{"power": {"package": 45.25, "cores": 30.5, "gpu": 9}}')" ">45.3 W</text>"
-# bin/open-in logs each target; chrome-tab waits for $SANDBOX/release, up to 10 s
+
+# keys.js: a key whose render throws shows its placeholder and logs once, and the others update
+out="$(node -e 'const keys = require(process.argv[1]);
+const logs = [];
+const drawn = [];
+const sampler = { reset() {}, stop() {}, async sample() { return {}; } };
+const stats = { placeholder: (kind) => `placeholder:${kind}`,
+  render: (kind) => { if (kind === "disk") throw new Error("broken"); return kind; } };
+const k = keys.createStatKeys({ stats, sampler, log: (m) => logs.push(m), draw: (id, svg) => drawn.push(`${id}=${svg}`),
+  intervalMs: 5, firstUpdateMs: 1 });
+k.keys.set("a", "swap");
+k.keys.set("b", "disk");
+k.start();
+(async () => {
+  const deadline = Date.now() + 5000;
+  while (drawn.length < 6 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+  k.stop();
+  console.log(drawn.slice(0, 6).join(" "));
+  console.log(logs.join("\n"));
+  process.exit(0);
+})();' "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/keys.js" 2>&1)" || fail "keys.js with a broken key failed: $out"
+assert_eq "a=swap b=placeholder:disk a=swap b=placeholder:disk a=swap b=placeholder:disk
+ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
+
 PLUGIN="$SANDBOX/plugin"
 mkdir -p "$PLUGIN/bin"
-cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,stats}.js "$PLUGIN/"
-cat > "$PLUGIN/bin/open-in" << EOF
-echo "\$1" >> "$SANDBOX/open-in.log"
-if [ "\$1" == chrome-tab ]; then
-    for _ in \$(seq 200); do [ ! -e "$SANDBOX/release" ] || break; sleep 0.05; done
-fi
-echo "done \$1"
-EOF
-# A New Tab press is dropped while the last one's open-in runs
-out="$(node -e 'const sent = [];
+cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,keys,stats}.js \
+    "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json "$PLUGIN/"
+
+# Runs $1 in the plugin, with Stream Deck's WebSocket faked: message(m) sends it m, sent holds
+# what it sent, and until(what, test) waits up to 10 s
+plugin_js() {
+    node -e 'const sent = [];
 let socket;
 globalThis.WebSocket = class {
   constructor() { socket = this; }
@@ -321,10 +347,7 @@ globalThis.WebSocket = class {
 };
 process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
 require(process.argv[1]);
-const press = (key) =>
-  socket.onmessage({ data: JSON.stringify({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key }) });
-const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
-// Wait up to 10 s for a condition, then fail naming it, rather than leave the test to the watchdog
+const message = (m) => socket.onmessage({ data: JSON.stringify(m) });
 const until = async (what, test) => {
   const deadline = Date.now() + 10000;
   while (!test()) {
@@ -336,62 +359,60 @@ const until = async (what, test) => {
   }
 };
 (async () => {
-  press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
-  await until("both Files presses", () => done("files") === 2);
-  require("node:fs").writeFileSync(process.argv[2], "");
-  await until("the first New Tab", () => done("chrome-tab") >= 1);
-  press("chrome-tab");
-  await until("the second New Tab", () => done("chrome-tab") >= 2);
-  process.exit(0);
-})();' "$PLUGIN/plugin.js" "$SANDBOX/release" 2>&1)" || fail "the plugin's key presses failed: $out"
+'"$1"'
+process.exit(0);
+})();' "$PLUGIN/plugin.js" "${@:2}" 2>&1
+}
+
+# bin/open-in logs each target; chrome-tab waits for $SANDBOX/release, up to 10 s
+cat > "$PLUGIN/bin/open-in" << EOF
+echo "\$1" >> "$SANDBOX/open-in.log"
+if [ "\$1" == chrome-tab ]; then
+    for _ in \$(seq 200); do [ ! -e "$SANDBOX/release" ] || break; sleep 0.05; done
+fi
+echo "done \$1"
+EOF
+# A New Tab press is dropped while the last one's open-in runs
+out="$(plugin_js 'const press = (key) => message({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key });
+const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
+press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
+await until("both Files presses", () => done("files") === 2);
+require("node:fs").writeFileSync(process.argv[2], "");
+await until("the first New Tab", () => done("chrome-tab") >= 1);
+press("chrome-tab");
+await until("the second New Tab", () => done("chrome-tab") >= 2);' "$SANDBOX/release")" ||
+    fail "the plugin's key presses failed: $out"
 assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
     "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
 
-# A key whose render throws shows its placeholder, logs once, and the others still update
+# The plugin draws stat keys through keys.js: a broken one shows its placeholder
 cat > "$PLUGIN/stats.js" << EOF
 const real = require("$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js");
 module.exports = { ...real, render: (kind, s) => { if (kind === "disk") throw new Error("broken"); return real.render(kind, s); } };
 EOF
-out="$(node -e 'const sent = [];
-let socket;
-globalThis.WebSocket = class {
-  constructor() { socket = this; }
-  send(message) { sent.push(JSON.parse(message)); }
-};
-process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
-require(process.argv[1]);
-const appear = (key) =>
-  socket.onmessage({ data: JSON.stringify({ event: "willAppear", action: `com.gpahal.dotfiles.${key}`, context: key }) });
+out="$(plugin_js 'const appear = (key) => message({ event: "willAppear", action: `com.gpahal.dotfiles.${key}`, context: key });
 const images = (key) => sent.filter((m) => m.event === "setImage" && m.context === key);
 appear("swap"); appear("disk");
-(async () => {
-  // The first update comes after 0.5 s and the next 2 s later, so a second error would show
-  await new Promise((r) => setTimeout(r, 3000));
-  const disk = decodeURIComponent(images("disk")[0].payload.image);
-  console.log(images("swap").length > 0, disk.includes(">DISK</text>") && disk.includes(">—</text>"));
-  console.log(sent.filter((m) => m.payload?.message?.startsWith("ERROR")).map((m) => m.payload.message).join("\n"));
-  process.exit(0);
-})();' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin with a broken key failed: $out"
-assert_eq "true true
-ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
+await until("the first images", () => images("swap").length > 0 && images("disk").length > 0);
+const disk = decodeURIComponent(images("disk")[0].payload.image);
+console.log(disk.includes(">DISK</text>") && disk.includes(">—</text>"));
+console.log(sent.filter((m) => m.payload?.message?.startsWith("ERROR")).map((m) => m.payload.message).join("\n"));')" ||
+    fail "the plugin with a broken key failed: $out"
+assert_eq "true
+ERROR couldn't draw the disk key: broken" "$out" "the plugin's stat keys"
 
-# Overview opens the System page only on the 15-key Stream Deck (device type 0)
-out="$(node -e 'const sent = [];
-let socket;
-globalThis.WebSocket = class {
-  constructor() { socket = this; }
-  send(message) { sent.push(JSON.parse(message)); }
-};
-process.argv.push("-port", "1", "-pluginUUID", "uuid", "-registerEvent", "register");
-require(process.argv[1]);
-const message = (m) => socket.onmessage({ data: JSON.stringify(m) });
-message({ event: "deviceDidConnect", device: "classic", deviceInfo: { type: 0 } });
-message({ event: "deviceDidConnect", device: "xl", deviceInfo: { type: 2 } });
-for (const device of ["classic", "xl"])
-  message({ event: "keyDown", action: "com.gpahal.dotfiles.overview", context: `key-${device}`, device });
-for (const m of sent) console.log(m.event, m.device ?? m.context ?? m.payload.message);
-process.exit(0);' "$PLUGIN/plugin.js" 2>&1)" || fail "the plugin's Overview presses failed: $out"
-assert_eq "switchToProfile classic
-logMessage Overview's System page is laid out for the 15-key Stream Deck, not device type 2
-showAlert key-xl" "$out" "Overview on the 15-key Stream Deck and on another"
+# A 5×3 deck switches to the Main profile when it connects; Overview opens System and Back Main.
+# Another size of deck stays where it is, and Overview alerts.
+out="$(plugin_js 'message({ event: "deviceDidConnect", device: "mk2", deviceInfo: { type: 7, size: { columns: 5, rows: 3 } } });
+message({ event: "deviceDidConnect", device: "xl", deviceInfo: { type: 2, size: { columns: 8, rows: 4 } } });
+for (const [key, device] of [["overview", "mk2"], ["back", "mk2"], ["overview", "xl"], ["back", "unknown"]])
+  message({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: `${key}-${device}`, device });
+for (const m of sent) console.log([m.event, m.device ?? m.context, m.payload?.profile ?? m.payload?.message].filter(Boolean).join(" "));')"
+assert_eq "switchToProfile mk2 profiles/Main
+switchToProfile mk2 profiles/System
+switchToProfile mk2 profiles/Main
+logMessage The dotfiles pages are laid out for 5×3 keys, not 8×4
+showAlert overview-xl
+logMessage The dotfiles pages are laid out for 5×3 keys, not this device's
+showAlert back-unknown" "$out" "switching pages"
 test_done

@@ -28,6 +28,9 @@ RESOURCES_APP=net.nokyan.Resources.desktop
 RESOURCES_CLASS=net.nokyan.Resources
 # How long a window the step opens may take to appear and still come to the front
 EXPECT_MS=10000
+# Seconds New Tab waits for Chrome in front with no modifiers held; the tests shorten it
+NEW_TAB_WAIT="${DOTFILES_NEW_TAB_WAIT:-10}"
+NEW_TAB_LOCK="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dotfiles-new-tab-$UID.lock"
 CALLER="${OPEN_IN_CALLER:-Stream Deck}"
 CALLER_LOG="${OPEN_IN_LOG:-journalctl --user -u dotfiles-stream-deck}"
 # Set, not printed: a command substitution's subshell would lose FAILURE
@@ -202,13 +205,28 @@ open_path() {
     fi
 }
 
-# Native Wayland Chrome's class; under XWayland it's Google-chrome
 chrome_in_front() {
     shell_call FocusedWindow || return 1
-    case "$(jq -r '.wmClass // ""' <<< "$SHELL_REPLY")" in
-        "$CHROME" | Google-chrome) return 0 ;;
-    esac
-    return 1
+    [ "$(jq -r '.wmClass // ""' <<< "$SHELL_REPLY")" == "$CHROME" ]
+}
+
+# One New Tab at a time, from the Stream Deck and the hotkeys alike: two at once would each open a
+# tab, then both paste into whichever is in front. mkdir is atomic. A lock whose process is gone,
+# or that got no process ID within a minute, is taken over.
+take_new_tab_lock() {
+    local pid=""
+    if ! mkdir "$NEW_TAB_LOCK" 2> /dev/null; then
+        read -r pid < "$NEW_TAB_LOCK/pid" 2> /dev/null
+        if [ -n "$pid" ]; then
+            ! kill -0 "$pid" 2> /dev/null || return 1
+        elif [ -z "$(find "$NEW_TAB_LOCK" -maxdepth 0 -mmin +1 2> /dev/null)" ]; then
+            return 1
+        fi
+        rm -rf "$NEW_TAB_LOCK"
+        mkdir "$NEW_TAB_LOCK" 2> /dev/null || return 1
+    fi
+    echo "$$" > "$NEW_TAB_LOCK/pid"
+    trap 'rm -rf "$NEW_TAB_LOCK"' EXIT
 }
 
 modifiers_held() {
@@ -223,12 +241,11 @@ send_keys() {
 # modifiers would turn Ctrl+T into another shortcut. Sets NEW_TAB "moved" when another window came
 # to the front before the paste.
 new_tab() {
+    local deadline=$((SECONDS + NEW_TAB_WAIT))
     NEW_TAB=""
-    for _ in $(seq 200); do
-        if chrome_in_front && ! modifiers_held; then
-            break
-        fi
+    until chrome_in_front && ! modifiers_held; do
         [ -z "$FAILURE" ] || return 1
+        [ "$SECONDS" -lt "$deadline" ] || break
         sleep 0.05
     done
     if ! chrome_in_front; then
@@ -258,6 +275,10 @@ open_target_app() {
         t3-code) app="$T3_CODE_APP" class="$T3_CODE_CLASS" name="T3 Code" ;;
         activity-monitor) app="$RESOURCES_APP" class="$RESOURCES_CLASS" name=Resources ;;
     esac
+    if [ "$target" == chrome-tab ] && ! take_new_tab_lock; then
+        log "$target: another New Tab is still running, so this one did nothing"
+        return
+    fi
     shell_call ActivateApp ss "$app" "$class" || return
     if [ "$SHELL_REPLY" != true ]; then
         log "ERROR no app has the desktop file $app"

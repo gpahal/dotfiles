@@ -17,7 +17,8 @@ touch "$file"
 
 # FRONT is the focused window's JSON; MISSING_APP, CLIPBOARD, MODIFIERS, LOCKED, and NO_EXTENSION
 # change the extension's answers. CHROME_AFTER makes Chrome the focused window after that many
-# FocusedWindow calls; CHROME_UNTIL, for that many, and FRONT after.
+# FocusedWindow calls; CHROME_UNTIL, for that many, and FRONT after. HOLD makes ActivateApp touch
+# $SANDBOX/held and wait for $SANDBOX/release.
 stub busctl 'reply() { jq -cn --arg t "$1" --argjson d "$2" "{type: \$t, data: \$d}"; }
 case "$*" in
     *" get-property "*OpenWindowsWithLocations) reply "a{sas}" "${NAUTILUS_WINDOWS:-{\}}"; exit ;;
@@ -32,7 +33,9 @@ case "$7" in
         [ -z "${CHROME_AFTER:-}" ] || [ "$n" -le "$CHROME_AFTER" ] || front="{\"wmClass\":\"google-chrome\"}"
         [ -z "${CHROME_UNTIL:-}" ] || [ "$n" -gt "$CHROME_UNTIL" ] || front="{\"wmClass\":\"google-chrome\"}"
         reply s "$(jq -cn --arg s "$front" "[\$s]")" ;;
-    ActivateApp) reply b "[$([ "$9" == "${MISSING_APP:-}" ] && echo false || echo true)]" ;;
+    ActivateApp)
+        [ -z "${HOLD:-}" ] || { touch "$SANDBOX/held"; until [ -e "$SANDBOX/release" ]; do sleep 0.01; done; }
+        reply b "[$([ "$9" == "${MISSING_APP:-}" ] && echo false || echo true)]" ;;
     ExpectWindow) reply "" "[]" ;;
     ModifiersHeld) reply b "[${MODIFIERS:-false}]" ;;
     SendKeys) reply b "[true]" ;;
@@ -48,7 +51,7 @@ stub nautilus
 export FRONT='{}' NAUTILUS_WINDOWS='{}' SANDBOX
 
 front() {
-    FRONT="$(jq -cn --arg c "$1" --arg t "$2" --arg w "${3:-}" '{wmClass: $c, appId: "", title: $t, gtkObjectPath: $w}')"
+    FRONT="$(jq -cn --arg c "$1" --arg t "$2" --arg w "${3:-}" '{wmClass: $c, title: $t, gtkObjectPath: $w}')"
 }
 
 # e.g. check files 0 "nautilus --new-window $dir": the stub log without the queries, apps by name
@@ -140,9 +143,39 @@ CHROME_UNTIL=2 CLIPBOARD=true check chrome-tab 0 "shell ActivateApp ss google-ch
 shell SendKeys s ctrl+t"
 assert_contains "$RUN_OUTPUT" "another window came to the front before the paste"
 front google-chrome "New Tab"
-MODIFIERS=true check chrome-tab 1 "shell ActivateApp ss google-chrome.desktop google-chrome
+DOTFILES_NEW_TAB_WAIT=0 MODIFIERS=true check chrome-tab 1 "shell ActivateApp ss google-chrome.desktop google-chrome
 notify-send --app-name=Stream Deck Stream Deck Couldn't open a new Chrome tab. See journalctl --user -u dotfiles-stream-deck"
 assert_contains "$RUN_OUTPUT" "modifier keys were still held"
+
+# --- New Tab one at a time: another while the first runs does nothing ---
+lock="$TMPDIR/dotfiles-new-tab-$UID.lock"
+HOLD=1 bash "$OPEN_IN" chrome-tab > "$SANDBOX/first.out" 2>&1 &
+first=$!
+for _ in $(seq 500); do
+    [ ! -e "$SANDBOX/held" ] || break
+    sleep 0.01
+done
+[ -e "$SANDBOX/held" ] || fail "the first New Tab didn't reach ActivateApp"
+check chrome-tab 0 ""
+assert_contains "$RUN_OUTPUT" "chrome-tab: another New Tab is still running, so this one did nothing"
+touch "$SANDBOX/release"
+wait "$first" || fail "the first New Tab failed: $(cat "$SANDBOX/first.out")"
+assert_file_contains "$SANDBOX/first.out" "chrome-tab: opened a new tab"
+[ ! -e "$lock" ] || fail "the lock outlived its New Tab"
+# A lock whose process is gone, or with no process ID for a minute, is taken over; one just made
+# isn't
+(exit 0) &
+dead=$!
+wait "$dead"
+mkdir "$lock"
+echo "$dead" > "$lock/pid"
+check chrome-tab 0 "shell ActivateApp ss google-chrome.desktop google-chrome
+shell SendKeys s ctrl+t"
+mkdir "$lock"
+check chrome-tab 0 ""
+touch -t 202001010000 "$lock"
+check chrome-tab 0 "shell ActivateApp ss google-chrome.desktop google-chrome
+shell SendKeys s ctrl+t"
 
 # --- The extension missing, the screen locked, and a bad target ---
 front google-chrome "New Tab"

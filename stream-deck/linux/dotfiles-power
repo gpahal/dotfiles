@@ -1,50 +1,75 @@
 #!/bin/bash
 set -uo pipefail
 
-# Writes the CPU package's and its cores' power, in watts, to /run/dotfiles-power every 2 s, for
-# the Stream Deck's Power key. Run as root by dotfiles-power.service, since the kernel made RAPL's
-# energy counters root-only (CVE-2020-8694); this shares only 2 s averages.
+# Writes the CPU package's and its cores' power, in watts, to /run/dotfiles-power/watts every 2 s,
+# for the Stream Deck's Power key. Run as root by dotfiles-power.service, since the kernel made
+# RAPL's energy counters root-only (CVE-2020-8694); this shares only 2 s averages. Builtins where
+# bash 3.2 has them, so each round starts only sleep and mv.
 
 RAPL="${DOTFILES_RAPL_DIR:-/sys/class/powercap}"
-OUT="${DOTFILES_POWER_FILE:-/run/dotfiles-power}"
+OUT="${DOTFILES_POWER_FILE:-/run/dotfiles-power/watts}"
+UPTIME="${DOTFILES_UPTIME_FILE:-/proc/uptime}"
 INTERVAL="${DOTFILES_POWER_INTERVAL:-2}"
-# The cores' figure is left off when the CPU has no core zone
 PACKAGE="$RAPL/intel-rapl:0"
-CORES="$RAPL/intel-rapl:0:0"
+# The package's child zone named core; the cores' figure is left off without one
+CORES=""
 
+# Sets UJ to a zone's energy counter
 read_uj() {
-    cat "$1/energy_uj" 2> /dev/null
+    read -r UJ 2> /dev/null < "$1/energy_uj" && [ -n "$UJ" ]
 }
 
-# Watts between two readings, allowing for the counter wrapping at max_energy_range_uj
+# Sets NOW to the time since boot in hundredths of a second
+read_now() {
+    local seconds
+    read -r seconds _ 2> /dev/null < "$UPTIME" || return 1
+    NOW="${seconds/./}"
+    NOW=$((10#$NOW))
+}
+
+# Sets WATTS from two readings in µJ and the hundredths of a second between them, allowing for
+# the counter wrapping at the zone's range: µJ / (cs × 100) is hundredths of a watt
 watts() {
-    local before="$1" after="$2" range="$3" nanoseconds="$4" delta
-    delta=$((after - before))
-    [ "$delta" -ge 0 ] || delta=$((delta + range))
-    awk -v d="$delta" -v ns="$nanoseconds" 'BEGIN { printf "%.2f", d / 1e6 / (ns / 1e9) }'
+    local delta=$(($2 - $1)) centiwatts
+    [ "$delta" -ge 0 ] || delta=$((delta + $3))
+    centiwatts=$(((delta + $4 * 50) / ($4 * 100)))
+    WATTS="$((centiwatts / 100)).$((centiwatts / 10 % 10))$((centiwatts % 10))"
 }
 
 main() {
-    local range pkg cores="" at now_pkg now_cores now line
-    if ! pkg="$(read_uj "$PACKAGE")"; then
-        echo "No RAPL package counter at $PACKAGE/energy_uj" >&2
+    local zone name pkg_range cores_range pkg pkg_at cores="" cores_at line
+    for zone in "$PACKAGE":*; do
+        read -r name 2> /dev/null < "$zone/name" || continue
+        if [ "$name" == core ]; then
+            CORES="$zone"
+            break
+        fi
+    done
+    if ! read_uj "$PACKAGE" || ! read -r pkg_range 2> /dev/null < "$PACKAGE/max_energy_range_uj"; then
+        echo "No RAPL package counter at $PACKAGE" >&2
         return 1
     fi
-    range="$(cat "$PACKAGE/max_energy_range_uj")" || return 1
-    [ ! -r "$CORES/energy_uj" ] || cores="$(read_uj "$CORES")"
-    at="$(date +%s%N)"
+    read_now || return 1
+    pkg="$UJ" pkg_at="$NOW"
+    if [ -n "$CORES" ] && read -r cores_range 2> /dev/null < "$CORES/max_energy_range_uj" && read_uj "$CORES"; then
+        cores="$UJ" cores_at="$NOW"
+    fi
+    umask 022
     while sleep "$INTERVAL"; do
-        now_pkg="$(read_uj "$PACKAGE")" || continue
-        now="$(date +%s%N)"
-        line="$(watts "$pkg" "$now_pkg" "$range" $((now - at)))"
-        if [ -n "$cores" ] && now_cores="$(read_uj "$CORES")"; then
-            line="$line $(watts "$cores" "$now_cores" "$range" $((now - at)))"
-            cores="$now_cores"
+        # A failed read keeps the last reading and its time, so the next figure spans both rounds
+        read_now || continue
+        read_uj "$PACKAGE" || continue
+        [ "$NOW" -gt "$pkg_at" ] || continue
+        watts "$pkg" "$UJ" "$pkg_range" $((NOW - pkg_at))
+        line="$WATTS"
+        pkg="$UJ" pkg_at="$NOW"
+        if [ -n "$cores" ] && read_uj "$CORES" && [ "$NOW" -gt "$cores_at" ]; then
+            watts "$cores" "$UJ" "$cores_range" $((NOW - cores_at))
+            line="$line $WATTS"
+            cores="$UJ" cores_at="$NOW"
         fi
         # Renamed into place, so a reader never sees half a line
-        printf '%s\n' "$line" > "$OUT.tmp" && chmod 644 "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT"
-        pkg="$now_pkg"
-        at="$now"
+        printf '%s\n' "$line" > "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT"
     done
 }
 

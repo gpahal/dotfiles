@@ -43,7 +43,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
-| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin, or on Ubuntu the daemon that drives the deck |
+| `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and profiles, or on Ubuntu the daemon that drives the deck |
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
@@ -143,15 +143,14 @@ The **Dotfiles** keys act on the folder of the app in front:
 
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
-- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats.
+- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 
-[`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
+[`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. Setup leaves the deck's brightness alone. [`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
 
-On macOS, a plugin adds the keys to Elgato's Stream Deck app. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread. GPU, temperature, and power need macmon.
+On macOS, a plugin adds the keys to Elgato's Stream Deck app, with a read-only profile for each page. Stream Deck shows the main page when it starts and when the deck comes back from Ubuntu, and setup deletes any other profile for the deck. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread.
 
 Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user service draws the same keys, and a GNOME extension lets it read and focus windows. Unlike on macOS:
 
-- [`stream-deck/linux/layout.json`](stream-deck/linux/layout.json) places the keys. Edit it and re-run the step.
 - The folder comes from a Ghostty tab, a Zed file, or a file manager window's folder, not its selected file. With T3 Code in front, the keys open a new window.
 - **Terminal** opens a Ghostty window, not a tab.
 - **Gmail** opens in its own Chrome window, and the stat keys open Resources.
@@ -237,9 +236,8 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 8. Open Rectangle, grant accessibility, and set your shortcuts.
 9. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
 10. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
-11. In Stream Deck, drag **Overview**, **Editor**, **Terminal**, **Files**, **Chrome**, **New Tab**, **Gmail**, **T3 Code**, and **Claude** from **Dotfiles** onto keys. Press **Overview** and install the **System** page. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
+11. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
 12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
-
 13. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
 
 **Shell**
@@ -358,7 +356,7 @@ At the desktop, with the Stream Deck switched to it:
 - `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills on next use.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
-- After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh`, match the System page in `stream-deck/linux/layout.json`, and commit them. To load the change, delete the **System** profile in Stream Deck and press **Overview**.
+- To change the Stream Deck's keys, edit `stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json`, run `bash stream-deck/build-profile.sh`, and commit both. Then re-run `bash setup.sh stream-deck` on each machine. On the Mac, accept Stream Deck's prompt for each changed profile, pressing **Overview** for the **System** profile.
 - To update the Ubuntu Stream Deck's packages, run `pnpm update` in `stream-deck/linux`, commit `pnpm-lock.yaml`, and re-run `bash setup.sh stream-deck`.
 - [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.
 

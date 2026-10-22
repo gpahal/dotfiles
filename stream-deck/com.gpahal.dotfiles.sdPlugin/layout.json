@@ -1,7 +1,10 @@
 {
   "columns": 5,
   "rows": 3,
-  "brightness": 60,
+  "links": {
+    "overview": "system",
+    "back": "main"
+  },
   "pages": {
     "main": {
       "0,0": "overview",

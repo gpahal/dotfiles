@@ -72,6 +72,12 @@ BIG_CLIPBOARD=1 check chrome-tab 0 "open -b com.google.Chrome
 CLIPBOARD="https://example.com" FRONT_CHANGES=1 check chrome-tab 0 "open -b com.google.Chrome
   Cmd+T"
 assert_contains "$RUN_OUTPUT" "chrome-tab: opened a new tab, but another app came to the front before the paste"
+# While another New Tab runs, from Hammerspoon or Stream Deck, this one does nothing
+mkdir "$TMPDIR/dotfiles-new-tab.lock"
+echo "$$" > "$TMPDIR/dotfiles-new-tab.lock/pid"
+check chrome-tab 0 ""
+assert_contains "$RUN_OUTPUT" "chrome-tab: another New Tab is still running, so this one did nothing"
+rm -r "$TMPDIR/dotfiles-new-tab.lock"
 
 export NEW_TAB_ERROR="execution error: System Events got an error: osascript is not allowed to send keystrokes. (1002)"
 check chrome-tab 1 "open -b com.google.Chrome

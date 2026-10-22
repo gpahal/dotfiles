@@ -1,5 +1,6 @@
-// Commands run by full path, since Stream Deck starts plugins with a minimal PATH. Linux reads
-// /proc and /sys instead, for the Ubuntu daemon in stream-deck/linux.
+// Commands run by full path, since Stream Deck starts plugins with a minimal PATH; GPU,
+// temperature, and power come from macmon. Linux reads /proc and /sys instead, for the Ubuntu
+// daemon in stream-deck/linux, with the sensors of an AMD CPU and GPU.
 const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -124,13 +125,13 @@ const NEEDS = {
 const LINUX_NEEDS = { ...NEEDS, gpu: ["gpu"], temperature: ["temperature"], power: ["power"] };
 
 // Written by the stream-deck step's root helper, since RAPL's counters are root-only
-const POWER_FILE = "/run/dotfiles-power";
+const POWER_FILE = "/run/dotfiles-power/watts";
 // The helper writes every 2 s; older means it stopped
 const POWER_STALE_MS = 10 * 1000;
 // Linux's USER_HZ, the unit of /proc/<pid>/stat's times, is 100 on every architecture Ubuntu ships
 const CLK_TCK = 100;
-const CPU_SENSORS = ["k10temp", "coretemp", "zenpower"];
-const CPU_LABELS = ["Tctl", "Tdie", "Package id 0"];
+// k10temp's control temperature, else its first core complex's
+const CPU_LABELS = ["Tctl", "Tccd1"];
 
 // The options are test seams
 function createSampler({
@@ -272,16 +273,12 @@ function createSampler({
     return Promise.all(dirs.map(async (dir) => ({ dir: `${base}/${dir}`, name: (await read(`${base}/${dir}/name`))?.trim() })));
   }
 
-  // The labeled sensor, else temp1; in °C
+  // The first of the labels the sensor has; in °C
   async function hwmonTemp(dir, labels) {
-    const files = await fs.promises.readdir(dir).catch(() => []);
-    for (const file of files.filter((f) => /^temp\d+_label$/.test(f))) {
-      if (labels.includes((await read(`${dir}/${file}`))?.trim())) {
-        const value = await readNumber(`${dir}/${file.replace("_label", "_input")}`);
-        return value == null ? null : value / 1000;
-      }
-    }
-    const value = await readNumber(`${dir}/temp1_input`);
+    const files = (await fs.promises.readdir(dir).catch(() => [])).filter((f) => /^temp\d+_label$/.test(f));
+    const found = new Map(await Promise.all(files.map(async (f) => [(await read(`${dir}/${f}`))?.trim(), f])));
+    const file = labels.map((label) => found.get(label)).find(Boolean);
+    const value = file ? await readNumber(`${dir}/${file.replace("_label", "_input")}`) : null;
     return value == null ? null : value / 1000;
   }
 
@@ -346,7 +343,7 @@ function createSampler({
       jobs.push(
         (async () => {
           const sensors = await hwmons();
-          const cpuDir = sensors.find((h) => CPU_SENSORS.includes(h.name))?.dir;
+          const cpuDir = sensors.find((h) => h.name === "k10temp")?.dir;
           const gpuDir = sensors.find((h) => h.name === "amdgpu")?.dir;
           if (needed.has("temperature")) {
             const cpu = cpuDir ? await hwmonTemp(cpuDir, CPU_LABELS) : null;
@@ -354,10 +351,8 @@ function createSampler({
             s.temperature = cpu == null ? null : { cpu, gpu };
           }
           if (needed.has("power")) {
-            // power1_average on older amdgpu, power1_input on newer; in µW
-            const gpuMicro = gpuDir
-              ? ((await readNumber(`${gpuDir}/power1_average`)) ?? (await readNumber(`${gpuDir}/power1_input`)))
-              : null;
+            // In µW
+            const gpuMicro = gpuDir ? await readNumber(`${gpuDir}/power1_input`) : null;
             const rapl = await raplPower();
             s.power = rapl && { package: rapl.pkg, cores: rapl.cores, gpu: gpuMicro == null ? null : gpuMicro / 1e6 };
           }
@@ -549,19 +544,6 @@ function card(label, value, valueColor, sub, extra = "") {
 
 const empty = (label, sub = "") => card(label, "—", COLORS.muted, sub);
 
-const LABELS = {
-  overview: "SYSTEM",
-  cpu: "CPU",
-  memory: "MEMORY",
-  swap: "SWAP",
-  top: "TOP CPU",
-  gpu: "GPU",
-  temperature: "TEMP",
-  power: "POWER",
-  disk: "DISK",
-  network: "NETWORK",
-};
-
 // A dash when macmon lacks the field, as after an update renames it
 const watts = (value) => (typeof value === "number" ? value.toFixed(1) : "—");
 
@@ -651,7 +633,8 @@ const RENDER = {
 
 const isStat = (kind) => Object.hasOwn(RENDER, kind);
 const render = (kind, s) => RENDER[kind](s);
-const placeholder = (kind) => empty(LABELS[kind] ?? kind.toUpperCase());
+// Each key drawn with no data
+const placeholder = (kind) => RENDER[kind]({});
 
 module.exports = {
   createSampler,

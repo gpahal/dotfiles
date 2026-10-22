@@ -1,25 +1,11 @@
 // Drives the Stream Deck on Ubuntu with the Mac plugin's keys. The dotfiles-stream-deck user
-// service runs it from the copy the stream-deck step installs, beside stats.js, images/, and
-// bin/open-in. layout.json places the keys; it logs to the journal.
-const { execFile } = require("node:child_process");
+// service runs it from the copy the stream-deck step installs, beside bin/open-in and the plugin's
+// keys.js, stats.js, layout.json, manifest.json, and images/. layout.json places the keys, and its
+// links are the keys that switch pages. It logs to the journal.
+const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const OPEN_IN_TARGETS = new Set([
-  "files",
-  "editor",
-  "terminal",
-  "claude",
-  "chrome",
-  "chrome-tab",
-  "gmail",
-  "t3-code",
-  "activity-monitor",
-]);
-// Keys that switch pages, as the Mac plugin's switchToProfile does
-const PAGE_KEYS = { overview: "system", back: "main" };
-// A second New Tab press while the first runs would open a second tab and paste twice
-const ONE_AT_A_TIME = new Set(["chrome-tab"]);
 const BLANK = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144"><rect width="144" height="144" fill="#000"/></svg>`;
 // Like Stream Deck's showAlert
 const ALERT = [
@@ -30,9 +16,12 @@ const ALERT = [
   `</svg>`,
 ].join("");
 
-// The options are test seams; main() passes the real ones
+// The options are test seams; main() passes the real ones. actions are the manifest's, and keys is
+// keys.js.
 function createDaemon({
   layout,
+  actions,
+  keys,
   stats,
   sampler,
   keyImage,
@@ -46,7 +35,7 @@ function createDaemon({
   reconnectMs = 2000,
   alertMs = 1500,
 }) {
-  const known = (action) => action in PAGE_KEYS || OPEN_IN_TARGETS.has(action) || stats.isStat(action);
+  const known = (action) => action in layout.links || actions.has(action);
   for (const [page, keys] of Object.entries(layout.pages)) {
     for (const [position, action] of Object.entries(keys)) {
       if (!known(action)) log(`ERROR layout.json's ${page} page has ${action} at ${position}, which isn't an action`);
@@ -58,19 +47,22 @@ function createDaemon({
   let page = "main";
   let connecting = false;
   let loop = null;
-  let timer = null;
-  let firstUpdate = null;
-  let busy = false;
   let lastError = "";
   // shown holds each key's last image, so an unchanged one isn't sent again
   const shown = new Map();
-  const statKeys = new Map();
   const alerts = new Set();
-  const running = new Set();
   // Paths of decks whose layout this can't drive, logged once each
   const unsupported = new Set();
-  // So each render error is logged once
-  const failing = new Set();
+  const statKeys = keys.createStatKeys({
+    stats,
+    sampler,
+    log,
+    draw: drawKey,
+    ready: () => Boolean(deck),
+    intervalMs,
+    firstUpdateMs,
+  });
+  const run = keys.createRunner({ runOpenIn, log });
 
   const actionAt = (index) => {
     const button = buttons.get(index);
@@ -84,7 +76,7 @@ function createDaemon({
     log(`Stream Deck disconnected: ${error?.message ?? error}`);
     const old = deck;
     deck = null;
-    stopUpdates();
+    statKeys.stop();
     shown.clear();
     alerts.clear();
     old.close().catch(() => {});
@@ -119,82 +111,29 @@ function createDaemon({
     }, alertMs);
   }
 
-  // A placeholder on error, so one bad stat leaves the other keys updating
-  function renderKey(kind, sample) {
-    try {
-      const svg = stats.render(kind, sample);
-      failing.delete(kind);
-      return svg;
-    } catch (error) {
-      if (!failing.has(kind)) log(`ERROR couldn't draw the ${kind} key: ${error.message}`);
-      failing.add(kind);
-      return stats.placeholder(kind);
-    }
-  }
-
-  async function update() {
-    if (busy || !deck || statKeys.size === 0) return;
-    busy = true;
-    try {
-      const sample = await sampler.sample([...new Set(statKeys.values())]);
-      await Promise.all([...statKeys].map(([index, kind]) => drawKey(index, renderKey(kind, sample))));
-    } catch (error) {
-      log(`ERROR couldn't update the stat keys: ${error.message}`);
-    } finally {
-      busy = false;
-    }
-  }
-
-  // CPU and network are rates, so the first sample waits a moment
-  function startUpdates() {
-    if (timer) return;
-    sampler.reset();
-    timer = setInterval(update, intervalMs);
-    firstUpdate = setTimeout(update, firstUpdateMs);
-  }
-
-  function stopUpdates() {
-    clearInterval(timer);
-    clearTimeout(firstUpdate);
-    timer = null;
-    sampler.stop();
-  }
-
   // Stat keys show their icon until the first sample, as in Stream Deck
   async function showPage(name) {
     page = name;
-    stopUpdates();
-    statKeys.clear();
+    statKeys.stop();
+    statKeys.keys.clear();
     const draws = [];
     for (const index of buttons.keys()) {
       const action = actionAt(index);
-      if (action && stats.isStat(action)) statKeys.set(index, action);
+      if (action && stats.isStat(action)) statKeys.keys.set(index, action);
       draws.push(drawKey(index, action ? keyImage(action) : BLANK));
     }
     await Promise.all(draws);
-    if (statKeys.size > 0) startUpdates();
-  }
-
-  function run(target, index) {
-    if (running.has(target)) return;
-    if (ONE_AT_A_TIME.has(target)) running.add(target);
-    runOpenIn(target, (error, output) => {
-      running.delete(target);
-      for (const line of output.split("\n").filter(Boolean)) log(line);
-      if (error) alert(index);
-    });
+    if (statKeys.keys.size > 0) statKeys.start();
   }
 
   function press(control) {
     if (control.type !== "button") return;
     const action = actionAt(control.index);
     if (!action) return;
-    if (action in PAGE_KEYS) {
-      showPage(PAGE_KEYS[action]);
-    } else if (stats.isStat(action)) {
-      run("activity-monitor", control.index);
+    if (action in layout.links) {
+      showPage(layout.links[action]);
     } else {
-      run(action, control.index);
+      run(stats.isStat(action) ? "activity-monitor" : action, () => alert(control.index));
     }
   }
 
@@ -235,7 +174,6 @@ function createDaemon({
           if (deck === opened) lost(error);
         });
         log(`Stream Deck connected: ${opened.PRODUCT_NAME}`);
-        await opened.setBrightness(layout.brightness);
         await showPage("main");
         return;
       }
@@ -255,7 +193,7 @@ function createDaemon({
   // Leaves the deck showing its logo, as Stream Deck does when it quits
   async function stop() {
     clearInterval(loop);
-    stopUpdates();
+    statKeys.stop();
     const current = deck;
     deck = null;
     if (!current) return;
@@ -289,28 +227,41 @@ function imageLoader(dir) {
   };
 }
 
+// resvg doesn't read fontconfig's aliases, so the keys' Helvetica would fall back to a serif. This
+// asks fontconfig once for the closest family with the symbols the keys draw (↑ ↓ ° · … —) and
+// loads only that family's files, since resvg loading every system font for each key is slow.
+function fontOptions(run = (file, args) => execFileSync(file, args, { encoding: "utf8" })) {
+  try {
+    const family = run("fc-match", ["-f", "%{family[0]}", "Helvetica:charset=2191 2193 b0 b7 2026 2014"]).trim();
+    // fontconfig's pattern syntax gives - : , and \ meanings
+    const pattern = family.replace(/[-:,\\]/g, "\\$&");
+    const fontFiles = run("fc-list", ["-f", "%{file}\n", pattern])
+      .split("\n")
+      .filter((file) => /\.(otf|ttf|otc|ttc)$/i.test(file))
+      .sort();
+    if (family && fontFiles.length > 0) {
+      return { loadSystemFonts: false, fontFiles, defaultFontFamily: family, sansSerifFamily: family };
+    }
+  } catch {
+    // fontconfig ships with Ubuntu's desktop
+  }
+  return { loadSystemFonts: true, defaultFontFamily: "DejaVu Sans", sansSerifFamily: "DejaVu Sans" };
+}
+
 function main() {
   const { listStreamDecks, openStreamDeck } = require("@elgato-stream-deck/node");
   const { Resvg } = require("@resvg/resvg-js");
+  const keys = require("./keys.js");
   const stats = require("./stats.js");
-  const layout = JSON.parse(fs.readFileSync(path.join(__dirname, "layout.json"), "utf8"));
+  const read = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8"));
+  const manifest = read("manifest.json");
   const openIn = path.join(__dirname, "bin", "open-in");
   const log = (message) => console.log(message);
-  // resvg doesn't read fontconfig's aliases, so the keys' Helvetica would fall back to a serif. This
-  // asks for the closest font that has the symbols the keys draw: ↑ ↓ ° · … —.
-  let sans = "DejaVu Sans";
-  try {
-    sans = require("node:child_process").execFileSync(
-      "fc-match",
-      ["-f", "%{family[0]}", "Helvetica:charset=2191 2193 b0 b7 2026 2014"],
-      { encoding: "utf8" },
-    );
-  } catch {
-    // fontconfig ships with Ubuntu's desktop; the default stays
-  }
-  const font = { loadSystemFonts: true, defaultFontFamily: sans, sansSerifFamily: sans };
+  const font = fontOptions();
   const daemon = createDaemon({
-    layout,
+    layout: read("layout.json"),
+    actions: new Set(manifest.Actions.map((action) => action.UUID.slice(manifest.UUID.length + 1))),
+    keys,
     stats,
     sampler: stats.createSampler({ log }),
     keyImage: imageLoader(path.join(__dirname, "images")),
@@ -331,4 +282,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { createDaemon, imageLoader, ALERT, BLANK };
+module.exports = { createDaemon, imageLoader, fontOptions, ALERT, BLANK };

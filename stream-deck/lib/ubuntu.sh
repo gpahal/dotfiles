@@ -14,6 +14,8 @@ DECK_UNIT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$DECK_UNIT_NAME"
 DECK_NODE="${MISE_DATA_DIR:-$DATA_HOME/mise}/installs/node/lts/bin/node"
 # The deps' lockfile as last installed, so a changed one reinstalls
 DECK_DEPS_STAMP="$DECK_DIR/node_modules/.dotfiles-lock"
+# Kept from a change to the daemon's files until the daemon restarts on them
+DECK_RESTART_PENDING="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/stream-deck-restart-pending"
 POWER_SCRIPT=/usr/local/libexec/dotfiles-power
 POWER_UNIT=/etc/systemd/system/dotfiles-power.service
 RAPL_DIR=/sys/class/powercap
@@ -25,10 +27,12 @@ GMAIL_CLASS=chrome-mail.google.com__mail_u_0_-Default
 
 stream_deck_ubuntu_files() {
     local file status=0
-    for file in daemon.js layout.json package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
+    for file in daemon.js package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
         "$1" "$LINUX_SRC/$file" "$DECK_DIR/$file" || status=1
     done
-    "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/stats.js" "$DECK_DIR/stats.js" || status=1
+    for file in keys.js stats.js layout.json manifest.json; do
+        "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/$file" "$DECK_DIR/$file" || status=1
+    done
     # The keys' images, and the Gmail window's icon
     for file in "$DOTFILES_DIR/stream-deck/$PLUGIN/images/"{key-*.svg,key-*@2x.png,gmail.svg}; do
         "$1" "$file" "$DECK_DIR/images/${file##*/}" || status=1
@@ -95,11 +99,10 @@ power_script_installed() {
     cmp -s "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" && [ -x "$POWER_SCRIPT" ]
 }
 
-# A running helper keeps the old script until restarted
+# A running helper keeps the old script and unit until restarted
 install_power_script() {
-    install_root_file "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" 0755 || return 1
-    ! systemctl is-active --quiet dotfiles-power.service 2> /dev/null ||
-        sudo systemctl restart dotfiles-power.service
+    install_root_file "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" 0755 &&
+        sudo systemctl try-restart dotfiles-power.service
 }
 
 power_unit_installed() {
@@ -107,7 +110,8 @@ power_unit_installed() {
 }
 
 install_power_unit() {
-    install_root_file "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT" 0644 && sudo systemctl daemon-reload
+    install_root_file "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT" 0644 && sudo systemctl daemon-reload &&
+        sudo systemctl try-restart dotfiles-power.service
 }
 
 power_service_on() {
@@ -124,10 +128,10 @@ stream_deck_ubuntu_items() {
     item --sudo "Resources, which the stat keys open" "Install Resources, the system monitor the stat keys open" \
         resources_installed install_resources
     rapl_present || return 0
-    item --sudo "Power helper ($POWER_SCRIPT)" "Install $POWER_SCRIPT, which shares the CPU's power for the Power key" \
-        power_script_installed install_power_script
     item --sudo "Power helper's service ($POWER_UNIT)" "Install $POWER_UNIT" \
         power_unit_installed install_power_unit
+    item --sudo "Power helper ($POWER_SCRIPT)" "Install $POWER_SCRIPT, which shares the CPU's power for the Power key" \
+        power_script_installed install_power_script
     item --sudo "Power helper running" "Start the power helper, and at each boot" \
         power_service_on start_power_service
 }
@@ -136,6 +140,8 @@ status_daemon() {
     status_check "Stream Deck daemon's dependencies in $DECK_DIR" deck_deps_current
     status_check "Stream Deck daemon's service ($DECK_UNIT)" file_is "$DECK_UNIT" "$(deck_unit)"
     [ -x "$DECK_NODE" ] || status_item missing "Node LTS at $DECK_NODE, which the daemon runs: bash setup.sh runtimes"
+    [ ! -e "$DECK_RESTART_PENDING" ] ||
+        status_item missing "Stream Deck daemon restarted on its new files: re-run the stream-deck step"
     [ -f "$DECK_UNIT" ] || return 0
     status_check "Stream Deck daemon starts at login" deck_unit_enabled
     if ! gnome_session_running; then
@@ -166,6 +172,7 @@ status_deck_access() {
 
 status_ubuntu() {
     stream_deck_ubuntu_files status_file
+    status_stale "$DECK_DIR" "the repo no longer has it" deck_file_list
     status_check "Gmail app window ($GMAIL_DESKTOP)" file_is "$GMAIL_DESKTOP" "$(gmail_desktop)"
     status_daemon
     if status_require_cmd gsettings "GNOME extension"; then
@@ -188,16 +195,33 @@ setup_extension() {
     fi
 }
 
-# Restarts the daemon when it or its files changed, so it runs the new ones
+# The daemon's files in DECK_DIR, relative to it
+deck_file_list() {
+    stream_deck_ubuntu_files _deck_dest
+}
+
+_deck_dest() {
+    case "$2" in
+        "$DECK_DIR"/*) printf '%s\n' "${2#"$DECK_DIR"/}" ;;
+    esac
+}
+
+mark_restart_pending() {
+    mkdir -p "$(dirname "$DECK_RESTART_PENDING")" && touch "$DECK_RESTART_PENDING"
+}
+
+# Restarts the daemon when it or its files changed, so it runs the new ones. The pending mark
+# outlasts a failed run, so the next one still restarts it.
 setup_deck_service() {
-    local changed="$1"
+    local changed=false
+    [ ! -e "$DECK_RESTART_PENDING" ] || changed=true
     if ! systemctl --user show-environment &> /dev/null; then
         echo "  Couldn't reach your systemd user manager, so the daemon isn't on yet. Re-run the step after"
         echo "  the next login."
         return 0
     fi
     if ! file_is "$DECK_UNIT" "$(deck_unit)"; then
-        mkdir -p "$(dirname "$DECK_UNIT")" && deck_unit > "$DECK_UNIT" || return 1
+        mkdir -p "$(dirname "$DECK_UNIT")" && mark_restart_pending && deck_unit > "$DECK_UNIT" || return 1
         changed=true
     fi
     if "$changed"; then
@@ -205,9 +229,11 @@ setup_deck_service() {
     fi
     deck_unit_enabled || systemctl --user enable "$DECK_UNIT_NAME" || return 1
     if ! gnome_session_running; then
+        rm -f "$DECK_RESTART_PENDING"
         echo "  No desktop session, so the daemon starts at your next login."
     elif "$changed"; then
         systemctl --user restart "$DECK_UNIT_NAME" || return 1
+        rm -f "$DECK_RESTART_PENDING"
         echo "  Restarted the Stream Deck daemon."
     elif ! systemctl --user is-active --quiet "$DECK_UNIT_NAME"; then
         systemctl --user start "$DECK_UNIT_NAME" || return 1
@@ -230,7 +256,7 @@ copy_deck_file() {
 
 apply_ubuntu() {
     echo "Setting up the Stream Deck daemon..."
-    local status=0 pending=() changed=false
+    local status=0 pending=()
     require_cmd pnpm || return 1
     require_cmd jq || return 1
     require_cmd gsettings || return 1
@@ -241,10 +267,13 @@ apply_ubuntu() {
     DECK_COPIED=false
     EXTENSION_COPIED=false
     stream_deck_ubuntu_files copy_deck_file || status=1
-    ! "$DECK_COPIED" || changed=true
+    COPIED=false
+    remove_stale "$DECK_DIR" "the repo" deck_file_list || status=1
+    ! "$COPIED" || DECK_COPIED=true
+    ! "$DECK_COPIED" || mark_restart_pending || status=1
     if ! deck_deps_current; then
         if install_deck_deps; then
-            changed=true
+            mark_restart_pending || status=1
         else
             echo "  Couldn't install the daemon's packages in $DECK_DIR." >&2
             status=1
@@ -258,7 +287,7 @@ apply_ubuntu() {
         fi
     fi
     setup_extension || status=1
-    setup_deck_service "$changed" || status=1
+    setup_deck_service || status=1
 
     stream_deck_ubuntu_items
     items_pending

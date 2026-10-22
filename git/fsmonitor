@@ -1,4 +1,4 @@
-# Only for repos under ~/Dev: elsewhere each repo would start a daemon that lives until logout.
+# Only for ~/Dev repos: elsewhere each repo would start a daemon that lives until logout.
 # No-op on Linux.
 [core]
     fsmonitor = true

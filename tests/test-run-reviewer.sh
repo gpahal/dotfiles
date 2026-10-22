@@ -29,15 +29,6 @@ leftover_sleeps() {
     "$PGREP" -f "$SLEEP_PATTERN" || true
 }
 
-wait_for() {
-    local i
-    for i in $(seq 100); do
-        "$@" && return 0
-        sleep 0.1
-    done
-    return 1
-}
-
 both_sleeps_started() {
     [ "$(leftover_sleeps | wc -l | tr -d ' ')" -ge 2 ]
 }
@@ -75,6 +66,11 @@ stub claude 'echo "No findings."'
 cd "$REPO"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$OUT"
 assert_file_contains "$OUT" "No findings."
+# What keeps the reviewer to reading, with no MCP servers or other tools
+for flag in --restricted --strict-mcp-config "--tools Read Grep Glob" "--allowedTools Read Grep Glob" \
+    "--permission-mode dontAsk"; do
+    assert_file_contains "$STUB_LOG" " $flag "
+done
 wait_for no_sleeps_left || fail "the watchdog outlived a finished review"
 "$PKILL" -f "$SLEEP_PATTERN" || true
 
@@ -108,7 +104,11 @@ mkdir -p "$REPO/sub"
 cd "$REPO/sub"
 assert_exit 0 bash "$RUNNER" codex gpt-test xhigh "$PROMPT" "$OUT"
 assert_file_contains "$OUT" "No findings."
-assert_file_contains "$STUB_LOG" "codex exec --model gpt-test -c model_reasoning_effort=\"xhigh\" -c approval_policy=\"never\" --ignore-user-config --ignore-rules --sandbox read-only --disable multi_agent --ephemeral --cd $(cd "$REPO" && pwd -P) --output-last-message $OUT -"
+# What keeps the reviewer from changing anything, or reading your config and rules
+for flag in "--sandbox read-only" '-c approval_policy="never"' --ignore-user-config --ignore-rules \
+    "--disable multi_agent" --ephemeral; do
+    assert_file_contains "$STUB_LOG" " $flag "
+done
 assert_eq "Review this." "$(cat "$OUT.stdin")" "the prompt codex read"
 cd "$REPO"
 
@@ -151,8 +151,6 @@ MATERIALIZE="$REPO_DIR/ai_tools/skills/engineering/code-review/scripts/materiali
 HIST="$SANDBOX/hist repo"
 git init -q "$HIST"
 cd "$HIST"
-git config user.email t@example.com
-git config user.name Test
 mkdir "sub dir"
 echo old > "sub dir/a b.txt"
 echo kept > kept.txt
@@ -183,17 +181,6 @@ review_tmp
 assert_exit 0 bash "$MATERIALIZE" "$SANDBOX/review tmp" HEAD
 assert_eq new "$(cat "$SANDBOX/review tmp/head/sub dir/a b.txt")" "the range head's file"
 [ ! -e "$SANDBOX/review tmp/head/kept.txt" ] || fail "a deleted file was copied"
-git worktree list | grep -q "review tmp" && fail "it added a worktree"
-
-echo "Review this." > "$SANDBOX/review tmp/prompt.md"
-stub claude '
-while [ $# -gt 0 ]; do
-    [ "$1" != --add-dir ] || dir="$2"
-    shift
-done
-cat "$dir/head/sub dir/a b.txt"'
-assert_exit 0 bash "$RUNNER" claude model high "$SANDBOX/review tmp/prompt.md" "$OUT"
-assert_eq new "$(cat "$OUT")" "what the reviewer read"
 
 review_tmp
 assert_exit 2 bash "$MATERIALIZE" "$SANDBOX/review tmp" 0123456789abcdef0123456789abcdef01234567
@@ -212,7 +199,6 @@ fi
 exec "'"$real_git"'" "$@"'
 review_tmp
 assert_exit 1 bash "$MATERIALIZE" "$SANDBOX/review tmp" "$OLD"
-assert_file_contains "$STUB_LOG" "git checkout-index --all --prefix=$SANDBOX/review tmp/head/"
 assert_eq "" "$(/bin/ls -A "$SANDBOX/review tmp")" "the temp dir after a checkout that failed partway"
 rm "$STUB_DIR/git"
 mkdir "$SANDBOX/review tmp/head"

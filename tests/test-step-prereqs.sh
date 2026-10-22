@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# chrome without curl is in test-chrome.sh.
+# A step missing a prerequisite fails before it changes anything, and status reports the check
+# unknown. chrome without curl is in test-chrome.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -114,20 +115,46 @@ for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq c
     assert_exit 1 without "$cmd" "$step"
     assert_contains "$RUN_OUTPUT" "$cmd"
     check_untouched "$step without $cmd"
+    # mise is there, so the step must stop before running it
+    [ "$step" != runtimes_step ] || assert_file_not_contains "$STUB_LOG" "mise"
 done
-assert_file_not_contains "$STUB_LOG" "mise"
 
 # The zsh step without the login zsh it needs
 for os in macos ubuntu; do
     rm -rf "$HOME"
     mkdir -p "$HOME"
+    : > "$STUB_LOG"
     load_script zsh/install.sh
-    if [ "$os" == ubuntu ]; then
-        as_os ubuntu
-    fi
+    as_os "$os"
     replace_fn login_zsh_path 'return 1'
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "zsh is missing" "the zsh step's output on $os"
     check_untouched "zsh on $os"
 done
+
+# Status reports a check whose prerequisite is missing as unknown, not missing or a crash
+chrome_status_without_curl() {
+    stub_apt_config
+    load_script chrome/install.sh
+    as_os ubuntu
+    stub dpkg-query 'exit 1'
+    stub_dpkg_arch
+    hide curl
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "unknown    google-chrome-stable from Google's .deb: curl isn't installed"
+    assert_not_contains "$RUN_OUTPUT" "command not found"
+    # The report carries on past it
+    assert_contains "$RUN_OUTPUT" "Chrome origins allowed in unattended-upgrades"
+}
+codex_status_without_brew() {
+    load_script ai_tools/codex/install.sh
+    as_os ubuntu
+    hide brew codex
+    stub bwrap
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "unknown    codex: brew isn't installed"
+    assert_not_contains "$RUN_OUTPUT" "missing    codex (cask)"
+}
+subtest chrome_status_without_curl
+subtest codex_status_without_brew
 test_done

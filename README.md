@@ -44,12 +44,12 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
 | `stream-deck` | Installs the [Stream Deck](#stream-deck) plugin and profiles, or on Ubuntu the daemon that drives the deck |
-| `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config. macOS only |
+| `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config and the open-in script its hotkeys run. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
 | `vicinae` | Installs the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, and sets the hostname if needed. macOS only |
+| `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, frees `Cmd+Space` for Vicinae, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
@@ -59,15 +59,15 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
 - `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached. `--quick` skips the slowest checks.
-- Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup (`--backup`, `--no-backup`).
+- Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup.
 - Settings that are yours, such as mise's global versions and the AI tools' models, are set when unset. When yours differs, setup asks before replacing it, and keeps it without a terminal.
 - Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.
 - The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
-- `just` lists the [justfile](./justfile)'s recipes. `just status` runs both scripts with `--status`.
+- `just status` runs both scripts with `--status`.
 
 ## Ubuntu
 
-Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` naming every step except `ghostty`, `zed`, `stream-deck`, `hotkeys`, `logitech`, and `chrome`, and install `upower` for UPS detection.
+Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` naming every step except `ghostty`, `zed`, `stream-deck`, `logitech`, and `chrome`, and install `upower` for UPS detection.
 
 - Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
 - Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
@@ -77,7 +77,7 @@ Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` nami
 
 ### Running around the clock
 
-The `ubuntu` and `docker` steps keep the machine reachable:
+The `ubuntu`, `docker`, and `chrome` steps keep the machine reachable:
 
 - Suspend is off, and a kernel panic reboots after 10 seconds.
 - With a USB UPS, the machine shuts down on low battery and starts when power returns.
@@ -128,7 +128,7 @@ Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in
 
 #### Ghostty notifications
 
-Claude Code, Codex, and long builds notify through Ghostty, inside tmux too:
+Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Ghostty also notifies when a command of 10 seconds or more finishes in an unfocused window. To allow the notifications:
 
 1. Run `~/Dev/setup/dotfiles/scripts/test-notification.sh` in Ghostty and click **Allow**. In **System Settings → Notifications → Ghostty**, allow notifications with the **Persistent** style.
 2. Add Ghostty to any Focus mode's **Allowed Apps**.
@@ -145,7 +145,7 @@ The **Dotfiles** keys act on the folder of the app in front:
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
 - **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 
-[`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. Setup leaves the deck's brightness alone. [`stream-deck/icons`](stream-deck/icons/README.md) lists the icon sources.
+[`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
 
 On macOS, a plugin adds the keys to Elgato's Stream Deck app, with a read-only profile for each page. Stream Deck shows the main page when it starts and when the deck comes back from Ubuntu, and setup deletes any other profile for the deck. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread.
 
@@ -201,11 +201,11 @@ A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the 
 
 ### tmux
 
-Prefix `Ctrl+a`. `|` and `-` split, `hjkl` move, `HJKL` resize, `Ctrl+h`/`Ctrl+l` switch windows, `v` copy mode, `S` new session, `X` kill session, `f` `tmux-sessionizer`. vim-tmux-navigator takes `Ctrl+hjkl`, so clear the screen with `prefix+Ctrl+k`.
+Prefix `Ctrl+a`. `|` and `-` split, `hjkl` move, `HJKL` resize, `Ctrl+h` and `Ctrl+l` switch windows, `v` copy mode, `S` new session, `X` kill session, `f` `tmux-sessionizer`. vim-tmux-navigator takes `Ctrl+hjkl`, so clear the screen with `prefix+Ctrl+k`.
 
 ### Packages
 
-The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS apps in `CASKS` and `MAS_APPS` in [`homebrew/install.sh`](homebrew/install.sh). The `runtimes` step installs Node LTS and Go with mise, and Rust with rustup.
+The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS apps in `CASKS` and `MAS_APPS` in [`homebrew/install.sh`](homebrew/install.sh).
 
 ### Touch ID for sudo
 
@@ -293,7 +293,7 @@ Once:
 16. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
-    3. At the machine, `sudo rtcwake -m off -s 120` should start it 2 minutes later. If not, only the BIOS setting brings it back.
+    3. At the machine, `sudo rtcwake -m off -s 120` starts it 2 minutes later. If it doesn't, only the BIOS setting brings it back.
     4. Run `just alerts test` again.
 17. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
 18. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.

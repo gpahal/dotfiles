@@ -17,7 +17,7 @@ source "$DOTFILES_DIR/lib/gnome.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
 
-# The cask on macOS; on Ubuntu, curl and jq for the installer, which it installs with apt
+# The homebrew step installs the cask on macOS, and the installer's curl and jq with apt on Ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 

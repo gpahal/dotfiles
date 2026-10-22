@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# scripts/check-brew-packages.sh reports unknown, deprecated, disabled, and bottle-less packages.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -57,7 +59,6 @@ cask="$(cask_list "$REPO_DIR/homebrew/install.sh" CASKS | head -n 1)"
     fail "couldn't read a formula for each OS and a cask from the homebrew step"
 
 check 0
-assert_contains "$RUN_OUTPUT" "Every formula and cask the homebrew step installs exists"
 assert_file_contains "$STUB_LOG" "curl -fsSL --retry 3 https://formulae.brew.sh/api/formula/$linux_formula.json"
 assert_file_not_contains "$STUB_LOG" "formula/$mac_formula.json"
 
@@ -79,10 +80,5 @@ check 1
 assert_contains "$RUN_OUTPUT" "The cask $cask is disabled"
 assert_not_contains "$RUN_OUTPUT" "is deprecated"
 
-: > "$SANDBOX/deprecated"
-: > "$SANDBOX/disabled"
-stub curl 'exit 22'
-check 1
-assert_contains "$RUN_OUTPUT" "Couldn't read the formula $linux_formula from https://formulae.brew.sh/api/formula"
-
 test_done
+

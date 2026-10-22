@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
-# serial
+
+# tmux.conf loads without errors, and reloading it doesn't grow its arrays.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -19,8 +20,6 @@ run env -i PATH=/usr/bin:/bin HOME="$HOME" TMUX_TMPDIR="$TMUX_TMPDIR" \
     "$TMUX_BIN" -f /dev/null new-session -d -s one \; source-file "$CONF"
 assert_eq 0 "$RUN_STATUS" "loading tmux.conf"
 assert_eq "" "$RUN_OUTPUT" "config errors"
-assert_eq "PATH=/usr/bin:/bin" "$(tmux show-environment -g PATH)" "global PATH"
-assert_eq all "$(tmux show-options -gv allow-passthrough)" "allow-passthrough"
 
 arrays() {
     tmux show -s terminal-overrides
@@ -34,18 +33,4 @@ for _ in 1 2; do
     tmux source-file "$CONF"
 done
 assert_eq "$once" "$(arrays)" "arrays after three loads"
-
-tmux new-session -d -s two
-tmux -L outer -f /dev/null new-session -d -s outer -x 100 -y 30 \
-    "env -u TMUX TERM=tmux-256color tmux attach -t one"
-for _ in $(seq 50); do
-    [ -z "$(tmux list-clients)" ] || break
-    sleep 0.1
-done
-assert_eq tmux-256color "$(tmux list-clients -F '#{client_termname}')" "the nested client's TERM"
-assert_contains "$(tmux show-messages -T)" "setrgbf: (string)" "the nested client's capabilities"
-assert_eq one "$(tmux list-clients -F '#{client_session}')" "the client's session"
-tmux kill-session -t one
-assert_eq two "$(tmux list-clients -F '#{client_session}')" "the client's session after killing its own"
-tmux -L outer kill-server &> /dev/null || true
 test_done

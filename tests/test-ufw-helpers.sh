@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# test-ufw-recheck.sh covers the step around these helpers.
+# The ubuntu step's ufw helpers: the SSH ports, which addresses count as outside, which rules let SSH
+# in from outside the private ranges, and when ufw counts as on. test-ufw-recheck.sh covers the step
+# around them.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -54,18 +56,10 @@ stub sshd '[ "$1" != -T ] || printf "%s\n" "port 22" "port 2222"'
 stub systemctl '[ "$1" != is-active ] || exit 3'
 stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
 wanted_rules() {
-    local port range
-    printf '%s\n' "Status: active" "" "To                         Action      From" \
-        "--                         ------      ----"
-    for port in 22 2222; do
-        for range in "${SSH_RANGES[@]}"; do
-            printf '%-26s ALLOW       %s\n' "$port/tcp" "$range"
-        done
-    done
-    printf '%s\n' "Anywhere on tailscale0     ALLOW       Anywhere" \
-        "41641/udp                  ALLOW       Anywhere" \
-        "Anywhere (v6) on tailscale0 ALLOW       Anywhere (v6)" \
-        "41641/udp (v6)             ALLOW       Anywhere (v6)"
+    ufw_header
+    ufw_range_rules 22
+    ufw_range_rules 2222
+    ufw_tailscale_rules
 }
 # Narrower ranges inside each private one, and other ports, aren't broad
 {

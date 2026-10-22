@@ -2,7 +2,6 @@
 # The ubuntu step's services a desktop install doesn't use: cloud-init, which only sets up a fresh
 # install or a cloud image, and cups-browsed, which adds network printers by itself.
 
-# A VM may need cloud-init at every boot for its network and users
 cloud_init_off() {
     ! apt_installed cloud-init || [ -e "$CLOUD_INIT_DISABLED" ]
 }

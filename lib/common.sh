@@ -95,7 +95,6 @@ left_unchanged() {
     fi
 }
 
-# Returns nonzero when declined
 confirm_sudo_changes() {
     echo "  These need sudo:"
     printf '    - %s\n' "$@"
@@ -123,8 +122,8 @@ warn_untested_platform() {
     echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2
 }
 
-# Homebrew's default prefixes, macOS's then Linux's. zsh/path.zsh and zsh/profile.sh keep their own
-# copies, since they run without this file.
+# Homebrew's default prefixes, macOS's then Linux's. zsh/path.zsh, and zsh/profile.sh for Linux's,
+# keep their own copies, since they run without this file.
 HOMEBREW_PREFIXES=(/opt/homebrew /home/linuxbrew/.linuxbrew)
 
 load_brew() {
@@ -998,7 +997,8 @@ step_script() {
     fi
 }
 
-# Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Exits unless a full run succeeds.
+# Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Returns only after a setup run succeeds;
+# otherwise exits.
 runner_main() {
     local name="$1" quick="$2" script status=0
     shift 2

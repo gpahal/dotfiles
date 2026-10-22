@@ -151,7 +151,7 @@ The script turns off Claude Code's error reporting, Codex's analytics, and T3 Co
 
 ## Skills
 
-[`skills`](./skills/README.md) holds agent skills, mostly modified copies of [mattpocock/skills](https://github.com/mattpocock/skills) and [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack).
+[`skills`](./skills/README.md) holds agent skills.
 
 The `skills` step copies each into `~/.agents/skills` and links it from `~/.claude/skills` **(script)**, deleting every other entry in both except dot-entries and Claude Code's `synced`. `--status` lists what it would delete. Edit skills in the repo and re-run the step. `code-review` replaces Claude Code's bundled one, and `interrogate` needs both `claude` and `codex` signed in.
 
@@ -161,7 +161,7 @@ The same steps, without the ChatGPT app or computer use. The `codex` step instal
 
 ### Notifications over SSH
 
-Notifications travel over SSH to Ghostty on the Mac. The script sets Claude Code's channel to `ghostty` and Codex's to `osc9` unless you set your own **(script)**. Test with `scripts/test-notification.sh` in tmux.
+Notifications travel over SSH to Ghostty on the Mac. The script sets Claude Code's channel to `ghostty` and Codex's to `osc9` unless you set your own **(script)**.
 
 ### T3 Code on Ubuntu
 

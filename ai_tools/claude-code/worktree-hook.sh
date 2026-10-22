@@ -6,7 +6,8 @@ set -euo pipefail
 # Replaces Claude Code's worktree code: honors worktree.baseRef and .worktreeinclude, ignores
 # worktree.symlinkDirectories and worktree.sparsePaths. Nothing may wait for input.
 
-# Launched from the Dock, Claude Code may have only the system PATH. Homebrew is for jq on Ubuntu.
+# Launched from the Dock, Claude Code may have only the system PATH, without ~/.local/bin's git wt.
+# Homebrew's dirs go last, as a fallback.
 for dir in /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin; do
     if [ -d "$dir" ]; then
         PATH="$PATH:$dir"
@@ -138,7 +139,8 @@ copy_worktree_include() {
         { git -C "$tmp" -c core.excludesFile="$include" check-ignore --no-index -z --stdin ||
             true; } |
         while IFS= read -r -d '' entry; do
-            # -p copies a symlink's target, since a link into the checkout wouldn't be its own copy
+            # -p copies a symlink's target, since a link into the checkout wouldn't be its own copy;
+            # -R keeps a dir's links
             flags=-p
             case "$entry" in */) flags=-pR entry="${entry%/}" ;; esac
             # A tracked symlink, even a dangling one, could point cp outside the worktree
@@ -149,7 +151,6 @@ copy_worktree_include() {
                 echo "worktree-hook: skipped $entry: $link is a symlink in the worktree" >&2
                 continue
             fi
-            # -R keeps the symlinks in a dir
             if ! { mkdir -p "$(dirname "$1/$entry")" && cp "$flags" "$top/$entry" "$1/$entry"; }; then
                 echo "worktree-hook: couldn't copy $entry into the worktree" >&2
             fi

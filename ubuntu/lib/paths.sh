@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the scripts that source this file read them
-# The root hooks keep their own copy of NTFY_URL_FILE, since they run away from the repo.
+# The root hooks hard-code NTFY_URL_FILE too, since they run outside the repo.
 
 # No dot in the name: run-parts --lsbsysinit skips it
 SMARTD_HOOK=/etc/smartmontools/run.d/50dotfiles-notify

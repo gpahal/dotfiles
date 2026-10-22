@@ -1,4 +1,4 @@
-# Claude Code settings keys the claude-code step may write; * is a user-chosen key.
+# Claude Code settings keys the claude-code step may write; * stands for any model ID.
 # Claude Code ignores unknown keys silently, so check-claude-keys.sh fails on any not listed.
 # Checked against the schema in Claude Code 2.1.296 (2026-10-11). To recheck a key, 0 means gone:
 #   strings "$(readlink -f "$(command -v claude)")" | grep -cE '[{,]switchModelsOnFlag:(\(\)=>)?[A-Za-z_$]+\('

@@ -1,3 +1,4 @@
+# Markdown sections and local links for the docs and skills checks. Source it; don't run it.
 # shellcheck shell=bash
 
 # Code fence; every reader skips code blocks so a # line or link in one doesn't count.

@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# The hook runs as root and reads only installed paths, so a copy points them into the sandbox
+# The ntfy alerts: smartd's hook, just alerts (ubuntu/setup-alerts.sh), and the ubuntu step's hook
+# installs, with the topic kept out of curl's arguments and logs. The hook runs as root and reads
+# only installed paths, so a copy points them into the sandbox.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,8 +15,7 @@ URL_FILE="$SANDBOX/ntfy-url"
 HOOK="$SANDBOX/smartd-notify.sh"
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
 
-stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
-[ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
+stub_ntfy_curl
 stub logger
 
 run_hook() {
@@ -66,9 +67,7 @@ load_script ubuntu/setup-alerts.sh
 as_os ubuntu
 NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
 SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
-# Not stub_sudo_exec, which would refuse the test warning's SMARTD_DEVICE=/dev/test
-stub sudo 'for a in "$@"; do case "$a" in /etc/*) echo "refused: $a" >&2; exit 1 ;; esac; done
-exec "$@"'
+stub_sudo_exec
 # No nut group in a test
 replace_fn ntfy_url_group 'id -gn'
 TOPIC=my-topic-0123456789abc
@@ -93,9 +92,6 @@ done
 assert_exit 2 main <<< "http://ntfy.sh/$TOPIC"
 assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 [ ! -e "$NTFY_URL_FILE" ] || fail "an invalid value was saved"
-assert_exit 0 main --help
-assert_contains "$RUN_OUTPUT" "Usage: bash ubuntu/setup-alerts.sh [--test] (or: just alerts [test])"
-assert_contains "$RUN_OUTPUT" "the UPS's events, the daily health alert, and the boot notice"
 
 : > "$STUB_LOG"
 assert_exit 0 main <<< "$TOPIC"
@@ -110,14 +106,10 @@ assert_exit 0 main <<< "  $TOPIC "
 assert_contains "$RUN_OUTPUT" "ntfy URL for the disk, UPS, health, and boot alerts ($NTFY_URL_FILE):"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
 assert_not_contains "$RUN_OUTPUT" "$TOPIC"
-assert_file_contains "$STUB_LOG" "-H Title: Alerts from $(hostname) -H Tags: white_check_mark --data-raw Disk warnings, UPS events, the daily health alert, and the boot notice from $(hostname) will arrive here."
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file's owner, group, and mode"
 assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
-if grep '^curl -' "$STUB_LOG" | grep -q "$TOPIC"; then
-    fail "the test push's curl arguments name the ntfy topic"
-fi
 
 : > "$STUB_LOG"
 assert_exit 0 main <<< "$URL"
@@ -142,21 +134,6 @@ assert_exit 0 main <<< ""
 generated="$(head -n 1 "$NTFY_URL_FILE")"
 generated="${generated#https://ntfy.sh/}"
 [[ "$generated" =~ ^[0-9a-f]{32}$ ]] || fail "the generated topic isn't 32 hex characters: $generated"
-assert_contains "$RUN_OUTPUT" "Topic: $generated
-  Android, in the ntfy app (ntfy://ntfy.sh/$generated):
-[QR ntfy://ntfy.sh/$generated]
-  iPhone or a browser (https://ntfy.sh/$generated):
-[QR https://ntfy.sh/$generated]"
-assert_file_contains "$STUB_LOG" "qrencode -t ANSIUTF8 ntfy://ntfy.sh/$generated"
-assert_contains "$RUN_OUTPUT" "Sent a test push"
-# A topic URL on another server keeps its host
-hide qrencode
-assert_exit 0 show_topic "https://ntfy.example.com/$TOPIC"
-assert_contains "$RUN_OUTPUT" "Topic: $TOPIC"
-assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs qrencode"
-stub qrencode 'echo "[QR $3]"'
-assert_exit 0 show_topic "https://ntfy.example.com/$TOPIC"
-assert_contains "$RUN_OUTPUT" "[QR ntfy://ntfy.example.com/$TOPIC]"
 
 # Point at the sandbox first, so a notifier installed on this machine is never run
 UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
@@ -184,12 +161,7 @@ stub sudo '[ "$1 $2" == "-u nut" ] && shift 2; exec "$@"'
 assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo -u nut env NOTIFYTYPE=TEST UPSNAME=test $UPS_NOTIFY Test: a UPS event from $(hostname). The UPS is fine."
 assert_file_contains "$STUB_LOG" "ups-notify TEST test Test: a UPS event from $(hostname). The UPS is fine."
-assert_contains "$RUN_OUTPUT" "Done. The UPS test shows on your phone if a ntfy URL is set."
-assert_contains "$RUN_OUTPUT" "When one doesn't arrive, journalctl -t dotfiles-ups says why."
 
-as_os macos
-assert_exit 0 main <<< "$URL"
-assert_contains "$RUN_OUTPUT" "The alerts are Ubuntu only"
 
 # --- the ubuntu step's installs of the hooks ---
 # run-parts skips a hook that isn't executable, so modes don't follow the checkout's

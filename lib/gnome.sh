@@ -107,13 +107,37 @@ gnome_keybinding_is() {
         [ "$(gnome_keybinding_get "$1" binding)" == "$(_gsettings_string "$4")" ]
 }
 
+# An accelerator spelled one way, as GTK reads it: modifier aliases (<Ctrl> and <Primary> are
+# <Control>, <Mod1> is <Alt>) in any case and order, and a letter key in either case
+gnome_accelerator() {
+    local accel="$1" re='^<([^>]*)>(.*)$' mod mods=""
+    while [[ "$accel" =~ $re ]]; do
+        mod="$(tr '[:upper:]' '[:lower:]' <<< "${BASH_REMATCH[1]}")"
+        accel="${BASH_REMATCH[2]}"
+        case "$mod" in
+            ctrl | ctl | control | primary) mod=control ;;
+            mod1) mod=alt ;;
+            shft) mod="shift" ;;
+        esac
+        mods="$mods<$mod>"$'\n'
+    done
+    case "$accel" in
+        [A-Z]) accel="$(tr '[:upper:]' '[:lower:]' <<< "$accel")" ;;
+    esac
+    printf '%s%s\n' "$(printf '%s' "$mods" | sort -u | tr -d '\n')" "$accel"
+}
+
 # gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
-# same keys, which GNOME would run instead
+# same keys, however it's spelled, which GNOME would run instead
 gnome_keybinding_clash() {
-    local binding="$1" own="$2" path
+    local own="$2" want path binding
+    want="$(gnome_accelerator "$1")"
     while IFS= read -r path; do
         [ "$path" != "$own" ] || continue
-        if [ "$(gnome_keybinding_get "$path" binding)" == "'$binding'" ]; then
+        binding="$(gnome_keybinding_get "$path" binding)" || continue
+        binding="${binding#[\'\"]}"
+        binding="${binding%[\'\"]}"
+        if [ -n "$binding" ] && [ "$(gnome_accelerator "$binding")" == "$want" ]; then
             echo "$path"
             return 0
         fi

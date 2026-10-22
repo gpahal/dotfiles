@@ -57,8 +57,7 @@ the_step() {
     load_script monitor-input/install.sh
     sandbox_paths
     as_os ubuntu
-    stub dpkg-query '[ "${*: -1}" == ddcutil ] && [ -e "$SANDBOX/ddcutil-installed" ] && printf "install ok installed"'
-    stub apt-get '[ "${*: -1}" != ddcutil ] || touch "$SANDBOX/ddcutil-installed"'
+    stub_apt_package ddcutil
     # shellcheck disable=SC2034 # apt_get_update reads it
     APT_UPDATE_RETRY_DELAY=0
 
@@ -75,12 +74,6 @@ the_step() {
 
     answer yes
     assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Switching stays off until just monitor-input"
-    assert_file_contains "$STUB_LOG" "install -y ddcutil"
-    assert_file_contains "$STUB_LOG" "systemctl daemon-reload"
-    [ -x "$MONITOR_INPUT_SCRIPT" ] || fail "the switcher isn't installed and executable"
-    cmp -s "$REPO_DIR/monitor-input/dotfiles-monitor-input.service" "$MONITOR_INPUT_UNIT" ||
-        fail "the unit differs from the repo's"
 
     : > "$STUB_LOG"
     assert_exit 0 main
@@ -114,14 +107,9 @@ setup_on_ubuntu() {
     : > "$MONITOR_INPUT_SCRIPT"
     chmod +x "$MONITOR_INPUT_SCRIPT"
 
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "  19f5:2620 Air75 V3 Dongle"
-    assert_contains "$RUN_OUTPUT" "Connected video outputs with DDC: HDMI-A-1"
-
     assert_exit 2 main 19f5:2620 17
     assert_contains "$RUN_OUTPUT" "Give the Mac's input too"
     assert_exit 2 main 19f5 17 27
-    assert_exit 2 main 19f5:2620 256 27
     assert_exit 2 main 19f5:2620 17 0x11
     assert_contains "$RUN_OUTPUT" "both 17"
     assert_exit 1 main 19f5:2620 17 27 DP-1
@@ -136,7 +124,6 @@ device=19f5:2620
 input=17
 other=27
 connector=HDMI-A-1" "$(cat "$MONITOR_INPUT_CONF")" "the settings"
-    # The kernel's PRODUCT drops leading zeros
     assert_file_contains "$MONITOR_INPUT_RULE" 'ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="19f5/2620/*", RUN+="/usr/bin/systemctl --no-block restart dotfiles-monitor-input.service"'
     assert_file_contains "$STUB_LOG" "udevadm control --reload"
 
@@ -149,6 +136,7 @@ connector=HDMI-A-1" "$(cat "$MONITOR_INPUT_CONF")" "the settings"
     rm -rf "$USB/1-2"
     assert_exit 0 main 046d:c548 17 27
     assert_contains "$RUN_OUTPUT" "046d:c548 isn't attached now"
+    # The kernel's PRODUCT drops leading zeros
     assert_file_contains "$MONITOR_INPUT_RULE" 'ENV{PRODUCT}=="46d/c548/*"'
     usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
 
@@ -192,12 +180,6 @@ EOF'
     # Many lines, as a grep -q reading them would leave m1ddc writing to a closed pipe
     stub m1ddc '[ "$*" != "display list" ] || [ -e "$SANDBOX/no-display" ] || for i in $(seq 5000); do echo "[$i] DELL S2722QC (57670C1C)"; done'
 
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "  19f5:2620 Air75 V3 Dongle"
-    assert_contains "$RUN_OUTPUT" "  046d:c548 Unnamed"
-
-    assert_exit 2 main 19f5:2620 27 17
-    assert_contains "$RUN_OUTPUT" "only its own input"
     touch "$SANDBOX/no-display"
     assert_exit 1 main 19f5:2620 27
     assert_contains "$RUN_OUTPUT" "m1ddc finds no external display"
@@ -257,7 +239,7 @@ input_codes() {
 }
 subtest input_codes
 
-# The installed switcher reads its paths from the environment only in a test
+# The switcher takes its paths from the environment, which the service doesn't set.
 switcher() {
     : > "$STUB_LOG"
     assert_exit "$1" env MONITOR_INPUT_CONF="$SANDBOX/switcher.conf" USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" \

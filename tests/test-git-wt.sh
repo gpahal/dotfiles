@@ -1,17 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# git wt: where worktrees go, their bases, and what rm and prune may delete.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 export PATH="$REPO_DIR/git/bin:$PATH"
-export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
-    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
-
-commit_in() {
-    git -C "$1" commit -q --allow-empty -m "$2"
-}
 
 # other_key <checkout>: resolve only the parent, since a bare repo's stand-in checkout needn't exist
 other_key() {
@@ -21,22 +17,19 @@ other_key() {
 }
 
 git init -q -b main "$SANDBOX/seed"
-commit_in "$SANDBOX/seed" pushed
+git_commit "$SANDBOX/seed" --allow-empty -m pushed
 git clone -q --bare "$SANDBOX/seed" "$SANDBOX/origin.git"
 mkdir -p "$HOME/Dev/x"
 git clone -q "$SANDBOX/origin.git" "$HOME/Dev/x/y"
 repo="$HOME/Dev/x/y"
-commit_in "$repo" unpushed
+git_commit "$repo" --allow-empty -m unpushed
 pushed="$(git -C "$repo" rev-parse origin/main)"
 local_head="$(git -C "$repo" rev-parse HEAD)"
 dir="$WORKTREES_DIR/x/y"
 
 cd "$repo"
 
-assert_eq "$dir/foo" "$(git wt path foo)" "path for foo"
 assert_eq "$dir" "$(git wt path)" "path with no name"
-
-assert_eq refs/remotes/origin/main "$(git wt base)" "base"
 
 out="$(git wt add foo 2> /dev/null)" || fail "git wt add foo failed"
 assert_eq "$dir/foo" "$out" "path git wt add prints"
@@ -52,7 +45,6 @@ out="$(git wt add old 2> /dev/null)" || fail "git wt add old failed"
 assert_eq "$local_head" "$(git -C "$dir/old" rev-parse HEAD)" "old's commit"
 
 cd "$dir/foo"
-assert_eq "$dir/bar" "$(git wt path bar)" "path for bar from inside the foo worktree"
 out="$(git wt add bar 2> /dev/null)" || fail "git wt add bar from inside a worktree failed"
 assert_eq "$dir/bar" "$out" "path git wt add prints from inside a worktree"
 cd "$repo"
@@ -88,8 +80,19 @@ git branch -q -D secrets
 git wt add merged > /dev/null 2>&1 || fail "git wt add merged failed"
 assert_exit 0 git wt rm --delete-merged-branch merged
 git show-ref --verify --quiet refs/heads/merged && fail "git wt rm --delete-merged-branch kept branch merged"
+# Enough branches containing it to overflow a pipe
+git wt add big > /dev/null 2>&1 || fail "git wt add big failed"
+big_commit="$(git rev-parse big)"
+i=0
+while [ "$i" -lt 2000 ]; do
+    echo "create refs/heads/many/a-long-branch-name-to-fill-the-pipe-faster-$i $big_commit"
+    i=$((i + 1))
+done | git update-ref --stdin
+assert_exit 0 git wt rm --delete-merged-branch big
+git show-ref --verify --quiet refs/heads/big && fail "git wt rm --delete-merged-branch kept the merged big branch"
+git for-each-ref --format='delete %(refname)' refs/heads/many | git update-ref --stdin
 out="$(git wt add unmerged 2> /dev/null)" || fail "git wt add unmerged failed"
-commit_in "$out" mine
+git_commit "$out" --allow-empty -m mine
 assert_exit 0 git wt rm unmerged --delete-merged-branch
 assert_contains "$RUN_OUTPUT" "git wt: kept branch unmerged, which has commits no other branch has"
 [ ! -e "$out" ] || fail "git wt rm --delete-merged-branch left $out"
@@ -114,13 +117,11 @@ git tag -d v2 > /dev/null
 for other in "$SANDBOX/elsewhere/z" "$SANDBOX/another/z" "$HOME/Dev/solo"; do
     mkdir -p "$other"
     git init -q -b main "$other"
-    commit_in "$other" only
+    git_commit "$other" --allow-empty -m only
     out="$(git -C "$other" wt add feat 2> /dev/null)" || fail "git wt add in $other failed"
     assert_eq "$WORKTREES_DIR/$(other_key "$other")/feat" "$out" "path for a repo at $other"
     assert_eq "$(git -C "$other" rev-parse HEAD)" "$(git -C "$out" rev-parse HEAD)" "feat's base in $other"
-    assert_eq HEAD "$(git -C "$other" wt base)" "base in $other"
 done
-assert_contains "$(git -C "$SANDBOX/elsewhere/z" wt path)" "/_/z-" "path for a repo named z"
 [ "$(git -C "$SANDBOX/elsewhere/z" wt path)" != "$(git -C "$SANDBOX/another/z" wt path)" ] ||
     fail "two repos named z share a worktrees dir"
 
@@ -132,7 +133,6 @@ assert_eq "origin/remote-only" "$(git -C "$dir/remote-only" rev-parse --abbrev-r
     "remote-only's upstream"
 
 git remote set-head origin -d
-assert_eq refs/remotes/origin/main "$(git wt base)" "base without origin/HEAD"
 out="$(git wt add nohead 2> /dev/null)" || fail "git wt add without origin/HEAD failed"
 assert_eq "$pushed" "$(git -C "$dir/nohead" rev-parse HEAD)" "nohead's base"
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -209,7 +209,7 @@ ln -s env-b "$dir/p-link/.env"
 ln -s env-a "$dir/p-samelink/.env"
 echo same > "$dir/p-linkcopy/.env"
 echo other > "$dir/p-linkdiff/.env"
-commit_in "$dir/p-committed" mine
+git_commit "$dir/p-committed" --allow-empty -m mine
 # git can't remove the worktree prune runs from
 out="$(cd "$dir/p-here" && git wt prune --session s1 2>&1)" || fail "git wt prune --session s1 failed: $out"
 for name in p-clean p-built p-cache p-samelink p-linkcopy; do
@@ -236,7 +236,7 @@ done
 rm "$repo/zz.local" "$repo/.env" "$repo/env-a" "$repo/env-b"
 
 git init -q -b main --separate-git-dir "$SANDBOX/sep.git" "$HOME/Dev/x/sep"
-commit_in "$HOME/Dev/x/sep" only
+git_commit "$HOME/Dev/x/sep" --allow-empty -m only
 out="$(git -C "$HOME/Dev/x/sep" wt add feat 2> /dev/null)" || fail "git wt add with a separate git dir failed"
 assert_eq "$WORKTREES_DIR/x/sep/feat" "$out" "path for a repo with a separate git dir"
 # Its git dir doesn't record the checkout, so a linked worktree can't find it

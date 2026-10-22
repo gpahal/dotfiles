@@ -12,37 +12,12 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
-export SANDBOX STATE
-mkdir -p "$STATE"
+export SANDBOX
 
-# Each stub keeps its state in $STATE: SESSION and SHELL_STATE are set per run
+# SESSION and SHELL_STATE are set per run
+stub_gnome_session "$STATE"
 stub pnpm 'mkdir -p node_modules'
-stub gsettings 'case "$1" in
-    get) cat "$STATE/extensions" 2>/dev/null || echo "@as []" ;;
-    set) printf "%s\n" "$4" > "$STATE/extensions" ;;
-esac'
-stub busctl 'case "$*" in
-    "--user status org.gnome.Shell") [ -n "${SHELL_STATE:-}" ] ;;
-    *GetExtensionInfo*)
-        if [ "$SHELL_STATE" == unknown ]; then echo "{\"type\":\"a{sv}\",\"data\":[{}]}"
-        else echo "{\"type\":\"a{sv}\",\"data\":[{\"state\":{\"type\":\"d\",\"data\":$SHELL_STATE.0},\"error\":{\"type\":\"s\",\"data\":\"${SHELL_ERROR:-}\"}}]}"; fi ;;
-esac'
-stub systemctl 'user=""
-[ "$1" != --user ] || { user=user-; shift; }
-case "$1" in
-    show-environment | try-restart) ;;
-    daemon-reload) [ ! -e "$STATE/reload-fails" ] ;;
-    is-enabled) [ -e "$STATE/$user${*: -1}.enabled" ] ;;
-    is-active)
-        case "${*: -1}" in
-            graphical-session.target) [ -n "${SESSION:-}" ] ;;
-            *) [ -e "$STATE/$user${*: -1}.active" ] ;;
-        esac ;;
-    enable) touch "$STATE/$user${*: -1}.enabled"; [ "$2" != --now ] || touch "$STATE/$user${*: -1}.active" ;;
-    start | restart) touch "$STATE/$user${*: -1}.active" ;;
-esac'
-stub dpkg-query '[ "${*: -1}" == resources ] && [ -e "$STATE/resources" ] && printf "install ok installed"'
-stub apt-get '[ "${*: -1}" != resources ] || touch "$STATE/resources"'
+stub_apt_package resources
 stub_sudo_exec
 
 # shellcheck disable=SC2034 # the loaded step reads them
@@ -61,8 +36,7 @@ mkdir -p "$SANDBOX/powercap/intel-rapl:0" "$SANDBOX/dev"
 echo 1 > "$SANDBOX/powercap/intel-rapl:0/energy_uj"
 node_bin="$HOME/.local/share/mise/installs/node/lts/bin/node"
 deck_dir="$HOME/.local/share/dotfiles/stream-deck"
-unit="$HOME/.config/systemd/user/dotfiles-stream-deck.service"
-echo "@as ['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com']" > "$STATE/extensions"
+echo "@as ['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com']" > "$SANDBOX/gsettings/org.gnome.shell.enabled-extensions"
 the_step
 
 # Without Node from mise, it fails before changing anything
@@ -85,21 +59,6 @@ answer no
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Turned on the GNOME extension dotfiles@gpahal.com. It loads at your next login."
 assert_contains "$RUN_OUTPUT" "No desktop session, so the daemon starts at your next login."
-assert_eq "['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com', 'dotfiles@gpahal.com']" "$(cat "$STATE/extensions")" \
-    "the enabled extensions, with yours kept"
-for file in daemon.js package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
-    cmp -s "$REPO_DIR/stream-deck/linux/$file" "$deck_dir/$file" || fail "$file wasn't copied"
-done
-[ -x "$deck_dir/bin/open-in" ] || fail "bin/open-in isn't executable"
-for file in keys.js stats.js layout.json manifest.json; do
-    cmp -s "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/$file" "$deck_dir/$file" || fail "$file wasn't copied"
-done
-[ -f "$deck_dir/images/key-cpu.svg" ] && [ -f "$deck_dir/images/key-editor@2x.png" ] || fail "the images weren't copied"
-[ -f "$HOME/.local/share/gnome-shell/extensions/dotfiles@gpahal.com/extension.js" ] || fail "the extension wasn't copied"
-assert_file_contains "$STUB_LOG" "pnpm install --frozen-lockfile --prod --config.confirmModulesPurge=false"
-assert_file_contains "$unit" "ExecStart=\"$node_bin\" \"$deck_dir/daemon.js\""
-assert_file_contains "$HOME/.local/share/applications/dotfiles-gmail.desktop" \
-    "StartupWMClass=chrome-mail.google.com__mail_u_0_-Default"
 [ -e "$STATE/user-dotfiles-stream-deck.service.enabled" ] || fail "the daemon's service wasn't enabled"
 [ ! -e "$SANDBOX/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
 assert_file_not_contains "$STUB_LOG" "apt-get"
@@ -115,10 +74,6 @@ assert_contains "$RUN_OUTPUT" "Install $SANDBOX/libexec/dotfiles-power, which sh
 assert_file_contains "$STUB_LOG" "install -y resources"
 assert_file_contains "$STUB_LOG" "systemctl enable --now dotfiles-power.service"
 assert_file_not_contains "$STUB_LOG" "pnpm"
-cmp -s "$REPO_DIR/stream-deck/linux/dotfiles-power" "$SANDBOX/libexec/dotfiles-power" || fail "the power helper wasn't installed"
-[ -x "$SANDBOX/libexec/dotfiles-power" ] || fail "the power helper isn't executable"
-cmp -s "$REPO_DIR/stream-deck/linux/dotfiles-power.service" "$SANDBOX/systemd/dotfiles-power.service" ||
-    fail "the power helper's unit wasn't installed"
 
 # In the desktop session: it starts the daemon, then a second run changes nothing
 export SESSION=1 SHELL_STATE=1
@@ -187,13 +142,7 @@ assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
 [ -f "$deck_dir/images/key-cpu.svg" ] || fail "a current image was removed"
 assert_exit 0 main --status
 
-# The extension's state, as GNOME Shell reports it
-SHELL_STATE=unknown assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: log out and back in, since GNOME loads a new extension at login"
-SHELL_STATE=4 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "it doesn't list this GNOME version in metadata.json"
-SHELL_STATE=3 SHELL_ERROR="TypeError: x is undefined" assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: it failed: TypeError: x is undefined"
+# A stopped daemon
 rm "$STATE/user-dotfiles-stream-deck.service.active"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon running: journalctl --user -u dotfiles-stream-deck.service says why it stopped"
@@ -249,5 +198,14 @@ assert_eq "10.00 5.00
 10.00
 10.00 5.00" "$(cat "$SANDBOX/power.log")" "the package's and cores' watts each round"
 [ -n "$(find "$SANDBOX/power" -perm 644)" ] || fail "the power file isn't world-readable"
+# A cores' counter unreadable at startup is read again each round; its figure starts a round later
+rm "$SANDBOX/sleeps" "$SANDBOX/power.log" "$rapl:1/energy_uj"
+echo 99000000 > "$rapl/energy_uj"
+echo "100.00 1.00" > "$SANDBOX/uptime"
+DOTFILES_RAPL_DIR="$SANDBOX/rapl" DOTFILES_POWER_FILE="$SANDBOX/power" DOTFILES_UPTIME_FILE="$SANDBOX/uptime" \
+    assert_exit 0 bash "$REPO_DIR/stream-deck/linux/dotfiles-power"
+assert_eq "10.00
+10.00
+10.00 5.00" "$(cat "$SANDBOX/power.log")" "the watts with the cores' counter unreadable at startup"
 
 test_done

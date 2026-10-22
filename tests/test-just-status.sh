@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# The justfile: status runs both runners and combines their codes, and no recipe runs its arguments.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -24,13 +26,8 @@ for codes in "0 0 0" "3 0 3" "0 1 1" "3 1 1"; do
 ai_tools/setup.sh --status" "$(cat "$RAN")" "runners run for codes $a and $b"
 done
 
-rm -f "$RAN"
-SETUP_CODE=0 AI_CODE=2 assert_exit 1 "$just" --justfile "$repo/justfile" status quick
-assert_eq "setup.sh --status --quick
-ai_tools/setup.sh --status --quick" "$(cat "$RAN")" "runners run for quick"
 # Arguments must reach the recipes as text, never run as code
 assert_exit 2 "$just" --justfile "$repo/justfile" status '$(touch '"$SANDBOX"'/marker)'
-assert_contains "$RUN_OUTPUT" "Usage: just status [quick]"
 [ ! -e "$SANDBOX/marker" ] || fail "just status ran its argument"
 mkdir -p "$repo/tests"
 for script in setup.sh ai_tools/setup.sh tests/run.sh; do

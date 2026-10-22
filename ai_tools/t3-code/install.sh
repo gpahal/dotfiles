@@ -79,32 +79,72 @@ install_t3_code_desktop() {
     return "$status"
 }
 
-t3_code_desktop_items() {
-    items_reset
-    item --sudo "T3 Code desktop app" "Install the T3 Code desktop app from its latest GitHub release" \
-        t3_code_desktop_installed install_t3_code_desktop
+t3_code_have_libatomic() {
+    apt_installed libatomic1
 }
 
-# The settings go first, so the app's first launch doesn't try to start a server
+install_t3_code_libatomic() {
+    # shellcheck disable=SC2119 # needs no options
+    apt_get_update || return 1
+    apt_get install -y libatomic1
+}
+
+# Ubuntu's sudo changes: the desktop app on a GNOME desktop, and libatomic1 while the t3 CLI is missing
+t3_code_ubuntu_items() {
+    items_reset
+    if has_gnome_desktop; then
+        item --sudo "T3 Code desktop app" "Install the T3 Code desktop app from its latest GitHub release" \
+            t3_code_desktop_installed install_t3_code_desktop
+    fi
+    if [ ! -x "$HOME/.local/bin/t3" ]; then
+        item --sudo "libatomic1, which the t3 CLI needs" "Install libatomic1, which the t3 CLI needs" \
+            t3_code_have_libatomic install_t3_code_libatomic
+    fi
+}
+
+# The first call asks once for the pending sudo changes of the items its check functions name, or of
+# all of them; later calls in the same apply get that answer, so one apply asks at most once
+T3_CODE_SUDO_ANSWER=""
+t3_code_confirm_sudo() {
+    local pending=()
+    if [ -z "$T3_CODE_SUDO_ANSWER" ]; then
+        t3_code_ubuntu_items
+        items_pending "$@"
+        if confirm_sudo_changes "${pending[@]}"; then
+            T3_CODE_SUDO_ANSWER=yes
+        else
+            T3_CODE_SUDO_ANSWER=no
+        fi
+    fi
+    [ "$T3_CODE_SUDO_ANSWER" == yes ]
+}
+
+# The settings go first, so the app's first launch doesn't try to start a server; without them it
+# isn't installed
 setup_t3_code_desktop_ubuntu() {
     echo "Setting up the T3 Code desktop app..."
-    local result=0 pending=()
+    local result=0 merged=true
     if ! has_gnome_desktop; then
         echo "  No GNOME desktop, so no desktop app; the service runs the server."
         return 0
     fi
     t3_code_files copy_file || result=1
-    merge_app_json t3code \
+    if ! merge_app_json t3code \
         "The desktop app's own server is already off, and its app settings are set" \
         "Turned off the desktop app's own server, so it connects to the service, and set its app settings" \
         "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER" \
-        "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER" || result=1
-    t3_code_desktop_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ]; then
+        "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"; then
+        result=1
+        merged=false
+    fi
+    t3_code_ubuntu_items
+    if items_ok t3_code_desktop_installed; then
         echo "  The T3 Code desktop app is already installed; it updates itself."
-    elif confirm_sudo_changes "${pending[@]}"; then
-        items_apply || result=1
+    elif ! "$merged"; then
+        echo "  Not installing the T3 Code desktop app without its settings, as its own server would" >&2
+        echo "  share the service's data." >&2
+    elif t3_code_confirm_sudo; then
+        items_apply t3_code_desktop_installed || result=1
     fi
     return "$result"
 }
@@ -440,7 +480,6 @@ t3_code_launcher_has_server() {
     pgrep -P "$1" > /dev/null 2>&1
 }
 
-# Prints the service's main PID; fails when it has none
 t3_code_main_pid() {
     local pid
     pid="$(systemctl --user show -p MainPID --value t3code.service 2>/dev/null)" || return 1
@@ -449,7 +488,8 @@ t3_code_main_pid() {
 }
 
 # Active with no server: in 0.1.1 a server that finds ~/.t3/userdata locked exits, and the
-# launcher idles until restarted. Checks 3 times since a swap (update) briefly has none too.
+# launcher idles until restarted. Checks 3 times a second apart (once under --quick), since a swap
+# (update) briefly has none too.
 t3_code_service_serving_nothing() {
     local pid check
     for check in 1 2 3; do
@@ -526,11 +566,9 @@ install_t3_cli() {
         echo "  t3 already installed."
         return 0
     fi
-    if ! apt_installed libatomic1; then
-        confirm_sudo_changes "Install libatomic1, which the t3 CLI needs" || return 2
-        # shellcheck disable=SC2119 # needs no options
-        apt_get_update || return 1
-        apt_get install -y libatomic1 || return 1
+    if ! t3_code_have_libatomic; then
+        t3_code_confirm_sudo t3_code_have_libatomic || return 2
+        install_t3_code_libatomic || return 1
     fi
     echo "  Installing the t3 CLI to ~/.local/bin..."
     run_installer sh https://t3.codes/install.sh "the t3 installer" || return 1
@@ -887,8 +925,8 @@ status() {
     if ! has_gnome_desktop; then
         status_item skipped "T3 Code desktop app: no GNOME desktop"
     else
-        t3_code_desktop_items
-        items_status
+        t3_code_ubuntu_items
+        items_status t3_code_desktop_installed
         t3_code_files status_file
         if "$jq"; then
             status_check "Desktop app's own server off in ~/.t3/userdata/desktop-settings.json" \
@@ -942,7 +980,8 @@ apply() {
     require_cmd jq || return 1
     if is_macos; then
         require_cmd brew || return 1
-    elif [ ! -x "$HOME/.local/bin/t3" ]; then
+    elif [ ! -x "$HOME/.local/bin/t3" ] || { has_gnome_desktop && ! t3_code_desktop_installed; }; then
+        # The t3 installer and the desktop app's .deb are downloads
         require_cmd curl || return 1
     fi
     if is_macos; then
@@ -957,6 +996,7 @@ apply() {
         return "$cask_failed"
     else
         local desktop_failed=0
+        T3_CODE_SUDO_ANSWER=""
         setup_t3_code_desktop_ubuntu || desktop_failed=1
         configure_t3_code_ubuntu || return 1
         return "$desktop_failed"

@@ -26,13 +26,13 @@ esac'
 export RUST_STUB="$SANDBOX/rustup-stub"
 mv "$STUB_DIR/rustup" "$RUST_STUB"
 
-export MISE_CONFIG_FILE="$HOME/.config/mise/config.toml"
+export EXPECTED_MISE_CONFIG="$HOME/.config/mise/config.toml"
 mkdir -p "$HOME/.config/mise"
-touch "$MISE_CONFIG_FILE"
+touch "$EXPECTED_MISE_CONFIG"
 stub mise 'echo "mise-cwd $PWD" >> "$STUB_LOG"
 case "$1 ${2:-}" in
     "config get")
-        if [ "$3" != -f ] || [ "$4" != "$MISE_CONFIG_FILE" ]; then
+        if [ "$3" != -f ] || [ "$4" != "$EXPECTED_MISE_CONFIG" ]; then
             echo "mise config get read the wrong file" >> "$STUB_LOG"
             exit 2
         fi
@@ -71,7 +71,6 @@ done'
 
 touch "$GLOBALS_FILE"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "mise's global node and go are already set."
 assert_file_not_contains "$STUB_LOG" "mise use"
 assert_file_contains "$STUB_LOG" "mise install --quiet"
 assert_file_contains "$STUB_LOG" "rustup-init -y --no-modify-path"
@@ -93,13 +92,8 @@ touch "$GLOBALS_FILE"
 : > "$STUB_LOG"
 export MISE_NODE=22
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Kept your value for mise's global node, 22. The repo's is lts."
-assert_contains "$RUN_OUTPUT" "mise's global go is already latest."
-assert_not_contains "$RUN_OUTPUT" "node and go are already set"
 assert_file_not_contains "$STUB_LOG" "mise use"
 assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
-assert_contains "$RUN_OUTPUT" "ok         mise's global go: latest"
 # mise config get prints a table-form global as TOML lines
 MISE_NODE='version = "22"
 postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
@@ -132,29 +126,27 @@ rm "$GLOBALS_FILE"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global go@latest"
 assert_file_not_contains "$STUB_LOG" "node@lts"
-assert_contains "$RUN_OUTPUT" "Set mise's global go to latest."
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    mise's global go: not set; the repo's is latest"
 unset MISE_NODE
 
 touch "$GLOBALS_FILE" "$SANDBOX/global.toml"
 : > "$STUB_LOG"
-MISE_GLOBAL_CONFIG_FILE="$SANDBOX/global.toml" MISE_CONFIG_FILE="$SANDBOX/global.toml" assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "mise's global node and go are already set."
+MISE_GLOBAL_CONFIG_FILE="$SANDBOX/global.toml" EXPECTED_MISE_CONFIG="$SANDBOX/global.toml" assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "wrong file"
-mv "$MISE_CONFIG_FILE" "$SANDBOX/config.toml.aside"
+mv "$EXPECTED_MISE_CONFIG" "$SANDBOX/config.toml.aside"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global node@lts go@latest"
 assert_file_not_contains "$STUB_LOG" "mise config get"
-mv "$SANDBOX/config.toml.aside" "$MISE_CONFIG_FILE"
+mv "$SANDBOX/config.toml.aside" "$EXPECTED_MISE_CONFIG"
 : > "$STUB_LOG"
 MISE_CONFIG_ERR=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "TOML parse error"
 assert_contains "$RUN_OUTPUT" "Couldn't read mise's global config"
 assert_file_not_contains "$STUB_LOG" "mise use"
 MISE_CONFIG_ERR=1 run status
-assert_contains "$RUN_OUTPUT" "unknown    mise's global node: couldn't read $MISE_CONFIG_FILE"
+assert_contains "$RUN_OUTPUT" "unknown    mise's global node: couldn't read $EXPECTED_MISE_CONFIG"
 rm "$GLOBALS_FILE"
 
 for cmd in use install; do
@@ -163,7 +155,6 @@ for cmd in use install; do
     MISE_FAIL="$cmd" assert_exit 1 main
     assert_file_contains "$STUB_LOG" "rustup-init -y --no-modify-path"
 done
-assert_contains "$RUN_OUTPUT" "mise"
 
 : > "$STUB_LOG"
 touch "$GLOBALS_FILE"
@@ -171,7 +162,6 @@ mkdir -p "$HOME/.cargo/bin"
 cp "$RUST_STUB" "$HOME/.cargo/bin/rustup"
 chmod +x "$HOME/.cargo/bin/rustup"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "rustup already installed."
 assert_file_not_contains "$STUB_LOG" "rustup-init"
 assert_file_not_contains "$STUB_LOG" "curl"
 

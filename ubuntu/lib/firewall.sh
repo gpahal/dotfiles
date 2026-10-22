@@ -10,8 +10,7 @@ ufw_enabled() {
         systemctl is-active -q ufw.service 2>/dev/null
 }
 
-# status_ufw runs sudo ufw status and sshd -T once each, through these: a cache_* function stores
-# the output and exit status in variables the caller declares local, and the reader then uses them.
+# Caches sudo ufw status and sshd -T for a status_ufw run, in variables the caller declares local.
 cache_ufw_status() {
     local out status=0
     out="$(sudo "$@" ufw status 2>/dev/null)" || status=$?

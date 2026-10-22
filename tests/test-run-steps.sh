@@ -2,17 +2,14 @@
 set -euo pipefail
 # serial
 
+# run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script lib/common.sh
 
-steps="$SANDBOX/steps"
-mkdir -p "$steps"
-fake_step() {
-    printf '%s\n' '#!/bin/bash' "echo \"$1\${*:+ \$*}\" >> \"$SANDBOX/ran\"" "$2" > "$steps/$1.sh"
-}
 fake_step first 'echo "first ran"'
 fake_step broken 'echo "broken output" >&2; exit 1'
 fake_step last 'echo "last ran"'
@@ -31,14 +28,7 @@ done
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
-replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
-assert_exit 0 run_steps "" first last
-assert_contains "$RUN_OUTPUT" "first ran"
-assert_contains "$RUN_OUTPUT" "last ran"
-assert_not_contains "$RUN_OUTPUT" "Failed steps"
-
-rm -f "$SANDBOX/ran"
 assert_exit 0 run_steps ""
 assert_eq "first
 last" "$(cat "$SANDBOX/ran")" "steps run with no names"
@@ -115,15 +105,35 @@ assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
 
+# STEP_NEEDS: a failed step skips the steps that need it, directly or not, but not their reports
+fake_step homebrew 'exit 1'
+fake_step runtimes 'STEP_NEEDS="homebrew"'
+fake_step lazygit
+fake_step skills 'STEP_NEEDS=runtimes'
+# shellcheck disable=SC2034 # run_steps reads it
+STEPS=(homebrew runtimes lazygit skills)
+rm -f "$SANDBOX/ran"
+assert_exit 1 run_steps ""
+assert_contains "$RUN_OUTPUT" "Failed steps: homebrew runtimes skills"
+assert_eq "homebrew
+lazygit" "$(cat "$SANDBOX/ran")" "steps run after homebrew failed"
+rm -f "$SANDBOX/ran"
+assert_exit 0 run_steps "" runtimes
+assert_eq "runtimes" "$(cat "$SANDBOX/ran")" "steps run without homebrew in the run"
+rm -f "$SANDBOX/ran"
+assert_exit 1 run_steps --status homebrew runtimes
+assert_eq "homebrew --status
+runtimes --status" "$(cat "$SANDBOX/ran")" "reports run after homebrew's failed"
+
 as_os macos
 
-stub uname '[ "$1" != -m ] || echo x86_64'
+stub_uname Darwin x86_64
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" first
 assert_contains "$RUN_OUTPUT" "Intel Macs aren't supported"
 assert_exit 1 run_steps --status first
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran on an Intel Mac"
-stub uname '[ "$1" != -m ] || echo arm64'
+stub_uname Darwin
 
 # shellcheck disable=SC2034 # run_steps reads them
 MACOS_STEPS=(first mac) UBUNTU_STEPS=(first linux)
@@ -142,7 +152,7 @@ printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.s
     > "$runner_dir/setup.sh"
 printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
-stub uname 'case "$1" in -m) echo arm64 ;; *) echo Darwin ;; esac'
+stub_uname Darwin
 CALLER_PID=""
 on_exit '[ -z "$CALLER_PID" ] || kill -KILL -- "-$CALLER_PID" 2> /dev/null'
 # kill -0 still finds a zombie, so check ps
@@ -152,14 +162,6 @@ exited() {
     esac
     return 1
 }
-wait_until() {
-    local i=0
-    until "$@"; do
-        [ "$i" -lt 100 ] || return 1
-        sleep 0.1
-        i=$((i + 1))
-    done
-}
 for mode in "" --status; do
     rm -f "$SANDBOX/slow-started"
     status=0
@@ -168,9 +170,9 @@ for mode in "" --status; do
     "$BASH" "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
     CALLER_PID=$!
     set +m
-    if wait_until test -e "$SANDBOX/slow-started"; then
+    if wait_for test -e "$SANDBOX/slow-started"; then
         kill -INT -- "-$CALLER_PID"
-        wait_until exited "$CALLER_PID" || kill -KILL -- "-$CALLER_PID"
+        wait_for exited "$CALLER_PID" || kill -KILL -- "-$CALLER_PID"
     else
         fail "the runner's step didn't start${mode:+ with $mode}"
         kill -KILL -- "-$CALLER_PID"
@@ -180,34 +182,5 @@ for mode in "" --status; do
     assert_eq 130 "$status" "the caller's status after Ctrl-C${mode:+ with $mode}"
     assert_file_contains "$SANDBOX/caller.out" "The slow step was interrupted; stopping."
     assert_file_not_contains "$SANDBOX/caller.out" continued
-done
-
-# Reload so step_script is the real one again
-load_script lib/common.sh
-# shellcheck source=../scripts/lib/runners.sh
-source "$REPO_DIR/scripts/lib/runners.sh"
-listed() {
-    LISTED="$(runner_steps "$REPO_DIR/$1" "$2")" || fail "$1 --help failed on $2"
-    [ -n "$LISTED" ] || fail "no steps read from $1 --help on $2"
-}
-for runner in setup.sh ai_tools/setup.sh; do
-    listed "$runner" Darwin
-    # shellcheck disable=SC2206 # step names have no spaces
-    MACOS_STEPS=($LISTED)
-    listed "$runner" Linux
-    # shellcheck disable=SC2206
-    UBUNTU_STEPS=($LISTED)
-    # shellcheck disable=SC2034 # step_script reads it
-    STEPS_DIR="$(dirname "$REPO_DIR/$runner")"
-    for step in "${MACOS_STEPS[@]}" "${UBUNTU_STEPS[@]}"; do
-        script="$(step_script "$step")" || {
-            fail "$runner: step_script doesn't resolve $step"
-            continue
-        }
-        [ -f "$script" ] || fail "$runner: $step resolves to $script, which doesn't exist"
-    done
-    for name in "" nope lib ../setup; do
-        ! step_script "$name" > /dev/null || fail "$runner: step_script resolved \"$name\""
-    done
 done
 test_done

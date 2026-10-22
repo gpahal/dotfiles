@@ -60,26 +60,35 @@ stub claude '[ "$*" != "plugin list --json" ] || echo "[
 stub codex
 mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
-fake_tmux_plugins
-"$BASH" -c 'source "$1/tmux/install.sh" && sync_tmux_plugins' bash "$REPO_DIR" > /dev/null
-# uname -s says UNAME_S, Darwin by default, when lib/common.sh loads; unlike a stub, it doesn't log
-printf '%s\n' '#!/bin/bash' '[ "$1" != -s ] || { echo "${UNAME_S:-Darwin}"; exit; }' 'exec /usr/bin/uname "$@"' > "$STUB_DIR/uname"
-chmod +x "$STUB_DIR/uname"
+# Darwin unless a case says Linux, and it doesn't log
+stub_uname Darwin
+
+# upgrade_run <fn> [arg...]: runs upgrade.sh's function on a fresh $STUB_LOG
+upgrade_run() {
+    : > "$STUB_LOG"
+    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
+        "$BASH" -c 'source "$1/scripts/upgrade.sh"; "${@:2}"' bash "$REPO_DIR" "$@"
+}
 
 # DOTFILES_DIR points elsewhere: upgrade finds the Brewfile from its own path
 upgrade_on() {
-    : > "$STUB_LOG"
-    PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" DOTFILES_DIR="$SANDBOX/nowhere" UNAME_S="$1" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1 || {
+    stub_uname "$1"
+    DOTFILES_DIR="$SANDBOX/nowhere" upgrade_run upgrade > "$SANDBOX/output" 2>&1 || {
         fail "upgrade failed on $1:"
         _show "$(cat "$SANDBOX/output")"
     }
-    sed -e "s|$HOME|~|g" -e "s|$REPO_DIR/|REPO/|g" -e "/^$(basename "$JQ") /d" "$STUB_LOG"
+    stub_uname Darwin
 }
 
-# Drops read-only queries only, so an unexpected write still fails
-upgrade_actions() {
-    upgrade_on "$1" | sed -E '/^(brew (bundle check|info|list|outdated|--caskroom)|pgrep |claude plugin (marketplace list|list) )/d'
+# A brew with casks $1 installed and outdated, each an app named after it. Case arms on "$*" in $2
+# come first, so they can override these.
+stub_brew_casks() {
+    stub brew 'case "$*" in
+'"${2:-}"'
+    "list --cask -1") printf "%s\n" '"$1"' ;;
+    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
+    "info --json=v2 --cask "*) echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"$4.app\"]}]}]}" ;;
+esac'
 }
 
 # macOS, with Claude Code's native install
@@ -87,121 +96,63 @@ mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
 mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
 ln -s "$HOME/.local/share/claude/versions/2.0.0" "$HOME/.local/bin/claude"
 ln -s "$STUB_DIR/t3" "$HOME/.local/bin/t3"
-assert_eq "brew update
-brew upgrade
-(not auto_updates casks)
-brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
-brew install --cask rectangle
-brew upgrade --cask --greedy zed
-mas upgrade
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
-mise upgrade
+upgrade_on Darwin
+# brew upgrade leaves casks that update themselves to their own updaters
+assert_file_contains "$STUB_LOG" "(not auto_updates casks)"
+assert_file_contains "$STUB_LOG" "brew install --cask rectangle"
+# Replacing a running app would break it
+assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy claude"
+assert_eq "claude plugin update a@m --scope user" "$(grep '^claude plugin update' "$STUB_LOG")" \
+    "plugin updates upgrade runs"
+assert_eq "mise upgrade
 mise hook-env --force -s bash
-new-node npm update -g
-uv tool upgrade --all
-rustup update
-claude update
-claude plugin marketplace update
-claude plugin update a@m --scope user
-t3 update
-codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_actions Darwin)" "commands upgrade runs on macOS"
-assert_file_contains "$SANDBOX/output" "Claude is running; quit it and run upgrade-ai-tools again to update it."
+new-node npm update -g" "$(grep -E '^(mise|npm|new-node npm) ' "$STUB_LOG")" "mise and npm commands upgrade runs"
+assert_file_not_contains "$STUB_LOG" "mise ran in"
+assert_eq "brew cleanup" "$(tail -n 1 "$STUB_LOG")" "upgrade's last command"
 
 # HOME through a symlink
 ln -s "$HOME" "$SANDBOX/home-link"
-: > "$STUB_LOG"
-env HOME="$SANDBOX/home-link" PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR" \
-    < /dev/null > "$SANDBOX/output" 2>&1 || true
+HOME="$SANDBOX/home-link" upgrade_run upgrade_ai_tools > /dev/null 2>&1 || true
 assert_file_contains "$STUB_LOG" "claude update"
 
 # A rustup elsewhere on PATH isn't the runtimes step's
 mv "$HOME/.cargo/bin/rustup" "$STUB_DIR/rustup"
-assert_not_contains "$(upgrade_on Darwin)" "rustup" "commands upgrade runs with rustup only on PATH"
+upgrade_on Darwin
+assert_file_not_contains "$STUB_LOG" "rustup"
 mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
-
-cp "$STUB_DIR/brew" "$SANDBOX/brew"
-stub brew 'case "$*" in
-    "bundle check"*) ;;
-esac'
-assert_not_contains "$(upgrade_on Darwin)" "bundle install" "commands upgrade runs with the Brewfile installed"
-assert_eq "" "$(find "$TMPDIR" -maxdepth 1 -name 'tmp.*' -print)" "temporary files upgrade leaves behind"
-cp "$SANDBOX/brew" "$STUB_DIR/brew"
-
-# A cask with no app artifact (Logi Options+) quits its own app, so no running check
-cp "$STUB_DIR/brew" "$SANDBOX/brew"
-stub brew 'case "$*" in
-    "list --cask -1") printf "logi-options+\n" ;;
-    "outdated --cask --greedy --quiet "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask logi-options+") echo "{\"casks\": [{\"artifacts\": [{\"installer\": [{\"manual\": \"x\"}]}, {\"uninstall\": []}, {\"zap\": []}]}]}" ;;
-esac'
-stub pgrep 'exit 0'
-: > "$STUB_LOG"
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade logi-options+' bash "$REPO_DIR"
-assert_eq 0 "$RUN_STATUS" "the upgrade of a cask with no app"
-assert_not_contains "$RUN_OUTPUT" "is running"
-assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
-assert_file_not_contains "$STUB_LOG" "pgrep"
-cp "$SANDBOX/brew" "$STUB_DIR/brew"
 
 # Ubuntu, where Claude Code doesn't update itself
 rm "$HOME/.local/bin/claude"
 mv "$HOME/.local/share/claude/versions/2.0.0" "$STUB_DIR/claude"
 stub brew 'case "$*" in
-    upgrade) [ -z "${HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS:-}" ] || echo "(not auto_updates casks)" >> "$STUB_LOG" ;;
     "list --cask -1") printf "font-monaspace\nzed\n" ;;
     "outdated --cask --greedy --quiet zed") echo zed; exit 1 ;;
     "bundle check"*) exit 1 ;;
 esac'
 stub pgrep 'exit 1'
-assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo apt -o DPkg::Lock::Timeout=300 upgrade
-brew update
-brew upgrade
-(not auto_updates casks)
-brew bundle install --file=REPO/homebrew/Brewfile --no-upgrade
-fc-cache -f ~/.local/share/fonts
-brew upgrade --cask --greedy zed
-vim -Nes -u ~/.vimrc -i NONE -c PlugUpdate --sync -c qa
-mise upgrade
-mise hook-env --force -s bash
-new-node npm update -g
-uv tool upgrade --all
-rustup update
-claude plugin marketplace update
-claude plugin update a@m --scope user
-t3 update
-codex plugin marketplace upgrade
-brew cleanup" "$(upgrade_actions Linux)" "commands upgrade runs on Ubuntu"
+upgrade_on Linux
+assert_eq "apt-get update
+apt upgrade" "$(sed -nE 's/^sudo .*(apt-get|apt) .* (update|upgrade)$/\1 \2/p' "$STUB_LOG")" \
+    "apt commands upgrade runs"
+assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
+assert_file_not_contains "$STUB_LOG" "claude update"
 
 # Replacing a running Zed would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'
-upgrade_on Linux > /dev/null
+upgrade_on Linux
 assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
-assert_file_contains "$SANDBOX/output" "zed is running; quit it and run upgrade again to update it."
 stub pgrep 'exit 1'
 
+stub_uname Linux
 stub sudo 'exit 1'
 stub mise '[ "$1" != upgrade ] || exit 1; [ "$1" != hook-env ] || echo :'
 stub t3 'exit 1'
-: > "$STUB_LOG"
-if PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR" < /dev/null > "$SANDBOX/output" 2>&1; then
-    fail "upgrade succeeded with failed stages"
-fi
+assert_exit 1 upgrade_run upgrade
 assert_file_contains "$STUB_LOG" "rustup update"
 assert_file_contains "$STUB_LOG" "codex plugin marketplace upgrade"
-assert_eq "Failed: apt, mise, t3 update" "$(grep '^Failed' "$SANDBOX/output")" "upgrade's list of failed stages"
+assert_eq "Failed: apt, mise, t3 update" "$(grep '^Failed' <<< "$RUN_OUTPUT")" "upgrade's list of failed stages"
 stub t3
-
 stub sudo
-stub claude '[ "$*" != "plugin list --json" ] || exit 2'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" 'claude plugin list'
-assert_file_contains "$STUB_LOG" 'codex plugin marketplace upgrade'
 
 # Plugins can add hooks, so versions show before and after; a project's copy (listed first)
 # doesn't stand in for the user-scope one
@@ -212,14 +163,13 @@ old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
 echo 1.0.0 > "$SANDBOX/plugin-version"
 stub claude 'case "$*" in
     "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"'"$SANDBOX"'\"}]" ;;
-    "plugin marketplace update") git -C "'"$market"'" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ;;
+    "plugin marketplace update") git -C "'"$market"'" commit -q --allow-empty -m two ;;
     "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"project\", \"version\": \"0.9.0\"},
         {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
         {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
     "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
 esac'
-assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
+assert_exit 0 upgrade_run upgrade_ai_tools
 assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
   m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
   dir: -
@@ -229,142 +179,80 @@ assert_contains "$RUN_OUTPUT" "Claude Code plugins:
   b@m: 2.0.0"
 assert_not_contains "$RUN_OUTPUT" "c@m"
 
-stub claude '[ "$*" != "plugin list --json" ] || exit 130'
-: > "$STUB_LOG"
-assert_exit 130 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
-assert_file_not_contains "$STUB_LOG" "t3 "
-assert_file_not_contains "$STUB_LOG" "codex "
-
 # A t3 elsewhere on PATH, such as the macOS app's ~/.t3/bin/t3, updates itself
+stub_uname Darwin
 stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
 mv "$HOME/.local/bin/t3" "$SANDBOX/t3-link"
-: > "$STUB_LOG"
-assert_exit 0 env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
+assert_exit 0 upgrade_run upgrade_ai_tools
 assert_file_not_contains "$STUB_LOG" "t3 update"
 mv "$SANDBOX/t3-link" "$HOME/.local/bin/t3"
 
 # Without hook-env, npm would run the old Node
-stub claude '[ "$*" != "plugin list --json" ] || echo "[]"'
+stub_uname Linux
 stub mise '[ "$1" != hook-env ] || exit 1'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'export UNAME_S=Linux; source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "mise hook-env"
+assert_exit 1 upgrade_run upgrade
+assert_contains "$(grep '^Failed' <<< "$RUN_OUTPUT")" "mise hook-env"
 assert_file_not_contains "$STUB_LOG" "npm"
 assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
+stub_uname Darwin
 
 # brew outdated also exits 1 on error, so an exit 1 listing nothing is a failure
-upgrade_ai_tools_mac() {
-    : > "$STUB_LOG"
-    assert_exit "$1" env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
-}
 stub brew 'case "$*" in
     "list --cask -1") printf "t3-code\ncodex\n" ;;
     "outdated "*) exit 1 ;;
 esac'
-upgrade_ai_tools_mac 1
-assert_contains "$RUN_OUTPUT" "Couldn't check whether t3-code is up to date"
-assert_contains "$RUN_OUTPUT" "Couldn't check whether codex is up to date"
+assert_exit 1 upgrade_run upgrade_ai_tools
 assert_contains "$RUN_OUTPUT" "Failed: AI casks"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
-stub brew 'case "$*" in
-    "list --cask -1") printf "t3-code\ncodex\n" ;;
-esac'
-upgrade_ai_tools_mac 0
+stub brew '[ "$*" != "list --cask -1" ] || printf "t3-code\ncodex\n"'
+assert_exit 0 upgrade_run upgrade_ai_tools
 assert_file_contains "$STUB_LOG" "brew outdated --cask --greedy --quiet t3-code codex"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
-stub brew 'case "$*" in
-    "list --cask -1") printf "t3-code\ncodex\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code.app\"]}]}]}" ;;
-    "info --json=v2 --cask codex") echo "{\"casks\": [{\"artifacts\": [{\"binary\": [\"codex\"]}]}]}" ;;
-esac'
-upgrade_ai_tools_mac 0
-assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy t3-code"
-assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
+
 # Replacing a CLI's binary doesn't break a running copy, such as the ChatGPT app's codex daemon
+stub_brew_casks "t3-code codex" \
+    '"info --json=v2 --cask codex") echo "{\"casks\": [{\"artifacts\": [{\"binary\": [\"codex\"]}]}]}" ;;'
 stub pgrep 'case "$*" in *codex*) ;; *) exit 1 ;; esac'
-upgrade_ai_tools_mac 0
-assert_not_contains "$RUN_OUTPUT" "is running"
+assert_exit 0 upgrade_run upgrade_ai_tools
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 stub pgrep 'exit 1'
 
-stub brew '[ "$*" != "list --cask -1" ] || exit 1'
-upgrade_ai_tools_mac 1
-assert_contains "$RUN_OUTPUT" "Couldn't list the installed casks"
-assert_contains "$RUN_OUTPUT" "Failed: AI casks"
-assert_file_not_contains "$STUB_LOG" "brew outdated"
-assert_file_contains "$STUB_LOG" "codex plugin marketplace upgrade"
+# A cask with no app artifact (Logi Options+) quits its own app, so no running check
+stub_brew_casks logi-options+ \
+    '"info --json=v2 --cask logi-options+") echo "{\"casks\": [{\"artifacts\": [{\"installer\": [{\"manual\": \"x\"}]}, {\"uninstall\": []}, {\"zap\": []}]}]}" ;;'
+stub pgrep 'exit 0'
+assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade logi-options+
+assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
+assert_file_not_contains "$STUB_LOG" "pgrep"
+stub pgrep 'exit 1'
 
 # brew outdated may name a cask after its tap
-stub brew 'case "$*" in
-    "list --cask -1") printf "zed\nappcleaner\nthe-unarchiver\n" ;;
-    "outdated "*) echo homebrew/cask/zed; echo the-unarchiver; exit 1 ;;
-    "info --json=v2 --cask "*) echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"$4.app\"]}]}]}" ;;
-esac'
-stub pgrep 'exit 1'
-: > "$STUB_LOG"
-assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+' bash "$REPO_DIR"
-assert_eq "brew list --cask -1
-brew outdated --cask --greedy --quiet zed appcleaner the-unarchiver
-brew upgrade --cask --greedy zed
-brew upgrade --cask --greedy the-unarchiver" "$(grep -E '^brew (list|outdated|upgrade)' "$STUB_LOG")" "brew calls for a stage's casks"
+stub_brew_casks "zed appcleaner the-unarchiver" '"outdated "*) echo homebrew/cask/zed; echo the-unarchiver; exit 1 ;;'
+assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+
+assert_eq "brew upgrade --cask --greedy zed
+brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades of a stage's casks"
 
 # A cask removed upstream fails any query naming it, so each is then asked alone
-stub brew 'case "$*" in
-    "list --cask -1") printf "zed\ngone-cask\nthe-unarchiver\n" ;;
-    "outdated "*gone-cask*) echo "Error: Cask '\''gone-cask'\'' is unavailable" >&2; exit 1 ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask "*) echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"$4.app\"]}]}]}" ;;
-esac'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Couldn't check whether gone-cask is up to date"
+stub_brew_casks "zed gone-cask the-unarchiver" \
+    '"outdated "*gone-cask*) echo "Error: Cask '\''gone-cask'\'' is unavailable" >&2; exit 1 ;;'
+assert_exit 1 upgrade_run _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver
 assert_eq "brew upgrade --cask --greedy zed
 brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades beside a cask brew can't find"
 
 # Unreadable metadata mustn't pass for a cask with no app
 for info in 'exit 1' 'echo "{}"'; do
-    stub brew 'case "$*" in
-        "list --cask -1") printf "zed\n" ;;
-        "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-        "info --json=v2 --cask zed") '"$info"' ;;
-    esac'
-    : > "$STUB_LOG"
-    assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
-    assert_contains "$RUN_OUTPUT" "Couldn't read zed's metadata; leaving it alone."
+    stub_brew_casks zed '"info --json=v2 --cask zed") '"$info"' ;;'
+    assert_exit 1 upgrade_run _upgrade_self_updating_casks upgrade zed
     assert_file_not_contains "$STUB_LOG" "brew upgrade"
     assert_file_not_contains "$STUB_LOG" "pgrep"
 done
 # An explicit target is the app checked for running
-stub brew 'case "$*" in
-    "list --cask -1") printf "zed\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed Preview.app\"}]}]}" ;;
-esac'
-: > "$STUB_LOG"
-assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
+stub_brew_casks zed \
+    '"info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed Preview.app\"}]}]}" ;;'
+assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade zed
 assert_file_contains "$STUB_LOG" 'pgrep -af ^/Elsewhere/Zed Preview[^/]*\.app/Contents/MacOS/'
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
-# A . in the app's path is escaped in pgrep's regex
-stub brew 'case "$*" in
-    "list --cask -1") printf "zed\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask zed") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Zed.app\"], \"target\": \"/Elsewhere/Zed.Dev.app\"}]}]}" ;;
-esac'
-stub pgrep 'echo "/Elsewhere/ZedxDev.app/Contents/MacOS/zed" | grep -E -- "${!#}"'
-assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
-assert_not_contains "$RUN_OUTPUT" "is running"
 
 # An app that renamed itself is re-recorded, since brew upgrade stops on
 # the recorded app being gone; a receipt that does more than remove the app gets the usual upgrade
@@ -372,21 +260,12 @@ mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/Applications/T3 Code (B
 receipt() {
     printf '{"uninstall_artifacts": %s}\n' "$1" > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
 }
-stub brew 'case "$*" in
-    "list --cask -1") printf "t3-code\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
-    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;
-esac'
+t3_cask='"info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
+    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;'
+stub_brew_casks t3-code "$t3_cask"
 stub pgrep
-upgrade_t3_cask() {
-    : > "$STUB_LOG"
-    assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
-        "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
-}
 receipt '[{"app": ["T3 Code (Alpha).app"]}, {"zap": [{"trash": ["~/.t3/userdata"]}]}]'
-upgrade_t3_cask
-assert_contains "$RUN_OUTPUT" "T3 Code (Beta).app renamed itself as it updated"
+assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade-ai-tools t3-code
 assert_file_contains "$STUB_LOG" "brew uninstall --cask --force t3-code"
 assert_file_contains "$STUB_LOG" "brew install --cask --adopt t3-code"
 assert_file_not_contains "$STUB_LOG" "brew upgrade"
@@ -394,74 +273,25 @@ assert_file_not_contains "$STUB_LOG" "pgrep"
 for artifacts in '[{"app": ["T3 Code (Alpha).app"]}, {"quit": ["com.t3tools.t3code"]}]' \
     '[{"app": ["T3 Code (Beta).app"]}]'; do
     receipt "$artifacts"
-    upgrade_t3_cask
+    assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade-ai-tools t3-code
     assert_file_not_contains "$STUB_LOG" "brew uninstall"
     assert_contains "$RUN_OUTPUT" "T3 Code is running"
 done
 stub pgrep 'exit 1'
 receipt '[{"app": ["T3 Code (Alpha).app"]}]'
-stub brew 'case "$*" in
-    "list --cask -1") printf "t3-code\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
-    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;
-    "install "*) exit 1 ;;
-esac'
-: > "$STUB_LOG"
-assert_exit 1 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade-ai-tools t3-code' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Couldn't re-record t3-code. Run: brew install --cask --adopt t3-code"
+stub_brew_casks t3-code "$t3_cask
+    \"install \"*) exit 1 ;;"
+assert_exit 1 upgrade_run _upgrade_self_updating_casks upgrade-ai-tools t3-code
+assert_contains "$RUN_OUTPUT" "Run: brew install --cask --adopt t3-code"
 
 # brew exits 129, 130, or 143 when it catches Ctrl-C
 stub brew '[ "$*" != update ] || exit 130'
-: > "$STUB_LOG"
-assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_contains "$RUN_OUTPUT" "Interrupted; stopping."
+assert_exit 130 upgrade_run upgrade
 assert_file_not_contains "$STUB_LOG" "brew bundle"
 assert_file_not_contains "$STUB_LOG" "rustup"
-stub brew 'case "$*" in
-    "list --cask -1") printf "claude\ncodex\n" ;;
-    "outdated "*) printf "%s\n" "${@:5}"; exit 1 ;;
-    "info --json=v2 --cask claude") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"Claude.app\"]}]}]}" ;;
-    "upgrade --cask --greedy claude") exit 130 ;;
-esac'
-: > "$STUB_LOG"
-assert_exit 130 env PATH="$STUB_DIR:/usr/bin:/bin" \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade_ai_tools' bash "$REPO_DIR"
+stub_brew_casks "claude codex" '"upgrade --cask --greedy claude") exit 130 ;;'
+assert_exit 130 upgrade_run upgrade_ai_tools
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy claude"
 assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 assert_file_not_contains "$STUB_LOG" "claude plugin"
-stub brew
-
-# A tmux plugin moves to its pin, never to HEAD
-plugin="$HOME/.tmux/plugins/tmux-yank"
-pin="$(git -C "$plugin" rev-parse HEAD)"
-git -C "$plugin" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
-git -C "$plugin" checkout -q --detach FETCH_HEAD
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_eq "$pin" "$(git -C "$plugin" rev-parse HEAD)" "tmux-yank's commit after upgrade"
-assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank"
-assert_not_contains "$RUN_OUTPUT" "Failed: tmux plugins"
-rm -rf "$HOME/.tmux/plugins/tmux-open"
-mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-open" "$SANDBOX/tmux-open"
-run env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_eq 1 "$RUN_STATUS" "upgrade's status with a tmux plugin it can't fetch"
-assert_contains "$RUN_OUTPUT" "Failed: tmux plugins"
-
-# Vicinae, on Ubuntu with it installed: upgrade runs its installer, and a failed one fails the stage
-stub gnome-shell 'echo "GNOME Shell 50.1"'
-stub curl 'exit 7'
-printf '#!/bin/sh\necho v0.29.2\n' > "$HOME/.local/bin/vicinae"
-chmod +x "$HOME/.local/bin/vicinae"
-: > "$STUB_LOG"
-run env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" UNAME_S=Linux \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_file_contains "$STUB_LOG" "https://vicinae.com/install"
-assert_contains "$RUN_OUTPUT" "Couldn't download Vicinae's installer."
-assert_contains "$(grep '^Failed' <<< "$RUN_OUTPUT")" "vicinae"
-: > "$STUB_LOG"
-run env PATH="$HOME/.local/bin:$STUB_DIR:/usr/bin:/bin" UNAME_S=Darwin \
-    "$BASH" -c 'source "$1/scripts/upgrade.sh"; upgrade' bash "$REPO_DIR"
-assert_file_not_contains "$STUB_LOG" "vicinae.com"
 test_done

@@ -74,7 +74,6 @@ owner_group_mode() {
     awk -v mode="$mode" '{ print $3, $4, mode; exit }' <<< "$names"
 }
 
-# System dirs only, since sbin_cmd's result can run under sudo
 SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 # Never search the user's PATH: sudo would run a planted command from e.g. ~/.cargo/bin as root.
@@ -106,7 +105,7 @@ apt_release_url() {
     echo "$1/dists/$(ubuntu_codename)/Release"
 }
 
-# Prints nothing when the file matches, as when a release upgrade hasn't commented it out
+# Prints nothing when the file matches what setup writes
 apt_source_state() {
     if [ ! -e "$1" ]; then
         echo missing

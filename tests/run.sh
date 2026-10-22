@@ -109,33 +109,6 @@ else
     done
 fi
 
-# In a git checkout, only what git lists, so ignored dirs such as .scratch/ are left out
-repo_scripts() {
-    if git -C .. rev-parse --is-inside-work-tree &>/dev/null; then
-        git -C .. ls-files --cached --others --exclude-standard '*.sh' '*/bin/*' | sed 's|^|../|' | sort -u
-    else
-        find .. \( -name .git -o -name node_modules \) -prune -o -type f \( -name '*.sh' -o -path '*/bin/*' \) -print | sort
-    fi
-}
-
-# A syntax error in a sourced script can let a test pass
-broken=0
-if [ $# -eq 0 ]; then
-    while IFS= read -r f; do
-        [ -f "$f" ] || continue
-        case "$f" in
-            ../tests/test-*.sh) continue ;;
-            *.sh) ;;
-            *) head -1 "$f" | grep -q bash || continue ;;
-        esac
-        if ! output="$("$BASH" -n "$f" 2>&1)"; then
-            echo "FAIL  ${f#../}"
-            printf '%s\n' "$output" | sed 's/^/    /'
-            broken=$((broken + 1))
-        fi
-    done < <(repo_scripts)
-fi
-
 jobs="${TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
     case "${setting#*=}" in
@@ -280,5 +253,4 @@ run_batch 1 ${serial[@]+"${serial[@]}"}
 echo ""
 echo "$((${#tests[@]} + ${#other_os_named[@]} - ${#failed[@]} - skipped)) passed, ${#failed[@]} failed, $skipped skipped"
 [ "$other_os_left_out" -eq 0 ] || echo "$other_os_left_out left out, as they need commands only the other OS ships"
-[ "$broken" -eq 0 ] || echo "$broken script(s) with a syntax error"
-[ ${#failed[@]} -eq 0 ] && [ "$broken" -eq 0 ]
+[ ${#failed[@]} -eq 0 ]

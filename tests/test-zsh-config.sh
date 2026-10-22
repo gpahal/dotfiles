@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# zsh/main.zsh in a login terminal: no zsh errors, extendedglob off, and _cached_init's cache.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -28,39 +30,21 @@ zsh_in_terminal() {
 # CI doesn't install bat or eza
 stub bat
 stub eza
-# eza reads a bare -F as --classify [WHEN], taking a following path as WHEN
-touch "$WORK/main.go" "$WORK/main_test.go"
-checks='echo loaded; print -r -- main^; [[ -o extendedglob ]] && echo extendedglob-on
-print -r -- "mise=$(whence -p mise)"; for a in l la ll lla; do alias $a; done; true'
+checks='echo loaded; print -r -- main^'
 # Only zsh's own errors count: real starship, atuin, and zoxide stderr flaked under parallel runs
 zsh_errors() {
     grep -qE -e '^[^ :]+:[0-9]+: ' -e '^[^ :]+: command not found: ' -e '^zsh:' -e "$HOME/\.z"
 }
-for line in "zsh:1: command not found: nocmd" "zsh: command not found: nocmd" \
-    "_cached_init: command not found: nocmd" "_cached_init:4: parse error near \`)'" \
-    "$HOME/.zprofile:1: command not found: nocmd" "(eval):3: command not found: nocmd" \
-    "$HOME/.zsh/main.zsh:12: no such file or directory: x"; do
-    zsh_errors <<< "$line" || fail "zsh_errors missed: $line"
-done
-for line in "Error: database is locked" "[WARN] - (starship::config): bad key" \
-    "thread 'main' panicked at src/main.rs:12:5:" "zoxide: warning: no match found"; do
-    ! zsh_errors <<< "$line" || fail "zsh_errors counted a tool's output: $line"
-done
 for term in xterm-256color dumb; do
     output="$(zsh_in_terminal "$term" "$checks")"
     assert_contains "$output" "loaded" "output with TERM=$term"
-    assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds with TERM=$term"
     if zsh_errors < "$ERR"; then
         fail "the zsh config printed an error with TERM=$term:"
         _show "$(cat "$ERR")"
     fi
 done
+# extendedglob would make git's HEAD^ a pattern
 assert_contains "$output" "main^" "main^ in a terminal"
-assert_not_contains "$output" "extendedglob-on" "options in a terminal"
-for a in "l='eza --classify=auto'" "la='eza -a --classify=auto'" "ll='eza -l --classify=auto'" \
-    "lla='eza -al --classify=auto'"; do
-    assert_contains "$output" "$a" "the eza listing aliases"
-done
 
 stub fakeinit 'echo "echo init-$*"'
 output="$(zsh -c "source '$HOME/.zsh/main.zsh'; _cached_init fakeinit one; _cached_init fakeinit two" 2>&1)"

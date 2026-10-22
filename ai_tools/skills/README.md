@@ -28,6 +28,6 @@ Most skills are modified copies from these repos, used under the MIT License. Li
 - [mattpocock/skills](https://github.com/mattpocock/skills) by [Matt Pocock](https://github.com/mattpocock): code-review-stds-and-spec (upstream `code-review`), diagnosing-bugs, grill (upstream `grilling`), handoff, implement, research, tdd, to-spec, to-tickets, wait-what, wizard, and writing-for-agents
 - [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack) by [poteto](https://x.com/poteto): architect, bro, interrogate, show-me-your-work, technical-writing, unslop, and why
 
-code-review adapts OpenAI Codex's review prompt and Claude Code's `/simplify`. rewrite-docs started here.
+code-review adapts OpenAI Codex's review prompt and Claude Code's `/simplify`. rewrite-docs is original to this repo.
 
 Thank you, Matt and poteto!

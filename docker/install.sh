@@ -17,7 +17,7 @@ DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin dock
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_REPO=https://download.docker.com/linux/ubuntu
 DOCKER_KEY_URL="$DOCKER_REPO/gpg"
-# "Docker Release (CE deb)"
+# The key's UID: "Docker Release (CE deb)"
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
 # Origin and label from https://download.docker.com/linux/ubuntu/dists/<codename>/Release
@@ -207,9 +207,8 @@ ports_on_every_address() {
     printf '%s\n' "${1//, /$nl}" | grep -E '^(0\.0\.0\.0|\[::\]):[^ ]*->' || true
 }
 
-# Published ports bypass ufw. A stopped daemon isn't asked (docker.socket would start it), but
-# live-restore containers keep running under shims in the moby namespace. [m] stops pgrep matching
-# its own shell.
+# A stopped daemon isn't asked (docker.socket would start it), but live-restore containers keep
+# running under shims in the moby namespace. [m] stops pgrep matching its own shell.
 status_docker_ports() {
     local label="Container ports published on every address, which ufw doesn't filter"
     local none="No container ports published on every address, which ufw doesn't filter"
@@ -268,7 +267,8 @@ status() {
     status_result
 }
 
-# Rolls back from memory if Docker won't restart, so no backup is left in /etc/docker.
+# Runs where set -e is off. Rolls back from memory if Docker won't restart, so no backup is left
+# in /etc/docker.
 configure_daemon() {
     local original="" current='{}' exists=false tmp running=false
     if sudo test -e "$DOCKER_DAEMON_CONFIG"; then
@@ -298,7 +298,6 @@ configure_daemon() {
         echo "  Docker rejected the proposed configuration; $DOCKER_DAEMON_CONFIG is unchanged." >&2
         return 1
     fi
-    # Runs where set -e is off: each command checks its own failure.
     if ! install_root_file "$tmp" "$DOCKER_DAEMON_CONFIG"; then
         rm -f "$tmp"
         return 1
@@ -358,10 +357,15 @@ apply() {
         echo "  Docker is already installed and set up."
         return 0
     elif confirm_sudo_changes "${pending[@]}"; then
-        items_apply docker_installed || return 1
-        "$installed" || fresh=true
-        ! "$repair_source" || add_docker_repo || result=1
-        items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
+        if items_apply docker_installed; then
+            "$installed" || fresh=true
+            ! "$repair_source" || add_docker_repo || result=1
+            items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
+        else
+            # Without the packages there are no units, dockerd, or docker group to set up
+            result=1
+            items_apply docker_auto_updates_configured || result=1
+        fi
         if [ "$result" -ne 0 ]; then
             echo "  Applied the rest. Some changes failed; see the errors above." >&2
         else

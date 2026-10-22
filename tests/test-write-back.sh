@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement.
+# write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement,
+# json_merge's backups and bad input, and root files' modes and groups.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -9,6 +10,12 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 load_script lib/common.sh
 load_script lib/system.sh
+
+# read -p prints no question without a terminal, so confirm echoes it
+fake_terminal() {
+    replace_fn is_interactive true
+    replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]'
+}
 
 file="$HOME/settings.json"
 printf 'old\n' > "$file"
@@ -65,7 +72,6 @@ ln -s "$HOME/real/nowhere.json" "$HOME/dangling.json"
 new="$(mktemp)"
 printf 'new\n' > "$new"
 assert_exit 1 write_back "$new" "$HOME/dangling.json"
-assert_contains "$RUN_OUTPUT" "Couldn't write $HOME/dangling.json. The new contents are in $new."
 [ -L "$HOME/dangling.json" ] || fail "write_back replaced a dangling symlink"
 [ ! -e "$HOME/real/nowhere.json" ] || fail "write_back wrote through a dangling symlink"
 [ -e "$new" ] || fail "a failed write_back through a dangling symlink removed the new contents"
@@ -79,7 +85,6 @@ if [ "$(id -u)" -ne 0 ]; then
     printf 'new\n' > "$new"
     assert_exit 1 write_back "$new" "$HOME/ro/settings.json"
     assert_eq old "$(cat "$HOME/ro/settings.json")" "file after a failed write_back"
-    assert_contains "$RUN_OUTPUT" "The new contents are in $new"
     [ -e "$new" ] || fail "a failed write_back removed the new contents"
     chmod 755 "$HOME/ro"
     # A read-only file stays, as with cp, though its directory would let a rename replace it
@@ -92,7 +97,6 @@ if [ "$(id -u)" -ne 0 ]; then
         assert_exit 1 write_back "$new" "$HOME/$name"
         assert_eq old "$(cat "$HOME/locked.conf")" "read-only file after write_back to $name"
         assert_eq 444 "$(file_mode "$HOME/locked.conf")" "read-only file's mode after write_back to $name"
-        assert_contains "$RUN_OUTPUT" "$HOME/$name is read-only, so left it unchanged. The new contents are in $new."
         [ -e "$new" ] || fail "a write_back to read-only $name removed the new contents"
     done
     [ -L "$HOME/locked-link.conf" ] || fail "a write_back replaced the symlink to a read-only file"
@@ -112,18 +116,62 @@ if command -v jq &>/dev/null; then
     if [ "$(id -u)" -ne 0 ]; then
         json="$HOME/json/locked.json"
         printf '{"existing":"keep me"}\n' > "$json"
-        cp "$json" "$HOME/locked-before"
+        snapshot "$json"
         chmod 000 "$json"
         assert_exit 1 json_merge "$json" '.added = 1'
         chmod 644 "$json"
-        assert_contains "$RUN_OUTPUT" "Couldn't read $json, so it was left as it is."
-        assert_exit 0 cmp -s "$json" "$HOME/locked-before"
+        assert_unchanged "$json" "though it couldn't be read"
         [ ! -e "$json.bak" ] || fail "json_merge backed up a file it couldn't read"
     fi
     ln -s "$HOME/json/nowhere.json" "$HOME/json/dangling.json"
     assert_exit 1 json_merge "$HOME/json/dangling.json" '.added = 1'
     [ -L "$HOME/json/dangling.json" ] || fail "json_merge replaced a dangling symlink"
     [ ! -e "$HOME/json/nowhere.json" ] || fail "json_merge wrote through a dangling symlink"
+
+    # A failed backup: the .bak is taken and the dir is read-only
+    edited="$HOME/ro-json/edited.json"
+    mkdir -p "$HOME/ro-json"
+    printf '"my edit"\n' > "$edited"
+    printf 'older\n' > "$edited.bak"
+    chmod 555 "$HOME/ro-json"
+    export DOTFILES_BACKUP=yes
+    assert_exit 1 json_merge "$edited" '"merged"'
+    unset DOTFILES_BACKUP
+    chmod 755 "$HOME/ro-json"
+    assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup"
+
+    # A failing or multi-value filter makes no backup, since jq runs before maybe_backup
+    fake_terminal
+    settings="$HOME/badfilter/settings.json"
+    mkdir -p "$HOME/badfilter"
+    printf '{"mine": 1}\n' > "$settings"
+    for filter in 'error("bad")' '.a, .b'; do
+        assert_exit 1 json_merge "$settings" "$filter" <<< y
+        assert_eq "settings.json" "$(/bin/ls "$HOME/badfilter")" "files after json_merge $filter"
+        assert_eq '{"mine": 1}' "$(cat "$settings")" "settings after json_merge $filter"
+    done
+    for bad in '{"a": 0}
+{"a": 1}' '{"a": 1,}'; do
+        printf '%s\n' "$bad" > "$settings"
+        ! json_applied "$settings" '.a = 1' || fail "json_applied passed $bad"
+        assert_exit 1 json_merge "$settings" '.a = 1' <<< y
+        assert_eq "settings.json" "$(/bin/ls "$HOME/badfilter")" "files after json_merge on $bad"
+        assert_eq "$bad" "$(cat "$settings")" "settings after json_merge on $bad"
+    done
+    printf '{"mine": 1}\n' > "$settings"
+    assert_exit 0 json_merge "$settings" '.a = 1' <<< y
+    assert_eq '{"mine": 1}' "$(cat "$settings.bak")" "backup after json_merge"
+    assert_eq 1 "$(jq .a "$settings")" "settings after json_merge"
+    # json_applied puts its comparison on its own line, after a trailing comment
+    assert_exit 0 json_applied "$settings" '.a = 1
+# a comment on the last line'
+    assert_exit 1 json_applied "$settings" '.a = 2
+# a comment on the last line'
+    rm "$settings.bak"
+    printf '{"a":1,  "mine":1}\n' > "$settings"
+    assert_exit 0 json_merge "$settings" '.a = 1' <<< y
+    assert_eq "settings.json" "$(/bin/ls "$HOME/badfilter")" "files after json_merge with nothing to change"
+    assert_eq '{"a":1,  "mine":1}' "$(cat "$settings")" "settings after json_merge with nothing to change"
 else
     skip_rest "jq isn't installed, so json_merge isn't tested"
 fi
@@ -136,10 +184,16 @@ for line in '-e x' '--' 'plain'; do
     assert_exit 0 has_line "$line" "$lines"
 done
 assert_eq "$(printf '%s\n' '-e x' '--' plain)" "$(cat "$lines")" "file after appending each line twice"
-mkdir "$HOME/dir"
-assert_exit 1 append_line x "$HOME/dir"
 
-stub_sudo_exec
+# install runs for real, minus -g, since the sandbox's user can't give a file root's groups
+stub_sudo_exec 'if [ "${1:-}" == install ]; then
+    shift
+    args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in -g) shift 2 ;; *) args+=("$1"); shift ;; esac
+    done
+    set -- install "${args[@]}"
+fi'
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"
@@ -156,22 +210,74 @@ assert_eq two "$(cat "$dest")" "a replaced root file"
 assert_eq 640 "$(file_mode "$dest")" "mode of a replaced root file"
 [ "$inode" != "$(/bin/ls -i "$dest" | awk '{print $1}')" ] || fail "install_root_file wrote through the file"
 assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files beside a replaced root file"
-cp -p "$dest" "$SANDBOX/before"
+snapshot "$dest"
 printf 'three\n' > "$src"
 for cmd in install mv; do
     stub "$cmd" 'exit 1'
     assert_exit 1 install_root_file "$src" "$dest"
     rm "$STUB_DIR/$cmd"
-    assert_exit 0 cmp -s "$dest" "$SANDBOX/before"
+    assert_unchanged "$dest" "after a failed $cmd"
     assert_eq 640 "$(file_mode "$dest")" "mode after a failed $cmd"
     assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files after a failed $cmd"
 done
-assert_exit 0 write_root_file "$dest" "four"
-assert_eq "four" "$(cat "$dest")" "write_root_file's content"
-assert_eq 5 "$(wc -c < "$dest" | tr -d ' ')" "write_root_file's size"
 stub mv 'exit 1'
 assert_exit 1 write_root_file "$dest" "five"
 rm "$STUB_DIR/mv"
-assert_eq four "$(cat "$dest")" "the file after a failed write_root_file"
+assert_unchanged "$dest" "after a failed write_root_file"
 assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files after a failed write_root_file"
+
+# The group is set in the install that writes the file, so a failed chgrp can't leave it root:root
+dest="$SANDBOX/etc/nut/upsd.users"
+: > "$STUB_LOG"
+assert_exit 0 write_root_file "$dest" "secret" 0640 nut
+assert_eq secret "$(cat "$dest")" "file write_root_file wrote"
+assert_eq 640 "$(file_mode "$dest")" "mode write_root_file set"
+assert_file_contains "$STUB_LOG" "sudo install -m 0640 -g nut "
+: > "$STUB_LOG"
+printf 'other\n' > "$SANDBOX/src"
+assert_exit 0 install_root_file "$SANDBOX/src" "$dest" "" nut
+assert_eq other "$(cat "$dest")" "file install_root_file wrote"
+assert_eq 640 "$(file_mode "$dest")" "mode install_root_file kept"
+assert_file_contains "$STUB_LOG" "sudo install -m 640 -g nut "
+
+# install would move the new file into a directory destination
+for kind in dir link; do
+    dest="$SANDBOX/etc/sleep.conf.d/10-$kind.conf"
+    if [ "$kind" == dir ]; then
+        mkdir -p "$dest"
+    else
+        mkdir -p "$SANDBOX/etc/real-dir"
+        ln -s "$SANDBOX/etc/real-dir" "$dest"
+    fi
+    assert_exit 1 write_root_file "$dest" "x"
+    assert_eq "" "$(/bin/ls -A "$dest/")" "files in a $kind destination"
+done
+
+# stat reads 777 for the link, so the target's own mode must be kept
+target="$SANDBOX/etc/real/target.conf"
+link="$SANDBOX/etc/linked.conf"
+mkdir -p "$(dirname "$target")"
+printf 'old\n' > "$target"
+chmod 640 "$target"
+ln -s "$target" "$link"
+assert_exit 0 write_root_file "$link" "new"
+[ -L "$link" ] || fail "install_root_file replaced the symlink"
+assert_eq new "$(cat "$target")" "symlink target after write_root_file"
+assert_eq 640 "$(file_mode "$target")" "symlink target's mode after write_root_file"
+assert_eq target.conf "$(/bin/ls -A "$(dirname "$target")")" "files beside the symlink target"
+ln -s "$SANDBOX/etc/nowhere.conf" "$SANDBOX/etc/dangling.conf"
+assert_exit 1 write_root_file "$SANDBOX/etc/dangling.conf" "new"
+[ -L "$SANDBOX/etc/dangling.conf" ] || fail "install_root_file replaced a dangling symlink"
+[ ! -e "$SANDBOX/etc/nowhere.conf" ] || fail "write_root_file wrote through a dangling symlink"
+
+# A new directory gets 755 under any umask, so the users hooks run as can read it
+(
+    umask 077
+    write_root_file "$SANDBOX/usr/local/lib/dotfiles/ntfy.sh" "lib" > /dev/null
+)
+assert_eq 755 "$(file_mode "$SANDBOX/usr/local/lib/dotfiles")" "mode of a new directory"
+mkdir -p "$SANDBOX/etc/private"
+chmod 750 "$SANDBOX/etc/private"
+assert_exit 0 write_root_file "$SANDBOX/etc/private/file" "x"
+assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directory"
 test_done

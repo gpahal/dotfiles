@@ -60,13 +60,10 @@ enable_apt_timers() {
     sudo systemctl enable --now "${APT_TIMERS[@]}"
 }
 
-# Replaces or appends our keys and keeps others, such as Software & Updates' AutocleanInterval.
-# APT allows several statements on a line, so each ;-terminated statement is replaced on its own,
-# keeping the others, their order, the indentation, and any trailing comment. A line this can't
-# split safely stays as it is: one inside or opening a scope ({ }), one with part of a statement
-# that runs onto another line, one with a statement and a /* */ comment, and #clear or #include.
-# Each could set or clear our keys, so ours are appended after the last such line too, where apt's
-# later-wins rule makes them take effect; for an unrelated one, that only repeats the same value.
+# Replaces our keys statement by statement and keeps the rest, such as Software & Updates'
+# AutocleanInterval. A line it can't split safely ({ }, a multi-line statement, a /* */ comment,
+# #clear, #include) stays as is, and our keys are appended after the last such line, since apt's
+# later value wins.
 merged_auto_upgrades() {
     # BSD awk's -v rejects a newline
     printf '%s' "$1" | AUTO_UPGRADES_LINES="$AUTO_UPGRADES_CONTENT" awk '

@@ -35,8 +35,8 @@ profile_uuid() {
         "${hex:17:3}" "${hex:20:12}"
 }
 
-# A profile's keys as "<page index>:<column>,<row> <action UUID>" lines, so a profile Stream Deck
-# installed compares with layout.json whatever fields it adds
+# layout.json's keys for a page, in profile_keys's "<page index>:<column>,<row> <action UUID>"
+# form, so an installed profile compares whatever fields Stream Deck adds
 layout_keys() {
     jq -r --arg page "$1" --arg plugin "$DECK_PLUGIN_UUID" \
         '.pages[$page] // {} | to_entries[] | "0:\(.key) \($plugin).\(.value)"' "$DECK_LAYOUT" | LC_ALL=C sort
@@ -78,7 +78,7 @@ installed_profiles() {
 #   named as arguments), its keys differ from layout.json, or there are two copies;
 # - delete, for any other profile for the deck;
 # - wait, for one that deleting would only have Stream Deck replace with its default profile,
-#   since the Main profile isn't installed yet.
+#   since the Main profile isn't installed and current yet.
 profile_plan() {
     local list page title dirs dir name count main_ok=false
     list="$(installed_profiles)"

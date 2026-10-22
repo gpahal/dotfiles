@@ -19,19 +19,17 @@ assert_exit 0 add_host box box.example.ts.net
 assert_eq drwx------ "$(/bin/ls -ld "$HOME/.ssh" | cut -c1-10)" "the mode of ~/.ssh"
 assert_eq -rw------- "$(/bin/ls -l "$config" | cut -c1-10)" "the config's mode"
 assert_contains "$RUN_OUTPUT" "ssh -O exit box closes it"
-assert_file_contains "$config" "Host box"
-assert_file_contains "$config" "  HostName box.example.ts.net"
-cp "$config" "$SANDBOX/config-before"
+snapshot "$config"
 assert_exit 0 add_host box box.example.ts.net
 assert_contains "$RUN_OUTPUT" "already has a block for box"
-cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config"
+assert_unchanged "$config" "on a second run"
 
 for bad in "my box" "*" "box#1" "$(printf 'a\nb')"; do
     assert_exit 2 add_host "$bad"
     assert_contains "$RUN_OUTPUT" "can't contain"
     assert_exit 2 add_host ok "$bad"
 done
-cmp -s "$SANDBOX/config-before" "$config" || fail "a rejected alias changed the config"
+assert_unchanged "$config" "with a rejected alias"
 
 # ssh matches Host patterns case-sensitively
 assert_exit 0 add_host Box
@@ -47,8 +45,6 @@ Host *
   ServerAliveInterval 60
 EOF
 assert_exit 0 add_host box2
-assert_eq "github.com box2 *" "$(awk '$1 == "Host" { printf "%s%s", sep, $2; sep = " " }' "$config")" \
-    "the Host lines' order"
 expected="Host github.com
   HostName github.com
 
@@ -66,12 +62,19 @@ assert_eq "$expected" "$(cat "$config")" "the config with a Host * block"
 assert_exit 0 ssh -G -F "$config" box2
 assert_contains "$RUN_OUTPUT" "serveraliveinterval 30"
 
-for star in 'Host * !bastion' 'Host foo *' 'Host "*"' "$(printf 'Host *\r')" 'host=*'; do
+# The block goes above a catch-all, however it's written, and else at the end
+for star in 'Host * !bastion' 'Host foo *' 'Host "*"' "$(printf 'Host *\r')" 'host=*' 'Host * # every host' \
+    'Match = all' 'Match "final" all' 'Match canonical all # defaults'; do
     printf 'Host github.com\n  HostName github.com\n\n%s\n  ServerAliveInterval 60\n' "$star" > "$config"
     assert_exit 0 add_host box3
     assert_eq "github.com box3" "$(awk '$1 == "Host" && NR < 9 { printf "%s%s", sep, $2; sep = " " }' "$config")" \
         "the Host lines above $star"
     assert_eq "$star" "$(sed -n 11p "$config")" "the catch-all after the block"
+done
+for line in 'Match all host other' 'Match canonical' '# Match all' 'Host other # *'; do
+    printf 'Host github.com\n  HostName github.com\n\n%s\n  ServerAliveInterval 60\n' "$line" > "$config"
+    assert_exit 0 add_host box3
+    assert_eq "Host box3" "$(tail -n 6 "$config" | head -n 1)" "the block's first line after: $line"
 done
 
 # Match all, and Host * with an included file, are catch-alls too
@@ -88,27 +91,29 @@ for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf
     assert_contains "$RUN_OUTPUT" "serveraliveinterval 30"
     assert_contains "$RUN_OUTPUT" "hostname box5.example.ts.net"
     assert_eq "$other_before" "$(ssh -G -F "$config" other 2>&1)" "another host with: $fixture"
-    cp "$config" "$SANDBOX/config-before"
+    snapshot "$config"
     assert_exit 0 add_host box5 box5.example.ts.net
-    cmp -s "$SANDBOX/config-before" "$config" || fail "a second run changed the config with: $fixture"
+    assert_unchanged "$config" "on a second run with: $fixture"
 done
 
-for existing in 'Host=box7' 'Host = box7' 'Host "box7"' 'host box7'; do
+# A block for the alias is found however it's written, and only as ssh would match it
+for existing in 'Host=box7' 'Host = box7' 'Host "box7"' '  host other box7'; do
     printf '%s\n  User me\n\nHost *\n  ServerAliveInterval 60\n' "$existing" > "$config"
-    cp "$config" "$SANDBOX/config-before"
+    snapshot "$config"
     assert_exit 0 add_host box7
-    assert_contains "$RUN_OUTPUT" "already has a block for box7"
-    cmp -s "$SANDBOX/config-before" "$config" || fail "add-host added a block next to: $existing"
+    assert_unchanged "$config" "beside: $existing"
     assert_exit 0 ssh -G -F "$config" box7
     assert_contains "$RUN_OUTPUT" "user me"
 done
+for other in 'Host box7er' 'Host other # box7' 'Match host box7'; do
+    printf '%s\n  User me\n' "$other" > "$config"
+    assert_exit 0 add_host box7
+    assert_eq 1 "$(grep -cx 'Host box7' "$config")" "blocks for box7 beside: $other"
+done
 
-if [ "$(id -u)" -ne 0 ]; then
-    : > "$config"
-    chmod 444 "$config"
-    assert_exit 1 add_host box8
+: > "$config"
+if as_unwritable "$config" add_host box8; then
     assert_not_contains "$RUN_OUTPUT" "Added"
-    chmod 600 "$config"
 fi
 
 printf 'Host *\n  ServerAliveInterval 60\n' > "$SANDBOX/real-config"

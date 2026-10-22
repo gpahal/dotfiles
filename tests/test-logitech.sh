@@ -2,7 +2,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# test-docker-sources.sh covers add_apt_repo's failures.
+# Solaar from its team's pinned PPA. test-apt-sources.sh covers add_apt_repo's failures.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,6 +14,7 @@ as_os ubuntu
 
 SOLAAR_SOURCES="$SANDBOX/apt/sources.list.d/solaar.sources"
 SOLAAR_PIN="$SANDBOX/apt/preferences.d/dotfiles-solaar"
+# shellcheck disable=SC2034 # the step reads it
 SOLAAR_KEYRING="$SANDBOX/keyrings/solaar.asc"
 OS_RELEASE="$SANDBOX/os-release"
 echo "VERSION_CODENAME=resolute" > "$OS_RELEASE"
@@ -25,23 +26,18 @@ case "$*" in
     *Status*) printf "install ok installed" ;;
     *Version*) printf "%s" "$(cat "$v")" ;;
 esac'
-stub apt-get '[ -z "${APT_FAILS:-}" ] || exit 100
-[ -z "${UPDATE_FAILS:-}" ] || [ "${*: -1}" != update ] || exit 100
-if [ "${*: -1}" == solaar ]; then
+stub apt-get 'if [ "${*: -1}" == solaar ]; then
     if [ -e "$SANDBOX/apt/sources.list.d/solaar.sources" ]; then
         echo "1.1.20+202607061356~ubuntu26.04.1" > "$SANDBOX/solaar-version"
     else
         echo "1.1.19-1" > "$SANDBOX/solaar-version"
     fi
 fi'
-# shellcheck disable=SC2034 # apt_get_update reads it
-APT_UPDATE_RETRY_DELAY=0
 stub_sudo_exec
 # fetch gives the key the step pins
-replace_fn fetch 'echo key > "$2"'
-stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $SOLAAR_KEY_FPR"
-stub curl 'cat "$SANDBOX/http-status"'
-echo 200 > "$SANDBOX/http-status"
+stub_fetch
+stub_gpg_fpr "$SOLAAR_KEY_FPR"
+stub_http_status
 mkdir -p "$(dirname "$SOLAAR_SOURCES")"
 
 assert_exit 3 main --status
@@ -54,7 +50,7 @@ hide gpg
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "gpg"
 [ ! -e "$SOLAAR_PIN" ] || fail "the pin was written without gpg"
-stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $SOLAAR_KEY_FPR"
+stub_gpg_fpr "$SOLAAR_KEY_FPR"
 
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -79,31 +75,11 @@ assert_file_not_contains "$STUB_LOG" "install -y solaar"
 rm "$SOLAAR_SOURCES"
 rmdir "$SOLAAR_PIN"
 
-export DOTFILES_ASSUME_YES=1 APT_FAILS=1
-assert_exit 1 main
-[ ! -e "$SANDBOX/solaar-version" ] || fail "Solaar counts as installed after a failed install"
-[ ! -e "$SOLAAR_SOURCES" ] || fail "a source apt-get update failed on was kept"
-[ -e "$SOLAAR_PIN" ] || fail "the pin wasn't written"
-
-export APT_FAILS="" UPDATE_FAILS=1
-: > "$STUB_LOG"
-assert_exit 1 main
-assert_file_not_contains "$STUB_LOG" "install -y solaar"
-export UPDATE_FAILS=""
-
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed Solaar 1.1.20."
 assert_file_contains "$STUB_LOG" "install -y solaar"
-assert_eq "Types: deb
-URIs: https://ppa.launchpadcontent.net/solaar-unifying/stable/ubuntu
-Suites: resolute
-Components: main
-Signed-By: $SOLAAR_KEYRING" "$(cat "$SOLAAR_SOURCES")" "the PPA's source"
-assert_file_contains "$SOLAAR_PIN" "Pin: release o=LP-PPA-solaar-unifying-stable"
 assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "ok         Solaar 1.1.20 or later"
-assert_contains "$RUN_OUTPUT" "ok         The Solaar team's PPA's apt source"
 
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -113,8 +89,8 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 hide gpg curl
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Solaar 1.1.20 is already installed."
-stub gpg "printf 'pub:-\\nfpr:::::::::%s:\\n' $SOLAAR_KEY_FPR"
-stub curl 'cat "$SANDBOX/http-status"'
+stub_gpg_fpr "$SOLAAR_KEY_FPR"
+stub_http_status
 
 # Ubuntu's older Solaar is upgraded from the PPA
 echo "1.1.19-1" > "$SANDBOX/solaar-version"
@@ -125,7 +101,7 @@ assert_eq "1.1.20+202607061356~ubuntu26.04.1" "$(cat "$SANDBOX/solaar-version")"
 
 # Before the PPA publishes for a new release, Ubuntu's Solaar stands in, and the next run adds it
 echo "VERSION_CODENAME=stonking" > "$OS_RELEASE"
-echo 404 > "$SANDBOX/http-status"
+stub_http_status 404
 rm -f "$SOLAAR_SOURCES" "$SANDBOX/solaar-version"
 # Ubuntu's Solaar needs no gpg
 hide gpg

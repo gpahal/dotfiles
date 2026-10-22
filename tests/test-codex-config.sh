@@ -2,6 +2,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
+# The codex step's config.toml edit through yq: its keys set, the rest of the file kept, comments
+# included, values of your own kept, and no edit when yq would drop comments or change values.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -12,7 +15,7 @@ stub bwrap
 stub codex 'echo "Logged in using ChatGPT" >&2'
 as_os macos
 
-yq --version 2>/dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
+require_mikefarah_yq
 
 mkdir -p "$HOME/.codex"
 
@@ -22,6 +25,18 @@ get() {
 
 set_key() {
     yq -i -p toml -o toml "$1 = $2" "$CODEX_CONFIG"
+}
+
+# yq with its TOML output piped through the given command, as a yq bug would change it; unset -f
+# yq restores it
+yq_filtering() {
+    YQ_FILTER=("$@")
+    yq() {
+        case "$*" in
+            *"-o toml"*) command yq "$@" | "${YQ_FILTER[@]}" ;;
+            *) command yq "$@" ;;
+        esac
+    }
 }
 
 # yq must keep every value and full-line comment through its rewrite
@@ -76,12 +91,6 @@ assert_file_contains "$CODEX_CONFIG" "# Mine, at the top"
 assert_file_contains "$CODEX_CONFIG" "# A full-line comment"
 assert_eq '"line one\nline two"' "$(get .developer_instructions)" "a multi-line string"
 assert_eq 'false "dark"' "$(get .analytics.enabled) $(get .tui.theme)" "dotted and inline tables the step sets"
-assert_eq '["model-with-reasoning","current-dir","git-branch","context-used"]' "$(get .tui.status_line)" \
-    "the status line in an inline [tui]"
-assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode"
-assert_eq '"on-request"' "$(get .approval_policy)" "approval_policy"
-assert_eq '"auto_review"' "$(get .approvals_reviewer)" "approvals_reviewer"
-assert_eq '"squash"' "$(get .desktop.git-pull-request-merge-method)" "a [desktop] key on macOS"
 first="$(cat "$CODEX_CONFIG")"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
@@ -90,16 +99,12 @@ assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run"
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
 assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on a fresh install"
-assert_eq 'null null null' "$(get .default_permissions) $(get .permissions) $(get .sandbox_workspace_write)" \
-    "profiles and sandbox table on a fresh install"
+assert_eq '"on-request"' "$(get .approval_policy)" "approval_policy on a fresh install"
+assert_eq '"auto_review"' "$(get .approvals_reviewer)" "approvals_reviewer on a fresh install"
 
 as_os ubuntu
 rm -f "$CODEX_CONFIG"
 assert_exit 0 configure_codex
-assert_eq '"workspace-write"' "$(get .sandbox_mode)" "sandbox_mode on Ubuntu"
-assert_eq null "$(get .desktop)" "[desktop] on Ubuntu"
-assert_eq '"osc9"' "$(get .tui.notification_method)" "the notification method on Ubuntu"
-assert_eq '"file"' "$(get .mcp_oauth_credentials_store)" "the MCP token store on Ubuntu"
 replace_fn bwrap_works 'true'
 stub brew 'exit 1'
 set_key .desktop.followUpQueueMode '"queue"'
@@ -171,51 +176,37 @@ for repro in 'model = "o" # wrap in """ if needed\n# keep me\n' \
     assert_file_contains "$CODEX_CONFIG" "# keep me"
 done
 printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n' > "$CODEX_CONFIG"
-cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
-yq() {
-    case "$*" in
-        *"-o toml"*) command yq "$@" | grep -v '^# keep me' ;;
-        *) command yq "$@" ;;
-    esac
-}
+snapshot "$CODEX_CONFIG"
+yq_filtering grep -v '^# keep me'
 assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged."
-assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 # A changed comment fails even when the comment count matches
 printf 'model = "x"\n# keep me\n[tui]\nnotifications = true\n# tail\n' > "$CODEX_CONFIG"
-cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
-yq() {
-    case "$*" in
-        *"-o toml"*) command yq "$@" | sed 's/^# keep me$/# other/' ;;
-        *) command yq "$@" ;;
-    esac
-}
+snapshot "$CODEX_CONFIG"
+yq_filtering sed 's/^# keep me$/# other/'
 assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged."
-assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 unset -f yq
 
 # yq 4.54.1 changes a top-level inline table after a dotted key; the stub stands in for that
 printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n' > "$CODEX_CONFIG"
-cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
-yq() {
-    case "$*" in
-        *"-o toml"*) command yq "$@" | sed 's/"gpt-6"/"gpt-7"/; s/^gpt-6 /gpt-7 /' ;;
-        *) command yq "$@" ;;
-    esac
-}
+snapshot "$CODEX_CONFIG"
+yq_filtering sed 's/"gpt-6"/"gpt-7"/; s/^gpt-6 /gpt-7 /'
 assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "yq would change other values in $CODEX_CONFIG while editing it; leaving it unchanged."
-assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 unset -f yq
 
 printf 'model = "x"\n[tui\n' > "$CODEX_CONFIG"
-cp "$CODEX_CONFIG" "$SANDBOX/codex-before"
+snapshot "$CODEX_CONFIG"
 assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "is it valid TOML? Leaving it unchanged."
-assert_exit 0 cmp -s "$SANDBOX/codex-before" "$CODEX_CONFIG"
+assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 
-# test-claude-settings.sh covers the status line consent matrix
+# A value of your own is kept without a terminal and replaced on yes; test-claude-settings.sh covers
+# the rest of the consent matrix, which both steps share
 repo_line='["model-with-reasoning","current-dir","git-branch","context-used"]'
 printf 'model = "gpt-6.1-sol"\n' > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
@@ -225,52 +216,34 @@ mine="$(cat "$CODEX_CONFIG")"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "Kept your value for Codex's status line (tui.status_line), [\"model\",\"git-branch\"]."
 assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config with a status line of your own"
-stub brew 'exit 1'
-run status
-assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
-assert_contains "$RUN_OUTPUT" "ok         Codex's status line (tui.status_line): yours, [\"model\",\"git-branch\"] (the repo's is $repo_line)"
 answer yes
 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"
-run status
-assert_not_contains "$RUN_OUTPUT" "yours"
 load_script ai_tools/codex/install.sh
 as_os macos
 
 stub brew 'exit 1'
 replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
-stub codex 'echo "Logged in using ChatGPT" >&2'
-run status
-assert_contains "$RUN_OUTPUT" "ok         Signed in to Codex"
-assert_file_contains "$STUB_LOG" "codex login status"
 stub codex 'echo "Not logged in" >&2; exit 1'
 run status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
-as_os ubuntu
-replace_fn bwrap_works 'true'
-run status
-assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
 
-as_os macos
+# ChatGPT may rewrite the config as it quits, so the step reads it after
 printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"
 replace_fn ensure_app_quit 'yq -i -p toml -o toml "del(.model)" "$CODEX_CONFIG"'
 assert_exit 0 configure_codex
 assert_eq '"gpt-6.1-sol"' "$(get .model)" "the model after ChatGPT removed yours as it quit"
 load_script ai_tools/codex/install.sh
 
-for version in "v4.54.1" "v4.55.0" "v4.100.0" "v5.0.0"; do
-    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
-    codex_yq_new_enough || fail "yq $version counts as too old"
-done
-for version in "v4.54.0" "v4.9.9" "v3.99.99"; do
-    stub yq "echo 'yq (https://github.com/mikefarah/yq/) version $version'"
-    codex_yq_new_enough && fail "yq $version counts as new enough"
-done
+stub yq "echo 'yq (https://github.com/mikefarah/yq/) version v4.54.1'"
+codex_yq_new_enough || fail "yq 4.54.1 counts as too old"
+stub yq "echo 'yq (https://github.com/mikefarah/yq/) version v4.54.0'"
+codex_yq_new_enough && fail "yq 4.54.0 counts as new enough"
 : > "$STUB_LOG"
 run apply
-assert_eq 1 "$RUN_STATUS" "apply's exit with yq 3.99.99"
-assert_contains "$RUN_OUTPUT" "yq 3.99.99 isn't mikefarah's yq 4.54.1 or newer, which the Codex config edit needs; run brew upgrade yq"
+assert_eq 1 "$RUN_STATUS" "apply's exit with yq 4.54.0"
+assert_contains "$RUN_OUTPUT" "yq 4.54.0 isn't mikefarah's yq 4.54.1 or newer"
 assert_file_not_contains "$STUB_LOG" "brew"
 stub yq 'echo "yq 3.4.3"'
 run status

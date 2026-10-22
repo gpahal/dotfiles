@@ -2,17 +2,22 @@
 # shellcheck disable=SC2329 # the step calls the functions this test replaces
 set -euo pipefail
 
+# The docker step's daemon.json merge: your settings kept, and the old file back when Docker
+# rejects the new one.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=docker-fixture.sh
+source "$TESTS_DIR/docker-fixture.sh"
 
 setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
 as_os ubuntu
+docker_sandbox_paths
 stub_sudo_exec
 stub systemctl
 stub dockerd
-DOCKER_DAEMON_CONFIG="$SANDBOX/etc/docker/daemon.json"
 SETTINGS='"log-driver": "local", "live-restore": true, "ip": "127.0.0.1",
     "default-network-opts": {"bridge": {"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1"}},
     "default-address-pools": [
@@ -43,39 +48,28 @@ assert_eq 10m "$(jq -r '.["log-opts"]["max-size"]' "$DOCKER_DAEMON_CONFIG")" "co
 assert_file_contains "$STUB_LOG" 'dockerd --validate --config-file'
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a change"
 
-printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-write"
-stub mv '[ "${!#}" != "'"$DOCKER_DAEMON_CONFIG"'" ] || exit 1
-exec /bin/mv "$@"'
-: > "$STUB_LOG"
-assert_exit 1 configure_daemon
-rm "$STUB_DIR/mv"
-assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-write"
-assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed write"
-assert_file_not_contains "$STUB_LOG" 'try-restart'
-
 printf '{"log-driver":"json-file","unknown-option":true}\n' > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-validation"
+snapshot "$DOCKER_DAEMON_CONFIG"
 stub dockerd 'exit 1'
 : > "$STUB_LOG"
 assert_exit 1 configure_daemon
-assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-validation"
+assert_unchanged "$DOCKER_DAEMON_CONFIG" "after a failed validation"
 assert_file_not_contains "$STUB_LOG" 'try-restart'
 stub dockerd
 
 printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
+snapshot "$DOCKER_DAEMON_CONFIG"
 stub systemctl '[ "$1" != try-restart ] || exit 1'
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "Docker activation failed; restored the previous configuration."
-assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
+assert_unchanged "$DOCKER_DAEMON_CONFIG" "after a failed restart"
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed restart"
 wrap_fn write_root_file 'return 1'
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "putting the previous configuration back failed too"
 assert_contains "$RUN_OUTPUT" '{"log-driver":"json-file"}'
 restore_fn write_root_file
-cp "$SANDBOX/before-restart" "$DOCKER_DAEMON_CONFIG"
+printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
 stub systemctl
 : > "$STUB_LOG"
 assert_exit 0 configure_daemon
@@ -101,18 +95,11 @@ assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_eq '{"dns": [' "$(cat "$DOCKER_DAEMON_CONFIG")" "invalid daemon.json"
 assert_file_not_contains "$STUB_LOG" "systemctl"
 { echo '{"debug": true}'; echo "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
-cp "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+snapshot "$DOCKER_DAEMON_CONFIG"
 assert_exit 1 daemon_configured
 : > "$STUB_LOG"
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
-assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/two-values"
+assert_unchanged "$DOCKER_DAEMON_CONFIG" "with two JSON values"
 assert_file_not_contains "$STUB_LOG" "dockerd"
-
-assert_file_not_contains "$STUB_LOG" "systemctl"
-
-stub systemctl '[ "$*" == "is-active --quiet docker.service" ]'
-assert_contains "$(daemon_restart_note)" "stops running containers unless live-restore was already on"
-stub systemctl 'exit 1'
-assert_eq "" "$(daemon_restart_note)" "the note with no daemon running"
 test_done

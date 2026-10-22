@@ -112,10 +112,9 @@ ntfy_topic_ok() {
     [ "${#1}" -ge "$NTFY_TOPIC_MIN" ] && [ "${#1}" -le 64 ]
 }
 
-# The URL file is yours, in nut's group, mode 0640, so the health alerts read it as you, the UPS
-# notifier as nut, and the smartd hook as root. Simpler than an ACL or a group of your own, which
-# would need setfacl or a new login before services saw it. Until NUT is installed, there's no
-# nut, so it's in your own group, and status asks to save it again.
+# The URL file is yours, group nut, mode 0640, so the health alerts (you), the UPS notifier (nut),
+# and the smartd hook (root) can all read it without an ACL. Before NUT adds nut, it's in your
+# group, and status asks to save it again.
 ntfy_url_group() {
     if id nut &>/dev/null; then
         echo nut

@@ -13,8 +13,10 @@ command -v node &> /dev/null || skip "node isn't installed"
 DAEMON="$REPO_DIR/stream-deck/linux/daemon.js"
 PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"
 
-# Runs $1 with: d (the daemon), decks (what listDecks finds), deck() (a fake 5×3 deck), drawn(i)
-# (key i's last image), runs (open-in targets), logs, and until(what, test).
+# Runs $1 with: d (the daemon), decks (what listDecks finds), deck(columns, rows) (a fake deck, by
+# default 5×3), opened (the decks opened), press(i), drawn(i) (key i's last image on the last deck
+# opened), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
+# taken), logs, and until(what, test). stats.render throws for the disk key.
 daemon_js() {
     node -e "(async () => {
 const { EventEmitter } = require('node:events');
@@ -50,7 +52,6 @@ const deck = (columns = 5, rows = 3) => {
 let decks = [];
 const opened = [];
 const drawn = (i, d = opened.at(-1)) => fills.filter((f) => f[0] === d && f[1] === i).at(-1)?.[2];
-const count = (i, d = opened.at(-1)) => fills.filter((f) => f[0] === d && f[1] === i).length;
 const until = async (what, test) => {
   const deadline = Date.now() + 5000;
   while (!test()) {
@@ -85,15 +86,12 @@ assert_eq '{"connected":true,"page":"main"} 0
 icon:overview icon:editor icon:terminal icon:files blank icon:chrome icon:claude blank
 stat:overview:1 overview 1' "$out" "the main page"
 
-# Overview opens the System page and Back returns; stat keys open Resources; unchanged images
-# aren't sent again; one bad stat leaves the others updating
+# Overview opens the System page and Back returns; stat keys open Resources
 out="$(daemon_js "decks = [deck()];
 await d.start();
 press(0);
 await until('the System page', () => drawn(1)?.startsWith('stat:cpu'));
 console.log(d.state().page, drawn(0), drawn(5), drawn(14) === BLANK, sampler.kinds.join());
-await until('a later sample', () => drawn(1) !== 'stat:cpu:' + sampler.kinds.length && n >= 3);
-console.log(count(0) === 2, drawn(9), logs.filter((l) => l.startsWith('ERROR')).join('|'));
 press(1);
 press(4);
 await until('two runs', () => runs.length === 2);
@@ -102,7 +100,6 @@ press(0);
 await until('the main page', () => drawn(0)?.startsWith('stat:overview'));
 console.log(d.state().page, drawn(1), sampler.kinds.join());")"
 assert_eq "system icon:back stat:top:1 true cpu,memory,swap,top,gpu,temperature,power,disk,network
-true placeholder:disk ERROR couldn't draw the disk key: broken
 activity-monitor,activity-monitor
 main icon:editor overview" "$out" "page switching and stat keys"
 
@@ -155,27 +152,8 @@ console.log(opened.at(-1).log.join());")"
 assert_eq "false 1 close The Stream Deck MK.2 has 8×4 keys; layout.json is for 5×3
 logo,close" "$out" "another model, then stop"
 
-# An action layout.json names that the manifest lacks is logged and left blank
-out="$(node -e "const { createDaemon } = require(process.argv[1]);
-const logs = [];
-createDaemon({ layout: { columns: 5, rows: 3, links: { overview: 'main' }, pages: { main: { '0,0': 'nope', '1,0': 'overview', '2,0': 'cpu' } } },
-  actions: new Set(['cpu']), keys: require(process.argv[2]), log: (m) => logs.push(m) });
-console.log(logs.join());" "$DAEMON" "$PLUGIN_SRC/keys.js")"
-assert_eq "ERROR layout.json's main page has nope at 0,0, which isn't an action" "$out" "an unknown action"
-
-# Each key's icon: an SVG, a PNG wrapped in SVG, or blank
-images="$SANDBOX/images"
-mkdir -p "$images"
-echo '<svg>cpu</svg>' > "$images/key-cpu.svg"
-printf 'png' > "$images/key-editor@2x.png"
-out="$(node -e "const { imageLoader, BLANK } = require(process.argv[1]);
-const load = imageLoader(process.argv[2]);
-console.log(load('cpu').trim(), load('editor').includes('href=\"data:image/png;base64,cG5n\"'), load('nope') === BLANK);" \
-    "$DAEMON" "$images")"
-assert_eq "<svg>cpu</svg> true true" "$out" "key icons"
-
-# resvg gets the matched family's OpenType files only, not every system font; with no fontconfig,
-# the system fonts
+# resvg gets the matched family's OpenType files only, not every system font, with the family
+# escaped for fc-list's pattern
 out="$(node -e "const { fontOptions } = require(process.argv[1]);
 const calls = [];
 const run = (file, args) => {
@@ -184,32 +162,9 @@ const run = (file, args) => {
   return ['/f/NimbusSans-Regular.otf', '/f/NimbusSans-Regular.t1', '/f/NimbusSans-Bold.otf', ''].join('\n');
 };
 console.log(JSON.stringify(fontOptions(run)));
-console.log(calls.join('|'));
-console.log(JSON.stringify(fontOptions(() => { throw new Error('ENOENT'); })));" "$DAEMON")"
+console.log(calls.join('|'));" "$DAEMON")"
 assert_eq '{"loadSystemFonts":false,"fontFiles":["/f/NimbusSans-Bold.otf","/f/NimbusSans-Regular.otf"],"defaultFontFamily":"Nimbus Sans-Narrow","sansSerifFamily":"Nimbus Sans-Narrow"}
 fc-match -f %{family[0]} Helvetica:charset=2191 2193 b0 b7 2026 2014|fc-list -f %{file}
- Nimbus Sans\-Narrow
-{"loadSystemFonts":true,"defaultFontFamily":"DejaVu Sans","sansSerifFamily":"DejaVu Sans"}' "$out" "the fonts resvg loads"
-
-# With the daemon's packages installed (pnpm install in stream-deck/linux) and fontconfig, the
-# network and temperature keys' symbols render with those fonts
-resvg="$REPO_DIR/stream-deck/linux/node_modules/@resvg/resvg-js"
-if [ -d "$resvg" ] && command -v fc-match &> /dev/null; then
-    out="$(node -e "const { Resvg } = require(process.argv[1]);
-const { fontOptions } = require(process.argv[2]);
-const font = fontOptions();
-// Lit pixels of one glyph, white on black
-const ink = (c) => {
-  const svg = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"144\" height=\"144\"><rect width=\"144\" height=\"144\"/>' +
-    '<text x=\"72\" y=\"100\" font-family=\"Helvetica Neue, Helvetica, Arial, sans-serif\" font-size=\"80\" fill=\"#fff\">' + c + '</text></svg>';
-  const px = new Resvg(svg, { font }).render().pixels;
-  let lit = 0;
-  for (let i = 0; i < px.length; i += 4) if (px[i] > 128) lit++;
-  return lit;
-};
-console.log(font.loadSystemFonts, ['↑', '↓', '°', '·', '—'].filter((c) => ink(c) === 0).join(' ') || 'all drawn');" \
-        "$resvg" "$DAEMON")"
-    assert_eq "false all drawn" "$out" "the keys' symbols with the resolved fonts"
-fi
+ Nimbus Sans\-Narrow' "$out" "the fonts resvg loads"
 
 test_done

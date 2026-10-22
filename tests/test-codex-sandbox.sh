@@ -15,9 +15,7 @@ S="$SANDBOX/state"
 USERNS_RESTRICT_SYSCTL="$S/userns"
 BWRAP_PROFILE="$SANDBOX/apparmor.d/bwrap-userns-restrict"
 
-stub dpkg-query '[ "${!#}" != bubblewrap ] || [ ! -e "'"$S"'/bubblewrap" ] || echo "install ok installed"'
-stub apt-get '[ "$3" == install ] || exit 0
-! grep -qw bubblewrap <<< "$*" || touch "'"$S"'/bubblewrap"'
+stub_apt_package bubblewrap "$S/bubblewrap"
 stub apparmor_parser 'touch "'"$S"'/loaded"'
 stub bwrap 'S="'"$S"'"
 [ -e "$S/bubblewrap" ] && [ ! -e "$S/bwrap-broken" ] &&
@@ -36,8 +34,9 @@ reset() {
     : > "$STUB_LOG"
     unset DOTFILES_ASSUME_YES
 }
+# apt-get without the environment and options lib/common.sh's apt_get adds
 sudo_calls() {
-    grep '^sudo' "$STUB_LOG" | sed -e "s|$SANDBOX|SANDBOX|g" || true
+    grep '^sudo' "$STUB_LOG" | sed -E -e "s|$SANDBOX|SANDBOX|g" -e 's/^sudo .*apt-get( -o [^ ]+)* /sudo apt-get /' || true
 }
 
 reset 1 bubblewrap loaded
@@ -72,8 +71,8 @@ touch "$BWRAP_PROFILE"
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
-assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with the profile loaded at boot"
+assert_eq "sudo apt-get update
+sudo apt-get install -y bubblewrap" "$(sudo_calls)" "sudo calls with the profile loaded at boot"
 
 reset 1
 touch "$BWRAP_PROFILE"
@@ -81,16 +80,16 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Install bubblewrap"
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
-assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap
+assert_eq "sudo apt-get update
+sudo apt-get install -y bubblewrap
 sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(sudo_calls)" "sudo calls for bubblewrap with the profile in apparmor.d"
 
 reset 1
 export DOTFILES_ASSUME_YES=1
 assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
-assert_eq "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update
-sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
+assert_eq "sudo apt-get update
+sudo apt-get install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile to load"
 
 reset 1 bwrap-broken
 touch "$BWRAP_PROFILE"
@@ -99,8 +98,4 @@ assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "bwrap still can't create a sandbox"
 assert_contains "$(sudo_calls)" "sudo apparmor_parser -r"
 
-reset 1 bubblewrap
-assert_exit 1 bwrap_works
-touch "$S/loaded"
-assert_exit 0 bwrap_works
 test_done

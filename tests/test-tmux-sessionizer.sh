@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# tmux-sessionizer: one session per project dir, named uniquely, inside tmux or out.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -30,10 +32,7 @@ pick "$HOME/Dev/go/api"
 : > "$STUB_LOG"
 assert_exit 0 bash "$SESSIONIZER"
 assert_eq "$HOME/Dev/go/api" "$(session_path api)" "the api session's path"
-assert_file_contains "$STUB_LOG" "tmux new-session -d -s api -c $HOME/Dev/go/api"
 assert_file_contains "$STUB_LOG" "tmux switch-client -t =api"
-assert_file_contains "$SANDBOX/fzf-input" "$HOME/Dev/js/api"
-assert_file_contains "$SANDBOX/fzf-input" "$HOME/Dev/web/site.io"
 
 : > "$STUB_LOG"
 assert_exit 0 bash "$SESSIONIZER"

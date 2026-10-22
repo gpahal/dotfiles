@@ -3,12 +3,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
 
-# Run it again to bring back a function a test replaced
+# Run it again to bring back a function a test replaced. restore_fn ufw_enabled reads ufw's files
+# and units instead of $SANDBOX/ufw-on.
 ubuntu_step_load() {
     load_script ubuntu/install.sh
     ubuntu_sandbox_paths
     as_os ubuntu
-    replace_fn ufw_enabled '[ -e "$SANDBOX/ufw-on" ]'
+    wrap_fn ufw_enabled '[ -e "$SANDBOX/ufw-on" ]'
     replace_fn lingering true
     replace_fn status_smart :
     replace_fn status_firmware :
@@ -21,7 +22,8 @@ ubuntu_step_load() {
     wrap_fn in_git_worktree false
 }
 
-# Defaults match 26.04; files under $SANDBOX change unit state. $1 runs first.
+# Defaults match 26.04; files under $SANDBOX change unit state, such as units/ufw.service.disabled
+# or .inactive. ssh.socket listens on the ports in $SANDBOX/socket-ports. $1 runs first.
 stub_systemctl() {
     stub systemctl "${1:-}"'
 case "$1" in
@@ -39,6 +41,7 @@ case "$1" in
             rm -f "'"$SANDBOX"'/reload-needed" ;;
     esac ;;
     is-enabled) case "$2" in
+        -q) [ "$3" != ufw.service ] || [ ! -e "'"$SANDBOX"'/units/ufw.service.disabled" ] ;;
         smartmontools.service) cat "'"$SANDBOX"'/smartd" 2> /dev/null || echo disabled ;;
         apt-daily.timer | apt-daily-upgrade.timer | ssh.socket) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo enabled ;;
         ssh.service) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo disabled ;;
@@ -46,6 +49,7 @@ case "$1" in
     esac ;;
     enable)
         case "$3" in ssh.socket) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
+        [ "${!#}" != ufw.service ] || { rm -f "'"$SANDBOX"'/units/ufw.service."*; exit 0; }
         if [ "$3" == apt-daily.timer ]; then
             [ ! -e "'"$SANDBOX"'/timers-fail" ] || exit 1
             for unit in "${@:3}"; do rm -f "'"$SANDBOX"'/units/$unit" "'"$SANDBOX"'/units/$unit.inactive"; done
@@ -59,6 +63,7 @@ case "$1" in
         smartmontools.service) [ -e "'"$SANDBOX"'/smartd-active" ] ;;
         *) [ ! -e "'"$SANDBOX"'/units/$3.inactive" ] ;;
     esac ;;
+    show) [ "$2" != ssh.socket ] || sed "s/.*/[::]:& (Stream)/" "'"$SANDBOX"'/socket-ports" 2> /dev/null || true ;;
 esac'
 }
 
@@ -98,7 +103,7 @@ ubuntu_step_setup() {
     esac'
     echo Running > "$SANDBOX/tailscale-state"
     # sshd -T takes the first value per key, Match blocks winning; test-ubuntu-sshd-real.sh checks
-    # the step against the real sshd
+    # the step against the real sshd. It reads a drop-in only root could read from <file>.root.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console
     stub ss
@@ -108,7 +113,9 @@ ubuntu_step_setup() {
             [ "${2:-}" != -C ] || user="$(sed -n "s/^user=\([^,]*\).*/\1/p" <<< "$3")"
             [ "${2:-}" != -C ] || addr="$(sed -n "s/.*addr=\([^,]*\).*/\1/p" <<< "$3")"
             echo "port 22"
-            cat "'"$SANDBOX"'"/sshd_config.d/*.conf 2> /dev/null | awk -v user="$user" -v addr="$addr" '"'"'
+            for f in "'"$SANDBOX"'"/sshd_config.d/*.conf; do
+                [ ! -e "$f" ] || cat "$f" 2> /dev/null || cat "$f.root"
+            done | awk -v user="$user" -v addr="$addr" '"'"'
                 { k = tolower($1) }
                 k == "match" {
                     matched = tolower($2) == "user" && $3 == user
@@ -148,10 +155,43 @@ ubuntu_step_setup() {
                 if grep -q "^Bogus" "$f"; then echo "$f: line 1: Bad configuration option: Bogus" >&2; exit 255; fi
             done ;;
     esac'
+    # ufw over $SANDBOX/ufw-status, in `ufw status` format. It's inactive unless $UFW_CONF says
+    # ENABLED=yes, or while $SANDBOX/ufw-stopped exists, as after ufw-init stop. As in ufw, IPv6 rules
+    # fail with IPV6=no.
+    mkdir -p "$(dirname "$UFW_CONF")"
     ufw_status_listing > "$SANDBOX/ufw-status"
-    stub ufw 'case "$1" in
-        --force) touch "'"$SANDBOX"'/ufw-on" ;;
-        status) [ -e "'"$SANDBOX"'/ufw-on" ] && cat "'"$SANDBOX"'/ufw-status" ;;
+    stub ufw 'rules="'"$SANDBOX"'/ufw-status"
+    case "$1" in
+        status) if ! grep -qx ENABLED=yes "'"$UFW_CONF"'" 2> /dev/null || [ -e "'"$SANDBOX"'/ufw-stopped" ]; then
+                echo "Status: inactive"
+            else
+                cat "$rules"
+            fi ;;
+        allow) case "$*" in
+                "allow from "*:*) if grep -qx IPV6=no "'"$UFW_DEFAULTS"'"; then
+                        echo "ERROR: IPv6 support not enabled" >&2
+                        exit 1
+                    fi
+                    rule="$(printf "%-26s ALLOW       %s" "$7/tcp" "$3")" ;;
+                "allow from "*) rule="$(printf "%-26s ALLOW       %s" "$7/tcp" "$3")" ;;
+                "allow in on tailscale0") rule="Anywhere on tailscale0     ALLOW       Anywhere" ;;
+                *) rule="$(printf "%-26s ALLOW       Anywhere" "$2")" ;;
+            esac
+            grep -qxF "$rule" "$rules" || echo "$rule" >> "$rules" ;;
+        prepend | delete)
+            v4="$(printf "%-26s DENY        Anywhere" "$9/tcp on $5")"
+            v6="$(printf "%-26s DENY        Anywhere (v6)" "$9/tcp (v6) on $5")"
+            if [ "$1" == delete ]; then
+                grep -vxF -e "$v4" -e "$v6" "$rules" > "$rules.new" || true
+            elif grep -qxF "$v4" "$rules"; then
+                exit 0
+            else
+                awk -v a="$v4" -v b="$v6" "{ print } /^--/ { print a; print b }" "$rules" > "$rules.new"
+            fi
+            mv "$rules.new" "$rules" ;;
+        --force) echo ENABLED=yes > "'"$UFW_CONF"'"
+            touch "'"$SANDBOX"'/ufw-on"
+            rm -f "'"$SANDBOX"'/ufw-stopped" ;;
     esac'
     stub nmcli 'case "$*" in
         "-t -e no -f UUID,TYPE,NAME connection show") printf "%s\n" "1111-aaaa:802-3-ethernet:Wired connection 1" "2222-bbbb:802-11-wireless:Home:5G" ;;
@@ -170,8 +210,6 @@ ubuntu_step_setup() {
     stub iw
     echo default > "$SANDBOX/wol"
     mkdir "$SANDBOX/units" "$SANDBOX/user-units"
-    # shellcheck disable=SC2034 # test-ubuntu-step.sh reads it
-    KEEP_CONFFILES="Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)"
     # As Tailscale's install script writes it
     TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/stable/ubuntu resolute main"
     echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"

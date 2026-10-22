@@ -1,10 +1,8 @@
-# Call ubuntu_sandbox_paths after setup_sandbox and after each load_script ubuntu/install.sh,
-# which resets the paths. It fails the test when a step constant still names a system path.
+# Helpers for tests of the ubuntu step and its hooks. Call ubuntu_sandbox_paths after setup_sandbox
+# and after each load_script ubuntu/install.sh, which resets the paths. It fails the test when a
+# step constant still names a system path.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
-
-# Constants the step only writes into files' content, never opens
-UBUNTU_CONTENT_PATHS="UPS_POWERDOWN_FLAG"
 
 ubuntu_sandbox_paths() {
     SBIN_PATH="$STUB_DIR"
@@ -44,7 +42,8 @@ ubuntu_sandbox_paths() {
 _ubuntu_system_paths_left() {
     local name value left=""
     while IFS= read -r name; do
-        case " $UBUNTU_CONTENT_PATHS " in *" $name "*) continue ;; esac
+        # Only written into NUT's config, never opened
+        [ "$name" != UPS_POWERDOWN_FLAG ] || continue
         eval "set -- \${${name}[@]+\"\${${name}[@]}\"}"
         for value; do
             case "$value" in
@@ -57,7 +56,8 @@ _ubuntu_system_paths_left() {
     [ -z "$left" ] || fail "ubuntu_sandbox_paths left these on the real machine:$left"
 }
 
-# `ufw status` output for the rules the ubuntu step adds, in its order; $1 is the SSH port
+# `ufw status` output for the rules the ubuntu step adds, in its order. The rules functions take the
+# SSH port, by default 22.
 ufw_header() {
     printf '%s\n' "Status: active" "" "To                         Action      From" \
         "--                         ------      ----"
@@ -83,4 +83,22 @@ ufw_status_listing() {
     ufw_deny_rules
     ufw_range_rules
     ufw_tailscale_rules
+}
+
+# Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and
+# PATH, so the copy points them at the sandbox.
+ntfy_hook_copy() {
+    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
+        -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
+    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4" ||
+        ! grep -qxF "PATH=\"$PATH\"" "$4"; then
+        fail "$1 has no NTFY_URL_FILE=, NTFY_LIB=, or PATH= line to point at the sandbox"
+    fi
+}
+
+# A curl for ntfy pushes. It logs the config it reads on stdin (-K -), which holds the topic, as
+# "curl config: <line>", and fails while $SANDBOX/curl-fails exists.
+stub_ntfy_curl() {
+    stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
+[ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
 }

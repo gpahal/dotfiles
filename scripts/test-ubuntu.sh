@@ -75,8 +75,7 @@ in_vm() {
     return "$status"
 }
 
-# As the machine's user with its user manager, which systemctl --user needs: orb run starts no
-# login session
+# Sets XDG_RUNTIME_DIR for systemctl --user, since orb run starts no login session
 in_vm_user() {
     # shellcheck disable=SC2016 # expanded in the machine
     in_vm bash -c 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"; "$@"' bash "$@"
@@ -138,7 +137,7 @@ run_runner() {
     shift 2
     echo "=== $runner $mode ==="
     if [ -n "$mode" ]; then
-        # The health alerts were installed from a worktree
+        # Setup set this too; without it, status rejects alerts installed from a worktree
         in_vm env DOTFILES_ALLOW_WORKTREE=1 bash "$runner" "$mode" || status=$?
     else
         # orb run bypasses sshd, so no SSH session proves a key login; the opt-in turns password logins off.

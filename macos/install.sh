@@ -7,8 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
-# shellcheck source=pam.sh
-source "$DOTFILES_DIR/macos/pam.sh"
+# shellcheck source=lib/pam.sh
+source "$DOTFILES_DIR/macos/lib/pam.sh"
 
 STEP_OS=macos
 
@@ -29,7 +29,7 @@ symbolic_hotkeys() {
     "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Vicinae"
 }
 
-# " domain:key" per change; " domain key," per failure. Sandboxed failures need Full Disk Access.
+# " domain:key" per change; " domain key," per failure
 CHANGED_KEYS=""
 FAILED_KEYS=""
 SANDBOXED_KEYS=""
@@ -204,7 +204,6 @@ enable_firewall() {
     echo "  Turned on the application firewall"
 }
 
-# Stealth mode leaves pings and probes of closed ports unanswered
 stealth_mode_on() {
     local cmd
     cmd="$(firewall_cmd)" || return 1
@@ -314,7 +313,7 @@ apply() {
         killall Finder 2>/dev/null || true
     [[ "$CHANGED_KEYS" == *com.apple.dock:* ]] && killall Dock 2>/dev/null || true
     [[ "$CHANGED_KEYS" == *com.apple.screencapture:* ]] && killall SystemUIServer 2>/dev/null || true
-    # Key repeat needs a new login session
+    # NSGlobalDomain changes, such as key repeat, need a new login session
     local logout=false cmd
     [[ "$CHANGED_KEYS" != *NSGlobalDomain:* ]] || logout=true
     if [[ "$CHANGED_KEYS" == *com.apple.symbolichotkeys:* ]]; then

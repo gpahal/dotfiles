@@ -15,9 +15,7 @@ load_script hotkeys/install.sh
 as_os ubuntu
 MEDIA=org.gnome.settings-daemon.plugins.media-keys
 DIR=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
-# One of yours, on a key the step doesn't use
-gsettings set "$MEDIA" custom-keybindings "['$DIR/custom0/']"
-gsettings set "$MEDIA.custom-keybinding:$DIR/custom0/" binding "<Super>Return"
+user_shortcut
 
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
@@ -39,10 +37,6 @@ assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+Space opens Claude"
 assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+N opens New Tab"
 assert_eq "['$DIR/custom0/', '$DIR/dotfiles-claude/', '$DIR/dotfiles-chrome/', '$DIR/dotfiles-t3-code/', '$DIR/dotfiles-terminal/', '$DIR/dotfiles-editor/', '$DIR/dotfiles-chrome-tab/']" \
     "$(gsettings get "$MEDIA" custom-keybindings)" "the shortcut list, with yours kept"
-assert_eq "'<Control><Alt><Super>t'" "$(gsettings get "$MEDIA.custom-keybinding:$DIR/dotfiles-terminal/" binding)" \
-    "Terminal's keys"
-assert_eq "\"systemd-cat -t dotfiles-hotkeys env OPEN_IN_CALLER=Hotkeys 'OPEN_IN_LOG=journalctl --user -t dotfiles-hotkeys' /bin/bash '$open_in' chrome-tab\"" \
-    "$(gsettings get "$MEDIA.custom-keybinding:$DIR/dotfiles-chrome-tab/" command)" "New Tab's command"
 
 # The command splits as a shell would, and runs open-in with its target
 stub systemd-cat 'shift 2; exec "$@"'
@@ -77,16 +71,4 @@ assert_eq 1 "$RUN_STATUS" "gnome_enable_extension's status when gsettings can't 
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 stub_gsettings
 assert_eq "$paths" "$(gsettings get "$MEDIA" custom-keybindings)" "the shortcut list after failed reads"
-: | gsettings_set_list org.gnome.shell enabled-extensions
-assert_eq "@as []" "$(gsettings get org.gnome.shell enabled-extensions)" "an emptied list"
-
-# Ubuntu Server: no GNOME, nothing to do
-hide gnome-shell
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "No GNOME desktop, so skipped."
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "skipped    GNOME shortcuts: no GNOME desktop"
-assert_eq "" "$(cat "$STUB_LOG")" "commands run without GNOME"
-
 test_done

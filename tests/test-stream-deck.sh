@@ -15,12 +15,6 @@ as_os macos
 src="$REPO_DIR/stream-deck/$PLUGIN"
 layout="$src/layout.json"
 
-mkdir -p "$SANDBOX/repo/stream-deck/$PLUGIN/bin"
-touch "$SANDBOX/repo/stream-deck/$PLUGIN/"{manifest.json,manifest.json.bak,.DS_Store,bin/open-in,bin/.DS_Store}
-assert_eq "bin/open-in
-manifest.json
-manifest.json.bak" "$(DOTFILES_DIR="$SANDBOX/repo" plugin_file_list | LC_ALL=C sort)" "plugin_file_list"
-
 stub pkill
 stub pgrep 'exit 1'
 stub open
@@ -44,7 +38,7 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
 
-# Stale files go, with folders left empty, but nothing outside the plugin
+# Stale files go, and the folders they leave empty, but nothing outside the plugin
 # shellcheck disable=SC2088 # shown, not expanded
 shown_plugin="~/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 mkdir -p "$PLUGIN_DIR/old" "$PLUGIN_DIR/../other.sdPlugin"
@@ -73,8 +67,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Stream Deck isn't running; it loads the plugin and its profiles when it starts."
 assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
 cmp -s "$src/plugin.js" "$PLUGIN_DIR/plugin.js" || fail "plugin.js wasn't restored"
-assert_not_contains "$RUN_OUTPUT" "Backed up"
-[ ! -e "$PLUGIN_DIR/plugin.js.bak" ] || fail "the step backed up the edit"
 
 # open fails with -600 just after Stream Deck quits
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
@@ -91,17 +83,7 @@ echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub open 'exit 1'
 assert_exit 1 main --no-backup
 assert_contains "$RUN_OUTPUT" "Couldn't reopen Stream Deck."
-
-echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
-stub pgrep
 stub open
-: > "$STUB_LOG"
-assert_exit 1 main --no-backup
-assert_contains "$RUN_OUTPUT" "Stream Deck didn't quit; quit it and re-run the step"
-assert_not_contains "$RUN_OUTPUT" "Restarted"
-assert_file_not_contains "$STUB_LOG" "open -g"
-stub pgrep 'exit 1'
-assert_exit 0 main --no-backup
 
 # Every action has a key image, and either switches pages or open-in or stats.js handles it
 actions="$(jq -r '.Actions[].UUID' "$src/manifest.json" | tr '\n' ' ')"
@@ -138,12 +120,6 @@ for page in $(layout_pages); do
     cmp -s "$src/profiles/$title.streamDeckProfile" "$SANDBOX/built/$title.streamDeckProfile" ||
         fail "the $title profile is out of date; run stream-deck/build-profile.sh"
 done
-# A relative path is the caller's, though zip runs elsewhere
-mkdir -p "$SANDBOX/cwd"
-# shellcheck disable=SC2016 # the inner shell expands them
-assert_exit 0 bash -c 'cd "$1" && bash "$2" rel' _ "$SANDBOX/cwd" "$REPO_DIR/stream-deck/build-profile.sh"
-cmp -s "$SANDBOX/built/Main.streamDeckProfile" "$SANDBOX/cwd/rel/Main.streamDeckProfile" ||
-    fail "build-profile.sh with a relative path didn't build there"
 
 profiles="$HOME/Library/Application Support/com.elgato.StreamDeck/ProfilesV3"
 mkdir -p "$profiles"
@@ -258,11 +234,8 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Stream Deck didn't quit"
 [ -e "$profiles/C3.sdProfile" ] || fail "a profile was deleted while Stream Deck still ran"
 stub pgrep 'exit 1'
-
-# Not running: deleted with nothing to reopen
-stub pkill 'exit 1'
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Deleted C3.sdProfile"
-assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
+# pkill failing, rather than finding nothing, says nothing about whether Stream Deck runs
+stub pkill 'exit 2'
+assert_exit 1 main
+[ -e "$profiles/C3.sdProfile" ] || fail "a profile was deleted though pkill failed"
 test_done

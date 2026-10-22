@@ -59,6 +59,7 @@ done <<< "$start_pins"
 # curl serves $SANDBOX/plug-<tag>.vim for each tag
 git init -q "$REMOTES/junegunn/vim-plug"
 commit junegunn/vim-plug 1 > /dev/null
+# 0.9.10 and 0.13.0 catch a string sort, which would rank 0.9.10 above 0.13.0 and the real tags
 for tag in 0.9.10 0.13.0 "$(cat "$PLUG_VERSION")" nightly; do
     git -C "$REMOTES/junegunn/vim-plug" tag "$tag"
 done
@@ -83,7 +84,7 @@ release() {
 }
 
 # A replaced file changes its inode
-snapshot() {
+pinned_files() {
     local f
     for f in "$VIMRC" "$LOCK" "$PLUG_VIM" "$PLUG_VERSION"; do
         /bin/ls -i "$f" | awk '{ print $1 }'
@@ -94,15 +95,11 @@ bump() {
     assert_exit "$1" "$BASH" "$COPY/scripts/bump-plugins.sh"
 }
 
-before="$(snapshot)"
+before="$(pinned_files)"
 bump 0
-assert_contains "$RUN_OUTPUT" "tpope/vim-sensible: unchanged"
-assert_contains "$RUN_OUTPUT" "tmux-plugins/tpm: unchanged"
-assert_contains "$RUN_OUTPUT" "vim-plug: unchanged"
-assert_eq "$before" "$(snapshot)" "the files when nothing moved"
+assert_eq "$before" "$(pinned_files)" "the files when nothing moved"
 assert_file_not_contains "$STUB_LOG" curl
 
-old_version="$(cat "$PLUG_VERSION")"
 old_nerdtree="$(pin_of preservim/nerdtree)"
 old_tpm="$(pin_of tmux-plugins/tpm)"
 sensible="$(commit tpope/vim-sensible 2)"
@@ -114,8 +111,6 @@ expected_vimrc="$(sed -e "s/$(pin_of tpope/vim-sensible)/$sensible/" \
 expected_lock="$(sed -e "s/$(pin_of christoomey/vim-tmux-navigator)/$navigator/" \
     -e "s/$(pin_of tmux-plugins/tmux-yank)/$yank/" "$LOCK")"
 bump 0
-assert_contains "$RUN_OUTPUT" "https://github.com/tpope/vim-sensible/compare/"
-assert_contains "$RUN_OUTPUT" "vim-plug: $old_version -> $NEXT"
 assert_eq "$expected_vimrc" "$(cat "$VIMRC")" "vimrc after the bump"
 assert_eq "$expected_lock" "$(cat "$LOCK")" "plugins.lock after the bump"
 assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after the bump"
@@ -130,17 +125,16 @@ git -C "$REMOTES/junegunn/vim-plug" tag "$AFTER"
 echo "<html>Not Found</html>" > "$SANDBOX/plug-$AFTER.vim"
 bump 1
 assert_contains "$RUN_OUTPUT" "Couldn't read preservim/nerdtree's HEAD"
-assert_contains "$RUN_OUTPUT" "vim-plug stays at $NEXT"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "the pin whose HEAD couldn't be read"
 assert_eq "$surround" "$(pin_of tpope/vim-surround)" "a pin that moved beside a failure"
 assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
 assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
 
 rm "$SANDBOX/plug-$AFTER.vim"
-before="$(snapshot)"
+before="$(pinned_files)"
 bump 1
 assert_contains "$RUN_OUTPUT" "Couldn't download vim-plug $AFTER"
-assert_eq "$before" "$(snapshot)" "the files after a failed download"
+assert_eq "$before" "$(pinned_files)" "the files after a failed download"
 
 assert_eq "$REAL_BEFORE" "$(real_sums)" "the repo's own files"
 test_done

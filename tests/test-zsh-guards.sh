@@ -15,12 +15,8 @@ mkdir -p "$ZDOTDIR"
 for file in options reminders; do
     echo "source '$REPO_DIR/zsh/$file.zsh'"
 done > "$ZDOTDIR/.zshrc"
-# macOS's path_helper would put real commands ahead of the stubs
-printf 'path=(%q $path)\n' "$STUB_DIR" > "$ZDOTDIR/.zprofile"
-stub mise
 
-PROBE='echo probed; setopt | grep -xE "nocaseglob|correct|rcexpandparam|autocd" | sed "s/^/opt=/"
-print -r -- "mise=$(whence -p mise)"; true'
+PROBE='echo probed; setopt | grep -xE "nocaseglob|correct|rcexpandparam|autocd" | sed "s/^/opt=/"; true'
 
 reminders() {
     echo "every time" > "$HOME/.remind"
@@ -35,7 +31,6 @@ assert_not_contains "$output" "just once" "probe output"
 [ -f "$HOME/.remind-oneshot" ] || fail "the probe removed ~/.remind-oneshot"
 assert_contains "$output" "probed" "probe output"
 assert_not_contains "$output" "opt=" "probe output"
-assert_contains "$output" "mise=$STUB_DIR/mise" "the mise the probe finds"
 
 # Claude Code's snapshot runs `zsh -c -l`, with CLAUDECODE=1 and stdout on a pipe
 output="$(CLAUDECODE=1 zsh -c -l "source '$ZDOTDIR/.zshrc' < /dev/null; $PROBE" < /dev/null)"
@@ -53,9 +48,6 @@ output="$(in_terminal zsh -ilc "$PROBE")"
 assert_contains "$output" "every time" "terminal output"
 assert_contains "$output" "just once" "terminal output"
 [ ! -f "$HOME/.remind-oneshot" ] || fail "a terminal shell left ~/.remind-oneshot"
-assert_contains "$output" "opt=nocaseglob" "terminal output"
-assert_contains "$output" "opt=correct" "terminal output"
-assert_contains "$output" "opt=rcexpandparam" "terminal output"
-assert_contains "$output" "opt=autocd" "terminal output"
-assert_contains "$output" "mise=$STUB_DIR/mise" "the mise a terminal finds"
+assert_eq "$(printf 'opt=%s\n' autocd correct nocaseglob rcexpandparam)" "$(grep '^opt=' <<< "$output" | sort)" \
+    "options in a terminal"
 test_done

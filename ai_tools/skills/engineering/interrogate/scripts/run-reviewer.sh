@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Run it from inside the repo under review: the reviewer works from the repo's root. Claude runs
 # in restricted mode, which confines its file tools to the repo and the prompt file's directory
-# (where the lead puts the diff file and any materialized head). It gets only the Read, Grep, and
+# (where the lead puts the diff files and any materialized head). It gets only the Read, Grep, and
 # Glob tools, with no settings files or MCP servers loaded, since the user's allow rules would
 # otherwise apply.
 # Codex runs in its read-only sandbox, which blocks writes but not reads. It skips the user's
@@ -94,9 +94,7 @@ case "$family" in
         ;;
     codex)
         # multi_agent is off because --ephemeral sessions can't start sub-agents. Auth still
-        # works without the user config: it lives in $CODEX_HOME/auth.json. The read-only
-        # sandbox lets the reviewer read any file you can, so instructions planted in a reviewed
-        # diff could get a secret quoted into its answer.
+        # works without the user config: it lives in $CODEX_HOME/auth.json.
         codex exec --model "$model" -c "model_reasoning_effort=\"$effort\"" \
             -c 'approval_policy="never"' --ignore-user-config --ignore-rules \
             --sandbox read-only --disable multi_agent --ephemeral --cd "$root" \

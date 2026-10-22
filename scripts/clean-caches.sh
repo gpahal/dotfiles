@@ -11,6 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 CACHE_NAMES=()
 CACHE_DIRS=()
 CACHE_CLEARS=()
+SKIPPED_CACHES=()
 
 # Each runs from ~, where collect_caches found the cache, and is given it where the tool takes one.
 # pnpm isn't: --store-dir wants the parent of the versioned dir that store path prints.
@@ -19,8 +20,8 @@ _clear_pnpm() { pnpm store prune; }
 _clear_npm() { npm cache clean --force --cache "$1"; }
 _clear_brew() { HOMEBREW_CACHE="$1" brew cleanup --prune=all; }
 
-# A cache dir only, resolved first, as $HOME// or a symlink can name HOME: never /, HOME, or a dir
-# above it
+# Resolves the dir first, since $HOME// or a symlink can name HOME; refuses /, HOME, or a dir
+# above it.
 _clear_dir() {
     local dir home
     dir="$(cd -- "$1" 2> /dev/null && pwd -P)" || return 1
@@ -41,13 +42,29 @@ _add_cache() {
     CACHE_CLEARS+=("$3")
 }
 
+# _add_dir_cache <name> <dir> <default-dir> <cache-home>: a dir an env var names is cleared, all of
+# it, only when it's the tool's default or inside the cache home; else it could be ~/Documents
+_add_dir_cache() {
+    local dir default home
+    [ -n "$2" ] && [ -d "$2" ] && [ -n "$(ls -A "$2" 2> /dev/null)" ] || return 0
+    dir="$(cd -- "$2" && pwd -P)" || return 0
+    default="$(cd -- "$3" 2> /dev/null && pwd -P)" || default=""
+    home="$(cd -- "$4" 2> /dev/null && pwd -P)" || home=""
+    if [ "$dir" != "$default" ] && { [ -z "$home" ] || [[ "$dir" != "$home/"* ]]; }; then
+        SKIPPED_CACHES+=("$1 in $2, which isn't in $4 or the default $3")
+        return 0
+    fi
+    _add_cache "$1" "$dir" _clear_dir
+}
+
 # Asking each tool finds its cache wherever its config moved it. From ~, so a project's mise.toml
 # doesn't pick the tool.
 collect_caches() {
-    local dir cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
+    local dir default cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
     CACHE_NAMES=()
     CACHE_DIRS=()
     CACHE_CLEARS=()
+    SKIPPED_CACHES=()
     if command -v go &> /dev/null && dir="$(cd ~ && go env GOCACHE 2> /dev/null)"; then
         _add_cache "Go build cache" "$dir" _clear_go
     fi
@@ -61,13 +78,12 @@ collect_caches() {
         _add_cache "Homebrew downloads" "$dir" _clear_brew
     fi
     # PLAYWRIGHT_BROWSERS_PATH=0 keeps browsers in each project's node_modules
-    dir="${PLAYWRIGHT_BROWSERS_PATH:-}"
-    if [ -z "$dir" ]; then
-        dir="$cache_home/ms-playwright"
-        ! is_macos || dir="$HOME/Library/Caches/ms-playwright"
-    fi
-    [ "$dir" == 0 ] || _add_cache "Playwright browsers" "$dir" _clear_dir
-    _add_cache "PyTorch downloads" "${TORCH_HOME:-$cache_home/torch}" _clear_dir
+    default="$cache_home/ms-playwright"
+    ! is_macos || default="$HOME/Library/Caches/ms-playwright"
+    dir="${PLAYWRIGHT_BROWSERS_PATH:-$default}"
+    [ "$dir" == 0 ] || _add_dir_cache "Playwright browsers" "$dir" "$default" "$cache_home"
+    _add_dir_cache "PyTorch downloads" "${TORCH_HOME:-$cache_home/torch}" "$cache_home/torch" \
+        "$cache_home"
 }
 
 _size_kib() {
@@ -96,10 +112,13 @@ _list_caches() {
 }
 
 clean_caches() {
-    local dry_run=false i=0 rc before_kib total_kib failed=()
+    local dry_run=false i=0 rc before_kib total_kib failed=() skipped
     [ "${1:-}" != --dry-run ] || dry_run=true
     echo "Measuring caches..."
     collect_caches
+    for skipped in ${SKIPPED_CACHES[@]+"${SKIPPED_CACHES[@]}"}; do
+        echo "Skipping the $skipped."
+    done
     if [ ${#CACHE_NAMES[@]} -eq 0 ]; then
         echo "No caches to clear."
         return 0

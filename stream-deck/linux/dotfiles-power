@@ -36,8 +36,15 @@ watts() {
     WATTS="$((centiwatts / 100)).$((centiwatts / 10 % 10))$((centiwatts % 10))"
 }
 
+# Sets main's cores and cores_at to the cores' reading now, and cores_range to their counter's range
+start_cores() {
+    [ -n "$CORES" ] && read -r cores_range 2> /dev/null < "$CORES/max_energy_range_uj" &&
+        [ -n "$cores_range" ] && read_uj "$CORES" || return 1
+    cores="$UJ" cores_at="$NOW"
+}
+
 main() {
-    local zone name pkg_range cores_range pkg pkg_at cores="" cores_at line
+    local zone name pkg_range cores_range="" pkg pkg_at cores="" cores_at line
     for zone in "$PACKAGE":*; do
         read -r name 2> /dev/null < "$zone/name" || continue
         if [ "$name" == core ]; then
@@ -51,9 +58,7 @@ main() {
     fi
     read_now || return 1
     pkg="$UJ" pkg_at="$NOW"
-    if [ -n "$CORES" ] && read -r cores_range 2> /dev/null < "$CORES/max_energy_range_uj" && read_uj "$CORES"; then
-        cores="$UJ" cores_at="$NOW"
-    fi
+    start_cores
     umask 022
     while sleep "$INTERVAL"; do
         # A failed read keeps the last reading and its time, so the next figure spans both rounds
@@ -63,7 +68,10 @@ main() {
         watts "$pkg" "$UJ" "$pkg_range" $((NOW - pkg_at))
         line="$WATTS"
         pkg="$UJ" pkg_at="$NOW"
-        if [ -n "$cores" ] && read_uj "$CORES" && [ "$NOW" -gt "$cores_at" ]; then
+        if [ -z "$cores" ]; then
+            # Unreadable so far, as at startup: this reading starts the cores' figure
+            start_cores
+        elif read_uj "$CORES" && [ "$NOW" -gt "$cores_at" ]; then
             watts "$cores" "$UJ" "$cores_range" $((NOW - cores_at))
             line="$line $WATTS"
             cores="$UJ" cores_at="$NOW"

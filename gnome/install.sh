@@ -16,10 +16,10 @@ GNOME_SETTINGS=(
     # The macos step's InitialKeyRepeat 15 and KeyRepeat 2, in 15 ms units
     "org.gnome.desktop.peripherals.keyboard|delay|uint32 225|Keys repeat after 225 ms"
     "org.gnome.desktop.peripherals.keyboard|repeat-interval|uint32 30|Keys repeat every 30 ms"
-    # Nautilus reads the GTK 3 key and GTK 4 file choosers read the other. Both, as AppleShowAllFiles
-    # covers Finder and file dialogs.
-    "org.gtk.Settings.FileChooser|show-hidden|true|Files and file choosers show hidden files"
-    "org.gtk.gtk4.Settings.FileChooser|show-hidden|true|GTK 4 file choosers show hidden files"
+    # Files and GTK 4 file choosers read the gtk4 key, GTK 3 file choosers the other. Both, as
+    # AppleShowAllFiles covers Finder and file dialogs.
+    "org.gtk.Settings.FileChooser|show-hidden|true|GTK 3 file choosers show hidden files"
+    "org.gtk.gtk4.Settings.FileChooser|show-hidden|true|Files and GTK 4 file choosers show hidden files"
     "org.gnome.nautilus.preferences|default-folder-viewer|'list-view'|Files opens folders in list view"
     # With dock-fixed and intellihide off, the dock stays hidden until the pointer reaches the edge,
     # as on the Mac

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy installed configs that differ back into the repo. Fails on a repo file with uncommitted
-# changes, or on two installed copies of one file that differ from each other.
+# Copy installed configs that differ back into the repo. Skips a repo file with uncommitted changes,
+# and a second installed copy that differs from the first, and then exits 1 after copying the rest.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

@@ -1,14 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# The macos step's sudo items for the firewall, its stealth mode, and automatic App Store updates.
+# The macos step's sudo items: the hostname, the firewall, its stealth mode, and automatic App Store
+# updates.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 
-# socketfilterfw and defaults keep their settings as files in $STATE
+# socketfilterfw and scutil keep their settings as files in $STATE
 STATE="$SANDBOX/state"
 mkdir -p "$STATE" "$HOME/Screenshots"
 stub socketfilterfw 'state="'"$STATE"'"
@@ -19,13 +20,14 @@ case "$1 ${2:-}" in
     "--setstealthmode on") touch "$state/stealth" ;;
     *) exit 1 ;;
 esac'
-stub defaults 'file="$2.$3"
-case "$1 ${4:-} ${5:-}" in
-    "read  ") cat "$file" 2> /dev/null ;;
-    "write -bool true") echo 1 > "$file" ;;
+stub scutil 'state="'"$STATE"'"
+case "$1 $2" in
+    "--get HostName") cat "$state/hostname" 2> /dev/null ;;
+    "--get LocalHostName") echo Garvits-MacBook-Pro ;;
+    "--set HostName") echo "$3" > "$state/hostname" ;;
     *) exit 1 ;;
 esac'
-stub scutil 'echo Garvits-MacBook-Pro'
+stub_defaults
 stub_sudo_exec
 
 load_script macos/install.sh
@@ -33,10 +35,13 @@ as_os macos
 replace_fn each_default
 replace_fn hotkey_off 'return 0'
 replace_fn status_filevault
-APP_STORE_PREFS="$STATE/com.apple.commerce"
-SOFTWARE_UPDATE_PREFS="$STATE/com.apple.SoftwareUpdate"
+# shellcheck disable=SC2034 # the step reads them
+APP_STORE_PREFS="$STATE/com.apple.commerce" SOFTWARE_UPDATE_PREFS="$STATE/com.apple.SoftwareUpdate"
 
+# Ghostty drops an OSC 7 report whose host has characters a URL can't hold
+echo "Unknown_d6:96:0e:05:c6:0a" > "$STATE/hostname"
 assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Hostname set"
 assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
@@ -44,21 +49,20 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 
 answer no
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Turn on the application firewall"
 assert_contains "$RUN_OUTPUT" "Left unchanged."
 assert_file_not_contains "$STUB_LOG" "sudo"
 assert_exit 3 status
 
+# One confirm covers all four sudo items
 answer yes
+wrap_fn confirm 'echo "$1" >> "$SANDBOX/confirms"
+real_confirm "$@"'
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Turned on the application firewall"
-assert_contains "$RUN_OUTPUT" "Turned on the firewall's stealth mode"
-assert_contains "$RUN_OUTPUT" "Turned on automatic App Store updates"
-assert_file_contains "$STUB_LOG" "socketfilterfw --setglobalstate on"
-assert_file_contains "$STUB_LOG" "socketfilterfw --setstealthmode on"
-assert_file_contains "$STUB_LOG" "defaults write $APP_STORE_PREFS AutoUpdate -bool true"
-assert_file_contains "$STUB_LOG" "defaults write $SOFTWARE_UPDATE_PREFS AutomaticallyInstallAppUpdates -bool true"
+assert_eq 1 "$(wc -l < "$SANDBOX/confirms" | tr -d ' ')" "confirms for four sudo items"
+restore_fn confirm
+assert_eq Garvits-MacBook-Pro "$(cat "$STATE/hostname")" "hostname"
 assert_exit 0 status
+assert_contains "$RUN_OUTPUT" "ok         Hostname set"
 assert_contains "$RUN_OUTPUT" "ok         Application firewall on"
 assert_contains "$RUN_OUTPUT" "ok         Firewall stealth mode on"
 assert_contains "$RUN_OUTPUT" "ok         App Store apps update automatically"
@@ -68,13 +72,19 @@ assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "sudo"
 
 # Only one of the two App Store keys set still needs the fix
-rm "$SOFTWARE_UPDATE_PREFS.AutomaticallyInstallAppUpdates"
+rm "$SANDBOX/defaults/com.apple.SoftwareUpdate.AutomaticallyInstallAppUpdates"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
+
+# An unset hostname needs the fix too
+rm "$STATE/hostname"
+assert_exit 3 status
+assert_contains "$RUN_OUTPUT" "missing    Hostname set"
 
 rm -f "$STATE"/*
 stub sudo 'exit 1'
 assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Couldn't set the hostname."
 assert_contains "$RUN_OUTPUT" "Couldn't turn on the application firewall."
 assert_contains "$RUN_OUTPUT" "Couldn't turn on the firewall's stealth mode."
 assert_contains "$RUN_OUTPUT" "Couldn't turn on automatic App Store updates."

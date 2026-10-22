@@ -1,7 +1,7 @@
 #!/bin/bash
 # upsmon's NOTIFYCMD, run as nut; pushes the UPS event to ntfy, always exits 0.
 
-# Fixed paths, since it runs as nut. Tests rewrite these lines (ntfy_hook_copy in tests/lib.sh).
+# Fixed paths, since it runs as nut. Tests rewrite these lines (tests/ubuntu-sandbox.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
 # upsmon's PATH starts with /usr/local; use the system's curl and logger

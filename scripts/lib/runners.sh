@@ -1,3 +1,4 @@
+# The runners' default steps on either OS, for the docs check. Source it; don't run it.
 # shellcheck shell=bash
 
 # Write a uname into dir $1 whose -s reports $2 (Darwin or Linux).

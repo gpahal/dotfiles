@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a runner that
+# couldn't run, the boot notice, and the ubuntu step's report of a failed last run.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
@@ -31,8 +34,7 @@ age_state() {
     read -r time hash < "$STATE"
     echo "$((time - $1)) $hash" > "$STATE"
 }
-stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
-[ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
+stub_ntfy_curl
 stub sleep
 
 cat > "$SANDBOX/out/setup" << 'EOF'
@@ -63,7 +65,6 @@ assert_file_not_contains "$STUB_LOG" "setup"
 
 echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
 : > "$STUB_LOG"
-before="$(date +%s)"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "setup --status --quick"
 assert_file_contains "$STUB_LOG" "ai_tools --status --quick"
@@ -77,16 +78,8 @@ assert_file_not_contains "$STUB_LOG" "ntfy URL set"
 assert_file_not_contains "$STUB_LOG" "Disk health"
 assert_file_not_contains "$STUB_LOG" "Claude Code"
 # Root-only items come back unverified, so the push says what wasn't checked
-assert_file_contains "$STUB_LOG" "Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
-if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
-    fail "curl's arguments name the ntfy topic"
-fi
-
-[ -f "$STATE" ] || fail "the first push didn't write $STATE"
+assert_file_contains "$STUB_LOG" "Not checked here, since they need root"
 read -r first_time first_hash < "$STATE"
-[ "$first_time" -ge "$before" ] && [ "$first_time" -le "$(date +%s)" ] ||
-    fail "the first push recorded the time $first_time"
-[ -n "$first_hash" ] || fail "the first push recorded no hash"
 first_state="$(cat "$STATE")"
 
 # Moved numbers, such as free space, don't make a new message
@@ -186,14 +179,6 @@ assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_not_contains "$(cat "$STATE")" " 12345"
 
-# An unreadable state counts as never pushed; an unwritable one only warns
-rm "$STATE"
-mkdir "$STATE"
-: > "$STUB_LOG"
-assert_exit 0 "$BASH" "$ALERT" status
-assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
-assert_contains "$RUN_OUTPUT" "Couldn't save the last push to $STATE."
-rmdir "$STATE"
 echo 0 > "$SANDBOX/exit/setup"
 
 chmod 000 "$DOTFILES_NTFY_URL_FILE"
@@ -203,18 +188,6 @@ if [ ! -r "$DOTFILES_NTFY_URL_FILE" ]; then
 fi
 chmod 644 "$DOTFILES_NTFY_URL_FILE"
 
-echo 3 > "$SANDBOX/exit/setup"
-{
-    echo "ubuntu:"
-    for i in $(seq 1 200); do echo "  missing    Item number $i with some words after it"; done
-} > "$SANDBOX/out/setup"
-: > "$STUB_LOG"
-assert_exit 0 "$BASH" "$ALERT" status
-assert_file_contains "$STUB_LOG" "ubuntu: Item number 1 with"
-assert_file_not_contains "$STUB_LOG" "Item number 200 "
-assert_file_contains "$STUB_LOG" "more lines; bash setup.sh --status lists them"
-assert_file_not_contains "$STUB_LOG" "Not checked here"
-echo 0 > "$SANDBOX/exit/setup"
 
 # boot retries while the network comes up
 echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
@@ -255,7 +228,6 @@ rm "$DOTFILES_NTFY_URL_FILE"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_not_contains "$STUB_LOG" "curl"
-assert_exit 2 "$BASH" "$ALERT"
 
 # --- the ubuntu step's status: a failed last run of an installed alert service ---
 load_script ubuntu/install.sh

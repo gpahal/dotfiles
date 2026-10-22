@@ -57,7 +57,6 @@ LINGER_DIR=/var/lib/systemd/linger
 APT_TIMERS=(apt-daily.timer apt-daily-upgrade.timer)
 SYSCTL_CONF=/etc/sysctl.d/90-dotfiles.conf
 SYSCTL_SOURCES=(/etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf)
-# Agents' file watchers in many worktrees run out of the default 128 inotify instances
 SYSCTL_CONTENT='# From the dotfiles ubuntu step: reboot 10 seconds after a kernel panic
 kernel.panic = 10
 # Room for the file watchers agents run in many worktrees
@@ -112,8 +111,8 @@ UFW_DEFAULTS=/etc/default/ufw
 # Without it, devices relay through DERP
 TAILSCALE_PORT=41641
 TAILSCALE_REPO=https://pkgs.tailscale.com/stable/ubuntu
-# Tailscale's updater rewrites the .list, so it can't be deb822
 TAILSCALE_KEYRING=/usr/share/keyrings/tailscale-archive-keyring.gpg
+# Tailscale's updater rewrites the .list, so it can't be deb822
 TAILSCALE_LIST=/etc/apt/sources.list.d/tailscale.list
 HOMEBREW_ENV_SRC="$DOTFILES_DIR/ubuntu/environment.d/99-homebrew.conf"
 HOMEBREW_ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
@@ -180,6 +179,7 @@ ubuntu_items() {
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
     item --sudo "qrencode, which just alerts shows the ntfy topic with" \
         "Install qrencode, which just alerts uses to show the ntfy topic as QR codes" qrencode_installed install_qrencode
+    # Skipped in a VM, which may need cloud-init at every boot for its network and users
     in_vm || item --sudo "cloud-init off, since it only sets up a fresh install ($CLOUD_INIT_DISABLED)" \
         "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off turn_off_cloud_init
     item --sudo "cups-browsed masked, so network printers aren't added by themselves" \
@@ -375,9 +375,9 @@ apply() {
     local ups_todo
     ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
     [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    # Root-only: checked with sudo only when other changes need it
     local auto_upgrades_unchecked=false
     items_pending locale_installed qrencode_installed
+    # Root-only $AUTO_UPGRADES_CONF: checked with sudo only when other changes need it
     if auto_upgrades_unreadable && ! sudo_ready; then
         auto_upgrades_unchecked=true
     else

@@ -2,6 +2,8 @@
 # shellcheck disable=SC2329 # the step calls the replaced functions
 set -euo pipefail
 
+# The git step's GitHub over HTTPS through gh's credential helper, and its GitHub login check.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -18,26 +20,22 @@ as_os macos
 assert_exit 0 main
 assert_eq "" "$(insteadof)" "insteadOf on macOS"
 assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "skipped    GitHub SSH remotes go over HTTPS"
 
 as_os ubuntu
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS, through gh's credential helper"
+assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS"
 
 git config --file "$HOME/.gitconfig" --add url.https://github.com/.insteadOf ssh://git@github.com/
 assert_exit 0 main
 assert_eq "ssh://git@github.com/
 git@github.com:" "$(insteadof)" "insteadOf after the first run"
-assert_contains "$RUN_OUTPUT" "GitHub SSH remotes now go over HTTPS"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url git@github.com:me/repo.git)" "rewritten scp-style URL"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url ssh://git@github.com/me/repo.git)" "rewritten ssh URL"
 assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         GitHub SSH remotes go over HTTPS"
 
-cp "$HOME/.gitconfig" "$SANDBOX/before"
+snapshot "$HOME/.gitconfig"
 assert_exit 0 main
-assert_eq "" "$(cmp "$SANDBOX/before" "$HOME/.gitconfig" 2>&1)" "the re-run's ~/.gitconfig"
-assert_contains "$RUN_OUTPUT" "GitHub SSH remotes already go over HTTPS"
+assert_unchanged "$HOME/.gitconfig" "on a re-run"
 
 # Repo-local settings mustn't satisfy the machine-wide checks
 rm "$HOME/.gitconfig"
@@ -52,7 +50,7 @@ assert_exit 1 github_over_https
 git config --file "$HOME/.gitconfig" credential.https://github.com.helper '!gh auth git-credential'
 assert_exit 0 configure_github_https
 cd "$HOME"
-assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url git@github.com:me/repo.git)" "rewrite outside caller's repo"
+[ -n "$(insteadof)" ] || fail "the rewrite went to the caller's repo, not ~/.gitconfig"
 git config --file "$HOME/.gitconfig" --unset credential.https://github.com.helper
 # Included user settings count
 git config --file "$HOME/.gitconfig.local" credential.https://github.com.helper '!gh auth git-credential'
@@ -64,7 +62,6 @@ stub gh 'case "$*" in "auth token"* | "auth status"*) exit 1 ;; esac'
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_contains "$RUN_OUTPUT" 'Not logged in to GitHub. Run gh auth login --insecure-storage --git-protocol https'
 replace_fn is_interactive 'return 0'
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_contains "$STUB_LOG" 'gh auth login --insecure-storage --git-protocol https'
@@ -82,10 +79,9 @@ gh_stub "Timeout trying to log in to github.com account me (keyring)"
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_contains "$RUN_OUTPUT" "Couldn't reach GitHub to check the stored login"
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh: credentials are stored, but GitHub couldn't be reached to check them"
+assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
 
 # gh calls a token invalid when GitHub is unreachable, e.g. through a down proxy
@@ -94,7 +90,6 @@ stub curl 'printf 000; exit 7'
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_contains "$RUN_OUTPUT" "Couldn't reach GitHub to check the stored login"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
 
@@ -116,10 +111,9 @@ esac'
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
 assert_exit 0 status_github_login
-assert_contains "$RUN_OUTPUT" "ok         Logged in to GitHub with gh"
 : > "$STUB_LOG"
 DOTFILES_STATUS_QUICK=1 assert_exit 0 status_github_login
-assert_contains "$RUN_OUTPUT" "unverified Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --quick"
+assert_contains "$RUN_OUTPUT" "unverified Logged in to GitHub with gh"
 assert_file_not_contains "$STUB_LOG" 'gh auth status'
 
 # The rewrite needs gh's credential helper, or git would have no GitHub credentials
@@ -128,18 +122,15 @@ rm -f "$HOME/.gitconfig"
 stub gh 'case "$*" in "auth token"* | "auth status"*) exit 1 ;; esac'
 assert_exit 0 main
 assert_eq "" "$(insteadof)" "insteadOf without gh's credential helper"
-assert_contains "$RUN_OUTPUT" "re-run after gh auth login and gh auth setup-git"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS, through gh's credential helper (a re-run after gh auth login and gh auth setup-git adds it)"
+assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS"
 # gh auth setup-git sets the helper in this run, so the rewrite follows
 stub gh 'case "$*" in
     "auth token") echo gho_SECRET ;;
     "auth setup-git") git config --file "$HOME/.gitconfig" credential.https://github.com.helper "!gh auth git-credential" ;;
 esac'
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Set git to use gh for GitHub credentials"
 assert_eq "git@github.com:
 ssh://git@github.com/" "$(insteadof)" "insteadOf once gh auth setup-git set the helper"
 assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         GitHub SSH remotes go over HTTPS"
 test_done

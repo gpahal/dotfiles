@@ -139,7 +139,6 @@ class Dotfiles {
         return (mods & MODIFIER_MASK) !== 0;
     }
 
-    // Presses each key in order, then releases them in reverse
     SendKeys(keys) {
         const keyvals = Object.hasOwn(KEYS, keys) ? [...KEYS[keys]] : null;
         if (!keyvals || Main.sessionMode.isLocked || global.display.get_focus_window()?.get_wm_class() !== KEYS_CLASS)

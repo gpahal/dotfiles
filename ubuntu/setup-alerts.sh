@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Saves a ntfy topic URL for the alerts and sends a test push; --test fires the hooks.
+# Save a ntfy topic URL for the alerts and send a test push; --test fires the hooks.
 # The topic is the URL's only secret, so it's read from the terminal, never an argument, and it
 # must be long enough that nobody guesses it.
 

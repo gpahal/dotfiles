@@ -18,8 +18,7 @@ ubuntu_step_load() {
     # No nut group in a test
     replace_fn ntfy_url_group 'id -gn'
     # This checkout may be a worktree
-    declare -F real_in_git_worktree > /dev/null || eval "real_$(declare -f in_git_worktree)"
-    replace_fn in_git_worktree false
+    wrap_fn in_git_worktree false
 }
 
 # Defaults match 26.04; files under $SANDBOX change unit state. $1 runs first.
@@ -67,8 +66,7 @@ esac'
 ubuntu_step_setup() {
     ubuntu_step_load
     echo IPV6=yes > "$UFW_DEFAULTS"
-    not_cached_sudo() { stub_sudo_exec '[ "${1:-}" != -n ] || exit 1'; }
-    not_cached_sudo
+    stub_sudo_cacheable
     stub dpkg-query 'echo "install ok installed"'
     stub_systemctl
     stub systemd-detect-virt 'exit 1'

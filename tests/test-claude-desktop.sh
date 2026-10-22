@@ -14,8 +14,7 @@ replace_fn running_inside 'false'
 # Keep the real /Applications/Claude.app out of the cask checks
 APP="$HOME/Applications/Claude.app"
 replace_fn cask_app_path 'echo "$APP"'
-eval "real_$(declare -f cask_state)"
-replace_fn cask_state 'real_cask_state "$1" "$APP"'
+wrap_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 AGENT="$HOME/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 

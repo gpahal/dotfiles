@@ -199,8 +199,7 @@ assert_file_contains "$STUB_LOG" "sudo usermod -aG docker me"
 assert_contains "$RUN_OUTPUT" "Added you to the docker group."
 reset
 rm "$SANDBOX/in-group"
-eval "real_$(declare -f confirm)"
-replace_fn confirm 'if [[ "$1" == *"docker group"* ]]; then
+wrap_fn confirm 'if [[ "$1" == *"docker group"* ]]; then
     echo "$1 n"
     return 1
 fi
@@ -209,7 +208,7 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left me out of the docker group."
 assert_file_not_contains "$STUB_LOG" "usermod"
-eval "$(declare -f real_confirm | sed 1s/real_confirm/confirm/)"
+restore_fn confirm
 stub id 'case "$1" in -un) echo me ;; -nG) echo "me docker" ;; esac'
 
 # Docker has no packages for this release yet: wait without failing

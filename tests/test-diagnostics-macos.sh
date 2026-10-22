@@ -6,22 +6,11 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=diagnostics-fixture.sh
+source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
 load_script lib/common.sh
-
-read_only() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-    : > "$STUB_LOG"
-}
-
-diag() {
-    "$@"
-    status_result
-}
 
 # info doesn't need attention
 report() {
@@ -34,15 +23,6 @@ report() {
 assert_exit 0 report ok info skipped
 assert_contains "$RUN_OUTPUT" "  info       item"
 
-df_lines() {
-    printf '%s\n' "$@" > "$SANDBOX/df-table"
-    stub df 'path="${!#}"
-echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-line="$(grep -F " $path" "'"$SANDBOX"'/df-table" | head -n 1)"
-[ -n "$line" ] || line="$(head -n 1 "'"$SANDBOX"'/df-table")"
-echo "$line"'
-}
-GIB=1048576
 # Spaces in the mount point and the filesystem name (macOS's automounter)
 df_lines "map auto_home $((100 * GIB)) $((10 * GIB)) $((90 * GIB)) 11% /Volumes/My Disk"
 assert_exit 0 diag status_disk_space "/Volumes/My Disk"

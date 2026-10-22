@@ -2,12 +2,45 @@
 set -euo pipefail
 # serial
 
+# The test helpers in tests/lib.sh, and lib/common.sh's confirm and regex_escape.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 load_script lib/common.sh
 
+# --- confirm and DOTFILES_ASSUME_YES ---
+assert_exit 1 confirm "Proceed?"
+export DOTFILES_ASSUME_YES=1
+assert_exit 0 confirm "Proceed?"
+assert_eq "Proceed? yes (DOTFILES_ASSUME_YES)" "$RUN_OUTPUT" "confirm's output"
+DOTFILES_ASSUME_YES=0
+assert_exit 1 confirm "Proceed?"
+
+# confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
+unset DOTFILES_ASSUME_YES
+interactive="$SANDBOX/interactive"
+check='. "$0/lib/common.sh"; if is_interactive > "$1"; then echo yes > "$1"; else echo no > "$1"; fi'
+if in_terminal_available; then
+    in_terminal "$BASH" -c "$check" "$REPO_DIR" "$interactive" > /dev/null
+    assert_eq yes "$(cat "$interactive")" "is_interactive with a terminal stdin and stdout to a file"
+else
+    skip_rest "is_interactive with a terminal: script isn't installed"
+fi
+run bash -c 'set -o pipefail; . "$0/lib/common.sh"; confirm "Proceed?" | cat' "$REPO_DIR"
+assert_eq 1 "$RUN_STATUS" "confirm's status with stdin from /dev/null and stdout piped"
+
+# --- regex_escape ---
+for s in 'Logi Options+' '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code' 'a.b*c?d[e]f{1}|g^h$i\j'; do
+    pattern="$(regex_escape "$s")"
+    printf '%s\n' "$s" | grep -qxE -- "$pattern" || fail "'$pattern' doesn't match '$s'"
+done
+! printf '%s\n' 'Logi Optionss' | grep -qxE -- "$(regex_escape 'Logi Options+')" ||
+    fail "the escaped + still repeats"
+! printf '%s\n' 'aXb' | grep -qxE -- "$(regex_escape 'a.b')" || fail "the escaped . still matches any character"
+
+# --- tests/lib.sh ---
 os() {
     case "$1" in
         macos) is_macos && ! is_ubuntu ;;
@@ -63,6 +96,29 @@ assert_eq hi "$(
 )" "no_such_fn after replace_fn"
 expect_failure "as_os: 'windows' isn't macos or ubuntu" as_os windows
 expect_failure "answer: 'maybe' isn't yes or no" answer maybe
+
+greet() { echo "hi $1"; }
+wrap_fn greet 'real_greet "$1"; echo wrapped'
+wrap_fn greet 'real_greet "$1"; echo again'
+assert_eq "hi you
+again" "$(greet you)" "greet after wrap_fn twice"
+restore_fn greet
+assert_eq "hi you" "$(greet you)" "greet after restore_fn"
+! declare -F real_greet > /dev/null || fail "restore_fn left real_greet"
+expect_failure "replace_fn: no function no_such_fn to replace" wrap_fn no_such_fn
+expect_failure "restore_fn: greet isn't wrapped" restore_fn greet
+
+: > "$STUB_LOG"
+stub_sudo_cacheable
+expect_failure "cache_sudo: 'maybe' isn't yes or no" cache_sudo maybe
+assert_exit 1 sudo -n true
+cache_sudo yes
+assert_exit 0 sudo -n true
+cache_sudo no
+assert_exit 1 sudo -n true
+assert_sudo_noninteractive
+assert_exit 0 sudo true
+expect_failure "the check ran sudo without -n:" assert_sudo_noninteractive "the check"
 unset -f confirm
 expect_failure "replace_fn: no function confirm to replace" answer yes
 

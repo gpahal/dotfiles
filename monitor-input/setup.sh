@@ -165,7 +165,7 @@ connector=$connector"
         return 0
     fi
     if ! confirm "  Save them with sudo?"; then
-        echo "  Left unchanged. Run this script from a terminal to save them."
+        left_unchanged "  " "this script" "save them"
         return 0
     fi
     if ! write_root_file "$MONITOR_INPUT_CONF" "$content" 0644 || ! write_root_file "$MONITOR_INPUT_RULE" "$rule" 0644 ||

@@ -70,12 +70,11 @@ assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "Docker activation failed; restored the previous configuration."
 assert_exit 0 cmp -s "$DOCKER_DAEMON_CONFIG" "$SANDBOX/before-restart"
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a failed restart"
-eval "real_$(declare -f write_root_file)"
-replace_fn write_root_file 'return 1'
+wrap_fn write_root_file 'return 1'
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "putting the previous configuration back failed too"
 assert_contains "$RUN_OUTPUT" '{"log-driver":"json-file"}'
-eval "$(declare -f real_write_root_file | sed '1s/real_//')"
+restore_fn write_root_file
 cp "$SANDBOX/before-restart" "$DOCKER_DAEMON_CONFIG"
 stub systemctl
 : > "$STUB_LOG"

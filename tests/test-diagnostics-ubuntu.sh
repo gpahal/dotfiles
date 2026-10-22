@@ -6,6 +6,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
+# shellcheck source=diagnostics-fixture.sh
+source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
 load_script lib/common.sh
@@ -14,37 +16,7 @@ stub dpkg '[ "$1" != --print-architecture ] || echo amd64'
 stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
 echo "APT::Periodic::Unattended-Upgrade \"1\";"'
 
-read_only() {
-    local log
-    log="$(cat "$STUB_LOG")"
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-    if grep -qE '^systemctl ([^ ]+ )*(start|restart|try-restart|reload|enable|stop)( |$)|^fwupdmgr (refresh|update|install|upgrade)|^smartctl .*( -t | --test)|^docker ([^ ]+ )*(prune|stop|start|rm|kill)( |$)' <<< "$log"; then
-        fail "status changed something:"
-        _show "$log"
-    fi
-    : > "$STUB_LOG"
-}
-
-diag() {
-    "$@"
-    status_result
-}
-
 # --- free space (status_disk_space) ---
-df_lines() {
-    printf '%s\n' "$@" > "$SANDBOX/df-table"
-    : > "$SANDBOX/df-fails"
-    stub df 'path="${!#}"
-! grep -qxF -- "$path" "'"$SANDBOX"'/df-fails" || { echo "df: $path: No such file or directory" >&2; exit 1; }
-echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-line="$(grep -F " $path" "'"$SANDBOX"'/df-table" | head -n 1)"
-[ -n "$line" ] || line="$(head -n 1 "'"$SANDBOX"'/df-table")"
-echo "$line"'
-}
-GIB=1048576
 df_lines "/dev/sda2 $((500 * GIB)) $((380 * GIB)) $((120 * GIB)) 76% /"
 assert_exit 0 diag status_disk_space /
 assert_contains "$RUN_OUTPUT" "ok         Free space on /: 120.0 GiB of 500.0 GiB (24%)"
@@ -214,11 +186,10 @@ fwupd() {
 mkdir -p "$FWUPD_METADATA_DIRS/lvfs"
 touch "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
 
-# fwupd 1.9's and 2.0's wording
-fwupd 'Devices with no available firmware updates:\n • System Firmware\nNo updates available\n' 2
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available"
 if command -v jq &> /dev/null; then
+    fwupd '{\n  "Devices": [\n  ]\n}\n'
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available, by metadata from the last 30 days"
     fwupd '{\n  "Devices" : [\n    {\n      "Name" : "System Firmware",\n      "Version" : "1.2.3",\n      "Releases" : [ { "Version" : "1.2.4" } ]\n    },\n    {\n      "Name" : "UEFI dbx",\n      "Version" : "371",\n      "Releases" : [ { "Version" : "377" } ]\n    }\n  ]\n}\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: available for System Firmware (1.2.3 to 1.2.4), UEFI dbx (371 to 377)"
@@ -231,6 +202,12 @@ if command -v jq &> /dev/null; then
     fwupd '{ "Devices" : [ { "Name" : "Disk", "Version" : "1", "Releases" : [] } ] }\n'
     assert_exit 0 diag status_firmware
     assert_contains "$RUN_OUTPUT" "info       Firmware updates: none available"
+    touch -t 202001010000 "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "metadata over 30 days old (fwupdmgr refresh updates it)"
+    rm "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
+    assert_exit 0 diag status_firmware
+    assert_contains "$RUN_OUTPUT" "metadata of unknown age"
 else
     skip_rest "jq isn't installed, so fwupdmgr's JSON can't be read"
 fi
@@ -244,13 +221,6 @@ subtest firmware_without_jq
 fwupd 'No updatable devices\n' 2
 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "info       Firmware updates: no device here that fwupd updates"
-touch -t 202001010000 "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
-fwupd 'No updates available\n' 2
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "metadata over 30 days old (fwupdmgr refresh updates it)"
-rm "$FWUPD_METADATA_DIRS/lvfs/metadata.xml.zst"
-assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "metadata of unknown age"
 fwupd 'Failed to connect to daemon: Error calling StartServiceByName\n' 1
 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "info       Firmware updates: couldn't check (Failed to connect to daemon"

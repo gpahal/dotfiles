@@ -166,7 +166,7 @@ main() {
         echo "  Subscribe your phone to it now; the test push goes there once it's saved."
     fi
     if ! confirm "  Save it with sudo?"; then
-        echo "  Left unchanged. Run this script from a terminal to save it."
+        left_unchanged "  " "this script" "save it"
         return 0
     fi
     if ! save_url "$url"; then

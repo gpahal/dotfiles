@@ -145,12 +145,6 @@ for setting in "TEST_JOBS=$jobs" "TEST_TIMEOUT=$TEST_TIMEOUT"; do
             ;;
     esac
 done
-# test-ubuntu-sandbox.sh's copies in /var/tmp outlive a killed test
-find /var/tmp/ -maxdepth 1 -type d -name 'dotfiles-test.*' -user "$(id -u)" -mtime +0 2>/dev/null |
-    while IFS= read -r dir; do
-        chmod -R u+w "$dir" 2>/dev/null
-        rm -rf "$dir"
-    done
 # /tmp keeps TMUX_TMPDIR under macOS's socket path limit
 tmp="$(mktemp -d /tmp/dotfiles-run.XXXXXX)" || exit 1
 

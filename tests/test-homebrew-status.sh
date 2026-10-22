@@ -16,8 +16,7 @@ zed_outside_homebrew() {
 }
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
-eval "real_$(declare -f cask_app_path)"
-replace_fn cask_app_path 'zed_outside_homebrew "$1"'
+wrap_fn cask_app_path 'zed_outside_homebrew "$1"'
 stub brew 'S="'"$SANDBOX"'"
 [ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nvicinae\n"; exit; }
 [ "$*" != --caskroom ] || { echo "$S/caskroom"; exit; }

@@ -10,8 +10,9 @@ command -v jq &>/dev/null || { echo "check-claude-keys.sh needs jq" >&2; exit 1;
 # shellcheck source=lib/ai-settings.sh
 source "$REPO_DIR/scripts/lib/ai-settings.sh"
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# shellcheck source=lib/check.sh
+source "$REPO_DIR/scripts/lib/check.sh"
+make_tmp
 
 if [ $# -gt 0 ]; then
     settings="$1"
@@ -45,12 +46,9 @@ jq -r '[paths | select(all(.[]; type == "string"))
     | unique[]' "$settings" > "$tmp/keys"
 grep -v '^#' "$CONTRACT" | sed '/^$/d' > "$tmp/contract"
 
-errors=0
 while IFS= read -r key; do
-    if ! grep -qxF -- "$key" "$tmp/contract"; then
-        echo "$key isn't a Claude Code setting in scripts/claude-settings-keys.txt. Fix the typo, or check the key against Claude Code and add it." >&2
-        errors=$((errors + 1))
-    fi
+    grep -qxF -- "$key" "$tmp/contract" ||
+        fail "$key isn't a Claude Code setting in scripts/claude-settings-keys.txt. Fix the typo, or check the key against Claude Code and add it."
 done < "$tmp/keys"
 [ "$errors" -eq 0 ] || exit 1
 [ $# -gt 0 ] || echo "Every key $what writes is in scripts/claude-settings-keys.txt"

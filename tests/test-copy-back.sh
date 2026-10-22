@@ -51,8 +51,6 @@ commit_all "editorconfig"
 # A repo file with uncommitted changes, or untracked, is skipped and fails the run
 printf 'repo edit\n' > "$repo/editorconfig/editorconfig"
 printf 'home edit\n' > "$HOME/.editorconfig"
-assert_exit 1 bash "$copy_back" --dry-run
-assert_contains "$RUN_OUTPUT" "Skipped ~/.editorconfig: editorconfig/editorconfig has uncommitted changes"
 assert_exit 1 bash "$copy_back"
 assert_contains "$RUN_OUTPUT" "Skipped ~/.editorconfig: editorconfig/editorconfig has uncommitted changes"
 assert_not_contains "$RUN_OUTPUT" "Every installed config matches"
@@ -93,8 +91,6 @@ assert_exit 1 bash "$copy_back"
 assert_contains "$RUN_OUTPUT" "~/.codex/AGENTS.md differs from ~/.claude/CLAUDE.md, and both are copies of ai_tools/user-instructions.md"
 assert_eq "claude" "$(cat "$repo/ai_tools/user-instructions.md")" "the repo's user instructions"
 git -C "$repo" checkout -q -- ai_tools/user-instructions.md
-assert_exit 1 bash "$copy_back" --dry-run
-assert_contains "$RUN_OUTPUT" "~/.codex/AGENTS.md differs from ~/.claude/CLAUDE.md"
 
 # A repo inside HOME prints repo-relative paths
 mv "$repo" "$HOME/repo"

@@ -45,10 +45,7 @@ assert_exit 0 sudo_cached
 assert_file_contains "$STUB_LOG" "sudo -n true"
 
 no_prompting_sudo() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "status ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
+    assert_sudo_noninteractive
     if [ -s "$SANDBOX/mutations" ]; then
         fail "status ran sudo to change something:"
         _show "$(cat "$SANDBOX/mutations")"

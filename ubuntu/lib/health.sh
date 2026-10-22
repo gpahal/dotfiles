@@ -143,8 +143,6 @@ status_firmware() {
         esac
     elif grep -qiE 'No (updatable|supported) devices' <<< "$out"; then
         status_item info "$label: no device here that fwupd updates"
-    elif [ "$status" -eq 2 ] || grep -qiE 'No updates available|no available firmware updates' <<< "$out"; then
-        status_item info "$label: none available, by $age"
     elif [ "$status" -eq 124 ]; then
         status_item info "$label: couldn't check (fwupdmgr didn't answer within 60 s)"
     else

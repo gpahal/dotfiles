@@ -1,6 +1,6 @@
 # Test helpers. A test sources this, calls setup_sandbox, runs steps or load_script, checks with
 # assert_*, and ends with test_done. Stub every SENTINELS command it reaches; hide makes one missing.
-# Change a loaded function only with replace_fn, as_os macos|ubuntu, or answer yes|no.
+# Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer yes|no.
 # tests/run.sh covers skips, timeouts, and the serial and os marks.
 # shellcheck shell=bash
 
@@ -176,6 +176,24 @@ done
 exec env "$@"'
 }
 
+# stub_sudo_exec where sudo -n works only after `cache_sudo yes`, as after sudo -v. The optional
+# body runs next, with -n shifted off.
+stub_sudo_cacheable() {
+    stub_sudo_exec 'if [ "${1:-}" == -n ]; then
+    [ -e "'"$SANDBOX"'/sudo-cached" ] || exit 1
+    shift
+fi
+'"${1:-}"
+}
+
+cache_sudo() {
+    case "$1" in
+        yes) touch "$SANDBOX/sudo-cached" ;;
+        no) rm -f "$SANDBOX/sudo-cached" ;;
+        *) fail "cache_sudo: '$1' isn't yes or no" ;;
+    esac
+}
+
 # Stub `apt-config shell`; the body prints the config as `apt-config dump` would
 stub_apt_config() {
     stub apt-config "config() {
@@ -267,6 +285,25 @@ ${2:-:}
 }"
 }
 
+# replace_fn that first saves the function as real_<name>, for the new body to call or restore_fn
+# to put back. A function already wrapped keeps its first saved copy.
+wrap_fn() {
+    if declare -F "$1" > /dev/null && ! declare -F "real_$1" > /dev/null; then
+        eval "real_$(declare -f "$1")"
+    fi
+    replace_fn "$1" "${2:-:}"
+}
+
+restore_fn() {
+    local def
+    def="$(declare -f "real_$1")" || {
+        fail "restore_fn: $1 isn't wrapped"
+        return 0
+    }
+    eval "${def#real_}"
+    unset -f "real_$1"
+}
+
 # A step run as its own process needs a uname stub instead
 as_os() {
     case "$1" in
@@ -324,6 +361,25 @@ git_commit() {
     local repo="$1"
     shift
     git -C "$repo" -c user.name=test -c user.email=test@example.com commit -q "$@"
+}
+
+in_terminal_available() {
+    if [[ "$OSTYPE" == darwin* ]]; then
+        command -v script &> /dev/null
+    else
+        script --version 2> /dev/null | grep -q util-linux
+    fi
+}
+
+# Run a command with a terminal for stdin and stdout, and stdin at EOF. Its output loses script's
+# \r line ends and the ^D that macOS's script echoes at EOF.
+in_terminal() {
+    if [[ "$OSTYPE" == darwin* ]]; then
+        script -q /dev/null "$@"
+    else
+        # script runs the command with $SHELL, and %q output is bash quoting
+        SHELL=/bin/bash script -qec "$(printf '%q ' "$@")" /dev/null
+    fi < /dev/null | tr -d '\r\b' | sed 's/^^D//'
 }
 
 stub_login_shell_zsh() {
@@ -454,6 +510,16 @@ assert_file_not_contains() {
     if [ -f "$1" ] && grep -qF -- "$2" "$1"; then
         fail "$1 contains '$2'"
     fi
+    return 0
+}
+
+# Fails if $STUB_LOG has a sudo without -n, which could prompt. $1 says what ran it.
+assert_sudo_noninteractive() {
+    local prompting
+    prompting="$(grep '^sudo' "$STUB_LOG" | grep -v '^sudo -n ' || true)"
+    [ -z "$prompting" ] && return 0
+    fail "${1:-status} ran sudo without -n:"
+    _show "$prompting"
     return 0
 }
 

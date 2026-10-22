@@ -43,14 +43,8 @@ replace_fn cups_browsed_off true
 replace_fn wifi_powersave_off true
 touch "$SANDBOX/linger"
 
-# sudo -n succeeds only while $SANDBOX/cached exists; sudo install makes $SSHD_RUN_DIR, not /run.
-stub_sudo_exec 'if [ "${1:-}" == -n ]; then
-    [ -e "'"$SANDBOX"'/cached" ] || exit 1
-    shift
-fi
-[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
-cached() { touch "$SANDBOX/cached"; }
-not_cached() { rm -f "$SANDBOX/cached"; }
+# sudo install makes $SSHD_RUN_DIR, not /run
+stub_sudo_cacheable '[ "${1:-}" != install ] || { mkdir -p "'"$SANDBOX"'/run-sshd"; exit 0; }'
 
 stub systemctl 'case "$1" in
     is-enabled) if [ "$*" == "is-enabled -q ufw.service" ]; then [ ! -e "'"$SANDBOX"'/ufw-unit-disabled" ]; else echo masked; fi ;;
@@ -117,31 +111,24 @@ rules_missing() {
     { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-rules"
 }
 
-no_prompting_sudo() {
-    if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-        fail "the step ran sudo without -n:"
-        _show "$(grep '^sudo' "$STUB_LOG")"
-    fi
-}
-
 # Nothing else pending, credentials not cached: no prompt, only a hint
 rules_present
-not_cached
+cache_sudo no
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_not_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 
 # Credentials cached: rules checked up front
-cached
+cache_sudo yes
 rules_present
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_not_contains "$RUN_OUTPUT" "sudo -v"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 rules_missing
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Firewall: add the missing ufw rules, so ufw denies incoming connections but SSH from 10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10, anything on tailscale0, and Tailscale's 41641/udp, and denies SSH on Docker's bridges"
@@ -153,7 +140,7 @@ assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw, so ufw denies 
 ufw_on
 
 # Something else pending and approved, credentials not cached: rules checked after the confirm
-not_cached
+cache_sudo no
 export DOTFILES_ASSUME_YES=1
 rm -f "$SANDBOX/linger"
 rules_present
@@ -171,18 +158,18 @@ assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 
 
 # Without $SSHD_RUN_DIR the rules can't be read even with cached credentials
 unset DOTFILES_ASSUME_YES
-cached
+cache_sudo yes
 rmdir "$SSHD_RUN_DIR"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_contains "$RUN_OUTPUT" "first SSH connection"
 [ ! -e "$SSHD_RUN_DIR" ] || fail "main created $SSHD_RUN_DIR without asking"
-no_prompting_sudo
+assert_sudo_noninteractive "the step"
 
 # Hand-added rules don't fail the check and aren't deleted
 mkdir -p "$SSHD_RUN_DIR"
-cached
+cache_sudo yes
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-rules"
 : > "$STUB_LOG"
@@ -318,7 +305,7 @@ firewall_unchanged() {
     assert_file_not_contains "$STUB_LOG" "ufw allow"
 }
 export DOTFILES_ASSUME_YES=1
-cached
+cache_sudo yes
 rules_present
 
 # Console run: ufw goes on, and ss runs without sudo
@@ -360,10 +347,10 @@ assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 [ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
 assert_exit 0 status
 touch "$SANDBOX/ufw-stopped"
-not_cached
+cache_sudo no
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
-cached
+cache_sudo yes
 rm "$SANDBOX/ufw-stopped"
 : > "$STUB_LOG"
 assert_exit 0 main

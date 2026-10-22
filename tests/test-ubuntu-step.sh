@@ -46,9 +46,7 @@ assert_contains "$RUN_OUTPUT" "Keep conffiles you edited through updates, so una
 assert_contains "$RUN_OUTPUT" "Add the en_US.UTF-8 locale"
 assert_contains "$RUN_OUTPUT" "Install security updates daily: turn on unattended-upgrades"
 [ ! -e "$AUTO_UPGRADES_CONF" ] || fail "unattended-upgrades was turned on without a yes"
-if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-    fail "the declined step ran sudo without -n"
-fi
+assert_sudo_noninteractive "the declined step"
 # No sudo needed, so copied even when declined
 ENV_CONF="$HOME/.config/environment.d/99-homebrew.conf"
 assert_eq "$(cat "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf")" "$(cat "$ENV_CONF")" "the environment.d file"
@@ -169,9 +167,7 @@ rm "$SANDBOX/units/"*
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
-if grep '^sudo' "$STUB_LOG" | grep -qv '^sudo -n '; then
-    fail "the re-run ran sudo without -n"
-fi
+assert_sudo_noninteractive "the re-run"
 assert_file_not_contains "$STUB_LOG" "daemon-reload"
 
 # In a VM the host manages the disks
@@ -257,7 +253,7 @@ assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/hea
 DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
 replace_fn in_git_worktree false
 
-eval "$(declare -f real_in_git_worktree | sed '1s/real_//')"
+restore_fn in_git_worktree
 GIT_REPO="$SANDBOX/git-main"
 git init -q "$GIT_REPO"
 mkdir "$GIT_REPO/sub"

@@ -27,7 +27,7 @@ ALLOWED_BEFORE=(
     "git: git uses gh for GitHub credentials|Logged in to GitHub with gh"
     "git: GitHub SSH remotes go over HTTPS, through gh's credential helper (*)|Logged in to GitHub with gh"
 )
-# tests/test-smoke-patterns.sh checks these against the step's formatter.
+# t3-code's status lines for a t3 serve started by hand, and for the service once it's gone
 T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
 T3_IDLE_SERVICE_STATUS='^  missing +T3 Code service running a server: it runs none'
 

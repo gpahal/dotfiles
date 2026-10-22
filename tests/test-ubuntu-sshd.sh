@@ -62,12 +62,11 @@ assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in after sshd rejected the new one"
 assert_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
 assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
-eval "real_write_root_file() $(declare -f write_root_file | tail -n +2)"
-replace_fn write_root_file '[ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"'
+wrap_fn write_root_file '[ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "the broken drop-in is still in place: $SSHD_DROP_IN"
 assert_not_contains "$RUN_OUTPUT" "the old one is back"
-eval "write_root_file() $(declare -f real_write_root_file | tail -n +2)"
+restore_fn write_root_file
 echo "# old, working" > "$SSHD_DROP_IN"
 
 rm "$SSHD_DROP_IN"
@@ -102,7 +101,7 @@ assert_exit 0 main
 
 # --- sshd's effective settings ---
 # sshd keeps the first value it reads, so an earlier drop-in can override ours
-stub_sudo_exec
+cache_sudo yes
 unset SSH_USER_AUTH
 me="$(id -un)"
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
@@ -216,16 +215,16 @@ rm "$SANDBOX/sshd-T-fails"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "ok         $item"
-not_cached_sudo
+cache_sudo no
 : > "$STUB_LOG"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified $item (the effective values need sudo -v; run sudo -v, then status, to check them)"
 assert_file_not_contains "$STUB_LOG" "sshd -T"
 # sshd -T needs $SSHD_RUN_DIR, which sshd creates on first run
-stub_sudo_exec
+cache_sudo yes
 rmdir "$SSHD_RUN_DIR"
 assert_exit 0 status
 assert_contains "$RUN_OUTPUT" "unverified $item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
 mkdir "$SSHD_RUN_DIR"
-not_cached_sudo
+cache_sudo no
 test_done

@@ -13,8 +13,9 @@ if [ $# -gt 1 ]; then
 fi
 command -v curl &>/dev/null || { echo "curl isn't installed" >&2; exit 1; }
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# shellcheck source=lib/check.sh
+source "$REPO_DIR/scripts/lib/check.sh"
+make_tmp
 
 # GITHUB_TOKEN lifts the API rate limit in CI. The header goes through stdin, since any local user
 # can read a command line.
@@ -44,12 +45,6 @@ get packages/contracts/src/project.ts
 
 # shellcheck source=../ai_tools/t3-code/install.sh
 source "$REPO_DIR/ai_tools/t3-code/install.sh"
-
-errors=0
-fail() {
-    echo "FAIL: $1" >&2
-    errors=$((errors + 1))
-}
 
 # Strip jq comments first, so "e.g." can't yield a key g.
 keys_of() {

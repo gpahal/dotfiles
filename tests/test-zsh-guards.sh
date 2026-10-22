@@ -27,15 +27,6 @@ reminders() {
     echo "just once" > "$HOME/.remind-oneshot"
 }
 
-in_terminal() {
-    if [[ "$OSTYPE" == darwin* ]]; then
-        script -q /dev/null "$@"
-    else
-        # script runs the command with $SHELL, and %q output is bash quoting
-        SHELL=/bin/bash script -qec "$(printf '%q ' "$@")" /dev/null
-    fi < /dev/null | tr -d '\r'
-}
-
 # The PATH probe: stdout is a pipe
 reminders
 output="$(zsh -ilc "$PROBE" < /dev/null | cat)"
@@ -51,7 +42,7 @@ output="$(CLAUDECODE=1 zsh -c -l "source '$ZDOTDIR/.zshrc' < /dev/null; $PROBE" 
 assert_not_contains "$output" "opt=" "snapshot output"
 [ -f "$HOME/.remind-oneshot" ] || fail "the snapshot removed ~/.remind-oneshot"
 
-command -v script &>/dev/null || skip "script isn't installed, so the terminal checks can't run"
+in_terminal_available || skip "script isn't installed, so the terminal checks can't run"
 
 output="$(CLAUDECODE=1 in_terminal zsh -ilc "$PROBE")"
 assert_not_contains "$output" "just once" "output under CLAUDECODE"

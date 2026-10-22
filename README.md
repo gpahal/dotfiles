@@ -249,7 +249,7 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 15. Sign in to Tailscale with the account your Ubuntu machine and phone use.
 16. Add your Google account to Calendar and Contacts.
 17. In Chrome, sign in to the sites you want agents to use.
-18. If you skipped the GitHub login, run `gh auth login`, then `gh auth setup-git`.
+18. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
 19. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**

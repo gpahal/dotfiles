@@ -366,7 +366,7 @@ assert_exit 0 env PATH="$STUB_DIR:/usr/bin:/bin" \
     "$BASH" -c 'source "$1/scripts/upgrade.sh"; _upgrade_self_updating_casks upgrade zed' bash "$REPO_DIR"
 assert_not_contains "$RUN_OUTPUT" "is running"
 
-# An app that renamed itself (T3 Code Alpha to Beta) is re-recorded, since brew upgrade stops on
+# An app that renamed itself is re-recorded, since brew upgrade stops on
 # the recorded app being gone; a receipt that does more than remove the app gets the usual upgrade
 mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/Applications/T3 Code (Beta).app"
 receipt() {

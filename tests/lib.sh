@@ -337,9 +337,10 @@ test_done() {
 # that way too, and, like gsettings, fails on a quoted string followed by more. Unset keys print
 # GNOME's defaults for the lists the steps edit, else ''.
 stub_gsettings() {
+    local body
     mkdir -p "$SANDBOX/gsettings"
-    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")
-$(cat << 'STUB'
+    # Not a heredoc in $(...): bash 3.2 misparses the case patterns' ) there
+    IFS= read -r -d '' body << 'STUB' || true
 file="$dir/${2//\//_}.$3"
 case "$1" in
     get)
@@ -367,7 +368,8 @@ case "$1" in
         esac ;;
 esac
 STUB
-)"
+    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")
+$body"
 }
 
 # The sandbox has no git identity

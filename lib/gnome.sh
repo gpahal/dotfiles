@@ -88,11 +88,13 @@ gnome_keybinding_paths() {
     gsettings_list "$GNOME_MEDIA_KEYS" custom-keybindings
 }
 
-# A string as gsettings prints it: in single quotes, or double quotes when it holds a single one
+# A string as gsettings prints it, which gsettings set also parses: in single quotes, or double
+# quotes when it holds a single one, with backslashes and that quote escaped
 _gsettings_string() {
-    case "$1" in
-        *"'"*) printf '"%s"\n' "$1" ;;
-        *) printf "'%s'\n" "$1" ;;
+    local s="${1//\\/\\\\}"
+    case "$s" in
+        *"'"*) s="${s//\"/\\\"}"; printf '"%s"\n' "$s" ;;
+        *) printf "'%s'\n" "$s" ;;
     esac
 }
 
@@ -119,13 +121,14 @@ gnome_keybinding_clash() {
     return 1
 }
 
-# gnome_set_keybinding <path> <name> <command> <binding>, adding the path to the list, keeping yours
+# gnome_set_keybinding <path> <name> <command> <binding>, adding the path to the list, keeping yours.
+# Each is passed quoted: unquoted, gsettings rejects a command that starts with a quoted word.
 gnome_set_keybinding() {
     local path="$1" paths
     paths="$(gnome_keybinding_paths)" || return 1
-    gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" name "$2" &&
-        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" command "$3" &&
-        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" binding "$4" || return 1
+    gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" name "$(_gsettings_string "$2")" &&
+        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" command "$(_gsettings_string "$3")" &&
+        gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" binding "$(_gsettings_string "$4")" || return 1
     ! grep -qxF "$path" <<< "$paths" || return 0
     printf '%s\n' "$paths" "$path" | gsettings_set_list "$GNOME_MEDIA_KEYS" custom-keybindings
 }

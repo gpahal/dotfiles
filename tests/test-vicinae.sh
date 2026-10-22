@@ -2,7 +2,7 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The vicinae step. On Ubuntu: Vicinae from its installer into ~/.local, its GNOME extension from
+# The vicinae step. On Ubuntu: libopengl0 from apt, Vicinae from its installer into ~/.local, its GNOME extension from
 # extensions.gnome.org, its user service, and Super+Space; and update_vicinae, which upgrade runs.
 # On both OSes: the shared settings file, settings.json's import and per-OS keys, and the keys it
 # overrides. A fake installer writes what the real one does for a prefix under HOME.
@@ -49,9 +49,14 @@ case "$1" in
     start | restart) touch "$STATE/${*: -1}.active" ;;
     try-restart) ;;
 esac'
+stub_sudo_exec
+stub dpkg-query '[ "${*: -1}" == libopengl0 ] && [ -e "$STATE/libopengl0" ] && printf "install ok installed"'
+stub apt-get '[ "${*: -1}" != libopengl0 ] || touch "$STATE/libopengl0"'
 
 load_script vicinae/install.sh
 as_os ubuntu
+# shellcheck disable=SC2034 # apt_get_update reads it
+APT_UPDATE_RETRY_DELAY=0
 bin="$HOME/.local/bin/vicinae"
 unit="$HOME/.local/share/systemd/user/vicinae.service"
 ext_dir="$HOME/.local/share/gnome-shell/extensions/vicinae@dagimg-dot"
@@ -78,6 +83,7 @@ gsettings set org.gnome.shell enabled-extensions "['ubuntu-dock@ubuntu.com']"
 
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Vicinae ($bin)"
+assert_contains "$RUN_OUTPUT" "missing    libopengl0, which Vicinae needs to start"
 assert_contains "$RUN_OUTPUT" "missing    Vicinae's GNOME extension vicinae@dagimg-dot enabled"
 assert_contains "$RUN_OUTPUT" "missing    Super+Space opens Vicinae"
 assert_contains "$RUN_OUTPUT" "missing    Super+Space doesn't switch keyboard layouts"
@@ -88,7 +94,10 @@ assert_contains "$RUN_OUTPUT" "missing    Paste into the active window and snipp
 # Over SSH, with no desktop session: it installs everything, and Vicinae starts at the next login
 unset TERM
 : > "$STUB_LOG"
+answer yes
 assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Install libopengl0, the OpenGL library Vicinae needs to start"
+assert_file_contains "$STUB_LOG" "install -y libopengl0"
 assert_file_contains "$STUB_LOG" "installer bash https://vicinae.com/install Vicinae's installer --prefix $HOME/.local TERM=dumb"
 assert_contains "$RUN_OUTPUT" "Paste into the active window and snippets stay off, since they need root."
 assert_file_contains "$STUB_LOG" "fetch https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50"
@@ -112,6 +121,7 @@ assert_contains "$RUN_OUTPUT" "$settings imports dotfiles.json"
 assert_contains "$RUN_OUTPUT" "Paste into the active window and snippets off (input_server.enabled = false)"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae ($bin)"
+assert_contains "$RUN_OUTPUT" "ok         libopengl0, which Vicinae needs to start"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae starts at login"
 assert_contains "$RUN_OUTPUT" "unverified Vicinae running: no desktop session"
 assert_contains "$RUN_OUTPUT" "unverified Vicinae's GNOME extension loaded: GNOME Shell isn't running"
@@ -136,10 +146,23 @@ assert_contains "$RUN_OUTPUT" "$settings already imports dotfiles.json and has t
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 assert_file_not_contains "$STUB_LOG" "fetch"
 assert_file_not_contains "$STUB_LOG" "daemon-reload"
+assert_file_not_contains "$STUB_LOG" "apt-get"
 cmp -s "$settings" "$SANDBOX/settings-before" || fail "a re-run changed settings.json"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae running"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae's GNOME extension loaded"
+
+# Declining sudo leaves libopengl0 out without failing the step, and status still names it
+rm "$STATE/libopengl0"
+answer no
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_not_contains "$STUB_LOG" "apt-get"
+: > "$STUB_LOG"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    libopengl0, which Vicinae needs to start"
+assert_sudo_noninteractive
+touch "$STATE/libopengl0"
 
 # Vicinae's own settings.json: a comment header, and its settings window's changes, which win.
 # Status names the repo's keys it overrides; with the import there, the step leaves it as it is.

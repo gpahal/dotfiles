@@ -29,7 +29,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## How setup works
 
-`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh`, except `manual-steps.sh`, and also runs on its own:
 
 | Step | What it does |
 | :- | :- |
@@ -67,7 +67,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## Ubuntu
 
-Run setup as your own user, not root. On Ubuntu Server, name the steps to leave out `ghostty`, `zed`, `stream-deck`, `logitech`, and `chrome`, and install `upower` for UPS detection.
+Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` naming every step except `ghostty`, `zed`, `stream-deck`, `hotkeys`, `logitech`, and `chrome`, and install `upower` for UPS detection.
 
 - Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
 - Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
@@ -96,7 +96,7 @@ The `ubuntu` and `docker` steps keep the machine reachable:
 
 ### git
 
-Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig`, which git reads after this config. Signing setup and `gh` write there too.
+Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in `~/.gitconfig` or `~/.gitconfig.local`, which git reads after this config. Signing setup and `gh` write to `~/.gitconfig`.
 
 - `git dft`, `git dd`, `git dlog`: difftastic diffs.
 - `git cob`, `git cobr`: pick a local or remote branch with fzf.
@@ -119,7 +119,7 @@ Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in
 [`zsh/`](zsh/), copied to `~/.zsh/`, with starship. The login shell is the system zsh, so it survives a broken Homebrew. Put secrets and per-machine settings in `~/.zshrc.local`.
 
 - `Ctrl+T` files, `Alt+C` directories, `Ctrl+R` and Up search history (atuin).
-- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `ts` (`tmux-sessionizer`).
+- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `zshrc` (edits `~/.zshrc`), `ts` (`tmux-sessionizer`).
 - `rm` deletes immediately. On macOS, `trash` can be undone.
 
 ### Ghostty
@@ -210,7 +210,7 @@ The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS app
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
+`just touch-id` makes `sudo` take Touch ID, inside tmux too. It adds its lines at the top of `/etc/pam.d/sudo_local` and keeps yours. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
 
 ```sh
 osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'
@@ -284,7 +284,7 @@ Once:
    4. `ssh -O exit <alias>`.
 
    Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
-8. **GitHub.** If you skipped it, run `gh auth login --insecure-storage --git-protocol https`, `gh auth setup-git`, then `bash setup.sh git`.
+8. **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
 9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
 11. **Logitech.** At the desktop, open Solaar and pair your devices.
@@ -346,7 +346,7 @@ At the desktop, with the Stream Deck switched to it:
 
 ## Updating
 
-`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, pinned vim and tmux plugins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.
@@ -355,7 +355,7 @@ At the desktop, with the Stream Deck switched to it:
 ## Maintenance
 
 - `just copy-back [dry-run]` copies installed configs that differ back into the repo for review with `git diff`. It skips repo files with uncommitted changes.
-- `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills when next needed, so the next build, install, or test is slower.
+- `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills on next use.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
 - After editing `stream-deck/profile`, run `bash stream-deck/build-profile.sh`, match the System page in `stream-deck/linux/layout.json`, and commit them. To load the change, delete the **System** profile in Stream Deck and press **Overview**.

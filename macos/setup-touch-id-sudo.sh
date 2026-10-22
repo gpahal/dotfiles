@@ -2,16 +2,20 @@
 set -euo pipefail
 
 # Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
-# Not run by setup.sh, since it changes /etc with sudo. Rewrites the whole file, dropping other lines.
+# Not run by setup.sh, since it changes /etc with sudo. Adds its lines and keeps yours.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=pam.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pam.sh"
+source "$DOTFILES_DIR/macos/pam.sh"
 
 STEP_OS=macos
+
+# macOS's sudo keeps your PATH, which starts with dirs you can write (~/.local/bin, mise's shims,
+# Homebrew's), so sudo, and what it runs, come from the system's dirs first
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 # Temp name then rename, so sudo_local never names a missing module between sudo runs (which
 # would break sudo). mv -h replaces a link rather than following it.

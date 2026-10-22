@@ -13,8 +13,8 @@ install_cask() {
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
             brew reinstall --cask "$cask" || status=$?
             ;;
-# brew install would fail on an existing app, or rerun a pkg cask's installer, and upgrade skips
-# casks brew doesn't list
+        # brew install would fail on an existing app, or rerun a pkg cask's installer, and
+        # upgrade skips casks brew doesn't list
         other) echo "  $cask already installed, but not by Homebrew, so upgrade won't update it." ;;
         *)
             echo "  Installing $cask..."
@@ -82,8 +82,8 @@ cask_state() {
     fi
     if "$listed"; then
         state=brew
-# The current cask can name the app differently from the installed one (T3 Code Alpha to Beta),
-# so it's gone only when the receipt's app is gone too
+        # An app can rename itself as it updates, so the current cask may name it differently from
+        # the installed one. It's gone only when the receipt's app is gone too.
         if [ -n "$app" ] && [ ! -e "$app" ]; then
             if recorded="$(recorded_cask_app "$cask" "$app")" && [ -e "$recorded" ]; then
                 app="$recorded"

@@ -116,10 +116,13 @@ stub pkill 'exit 1'
 load_script ghostty/install.sh
 as_os ubuntu
 
+# A missing prerequisite fails the step before it changes anything
 hide snap
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo apt-get install snapd"
-assert_eq "" "$(cmp "$REPO_DIR/ghostty/config.ghostty" "$GHOSTTY_DIR/config.ghostty" 2>&1)" "ghostty config copied"
+assert_contains "$RUN_OUTPUT" "snap isn't installed. Install it with: sudo apt install snapd"
+[ ! -e "$GHOSTTY_DIR/config.ghostty" ] || fail "the ghostty config was copied without snapd"
+run status
+assert_contains "$RUN_OUTPUT" "unknown    Ghostty snap: snap isn't installed"
 
 stub snap 'exit 1'
 rm -f "$GHOSTTY_DIR/config.ghostty"

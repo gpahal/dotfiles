@@ -113,12 +113,49 @@ reattach_copy_needed() {
 }
 
 # pam_reattach must precede pam_tid for tmux. ignore_ssh: over SSH, ask for the password instead.
-desired_sudo_local() {
-    echo "$SUDO_LOCAL_HEADER"
+repo_sudo_local_lines() {
     if [ -f "$REATTACH_MODULE" ] || reattach_source_installed; then
         echo "auth       optional       $REATTACH_MODULE ignore_ssh"
     fi
     echo "$TID_LINE"
+}
+
+# sudo_local with the repo's lines, keeping yours. Unchanged when the repo's lines are there in
+# order and no other line loads pam_tid or pam_reattach. Otherwise those lines go, and the repo's
+# go after the leading comments, ahead of your modules.
+desired_sudo_local() {
+    if [ ! -s "$SUDO_LOCAL" ]; then
+        echo "$SUDO_LOCAL_HEADER"
+        repo_sudo_local_lines
+        return 0
+    fi
+    WANTED="$(repo_sudo_local_lines)" awk '
+        function norm(s) { gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); return s }
+        BEGIN {
+            n = split(ENVIRON["WANTED"], wanted, "\n")
+            for (j = 1; j <= n; j++) want[j] = norm(wanted[j])
+        }
+        { line[NR] = $0 }
+        $1 !~ /^#/ && $3 ~ /(^|\/)pam_(tid|reattach)\.so$/ {
+            ours[NR] = 1
+            count++
+            if (matched < n && norm($0) == want[matched + 1]) matched++
+        }
+        END {
+            if (matched == n && count == n) {
+                for (i = 1; i <= NR; i++) print line[i]
+                exit
+            }
+            top = 1
+            for (i = 1; i <= NR; i++) {
+                if (top && line[i] !~ /^[ \t]*(#|$)/) {
+                    for (j = 1; j <= n; j++) print wanted[j]
+                    top = 0
+                }
+                if (!(i in ours)) print line[i]
+            }
+            if (top) for (j = 1; j <= n; j++) print wanted[j]
+        }' "$SUDO_LOCAL"
 }
 
 has_tid() {
@@ -176,10 +213,14 @@ status_touch_id() {
             status_item skipped "Touch ID in tmux: pam-reattach isn't installed; the homebrew step installs it, then re-run just touch-id"
         elif { [ -e "$REATTACH_MODULE" ] || [ -L "$REATTACH_MODULE" ]; } && reattach_copy_needed; then
             # A missing copy is reported below
-            status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
+            if reattach_module_replaceable; then
+                status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
+            else
+                status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, is older than Homebrew's pam-reattach; re-run just touch-id"
+            fi
         fi
     else
-        status_item missing "Touch ID for sudo: $SUDO_LOCAL differs from what just touch-id writes; run it to rewrite the file"
+        status_item missing "Touch ID for sudo: $SUDO_LOCAL's pam_tid and pam_reattach lines differ from just touch-id's; run it to fix them, keeping your other lines"
     fi
     # A missing module can break sudo, so give a fix that doesn't need it
     rescue="If sudo fails, remove the file without it: $(sudo_local_rescue)"

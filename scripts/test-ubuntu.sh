@@ -4,11 +4,12 @@ set -uo pipefail
 # Run both setups twice in a throwaway OrbStack Ubuntu machine, restart, and check status and services.
 
 MACHINE=dotfiles-test
-# amd64 runs through Rosetta on Apple Silicon, where T3 Code crashes under systemd.
-ARCH="${TEST_UBUNTU_ARCH:-arm64}"
+# x86_64, as the real machine is: through Rosetta on Apple Silicon
+ARCH="${TEST_UBUNTU_ARCH:-amd64}"
 REPO="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Steps that can't work in OrbStack (ghostty: no snapd)
+# Steps that can't work in OrbStack (ghostty: no snapd). The image has no GNOME desktop, so the
+# desktop steps skip their GNOME parts.
 ALLOWED_SETUP=(ghostty)
 ALLOWED_AI=()
 # Status items that need a person, a tailnet, or root
@@ -74,7 +75,19 @@ in_vm() {
     return "$status"
 }
 
+# As the machine's user with its user manager, which systemctl --user needs: orb run starts no
+# login session
+in_vm_user() {
+    # shellcheck disable=SC2016 # expanded in the machine
+    in_vm bash -c 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"; "$@"' bash "$@"
+}
+
 FAILED=0
+
+fail() {
+    echo "FAIL: $1" | tee -a "$LOG"
+    FAILED=1
+}
 
 # Succeeds when the step's report has missing or unknown items, all of them allowed.
 only_allowed_items() {
@@ -108,16 +121,14 @@ check_runner() {
     listed="$(printf '%s\n' "$VM_OUTPUT" | sed -nE 's/^(Failed steps|Needs attention): ([^.]*).*/\2/p')"
     attention="$(printf '%s\n' "$VM_OUTPUT" | sed -nE 's/^Needs attention: ([^.]*).*/\1/p')"
     if [ "$status" -ne 0 ] && [ -z "$listed" ]; then
-        echo "FAIL: $what exited $status" | tee -a "$LOG"
-        FAILED=1
+        fail "$what exited $status"
     fi
     for step in $listed; do
         if [[ " $attention " == *" $step "* ]] && only_allowed_items "$step"; then
             continue
         fi
         if [[ " $* " != *" $step "* ]]; then
-            echo "FAIL: $what: the $step step failed or needs attention" | tee -a "$LOG"
-            FAILED=1
+            fail "$what: the $step step failed or needs attention"
         fi
     done
 }
@@ -146,10 +157,8 @@ fi
 
 # Ubuntu Desktop ships it; the image doesn't
 echo "=== unattended-upgrades ==="
-in_vm sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades || {
-    echo "FAIL: couldn't install unattended-upgrades" | tee -a "$LOG"
-    FAILED=1
-}
+in_vm sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades ||
+    fail "couldn't install unattended-upgrades"
 
 for pass in 1 2; do
     echo "=== Setup, pass $pass ==="
@@ -158,39 +167,29 @@ for pass in 1 2; do
 done
 
 echo "Restarting the $MACHINE machine..."
-orb restart "$MACHINE" >> "$LOG" 2>&1 || {
-    echo "FAIL: couldn't restart the machine" | tee -a "$LOG"
-    FAILED=1
-}
+orb restart "$MACHINE" >> "$LOG" 2>&1 || fail "couldn't restart the machine"
 
 # The restart clears /run/sshd and orb run doesn't recreate it; without it sshd -T fails.
-in_vm sudo mkdir -p /run/sshd > /dev/null || {
-    echo "FAIL: couldn't make /run/sshd" | tee -a "$LOG"
-    FAILED=1
-}
+in_vm sudo mkdir -p /run/sshd > /dev/null || fail "couldn't make /run/sshd"
 run_runner setup.sh --status ${ALLOWED_SETUP[@]+"${ALLOWED_SETUP[@]}"}
 run_runner ai_tools/setup.sh --status ${ALLOWED_AI[@]+"${ALLOWED_AI[@]}"}
 
-# orb run starts no login session, so point systemctl at the user manager.
 echo "=== T3 Code service ==="
 active=false
 for _ in $(seq 1 12); do
-    # shellcheck disable=SC2016 # expanded in the machine
-    if in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-active t3code.service'; then
+    if in_vm_user systemctl --user is-active t3code.service; then
         active=true
         break
     fi
     sleep 5
 done
 if ! "$active"; then
-    echo "FAIL: the T3 Code service isn't active after a restart" | tee -a "$LOG"
-    FAILED=1
+    fail "the T3 Code service isn't active after a restart"
 fi
 
 # Uses the t3-code step's functions, so servers are counted as its status counts them.
 # shellcheck disable=SC2016 # expanded in the machine
 T3_VM_LIB='
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
 source ai_tools/t3-code/install.sh
 set +eu +o pipefail
 t3_unit() { systemctl --user show -p "$1" --value t3code.service; }
@@ -224,7 +223,7 @@ service_shut_out() {
 '
 
 in_vm_t3() {
-    in_vm bash -c "$T3_VM_LIB"$'\n'"$1"
+    in_vm_user bash -c "$T3_VM_LIB"$'\n'"$1"
 }
 
 retry_t3() {
@@ -241,52 +240,47 @@ t3_main_pid() {
     tail -n 1 <<< "$VM_OUTPUT"
 }
 
-t3_fail() {
-    echo "FAIL: $1" | tee -a "$LOG"
-    FAILED=1
-}
-
 echo "=== One T3 Code server ==="
 # shellcheck disable=SC2016 # expanded in the machine
 if ! in_vm_t3 'command -v ss && [ -x "$HOME/.local/bin/t3" ]' > /dev/null; then
-    t3_fail "the one-server checks need ss and ~/.local/bin/t3 in the machine"
+    fail "the one-server checks need ss and ~/.local/bin/t3 in the machine"
 else
-    retry_t3 12 one_server_stable || t3_fail "the T3 Code service isn't the one T3 Code server, on port 3773"
+    retry_t3 12 one_server_stable || fail "the T3 Code service isn't the one T3 Code server, on port 3773"
 
     # On failure, restart with systemctl so the later checks still run.
     old_pid="$(t3_main_pid)"
     # shellcheck disable=SC2016 # expanded in the machine
     if ! in_vm_t3 '"$HOME/.local/bin/t3" service restart'; then
-        t3_fail "t3 service restart failed"
+        fail "t3 service restart failed"
         in_vm_t3 'systemctl --user restart t3code.service' || true
     fi
     retry_t3 12 "one_server_stable $old_pid" ||
-        t3_fail "after t3 service restart, the restarted service isn't the one T3 Code server, on port 3773"
+        fail "after t3 service restart, the restarted service isn't the one T3 Code server, on port 3773"
 
     in_vm_t3 't3_unit Restart' > /dev/null
     if [ "$(tail -n 1 <<< "$VM_OUTPUT")" == no ]; then
-        t3_fail "t3code.service has Restart=no, so systemd won't restart a server that dies"
+        fail "t3code.service has Restart=no, so systemd won't restart a server that dies"
     fi
     old_pid="$(t3_main_pid)"
     # kill -9 0 would kill orb run's own process group
     if ! [[ "$old_pid" =~ ^[1-9][0-9]*$ ]]; then
-        t3_fail "the T3 Code service has no server to kill -9 (MainPID ${old_pid:-unset})"
+        fail "the T3 Code service has no server to kill -9 (MainPID ${old_pid:-unset})"
     elif ! in_vm_t3 "kill -9 $old_pid"; then
-        t3_fail "couldn't kill -9 the T3 Code service's server (PID $old_pid)"
+        fail "couldn't kill -9 the T3 Code service's server (PID $old_pid)"
     else
         retry_t3 12 "one_server_stable $old_pid" ||
-            t3_fail "after a kill -9 of its server, the restarted service isn't the one T3 Code server, on port 3773"
+            fail "after a kill -9 of its server, the restarted service isn't the one T3 Code server, on port 3773"
     fi
 
     # setsid -f detaches it so orb run returns.
     outside=""
     # shellcheck disable=SC2016 # expanded in the machine
     if ! in_vm_t3 'systemctl --user stop t3code.service && ! t3_code_service_active'; then
-        t3_fail "couldn't stop the T3 Code service"
+        fail "couldn't stop the T3 Code service"
     elif ! in_vm_t3 'T3CODE_PORT=$T3_CODE_PORT T3CODE_TELEMETRY_ENABLED=false setsid -f "$HOME/.local/bin/t3" serve > /tmp/t3-manual-serve.log 2>&1 < /dev/null'; then
-        t3_fail "couldn't start t3 serve by hand"
+        fail "couldn't start t3 serve by hand"
     elif ! retry_t3 12 outside_listener; then
-        t3_fail "the t3 serve started by hand isn't listening on port 3773; see /tmp/t3-manual-serve.log in the machine"
+        fail "the t3 serve started by hand isn't listening on port 3773; see /tmp/t3-manual-serve.log in the machine"
     else
         in_vm_t3 outside_listener > /dev/null
         outside="$(sed -n 's/^outside=//p' <<< "$VM_OUTPUT")"
@@ -294,25 +288,22 @@ else
     if [ -n "$outside" ]; then
         in_vm_t3 'systemctl --user start t3code.service' || true
         retry_t3 8 "service_shut_out $outside" ||
-            t3_fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
-        # shellcheck disable=SC2016 # expanded in the machine
-        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
+            fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
+        in_vm_user bash ai_tools/setup.sh --status t3-code > /dev/null || true
         grep -qE "$T3_MANUAL_SERVE_STATUS" <<< "$VM_OUTPUT" ||
-            t3_fail "t3-code's status doesn't flag the t3 serve started by hand"
+            fail "t3-code's status doesn't flag the t3 serve started by hand"
         # shellcheck disable=SC2016 # expanded in the machine
         in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true
         # shellcheck disable=SC2016 # expanded in the machine
         retry_t3 12 '[ -z "$(t3_code_other_servers)" ]' ||
-            t3_fail "the t3 serve started by hand didn't stop"
-        # shellcheck disable=SC2016 # expanded in the machine
-        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh --status t3-code' > /dev/null || true
+            fail "the t3 serve started by hand didn't stop"
+        in_vm_user bash ai_tools/setup.sh --status t3-code > /dev/null || true
         grep -qE "$T3_IDLE_SERVICE_STATUS" <<< "$VM_OUTPUT" ||
-            t3_fail "once the t3 serve started by hand stopped, t3-code's status doesn't flag the service that runs no server"
-        # shellcheck disable=SC2016 # expanded in the machine
-        in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) bash ai_tools/setup.sh t3-code' > /dev/null ||
-            t3_fail "once the t3 serve started by hand stopped, the t3-code step failed"
+            fail "once the t3 serve started by hand stopped, t3-code's status doesn't flag the service that runs no server"
+        in_vm_user bash ai_tools/setup.sh t3-code > /dev/null ||
+            fail "once the t3 serve started by hand stopped, the t3-code step failed"
         retry_t3 12 one_server_stable ||
-            t3_fail "once the t3 serve started by hand stopped and the t3-code step ran, the T3 Code service isn't the one T3 Code server, on port 3773"
+            fail "once the t3 serve started by hand stopped and the t3-code step ran, the T3 Code service isn't the one T3 Code server, on port 3773"
     fi
 fi
 
@@ -322,24 +313,17 @@ echo "=== sshd settings ==="
 if in_vm bash -c 'sudo mkdir -p /run/sshd && sudo sshd -T -C "user=$(id -un),host=localhost,addr=127.0.0.1"' > /dev/null; then
     for setting in "permitrootlogin no" "passwordauthentication no" "kbdinteractiveauthentication no" \
         "clientaliveinterval 60" "exposeauthinfo yes"; do
-        grep -qxF "$setting" <<< "$VM_OUTPUT" || {
-            echo "FAIL: sshd -T doesn't show $setting" | tee -a "$LOG"
-            FAILED=1
-        }
+        grep -qxF "$setting" <<< "$VM_OUTPUT" || fail "sshd -T doesn't show $setting"
     done
-    grep -qE '^allowusers [^ ]+$' <<< "$VM_OUTPUT" || {
-        echo "FAIL: sshd -T doesn't limit logins to one user with AllowUsers" | tee -a "$LOG"
-        FAILED=1
-    }
+    grep -qE '^allowusers [^ ]+$' <<< "$VM_OUTPUT" ||
+        fail "sshd -T doesn't limit logins to one user with AllowUsers"
 else
-    echo "FAIL: sudo sshd -T failed" | tee -a "$LOG"
-    FAILED=1
+    fail "sudo sshd -T failed"
 fi
 
 echo "=== ufw ==="
 if ! in_vm sudo ufw status || ! grep -qx 'Status: active' <<< "$VM_OUTPUT"; then
-    echo "FAIL: ufw isn't active after a restart" | tee -a "$LOG"
-    FAILED=1
+    fail "ufw isn't active after a restart"
 fi
 
 # A real login through ufw and sshd, so a lockout fails here.
@@ -349,36 +333,28 @@ vm_user=""
 in_vm id -un > /dev/null && vm_user="$(tail -n 1 <<< "$VM_OUTPUT")"
 # shellcheck disable=SC2016 # expanded in the machine
 if [ -z "$vm_user" ]; then
-    echo "FAIL: couldn't read the machine's user name" | tee -a "$LOG"
-    FAILED=1
+    fail "couldn't read the machine's user name"
 elif ! ssh-keygen -q -t ed25519 -N "" -C dotfiles-test-ubuntu -f "$KEY_DIR/id_ed25519" >> "$LOG" 2>&1; then
-    echo "FAIL: couldn't make a test key with ssh-keygen" | tee -a "$LOG"
-    FAILED=1
+    fail "couldn't make a test key with ssh-keygen"
 elif ! in_vm bash -c 'umask 077 && mkdir -p ~/.ssh && printf "%s\n" "$1" >> ~/.ssh/authorized_keys' _ \
     "$(cat "$KEY_DIR/id_ed25519.pub")"; then
-    echo "FAIL: couldn't add the test key to the machine's authorized_keys" | tee -a "$LOG"
-    FAILED=1
+    fail "couldn't add the test key to the machine's authorized_keys"
 elif ! ssh -F /dev/null -i "$KEY_DIR/id_ed25519" -o BatchMode=yes -o IdentitiesOnly=yes \
     -o IdentityAgent=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=15 "$vm_user@$MACHINE.orb.local" true < /dev/null >> "$LOG" 2>&1; then
-    echo "FAIL: couldn't log in over SSH with the test key as $vm_user@$MACHINE.orb.local" | tee -a "$LOG"
-    FAILED=1
+    fail "couldn't log in over SSH with the test key as $vm_user@$MACHINE.orb.local"
 fi
 rm -rf "$KEY_DIR"
 
 echo "=== Health alert timer ==="
-# shellcheck disable=SC2016 # expanded in the machine
-if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-active dotfiles-health.timer'; then
-    echo "FAIL: dotfiles-health.timer isn't active after a restart" | tee -a "$LOG"
-    FAILED=1
+if ! in_vm_user systemctl --user is-active dotfiles-health.timer; then
+    fail "dotfiles-health.timer isn't active after a restart"
 fi
 
 # As an agent in a T3 Code thread would, under the user manager's groups
 echo "=== Docker from the user manager ==="
-# shellcheck disable=SC2016 # expanded in the machine
-if ! in_vm bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemd-run --user --wait --pipe --quiet docker ps'; then
-    echo "FAIL: docker ps doesn't work from the user manager the T3 Code service runs under" | tee -a "$LOG"
-    FAILED=1
+if ! in_vm_user systemd-run --user --wait --pipe --quiet docker ps; then
+    fail "docker ps doesn't work from the user manager the T3 Code service runs under"
 fi
 
 # Diagnostic only; never fails the test.

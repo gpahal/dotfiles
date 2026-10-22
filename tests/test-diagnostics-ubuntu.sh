@@ -33,19 +33,6 @@ diag() {
     status_result
 }
 
-# --- run_bounded with timeout(1) ---
-assert_exit 124 run_bounded 1 sleep 10
-assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
-assert_eq out "$RUN_OUTPUT" "run_bounded's output"
-# timeout -k 5 exits 137 after SIGKILL; run_bounded reports 124 only past the deadline
-run_bounded_killed() {
-    stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; [ "$3" -lt 2 ] || exit 137; sleep "$3"; exit 137'
-    assert_exit 124 run_bounded 1 sleep 10
-    assert_exit 137 run_bounded 5 sleep 10
-    rm "$STUB_DIR/timeout"
-}
-subtest run_bounded_killed
-
 # --- free space (status_disk_space) ---
 df_lines() {
     printf '%s\n' "$@" > "$SANDBOX/df-table"
@@ -333,7 +320,7 @@ docker_df() {
     printf '%b' "$1" > "$SANDBOX/docker-df"
     echo "${2:-0}" > "$SANDBOX/docker-df.status"
 }
-# Docker 24's and 28's formats
+# With space to reclaim, and with none
 docker_df 'Images\t12\t8.1GB\t3.2GB (39%)\nContainers\t3\t120MB\t0B (0%)\nLocal Volumes\t2\t1.5GB\t0B (0%)\nBuild Cache\t40\t2.3GB\t2.3GB\n'
 assert_exit 0 diag status_docker_usage
 assert_contains "$RUN_OUTPUT" "info       Docker disk usage: images 12, 8.1GB (3.2GB reclaimable); containers 3, 120MB; local volumes 2, 1.5GB; build cache 40, 2.3GB (2.3GB reclaimable)"

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Homebrew and the formulae, casks, and App Store apps the step lists.
+# Install Homebrew, the Brewfile's formulae, and the step's casks and App Store apps.
 # Installs into the real Homebrew prefix whatever HOME is: test it in a VM or on a spare machine.
 # Rule breaks: failed App Store apps only warn (a new Mac isn't signed in), and declining the apt
 # packages fails the step, since every later step needs them.
@@ -106,9 +106,9 @@ install_ubuntu_packages() {
 
 homebrew_prefix() {
     if is_ubuntu; then
-        echo /home/linuxbrew/.linuxbrew
+        echo "${HOMEBREW_PREFIXES[1]}"
     else
-        echo /opt/homebrew
+        echo "${HOMEBREW_PREFIXES[0]}"
     fi
 }
 

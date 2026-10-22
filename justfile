@@ -9,12 +9,19 @@ default:
 check:
     #!/bin/bash
     set -euo pipefail
-    # git still lists a deleted but unstaged file, so skip it.
+    # Scripts by name, or by a bash shebang. git still lists a deleted but unstaged file, so skip it.
     files="$(mktemp)"
     trap 'rm -f "$files"' EXIT
-    git ls-files -z --cached --others --exclude-standard '*.sh' '*/bin/*' | while IFS= read -r -d '' f; do [ ! -f "$f" ] || printf '%s\0' "$f"; done > "$files"
+    git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            *.sh | */bin/*) ;;
+            *) head -n 1 "$f" | grep -qE '^#!(/usr)?/bin/(env +)?bash\b' || continue ;;
+        esac
+        printf '%s\0' "$f"
+    done > "$files"
     xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck < "$files"
-    bad="$(xargs -0 grep -nE '\b(mapfile|readarray|coproc)\b|\b(declare|local|typeset) +-[a-zA-Z]*[An]|\[\[ -v |\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^|,)|\$\{[A-Za-z_][A-Za-z0-9_]*\[-[0-9]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?@[QEPAaUuLK]\}|&>>|;;&|\|&|\bwait +-n\b|\bEPOCH(SECONDS|REALTIME)\b' /dev/null < "$files")" || true
+    bad="$(xargs -0 grep -nE '\b(mapfile|readarray|coproc)\b|\b(declare|local|typeset) +-[a-zA-Z]*[Ang]|\[\[ -v |(\btest|\[) +-v |\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^|,)|\$\{[A-Za-z_][A-Za-z0-9_]*\[-[0-9]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?@[QEPAaUuLK]\}|&>>|;;&|(^|[^;]);&([[:space:]]|$)|\|&|\bwait +-n\b|\bEPOCH(SECONDS|REALTIME)\b|\$\{?BASHPID\b|\bprintf .*%\([^)]*\)T|(^|[^$])\{[A-Za-z_][A-Za-z0-9_]*\}[<>]|\bshopt .*\b(globstar|lastpipe)\b' /dev/null < "$files")" || true
     [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
     [ "$(uname -s)" != Darwin ] || xargs -0 -n 1 /bin/bash -n < "$files"
     for f in zsh/*.zsh; do zsh -n "$f"; done

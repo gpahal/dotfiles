@@ -7,7 +7,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=lib/config.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh"
+source "$DOTFILES_DIR/git/lib/config.sh"
 
 LOGIN_KEY="$HOME/.ssh/id_ed25519"
 SIGNING_KEY="$HOME/.ssh/id_ed25519_signing"

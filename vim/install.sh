@@ -37,7 +37,7 @@ vim_plugins_off_pin() {
     while read -r repo sha; do
         dir="$PLUGGED_DIR/${repo##*/}"
         [ -d "$dir/.git" ] || continue
-        [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" == "$sha" ] || echo "$repo $sha"
+        git_head_is "$dir" "$sha" || echo "$repo $sha"
     done < <(vim_plugins)
 }
 
@@ -45,14 +45,11 @@ vim_plugins_pinned() {
     [ -z "$(vim_plugins_off_pin)" ]
 }
 
-# vim-plug's clones are shallow, so fetch a missing pinned commit by hash
+# vim-plug's clones are shallow
 pin_vim_plugins() {
-    local repo sha dir status=0
+    local repo sha status=0
     while read -r repo sha; do
-        dir="$PLUGGED_DIR/${repo##*/}"
-        if { git -C "$dir" cat-file -e "$sha^{commit}" 2>/dev/null ||
-            GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 origin "$sha"; } &&
-            git -C "$dir" checkout -q --detach "$sha"; then
+        if git_checkout_pin "$PLUGGED_DIR/${repo##*/}" origin "$sha"; then
             echo "  Moved vim plugin $repo to ${sha:0:7}"
         else
             echo "  Couldn't move vim plugin $repo to ${sha:0:7}." >&2

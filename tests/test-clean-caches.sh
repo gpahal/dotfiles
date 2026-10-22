@@ -90,6 +90,66 @@ assert_contains "$RUN_OUTPUT" "Failed: pnpm store"
 assert_file_contains "$STUB_LOG" "brew cleanup --prune=all"
 [ ! -e "$HOME/.cache/torch" ] || fail "a failed pnpm prune stopped the later caches"
 
+# _clear_dir resolves its dir, so no spelling of HOME, or of a dir above it, is removed
+clear_dir_guard() {
+    local dir
+    ln -s "$HOME" "$SANDBOX/home-link"
+    stub rm 'exit 1'
+    for dir in "$HOME//" "$HOME/." "$SANDBOX/home-link" "$SANDBOX/home-link/" "$HOME/.." / //; do
+        assert_exit 1 _clear_dir "$dir"
+        assert_contains "$RUN_OUTPUT" "Not clearing $dir, which is / or holds your home folder."
+    done
+    assert_eq "" "$(grep '^rm' "$STUB_LOG" || true)" "rm runs for HOME or a dir above it"
+    /bin/rm -f "$STUB_DIR/rm" "$SANDBOX/home-link"
+}
+subtest clear_dir_guard
+as_os ubuntu
+fill
+answer yes
+PLAYWRIGHT_BROWSERS_PATH="$HOME//" TORCH_HOME="$HOME/." run main
+assert_eq 1 "$RUN_STATUS" "main's status with HOME as a cache"
+assert_contains "$RUN_OUTPUT" "Playwright browsers, PyTorch downloads"
+[ -f "$HOME/.cache/torch/blob" ] || fail "a cache set to HOME cleared HOME"
+as_os macos
+
+# Each tool's cache depends on the dir it runs in, as a project's .npmrc or pnpm config makes it.
+# Clearing from a project clears the caches listed, which are found from ~.
+cwd_caches() {
+    local where='$([ "$PWD" == "$HOME" ] && echo home || echo project)' place
+    stub go 'c="'"$CACHES/go-$where"'"
+case "$1 $2" in
+    "env GOCACHE") echo "${GOCACHE:-$c}" ;;
+    "clean -cache") rm -rf "${GOCACHE:-$c}"/* ;;
+esac'
+    stub pnpm 'c="'"$CACHES/pnpm-$where"'"
+case "$1 $2" in
+    "store path") echo "$c" ;;
+    "store prune") rm -rf "$c"/* ;;
+esac'
+    stub npm 'c="'"$CACHES/npm-$where"'"
+[ "${4:-}" != --cache ] || c="$5"
+case "$1 $2 $3" in
+    "config get cache") echo "$c" ;;
+    "cache clean --force") rm -rf "$c"/* ;;
+esac'
+    for place in home project; do
+        for dir in go pnpm npm; do
+            mkdir -p "$CACHES/$dir-$place"
+            echo blob > "$CACHES/$dir-$place/blob"
+        done
+    done
+    mkdir -p "$SANDBOX/project"
+    cd "$SANDBOX/project"
+    answer yes
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "$CACHES/npm-home"
+    for dir in go pnpm npm; do
+        [ ! -e "$CACHES/$dir-home/blob" ] || fail "the $dir cache listed, from ~, wasn't cleared"
+        [ -f "$CACHES/$dir-project/blob" ] || fail "the project's $dir cache, which wasn't listed, was cleared"
+    done
+}
+subtest cwd_caches
+
 assert_exit 2 main --bogus
 assert_contains "$RUN_OUTPUT" "Usage: bash scripts/clean-caches.sh [--dry-run]"
 test_done

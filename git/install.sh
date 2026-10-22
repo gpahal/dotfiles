@@ -1,12 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the git config, ignore file, and git wt, and log in to GitHub with gh.
+# Copy the git config, ignore file, and git wt, and offer a GitHub login with gh.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=lib/config.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/config.sh"
+source "$DOTFILES_DIR/git/lib/config.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -17,7 +19,7 @@ XDG_GIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
 # Any answer counts; curl reads the same proxy variables gh does
 github_reachable() {
     local code
-    code="$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' https://api.github.com/ 2>/dev/null || true)"
+    code="$(http_status https://api.github.com/)"
     [ -n "$code" ] && [ "$code" != 000 ]
 }
 

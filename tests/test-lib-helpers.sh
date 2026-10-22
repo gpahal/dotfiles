@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# serial
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -27,6 +28,15 @@ assert_eq "0 Go on?" "$RUN_STATUS $RUN_OUTPUT" "confirm after answer yes"
 answer no
 run confirm "Go on?"
 assert_eq "1 Go on?" "$RUN_STATUS $RUN_OUTPUT" "confirm after answer no"
+
+# The homebrew step supplies most commands, through apt on Ubuntu for some
+as_os ubuntu
+assert_eq "jq isn't installed. Run bash setup.sh homebrew first, which installs it with apt." \
+    "$(missing_cmd_hint jq)" "jq's hint on Ubuntu"
+assert_eq "gnome-extensions isn't installed. It needs the GNOME desktop: ubuntu-desktop." \
+    "$(missing_cmd_hint gnome-extensions)" "gnome-extensions' hint"
+as_os macos
+assert_eq "jq isn't installed. Run bash setup.sh homebrew first." "$(missing_cmd_hint jq)" "jq's hint on macOS"
 
 replace_fn locale_installed 'return 1'
 ! locale_installed || fail "replace_fn didn't replace locale_installed"
@@ -73,5 +83,35 @@ for cmd in "cp $SANDBOX/file $gone" "install -d $gone" "install -m 0644 $SANDBOX
 done
 assert_exit 1 sudo cat /etc/hosts
 assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
+
+# run_bounded through timeout(1), then through perl, as on macOS. One real timeout each.
+assert_exit 124 run_bounded 1 sleep 10
+assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
+assert_eq out "$RUN_OUTPUT" "run_bounded's output"
+# timeout -k 5 exits 137 after SIGKILL; run_bounded reports 124 only past the deadline
+run_bounded_killed() {
+    stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; exit 137'
+    assert_exit 124 run_bounded 0 sleep 10
+    assert_exit 137 run_bounded 5 sleep 10
+    rm "$STUB_DIR/timeout"
+}
+subtest run_bounded_killed
+# Its elapsed-time check is why this test is serial
+run_bounded_without_timeout() {
+    local start=$SECONDS
+    hide timeout
+    assert_exit 124 run_bounded 1 sleep 10
+    [ $((SECONDS - start)) -lt 5 ] || fail "run_bounded without timeout(1) waited out the command"
+    assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
+    assert_eq out "$RUN_OUTPUT" "run_bounded's output without timeout(1)"
+    # 142 (SIGALRM) or 143 from the command itself isn't a timeout
+    assert_exit 142 run_bounded 5 sh -c 'exit 142'
+    assert_exit 143 run_bounded 5 sh -c 'kill -TERM $$'
+}
+if command -v perl &> /dev/null; then
+    subtest run_bounded_without_timeout
+else
+    skip_rest "run_bounded without timeout(1): perl isn't installed"
+fi
 
 test_done

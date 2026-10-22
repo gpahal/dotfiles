@@ -15,6 +15,12 @@ as_os macos
 # shellcheck disable=SC2034 # macos/pam.sh reads them
 PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 
+# sudo and what it runs come from the system's dirs, after the stubs
+case "$PATH" in
+    "$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin:"*) ;;
+    *) fail "the system's dirs don't lead PATH: $PATH" ;;
+esac
+
 SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
 SOURCE="$SANDBOX/brew/lib/pam/pam_reattach.so"
 MODULE="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
@@ -90,7 +96,7 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 chmod 644 "$SOURCE"
 put_reattach "reattach 1.1"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is older than Homebrew's pam-reattach; re-run just touch-id"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "reattach 1.1" "$(cat "$MODULE")" "the copy after the upgrade"
@@ -164,7 +170,7 @@ assert_contains "$RUN_OUTPUT" "skipped    Touch ID in tmux: pam-reattach isn't i
 # pam-reattach installed later
 put_reattach
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL differs"
+assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL's pam_tid and pam_reattach lines differ from just touch-id's"
 assert_exit 0 main
 assert_eq "$HEADER
 $REATTACH_LINE
@@ -182,18 +188,39 @@ assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local after uninstalling pam-reattach"
 
-# Any other content is rebuilt from scratch
+# Your lines are kept. Other pam_tid and pam_reattach lines go, and the repo's go first.
 reset
 put_reattach
 answer yes
+WATCHID_LINE="auth       sufficient     pam_watchid.so"
 printf '%s\n' "$HEADER" "auth       optional       $SOURCE ignore_ssh" "#auth       sufficient     pam_tid.so" \
-    "auth       sufficient     pam_watchid.so" "$TID_LINE" "auth optional $MODULE debug" > "$SUDO_LOCAL"
+    "$WATCHID_LINE" "$TID_LINE" "auth optional $MODULE debug" > "$SUDO_LOCAL"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "differs"
+assert_contains "$RUN_OUTPUT" "lines differ"
 assert_exit 0 main
 assert_eq "$HEADER
 $REATTACH_LINE
-$TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local rebuilt"
+$TID_LINE
+#auth       sufficient     pam_tid.so
+$WATCHID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local with your lines"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
+# The repo's lines in order, wherever they are and however spaced, are left alone
+chmod 644 "$SUDO_LOCAL"
+printf '%s\n' "$WATCHID_LINE" "auth optional $MODULE ignore_ssh" "$TID_LINE" > "$SUDO_LOCAL"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "already on"
+assert_file_not_contains "$STUB_LOG" "sudo"
+# Out of order, they move to the top
+printf '%s\n' "$WATCHID_LINE" "$TID_LINE" "$REATTACH_LINE" > "$SUDO_LOCAL"
+assert_exit 3 main --status
+assert_exit 0 main
+assert_eq "$REATTACH_LINE
+$TID_LINE
+$WATCHID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local with the repo's lines out of order"
 
 # OpenPAM resolves bare names in /usr/lib/pam or /usr/local/lib/pam, with or without .2
 reset

@@ -324,7 +324,7 @@ configure_ufw() {
         return 1
     fi
     if ! apt_installed ufw; then
-        apt_get install -y ufw || return 1
+        apt_install_fresh ufw || return 1
     fi
     "$on" || sudo ufw default deny incoming > /dev/null || return 1
     rules=""

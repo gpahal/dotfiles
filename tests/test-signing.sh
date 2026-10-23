@@ -7,6 +7,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 stub scutil 'echo Test-Mac'
 load_script git/setup-signing.sh
 as_os ubuntu

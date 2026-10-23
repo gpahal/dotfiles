@@ -154,7 +154,7 @@ status_firmware() {
 # but failed unit failed, so restart it.
 install_smartd() {
     if ! apt_installed smartmontools; then
-        apt_get install -y --no-install-recommends smartmontools || return 1
+        apt_install_fresh --no-install-recommends smartmontools || return 1
     fi
     sudo systemctl enable --now "$SMARTD_UNIT" || return 1
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"

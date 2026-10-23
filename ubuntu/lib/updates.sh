@@ -150,7 +150,7 @@ merged_auto_upgrades() {
 turn_on_unattended_upgrades() {
     local current merged
     if ! apt_installed unattended-upgrades; then
-        apt_get install -y unattended-upgrades || return 1
+        apt_install_fresh unattended-upgrades || return 1
     fi
     if ! unattended_upgrades_on; then
         if ! current="$(read_root_file "$AUTO_UPGRADES_CONF")"; then

@@ -268,7 +268,7 @@ setup_ups() {
     local scan driver vendor product password file content changed=false notifier=false rtc=false
     local target=false scan_err scan_status=0
     if ! nut_installed; then
-        apt_get install -y "${NUT_PACKAGES[@]}" || return 1
+        apt_install_fresh "${NUT_PACKAGES[@]}" || return 1
         # nut-server's postinst re-runs udev only if /etc/init.d/udev exists, which Ubuntu lacks,
         # so a plugged-in UPS wouldn't get the nut group
         sudo udevadm trigger --settle --subsystem-match=usb --action=change || return 1

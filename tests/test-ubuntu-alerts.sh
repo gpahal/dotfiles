@@ -11,6 +11,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 URL_FILE="$SANDBOX/ntfy-url"
 HOOK="$SANDBOX/smartd-notify.sh"
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
@@ -32,7 +34,8 @@ assert_file_not_contains "$STUB_LOG" "logger"
 # The URL goes to curl on stdin, since any user can read a process's arguments
 echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+# Root's curl speaks only https (--proto =https)
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =https --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
     fail "curl's arguments name the ntfy topic"
@@ -108,7 +111,7 @@ assert_contains "$RUN_OUTPUT" "Sent a test push"
 assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
 assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file's owner, group, and mode"
-assert_file_contains "$STUB_LOG" "curl -q -fsS --max-time 10"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =https --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
 
 : > "$STUB_LOG"

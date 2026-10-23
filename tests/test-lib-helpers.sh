@@ -14,10 +14,16 @@ load_script lib/common.sh
 # --- confirm and DOTFILES_ASSUME_YES ---
 assert_exit 1 confirm "Proceed?"
 export DOTFILES_ASSUME_YES=1
+stub systemd-detect-virt
 assert_exit 0 confirm "Proceed?"
 assert_eq "Proceed? yes (DOTFILES_ASSUME_YES)" "$RUN_OUTPUT" "confirm's output"
 DOTFILES_ASSUME_YES=0
 assert_exit 1 confirm "Proceed?"
+# Off a VM, so an export on a real machine approves nothing
+DOTFILES_ASSUME_YES=1
+stub systemd-detect-virt 'exit 1'
+assert_exit 1 confirm "Proceed?"
+assert_eq "" "$RUN_OUTPUT" "confirm's output off a VM"
 
 # confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
 unset DOTFILES_ASSUME_YES

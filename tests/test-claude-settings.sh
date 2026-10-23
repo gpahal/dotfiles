@@ -10,6 +10,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 load_script ai_tools/claude-code/install.sh
 
 command -v jq &> /dev/null || skip "jq isn't installed"

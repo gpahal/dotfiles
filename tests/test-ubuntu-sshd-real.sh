@@ -11,6 +11,8 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 REAL_SSHD="$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v sshd)" || skip "sshd isn't installed"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 mkdir -p "$SSHD_RUN_DIR" "$(dirname "$SSHD_DROP_IN")"

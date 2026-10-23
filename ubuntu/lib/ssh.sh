@@ -10,7 +10,7 @@ openssh_installed() {
 }
 
 install_openssh() {
-    apt_get install -y openssh-server
+    apt_install_fresh openssh-server
 }
 
 # Either unit counts: with ssh.service enabled, ssh.socket couldn't bind sshd's port
@@ -89,7 +89,7 @@ key_only_in() {
 
 key_only_reason() {
     local fp
-    if [ "${DOTFILES_SSH_KEY_ONLY:-}" == 1 ]; then
+    if [ "${DOTFILES_SSH_KEY_ONLY:-}" == 1 ] && on_test_machine; then
         echo "DOTFILES_SSH_KEY_ONLY=1 is set"
     elif fp="$(key_login)"; then
         echo "this SSH session logged in with your key $fp"

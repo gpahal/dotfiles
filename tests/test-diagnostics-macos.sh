@@ -14,6 +14,8 @@ stub scutil 'echo Garvits-MacBook-Pro'
 
 load_script macos/install.sh
 as_os macos
+# firewall() below stubs socketfilterfw here
+APP_FIREWALL_DIR="$STUB_DIR"
 # The macos step mustn't load the Touch ID script's functions
 assert_eq "" "$(declare -F usage install_reattach_module || true)" "the Touch ID script's functions"
 pam_sandbox
@@ -80,15 +82,16 @@ firewall '' 'Firewall stealth mode is on\n'
 stealth_mode_on || fail "stealth mode on read as off"
 firewall '' 'Firewall stealth mode is off\n'
 ! stealth_mode_on || fail "stealth mode off read as on"
-# socketfilterfw isn't on PATH on macOS
-firewall_off_path() {
-    hide socketfilterfw
+# The step runs the system's socketfilterfw, not one earlier on PATH
+firewall_system_copy() {
+    firewall 'Firewall is disabled. (State = 0)\n'
     APP_FIREWALL_DIR="$SANDBOX/alf"
     mkdir -p "$APP_FIREWALL_DIR"
-    cp "$STUB_DIR/fdesetup" "$APP_FIREWALL_DIR/socketfilterfw"
-    assert_eq "$APP_FIREWALL_DIR/socketfilterfw" "$(firewall_cmd)" "socketfilterfw's path"
+    mv "$STUB_DIR/socketfilterfw" "$APP_FIREWALL_DIR/socketfilterfw"
+    firewall 'Firewall is enabled. (State = 1)\n'
+    ! firewall_on || fail "firewall_on ran the socketfilterfw on PATH"
 }
-subtest firewall_off_path
+subtest firewall_system_copy
 read_only
 
 replace_fn default_matches 'return 0'

@@ -20,6 +20,8 @@ ubuntu_step_load() {
     replace_fn ntfy_url_group 'id -gn'
     # This checkout may be a worktree
     wrap_fn in_git_worktree false
+    # The test opt-ins count here, though systemd-detect-virt says this isn't a VM
+    replace_fn on_test_machine true
 }
 
 # Defaults match 26.04; files under $SANDBOX change unit state, such as units/ufw.service.disabled

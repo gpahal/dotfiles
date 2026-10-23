@@ -314,10 +314,15 @@ is_interactive() {
     [ -t 0 ]
 }
 
-# DOTFILES_ASSUME_YES=1 is for throwaway test machines only
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY are for throwaway test machines, so they count only
+# in a VM or container, and a stray export can't approve changes on a real machine
+on_test_machine() {
+    systemd-detect-virt -q 2>/dev/null
+}
+
 confirm() {
     local reply
-    if [ "${DOTFILES_ASSUME_YES:-}" == 1 ]; then
+    if [ "${DOTFILES_ASSUME_YES:-}" == 1 ] && on_test_machine; then
         echo "$1 yes (DOTFILES_ASSUME_YES)"
         return 0
     fi

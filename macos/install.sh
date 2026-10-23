@@ -12,6 +12,10 @@ source "$DOTFILES_DIR/macos/lib/pam.sh"
 
 STEP_OS=macos
 
+# macOS's sudo keeps your PATH, which starts with dirs you can write (~/.local/bin, mise's shims,
+# Homebrew's), so sudo, and what it runs, come from the system's dirs first
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 APP_STORE_PREFS=/Library/Preferences/com.apple.commerce
 SOFTWARE_UPDATE_PREFS=/Library/Preferences/com.apple.SoftwareUpdate
@@ -181,23 +185,16 @@ status_filevault() {
     esac
 }
 
-firewall_cmd() {
-    PATH="$PATH:$APP_FIREWALL_DIR" command -v socketfilterfw
-}
-
 # State 2 also blocks all incoming connections
 firewall_on() {
-    local cmd
-    cmd="$(firewall_cmd)" || return 1
-    case "$(run_bounded 10 "$cmd" --getglobalstate 2>/dev/null)" in
+    case "$(run_bounded 10 "$APP_FIREWALL_DIR/socketfilterfw" --getglobalstate 2>/dev/null)" in
         *"State = 1"* | *"State = 2"*) return 0 ;;
     esac
     return 1
 }
 
 enable_firewall() {
-    local cmd
-    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setglobalstate on > /dev/null; then
+    if ! sudo "$APP_FIREWALL_DIR/socketfilterfw" --setglobalstate on > /dev/null; then
         echo "  Couldn't turn on the application firewall." >&2
         return 1
     fi
@@ -205,14 +202,11 @@ enable_firewall() {
 }
 
 stealth_mode_on() {
-    local cmd
-    cmd="$(firewall_cmd)" || return 1
-    [[ "$(run_bounded 10 "$cmd" --getstealthmode 2>/dev/null)" == *"stealth mode is on"* ]]
+    [[ "$(run_bounded 10 "$APP_FIREWALL_DIR/socketfilterfw" --getstealthmode 2>/dev/null)" == *"stealth mode is on"* ]]
 }
 
 enable_stealth_mode() {
-    local cmd
-    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setstealthmode on > /dev/null; then
+    if ! sudo "$APP_FIREWALL_DIR/socketfilterfw" --setstealthmode on > /dev/null; then
         echo "  Couldn't turn on the firewall's stealth mode." >&2
         return 1
     fi

@@ -8,6 +8,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 stub gh
 load_script git/install.sh
 git config --file "$HOME/.gitconfig" credential.https://github.com.helper '!gh auth git-credential'

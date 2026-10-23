@@ -2,7 +2,7 @@
 // com.gpahal.Dotfiles at /com/gpahal/Dotfiles on the session bus, under org.gnome.Shell, so any
 // process that can reach your session bus, a sandboxed app given access included, can call it to:
 // - read the focused window's class, and the title of a Ghostty, Zed, or Files window;
-// - focus or launch an app, and have the shell focus the next window of a class;
+// - focus or launch one of the apps open-in opens, and have the shell focus the next window of a class;
 // - send Ctrl+T, Ctrl+V, or Ctrl+A to Google Chrome while it's focused and the screen is unlocked.
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
@@ -40,6 +40,11 @@ const LAUNCH_FOCUS_MS = 10000;
 // marks it as wanting attention instead, and GNOME shows "… is ready".
 const now = () => global.display.get_current_time_roundtrip();
 
+// The desktop files open-in passes to ActivateApp, the only apps it focuses or launches
+const APP_IDS = new Set([
+    'google-chrome.desktop', 'dotfiles-gmail.desktop', 'com.anthropic.Claude.desktop', 't3code.desktop',
+    'net.nokyan.Resources.desktop',
+]);
 // open-in reads a path from these windows' titles; other windows' titles stay in the shell
 const TITLED_CLASSES = new Set(['com.mitchellh.ghostty', 'dev.zed.Zed', 'org.gnome.Nautilus']);
 // New Tab's keys, the only ones SendKeys sends, and only to Chrome
@@ -115,6 +120,8 @@ class Dotfiles {
     // Focuses the most recently used window of the class, else launches the app. By class, since
     // an app can register another desktop file at run time, as T3 Code does, and own its windows.
     ActivateApp(desktopId, wmClass) {
+        if (!APP_IDS.has(desktopId))
+            return false;
         const window = global.display.get_tab_list(Meta.TabList.NORMAL_ALL, null)
             .find(w => w.get_wm_class() === wmClass);
         if (window) {

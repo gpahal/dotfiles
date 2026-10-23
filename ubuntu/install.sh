@@ -224,13 +224,11 @@ qrencode_installed() {
 }
 
 install_qrencode() {
-    apt_get install -y qrencode
+    apt_install_fresh qrencode
 }
 
+# The homebrew step installs locales
 install_locale() {
-    if ! apt_installed locales; then
-        apt_get install -y locales || return 1
-    fi
     sudo locale-gen en_US.UTF-8 > /dev/null
 }
 

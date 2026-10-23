@@ -4,6 +4,7 @@
 # ntfy_push <url> <title> <message> [header...]
 # The URL goes through stdin config to keep the topic out of ps. --data-raw, since --data-binary
 # reads a message starting with @ as a file. -q (must be first) skips root's ~/.curlrc.
+# --proto keeps the push on https, whatever URL the file holds.
 ntfy_push() {
     local url="$1" title="$2" message="$3" header headers=()
     shift 3
@@ -11,7 +12,7 @@ ntfy_push() {
         headers+=(-H "$header")
     done
     printf 'url = "%s"\n' "$(printf '%s' "$url" | sed 's/[\\"]/\\&/g')" |
-        curl -q -fsS --max-time 10 -H "Title: $title" ${headers[@]+"${headers[@]}"} \
+        curl -q -fsS --proto '=https' --max-time 10 -H "Title: $title" ${headers[@]+"${headers[@]}"} \
             --data-raw "$message" -K - > /dev/null
 }
 

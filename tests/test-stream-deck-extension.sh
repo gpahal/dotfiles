@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # The dotfiles GNOME extension's methods under node, with GNOME Shell's modules mocked: focusing
-# windows, ExpectWindow's expiry, the keys SendKeys allows, and what FocusedWindow shares.
+# windows, the apps ActivateApp allows, ExpectWindow's expiry, the keys SendKeys allows, and what
+# FocusedWindow shares.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -79,25 +80,32 @@ const s = gnome.service;
 }
 
 # ActivateApp focuses the class's window, else launches the app and focuses its first window of
-# that class; an unknown app is false
+# that class; an app it can't find is false
 out="$(extension_js 'gnome.windows = [win("google-chrome", "Chrome")];
 console.log(s.ActivateApp("google-chrome.desktop", "google-chrome"), gnome.activated.join());
 gnome.windows = [];
-gnome.apps["dev.zed.Zed.desktop"] = { activate_full: () => gnome.activated.push("launched") };
-console.log(s.ActivateApp("dev.zed.Zed.desktop", "dev.zed.Zed"), s.ActivateApp("nope.desktop", "nope"));
+gnome.apps["net.nokyan.Resources.desktop"] = { activate_full: () => gnome.activated.push("launched") };
+console.log(s.ActivateApp("net.nokyan.Resources.desktop", "net.nokyan.Resources"), s.ActivateApp("t3code.desktop", "nope"));
 const other = win("org.gnome.Nautilus");
 emit("window-created", other);
 other.actor.firstFrame();
-const zed = win("dev.zed.Zed", "Zed");
-emit("window-created", zed);
+const resources = win("net.nokyan.Resources", "Resources");
+emit("window-created", resources);
 console.log(gnome.activated.join());
-zed.actor.firstFrame();
-emit("window-demands-attention", win("dev.zed.Zed", "Zed again"));
+resources.actor.firstFrame();
+emit("window-demands-attention", win("net.nokyan.Resources", "Resources again"));
 console.log(gnome.activated.join());')"
 assert_eq "true Chrome
 true false
 Chrome,launched
-Chrome,launched,Zed" "$out" "focusing and launching apps"
+Chrome,launched,Resources" "$out" "focusing and launching apps"
+
+# ActivateApp refuses any app open-in doesn't open, even one with a window or a desktop file
+out="$(extension_js 'gnome.windows = [win("com.mitchellh.ghostty", "Ghostty")];
+gnome.apps["com.mitchellh.ghostty.desktop"] = { activate_full: () => gnome.activated.push("launched") };
+console.log(s.ActivateApp("com.mitchellh.ghostty.desktop", "com.mitchellh.ghostty"), s.ActivateApp("", ""),
+    s.ActivateApp("constructor", "com.mitchellh.ghostty"), gnome.activated.length);')"
+assert_eq "false false false 0" "$out" "apps ActivateApp refuses"
 
 # ExpectWindow's request ends after its timeout
 out="$(extension_js 's.ExpectWindow("dev.zed.Zed", 100);

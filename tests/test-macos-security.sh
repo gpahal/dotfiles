@@ -9,7 +9,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 
-# socketfilterfw and scutil keep their settings as files in $STATE
+# socketfilterfw and scutil keep their settings as files in $STATE. The step runs socketfilterfw
+# from $APP_FIREWALL_DIR, set to the stubs' dir below.
 STATE="$SANDBOX/state"
 mkdir -p "$STATE" "$HOME/Screenshots"
 stub socketfilterfw 'state="'"$STATE"'"
@@ -32,11 +33,18 @@ stub_sudo_exec
 
 load_script macos/install.sh
 as_os macos
+# sudo and what it runs come from the system's dirs, after the stubs
+case "$PATH" in
+    "$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin:"*) ;;
+    *) fail "the system's dirs don't lead PATH: $PATH" ;;
+esac
 replace_fn each_default
 replace_fn hotkey_off 'return 0'
 replace_fn status_filevault
 # shellcheck disable=SC2034 # the step reads them
-APP_STORE_PREFS="$STATE/com.apple.commerce" SOFTWARE_UPDATE_PREFS="$STATE/com.apple.SoftwareUpdate"
+APP_FIREWALL_DIR="$STUB_DIR" APP_STORE_PREFS="$STATE/com.apple.commerce"
+# shellcheck disable=SC2034
+SOFTWARE_UPDATE_PREFS="$STATE/com.apple.SoftwareUpdate"
 
 # Ghostty drops an OSC 7 report whose host has characters a URL can't hold
 echo "Unknown_d6:96:0e:05:c6:0a" > "$STATE/hostname"

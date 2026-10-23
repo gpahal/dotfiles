@@ -13,6 +13,8 @@ source "$TESTS_DIR/docker-fixture.sh"
 source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 command -v jq &>/dev/null || skip "jq isn't installed"
 # apt-config stays a sentinel: only the ubuntu step checks the upgrade schedule
 load_script docker/install.sh

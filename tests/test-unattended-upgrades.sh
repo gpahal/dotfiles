@@ -2,8 +2,8 @@
 # shellcheck disable=SC2329 # the step calls the replaced functions
 set -euo pipefail
 
-# unattended-upgrades in the ubuntu step: which effective periodic settings count as daily, merging
-# 20auto-upgrades while keeping your keys, and a 20auto-upgrades only root can read.
+# unattended-upgrades in the ubuntu step: a later file turning it off, merging 20auto-upgrades while
+# keeping your keys, and a 20auto-upgrades only root can read.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -83,7 +83,7 @@ env "$@" || status=$?
 exit "$status"'
 printf '%s\n' 'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended-Upgrade "0";' > "$AUTO_UPGRADES_CONF"
 chmod 200 "$AUTO_UPGRADES_CONF"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF"
 # A re-run with nothing else to change doesn't ask for sudo only to read it
 : > "$STUB_LOG"
@@ -110,37 +110,8 @@ APT::Periodic::Enable "1";
 APT::Periodic::Update-Package-Lists "1";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after the merge"
 chmod 200 "$AUTO_UPGRADES_CONF"
 touch "$SANDBOX/cached"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         unattended-upgrades runs daily"
 chmod 600 "$AUTO_UPGRADES_CONF"
 
-# apt.systemd.daily takes always or an interval (bare number = days); up to a day counts as daily
-periodic() {
-    stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"1\";"
-echo "APT::Periodic::Unattended-Upgrade \"'"$1"'\";"'
-}
-for value in always 1d 24h 90m 3600s; do
-    periodic "$value"
-    assert_exit 0 unattended_upgrades_on
-done
-for value in 0 0h 2 2d 25h never ""; do
-    periodic "$value"
-    assert_exit 1 unattended_upgrades_on
-done
-stub_apt_config 'echo "APT::Periodic::Update-Package-Lists \"always\";"
-echo "APT::Periodic::Unattended-Upgrade \"1\";"'
-assert_exit 0 unattended_upgrades_on
-
-# Enable "0", or Update-Package-Lists 0 or unset, turns it off
-for config in \
-    'APT::Periodic::Enable "0";
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";' \
-    'APT::Periodic::Update-Package-Lists "0";
-APT::Periodic::Unattended-Upgrade "1";' \
-    'APT::Periodic::Unattended-Upgrade "1";'; do
-    printf '%s\n' "$config" > "$SANDBOX/periodic-config"
-    stub_apt_config 'cat "'"$SANDBOX"'/periodic-config"'
-    assert_exit 1 unattended_upgrades_on
-done
 test_done

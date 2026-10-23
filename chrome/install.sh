@@ -7,7 +7,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -15,45 +15,28 @@ STEP_NEEDS="homebrew"
 
 # Origin and suite from https://dl.google.com/linux/chrome-stable/deb/dists/stable/Release
 UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-google-chrome
-# Written by the .deb's postinst
+# The path Chrome's own cron job writes its source to, so the two never both exist
 GOOGLE_SOURCES=/etc/apt/sources.list.d/google-chrome.sources
-# The .deb re-adds its repo only when this sets repo_add_once="true" (Chromium's apt.include)
+# Chrome's postinst creates this with repo_add_once="true" when it's missing, and its cron job then
+# rewrites $GOOGLE_SOURCES. The step sets it to "false" first.
 CHROME_DEFAULTS=/etc/default/google-chrome
 UNATTENDED_CONTENT='// From the dotfiles chrome step: install Chrome updates with the daily security updates
 Unattended-Upgrade::Origins-Pattern { "origin=Google LLC,suite=stable"; };'
-# Written by the .deb's postinst
 GOOGLE_KEYRING=/usr/share/keyrings/google-chrome.gpg
+GOOGLE_KEY_URL=https://dl.google.com/linux/linux_signing_key.pub
 # Primary key fingerprint from $GOOGLE_LINUX_KEYS_URL; recheck with gpg --show-keys $GOOGLE_KEYRING
 GOOGLE_KEY_FPR=EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796
 GOOGLE_LINUX_KEYS_URL=https://www.google.com/linuxrepositories/
+# Google's suite is stable for every release, so not deb822_source's codename. Google builds Chrome
+# for amd64 alone.
+GOOGLE_SOURCES_CONTENT="Types: deb
+URIs: https://dl.google.com/linux/chrome-stable/deb/
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: $GOOGLE_KEYRING"
 
-deb_url() {
-    echo "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb"
-}
-
-# 200: a .deb exists for this CPU; 404: none; 000: unreachable
-deb_status() {
-    http_status "$(deb_url)"
-}
-
-# Runs under ||, so set -e is off: each command checks its own failure.
-install_chrome() {
-    local deb status=0
-    # Without || return, a failed mktemp makes the cleanup below remove /
-    deb="$(mktemp -d)" || return 1
-    deb="$deb/google-chrome-stable.deb"
-    if ! fetch "$(deb_url)" "$deb" "Chrome's .deb"; then
-        rm -rf "$(dirname "$deb")"
-        return 1
-    fi
-    # apt's sandbox user must be able to read the file
-    chmod a+rx "$(dirname "$deb")" && chmod a+r "$deb" &&
-        apt_get install -y "$@" "$deb" || status=1
-    rm -rf "$(dirname "$deb")"
-    return "$status"
-}
-
-# The .deb's key arrives over TLS alone, and unattended-upgrades trusts it as root. Prints what's
+# Google's key arrives over TLS alone, and unattended-upgrades trusts it as root. Prints what's
 # wrong, or nothing.
 google_key_problem() {
     local fingerprint
@@ -70,11 +53,13 @@ write_auto_updates() {
     write_root_file "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
 }
 
-allow_repo_readd() {
+# Else Chrome's postinst and cron job would rewrite $GOOGLE_SOURCES. Keeps your other settings.
+stop_repo_readd() {
     local content
+    ! grep -qx 'repo_add_once="false"' "$CHROME_DEFAULTS" 2>/dev/null || return 0
     content="$(grep -v '^repo_add_once=' "$CHROME_DEFAULTS" 2>/dev/null || true)"
     write_root_file "$CHROME_DEFAULTS" "${content:+$content
-}repo_add_once=\"true\""
+}repo_add_once=\"false\""
 }
 
 # A release upgrade disables third-party sources with Enabled: no
@@ -82,12 +67,10 @@ google_source_exists() {
     [ -r "$GOOGLE_SOURCES" ] && ! grep -qiE '^Enabled:[[:space:]]*no[[:space:]]*$' "$GOOGLE_SOURCES"
 }
 
-readd_google_repo() {
-    allow_repo_readd && install_chrome --reinstall || return 1
-    google_source_exists && return 0
-    echo "  Reinstalling Chrome's .deb didn't add Google's apt repo. Add it by hand:" >&2
-    echo "  $GOOGLE_LINUX_KEYS_URL" >&2
-    return 1
+add_google_repo() {
+    stop_repo_readd || return 1
+    add_apt_repo Google "$GOOGLE_SOURCES" "$GOOGLE_SOURCES_CONTENT" "$GOOGLE_KEY_URL" "$GOOGLE_KEYRING" \
+        "$GOOGLE_KEY_FPR"
 }
 
 # Ubuntu's firefox .deb is a stub that installs the snap; ubuntu-desktop-minimal only recommends it
@@ -104,12 +87,12 @@ remove_firefox() {
     fi
 }
 
-# Installing Chrome isn't an item: it branches on whether a .deb exists for this CPU.
+# Installing Chrome isn't an item: it's skipped on a CPU Google doesn't build for.
 chrome_items() {
     items_reset
     item --sudo "Google's apt source ($GOOGLE_SOURCES)" \
-        "Re-add Google's apt repo, which Chrome updates from: set repo_add_once in $CHROME_DEFAULTS and reinstall Google's .deb" \
-        google_source_exists readd_google_repo
+        "Add Google's apt repo, which Chrome updates from, with its pinned key: write $GOOGLE_SOURCES" \
+        google_source_exists add_google_repo
     item --sudo "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" \
         "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" auto_updates_configured write_auto_updates
     item --sudo "Firefox removed, since Chrome replaces it" \
@@ -128,17 +111,16 @@ status_google_key() {
 }
 
 status() {
+    local arch
     if apt_installed google-chrome-stable; then
-        status_item ok "google-chrome-stable from Google's .deb"
-    elif status_require_cmd curl "google-chrome-stable from Google's .deb"; then
-        case "$(deb_status)" in
-            404)
-                status_item skipped "Chrome: Google has no .deb for $(dpkg --print-architecture)"
-                return 0
-                ;;
-            200) status_item missing "google-chrome-stable from Google's .deb" ;;
-            *) status_item unknown "google-chrome-stable: couldn't reach dl.google.com to check for its .deb" ;;
-        esac
+        status_item ok "google-chrome-stable from Google's apt repo"
+    else
+        arch="$(dpkg --print-architecture)"
+        if [ "$arch" != amd64 ]; then
+            status_item skipped "Chrome: Google has no .deb for $arch"
+            return 0
+        fi
+        status_item missing "google-chrome-stable from Google's apt repo"
     fi
     chrome_items
     items_status google_source_exists auto_updates_configured
@@ -147,44 +129,34 @@ status() {
         items_status firefox_removed
         status_google_key
     fi
-    status_result
 }
 
 apply() {
     echo "Setting up Google Chrome..."
 
-    if ! apt_installed google-chrome-stable; then
-        require_cmd curl || return 1
-        case "$(deb_status)" in
-            200) ;;
-            404)
-                echo "  Google has no Chrome .deb for $(dpkg --print-architecture); skipping."
-                return 0
-                ;;
-            *)
-                echo "  Couldn't reach dl.google.com to check for Chrome's .deb." >&2
-                return 1
-                ;;
-        esac
+    local pending=() result=0 installed=false problem arch
+    ! apt_installed google-chrome-stable || installed=true
+    if ! "$installed"; then
+        arch="$(dpkg --print-architecture)"
+        if [ "$arch" != amd64 ]; then
+            echo "  Google has no Chrome .deb for $arch; skipping."
+            return 0
+        fi
     fi
-    # Re-adding the repo reinstalls the .deb, so it needs curl too
-    if apt_installed google-chrome-stable && ! google_source_exists; then
+    # add_apt_repo downloads the key with curl
+    if ! google_source_exists; then
         require_cmd curl || return 1
     fi
     require_cmd gpg || return 1
-    local pending=() result=0 installed=false problem
-    ! apt_installed google-chrome-stable || installed=true
     chrome_items
-    if "$installed"; then
-        items_pending google_source_exists auto_updates_configured firefox_removed
-    else
-        pending+=("Install google-chrome-stable from Google's .deb, which adds Google's apt repo")
-        items_pending auto_updates_configured firefox_removed
-    fi
+    items_pending google_source_exists
+    "$installed" ||
+        pending+=("Install google-chrome-stable from Google's apt repo, with repo_add_once=\"false\" in $CHROME_DEFAULTS so it leaves the source alone")
+    items_pending auto_updates_configured firefox_removed
     if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
         if "$installed"; then
             items_apply google_source_exists auto_updates_configured firefox_removed || result=1
-        elif install_chrome; then
+        elif items_apply google_source_exists && stop_repo_readd && apt_install_fresh google-chrome-stable; then
             items_apply auto_updates_configured firefox_removed || result=1
         else
             result=1

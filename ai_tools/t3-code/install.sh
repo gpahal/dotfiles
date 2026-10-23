@@ -13,6 +13,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/app-json.sh
 source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
+# shellcheck source=../lib/keepable.sh
+source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -102,21 +104,19 @@ t3_code_ubuntu_items() {
     fi
 }
 
-# The first call asks once for the pending sudo changes of the items its check functions name, or of
-# all of them; later calls in the same apply get that answer, so one apply asks at most once
-T3_CODE_SUDO_ANSWER=""
+# Asks once for the pending sudo changes of the items its check functions name, or of all of them.
+# apply declares t3_code_sudo, which keeps the answer, so one apply asks at most once.
 t3_code_confirm_sudo() {
-    local pending=()
-    if [ -z "$T3_CODE_SUDO_ANSWER" ]; then
-        t3_code_ubuntu_items
-        items_pending "$@"
-        if confirm_sudo_changes "${pending[@]}"; then
-            T3_CODE_SUDO_ANSWER=yes
-        else
-            T3_CODE_SUDO_ANSWER=no
-        fi
+    local pending=() answer=no
+    if [ -n "${t3_code_sudo:-}" ]; then
+        [ "$t3_code_sudo" == yes ]
+        return
     fi
-    [ "$T3_CODE_SUDO_ANSWER" == yes ]
+    t3_code_ubuntu_items
+    items_pending "$@"
+    ! confirm_sudo_changes "${pending[@]}" || answer=yes
+    [ -z "${t3_code_sudo+x}" ] || t3_code_sudo="$answer"
+    [ "$answer" == yes ]
 }
 
 # The settings go first, so the app's first launch doesn't try to start a server; without them it
@@ -161,12 +161,15 @@ T3_CODE_SERVICE_UNIT="$HOME/.config/systemd/user/t3code.service"
 # `t3 serve` otherwise picks a free one while `tailscale serve` points at 3773. Loopback only, since
 # ufw lets the tailnet reach every port; `tailscale serve` is the way in.
 T3_CODE_SERVICE_DROP_IN="$T3_CODE_SERVICE_UNIT.d/dotfiles.conf"
+# The drop-in's port and host
 T3_CODE_PORT=3773
 T3_CODE_HOST=127.0.0.1
-T3_CODE_SERVICE_DROP_IN_CONTENT="[Service]
-Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=$T3_CODE_PORT
-Environment=T3CODE_HOST=$T3_CODE_HOST"
+
+# Copied only by update_t3_code_server, which also loads it
+t3_code_service_files() {
+    is_ubuntu || return 0
+    "$1" "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.conf" "$T3_CODE_SERVICE_DROP_IN"
+}
 
 T3_CODE_MODEL="claude-opus-5-5"
 T3_CODE_MODEL_NAME="T3 Code's default model (defaultModelSelection.model)"
@@ -174,11 +177,18 @@ T3_CODE_REPLACE_MODEL=false
 T3_CODE_EFFORT="medium"
 T3_CODE_EFFORT_NAME="T3 Code's default effort (defaultModelSelection.options effort)"
 T3_CODE_REPLACE_EFFORT=false
+# Read through keepable.sh. The effort counts only on the repo's model, whichever instance runs it.
+# shellcheck disable=SC2034 # keep_read reads it
+T3_CODE_KEEP=(
+    .defaultModelSelection.model "\"$T3_CODE_MODEL\"" "$T3_CODE_MODEL_NAME"
+    "[.defaultModelSelection | select(.model == \"$T3_CODE_MODEL\") | .options[]? | select(.id == \"effort\") | .value][0]"
+    "\"$T3_CODE_EFFORT\"" "$T3_CODE_EFFORT_NAME"
+)
 
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
 
 # Objects are set key by key so keys a newer T3 Code adds survive. T3 Code drops values equal to a
-# key's default, so setting one never settles (scripts/check-t3-settings.sh warns). Setup actions
+# key's default, so setting one never settles. Setup actions
 # get async=false per list, as T3 has no global default.
 t3_code_server_filter() {
     # shellcheck disable=SC2016 # jq variables, not shell ones
@@ -245,24 +255,22 @@ t3_code_server_filter() {
 '
 }
 
-t3_code_model() {
-    jq -r '.defaultModelSelection.model // empty' "$T3_CODE_SETTINGS" 2>/dev/null || true
-}
-
-# Only on the repo's model, whichever instance runs it
-t3_code_effort() {
-    jq -r --arg model "$T3_CODE_MODEL" '.defaultModelSelection | select(.model == $model)
-        | [.options[]? | select(.id == "effort") | .value][0] // empty' \
-        "$T3_CODE_SETTINGS" 2>/dev/null || true
+# Sets the caller's model and effort
+t3_code_read_custom_values() {
+    keep_read T3_CODE_KEEP "$(jq -c . "$T3_CODE_SETTINGS" 2>/dev/null)"
+    model="$(keep_value T3_CODE_KEEP CURRENT 0)"
+    effort="$(keep_value T3_CODE_KEEP CURRENT 1)"
 }
 
 # A model of your own that stays leaves its effort alone
 t3_code_choose_custom_values() {
+    local model effort
     T3_CODE_REPLACE_MODEL=false
     T3_CODE_REPLACE_EFFORT=false
-    if replace_custom_value "$T3_CODE_MODEL_NAME" "$(t3_code_model)" "$T3_CODE_MODEL"; then
+    t3_code_read_custom_values
+    if replace_custom_value "$T3_CODE_MODEL_NAME" "$model" "$T3_CODE_MODEL"; then
         T3_CODE_REPLACE_MODEL=true
-        if replace_custom_value "$T3_CODE_EFFORT_NAME" "$(t3_code_effort)" "$T3_CODE_EFFORT"; then
+        if replace_custom_value "$T3_CODE_EFFORT_NAME" "$effort" "$T3_CODE_EFFORT"; then
             T3_CODE_REPLACE_EFFORT=true
         fi
     fi
@@ -270,11 +278,10 @@ t3_code_choose_custom_values() {
 
 t3_code_status_custom_values() {
     local model effort
-    model="$(t3_code_model)"
+    t3_code_read_custom_values
     [ -n "$model" ] || return 0
     status_custom_value "$T3_CODE_MODEL_NAME" "$model" "$T3_CODE_MODEL"
     [ "$model" == "$T3_CODE_MODEL" ] || return 0
-    effort="$(t3_code_effort)"
     [ -z "$effort" ] || status_custom_value "$T3_CODE_EFFORT_NAME" "$effort" "$T3_CODE_EFFORT"
 }
 
@@ -536,14 +543,13 @@ wait_for_t3_code_service() {
 # Print each non-loopback listener on the port. T3 may take a host from elsewhere than the drop-in.
 t3_code_exposed_listeners() {
     local listeners
-    listeners="$(ss -Hltn 2>/dev/null)" || return 1
-    awk -v port=":$T3_CODE_PORT" '
-        { addr = $4 }
-        length(addr) > length(port) && substr(addr, length(addr) - length(port) + 1) == port {
-            host = substr(addr, 1, length(addr) - length(port))
+    listeners="$(ss -Hltn "sport = :$T3_CODE_PORT" 2>/dev/null)" || return 1
+    awk '{
+            host = $4
+            sub(/:[0-9]+$/, "", host)
             # Strip an interface scope, as in 127.0.0.1%lo
             sub(/%[^]]*$/, "", host)
-            if (host !~ /^127\./ && host != "[::1]" && host !~ /^\[::ffff:127\./) print addr
+            if (host !~ /^127\./ && host != "[::1]" && host !~ /^\[::ffff:127\./) print $4
         }' <<< "$listeners"
 }
 
@@ -579,7 +585,7 @@ install_t3_cli() {
 }
 
 t3_code_drop_in_current() {
-    file_is "$T3_CODE_SERVICE_DROP_IN" "$T3_CODE_SERVICE_DROP_IN_CONTENT"
+    cmp -s "$DOTFILES_DIR/ai_tools/t3-code/dotfiles.conf" "$T3_CODE_SERVICE_DROP_IN"
 }
 
 # The loaded unit, not the running process, which keeps its environment until restarted
@@ -663,78 +669,59 @@ configure_t3_code_ubuntu() {
     [ "$cli_status" -ne 1 ] && ! "$step_failed"
 }
 
-t3_code_write_drop_in() {
-    local tmp=""
-    if ! t3_code_drop_in_current; then
-        # write_back: a truncated drop-in without its host line would serve on every interface
-        if ! tmp="$(mktemp)" || ! printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$tmp" ||
-            ! mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"; then
-            rm -f "$tmp"
-            return 1
-        fi
-        write_back "$tmp" "$T3_CODE_SERVICE_DROP_IN" || return 1
-    fi
-    t3_code_load_drop_in
-}
-
-# Stops a running service around the change, since it writes settings.json too. Returns 2 when the
-# drop-in isn't written and loaded (and leaves a stopped service stopped), 1 for other failures.
+# Stops a running service around the settings change, since it writes settings.json too. Returns 2
+# when the drop-in isn't written and loaded, 1 for other failures.
 update_t3_code_server() {
-    local settings_set=false stopped=false result=0 drop_in_ok=true drop_in_was_current=false
+    local settings_set=false wrote=false result=0 lacks=""
     t3_code_choose_custom_values
     json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
-    if t3_code_drop_in_current; then
-        drop_in_was_current=true
-        t3_code_load_drop_in || return 2
+    t3_code_drop_in_current || wrote=true
+    # copy_file replaces it whole: a truncated drop-in without its host line would serve on every interface
+    # A current drop-in that won't load keeps only the loader's message
+    if ! t3_code_service_files copy_file > /dev/null || ! t3_code_load_drop_in; then
+        ! "$wrote" || echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
+        return 2
     fi
-    if "$settings_set" && "$drop_in_was_current" && ! t3_code_restart_pending; then
-        echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
+    if "$settings_set" && ! t3_code_restart_pending; then
+        if "$wrote"; then
+            echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN"
+        else
+            echo "  The $T3_CODE_SERVER_SETTINGS_NAME and the service's drop-in are already set"
+        fi
         return 0
     fi
-    if t3_code_service_active; then
-        if ! confirm "  Restart the T3 Code service to apply its settings and drop-in? Threads running on it stop."; then
-            local lacks=""
-            if ! "$drop_in_was_current"; then
-                if ! t3_code_write_drop_in; then
-                    echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
-                    return 2
-                fi
-                echo "  Wrote the drop-in; it applies at the next restart of the T3 Code service"
-            fi
-            "$settings_set" || lacks="its new settings"
-            ! t3_code_restart_pending || lacks="${lacks:+$lacks and }its drop-in"
-            if [ -n "$lacks" ]; then
-                echo "  Left the T3 Code service running, without $lacks. Re-run from a terminal to"
-                echo "  restart it."
-            fi
-            return 0
-        fi
-        if ! systemctl --user stop t3code.service || t3_code_service_active; then
-            echo "  Couldn't stop the T3 Code service, so its settings are unchanged. Check:" >&2
-            echo "  systemctl --user status t3code" >&2
+    if ! t3_code_service_active; then
+        if ! json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"; then
+            echo "  Couldn't set all of the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN" >&2
             return 1
         fi
-        stopped=true
+        echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN"
+        return 0
     fi
-    if ! "$settings_set"; then
-        json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
+    if ! confirm "  Restart the T3 Code service to apply its settings and drop-in? Threads running on it stop."; then
+        ! "$wrote" || echo "  Wrote the drop-in; it applies at the next restart of the T3 Code service"
+        "$settings_set" || lacks="its new settings"
+        ! t3_code_restart_pending || lacks="${lacks:+$lacks and }its drop-in"
+        if [ -n "$lacks" ]; then
+            echo "  Left the T3 Code service running, without $lacks. Re-run from a terminal to"
+            echo "  restart it."
+        fi
+        return 0
     fi
-    "$drop_in_was_current" || t3_code_write_drop_in || drop_in_ok=false
-    if "$stopped" && "$drop_in_ok"; then
-        start_t3_code_service
-        wait_for_t3_code_service || result=1
-    elif "$stopped"; then
-        echo "  Left the T3 Code service stopped, since it would start without its drop-in" >&2
+    if ! systemctl --user stop t3code.service || t3_code_service_active; then
+        echo "  Couldn't stop the T3 Code service, so its settings are unchanged. Check:" >&2
+        echo "  systemctl --user status t3code" >&2
+        return 1
     fi
-    if [ "$result" -ne 0 ] || ! "$drop_in_ok"; then
+    "$settings_set" || json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" || result=1
+    start_t3_code_service
+    wait_for_t3_code_service || result=1
+    if [ "$result" -ne 0 ]; then
         echo "  Couldn't set all of the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN" >&2
-        "$drop_in_ok" || return 2
         return 1
     fi
     echo "  Set the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN"
-    if "$stopped"; then
-        echo "  Restarted the T3 Code service"
-    fi
+    echo "  Restarted the T3 Code service"
 }
 
 # Run after wait_for_t3_code_service. Restarting a launcher that serves nothing stops no thread, so
@@ -833,12 +820,15 @@ setup_t3_code_browser() {
     echo "  The step doesn't run it: t3 is writable by you and updates itself, so check it's the one you installed."
 }
 
+# A crash-looping server shows active between restarts, so it must have run 2 s; --quick skips that
 t3_code_service_running_now() {
-    if status_quick; then
-        t3_code_service_active
-    else
-        wait_for_t3_code_service 2>/dev/null
-    fi
+    local pid age
+    t3_code_service_active || return 1
+    ! status_quick || return 0
+    pid="$(t3_code_main_pid)" || return 1
+    age="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')" || return 1
+    case "$age" in '' | *[!0-9]*) return 1 ;; esac
+    [ "$age" -ge 2 ]
 }
 
 t3_code_status_other_servers() {
@@ -919,8 +909,7 @@ status() {
         t3_code_macos_items
         items_status t3_code_telemetry_off
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
-        status_result
-        return
+        return 0
     fi
     if ! has_gnome_desktop; then
         status_item skipped "T3 Code desktop app: no GNOME desktop"
@@ -972,7 +961,6 @@ status() {
     else
         status_item unknown "T3 Connect: needs the t3 CLI"
     fi
-    status_result
 }
 
 apply() {
@@ -995,8 +983,7 @@ apply() {
         configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
-        local desktop_failed=0
-        T3_CODE_SUDO_ANSWER=""
+        local desktop_failed=0 t3_code_sudo=""
         setup_t3_code_desktop_ubuntu || desktop_failed=1
         configure_t3_code_ubuntu || return 1
         return "$desktop_failed"

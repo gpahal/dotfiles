@@ -34,7 +34,7 @@ ubuntu_step() {
     CLAUDE_APT_SOURCES="$SANDBOX/sources.list.d/claude-desktop.list"
     replace_fn apt_repo_published 'return 0'
     replace_fn add_apt_repo 'echo "add_apt_repo $1" >> "$STUB_LOG"; mkdir -p "${2%/*}"; printf "%s\n" "$3" > "$2"'
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Claude desktop app from Anthropic's apt repo"
     assert_contains "$RUN_OUTPUT" "missing    ~/.config/autostart/claude-desktop.desktop"
 
@@ -49,7 +49,7 @@ ubuntu_step() {
     assert_eq 'false 30 null null' "$(jq -r '[.preferences.menuBarEnabled, .preferences.ccAutoArchiveInactiveDays,
         .preferences.dockBounceEnabled, .preferences.quickEntryShortcut] | map(tostring) | join(" ")' "$config")" \
         "Ubuntu's settings, without the Dock's or quick entry's"
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "ok         Claude desktop app from Anthropic's apt repo"
 
     # A second run changes nothing; a running Claude can't have its settings changed
@@ -64,7 +64,7 @@ ubuntu_step() {
 
     # Ubuntu Server has no desktop to run it
     replace_fn has_gnome_desktop 'false'
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "skipped    Claude desktop app: no GNOME desktop"
     : > "$STUB_LOG"
     assert_exit 0 main
@@ -76,7 +76,7 @@ as_os macos
 assert_eq "$CONFIG" "$(claude_desktop_config)" "config path"
 stub brew '[ "$*" == "install --cask claude" ]'
 stub pgrep 'exit 1'
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    claude (cask)"
 assert_contains "$RUN_OUTPUT" "missing    ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 assert_exit 0 main
@@ -86,7 +86,7 @@ stub brew '[ "$*" == "list --cask claude" ]'
 stub pgrep 'exit 1'
 mkdir -p "$APP" "$(dirname "$CONFIG")"
 echo '{"mcpServers": {"x": {"command": "y"}}, "preferences": {"sidebarMode": "chat", "menuBarEnabled": true, "quickEntryShortcut": {"enabled": true}}}' > "$CONFIG"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Claude desktop app settings"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -94,7 +94,7 @@ assert_file_not_contains "$STUB_LOG" "brew install"
 assert_eq 'y chat false Alt+Space true' "$(jq -r '[.mcpServers.x.command, .preferences.sidebarMode,
     .preferences.menuBarEnabled, .preferences.quickEntryShortcut.accelerator,
     .preferences.quickEntryShortcut.enabled] | map(tostring) | join(" ")' "$CONFIG")" "merged settings"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Claude desktop app settings"
 assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
 

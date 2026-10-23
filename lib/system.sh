@@ -81,9 +81,14 @@ sbin_cmd() {
     PATH="$SBIN_PATH" command -v "$1"
 }
 
-# Updates apt's lists first, since stale ones can name a version the mirror no longer has
+# Updates apt's lists first, since stale ones can name a version the mirror no longer has. One
+# successful update serves the rest of the run, until add_apt_repo changes a source or key.
+APT_LISTS_FRESH=""
 apt_install_fresh() {
-    apt_get_update || return 1
+    if [ -z "$APT_LISTS_FRESH" ]; then
+        apt_get_update || return 1
+        APT_LISTS_FRESH=true
+    fi
     apt_get install -y "$@"
 }
 
@@ -144,6 +149,20 @@ apt_key_fingerprint() {
     rm -rf "$home"
 }
 
+# gpgv, which apt runs, reads a .gpg keyring only unarmored. A temp GNUPGHOME, as above.
+dearmor_key() {
+    local home out status=0
+    home="$(mktemp -d)" || return 1
+    if ! out="$(mktemp)"; then
+        rm -rf "$home"
+        return 1
+    fi
+    GNUPGHOME="$home" gpg --batch --dearmor < "$1" > "$out" && [ -s "$out" ] && mv -f "$out" "$1" ||
+        status=1
+    rm -rf "$home" "$out"
+    return "$status"
+}
+
 # The pinned fingerprint stops a swapped key, which unattended-upgrades would trust as root. A
 # source apt can't use breaks every later apt-get update, so on failure the previous source and
 # key are restored, or the new ones removed. A previous source with the same content is untested,
@@ -173,6 +192,15 @@ add_apt_repo() {
         rm -f "$key"
         return 1
     fi
+    case "$keyring" in
+        *.gpg)
+            if grep -q -- '-----BEGIN PGP' "$key" && ! dearmor_key "$key"; then
+                echo "  Couldn't unarmor $name's apt key, so nothing was changed." >&2
+                rm -f "$key"
+                return 1
+            fi
+            ;;
+    esac
     # An untested source's key goes with it
     if ! "$untested" && [ -e "$keyring" ] && ! { old_key="$(mktemp)" && cp "$keyring" "$old_key"; }; then
         rm -f "$key" "$old_key"
@@ -183,6 +211,7 @@ add_apt_repo() {
         return 1
     fi
     rm -f "$key"
+    APT_LISTS_FRESH=""
     # The key has changed, so a failed write gets the same rollback as a failed update. --error-on=any
     # fails on an unverifiable key, which apt-get update otherwise only warns about.
     if ! file_is "$file" "$content" && ! write_root_file "$file" "$content"; then

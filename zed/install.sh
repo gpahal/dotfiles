@@ -6,12 +6,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# Zed on macOS ignores XDG_CONFIG_HOME
-if is_macos; then
-    ZED_DIR="$HOME/.config/zed"
-else
-    ZED_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zed"
-fi
+ZED_DIR="$(app_config_dir zed)"
 
 # Replaced whole, not merged: a jq merge would strip JSONC comments
 zed_files() {

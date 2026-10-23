@@ -19,7 +19,7 @@ ubuntu_step_set_up
 # tailscale up resets auto-update and operator, so the step waits for the first login
 touch "$SANDBOX/tailscale-reset"
 echo NeedsLogin > "$SANDBOX/tailscale-state"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Tailscale auto-updates, with $(id -un) as its operator"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -44,39 +44,11 @@ assert_contains "$RUN_OUTPUT" "missing    No Tailscale funnel publishing a port 
 assert_contains "$RUN_OUTPUT" "missing    Tailscale SSH off"
 rm "$SANDBOX/tailscale-serve" "$SANDBOX/tailscale-ssh"
 
-# A release upgrade leaves Tailscale's source on the old release; test-apt-sources.sh covers other states
+# Tailscale's apt source; test-apt-sources.sh covers its states
 mkdir -p "$SANDBOX/keyrings"
 stub_fetch
 stub_gpg_fpr "$TAILSCALE_KEY_FPR"
 stub_http_status
-TAILSCALE_ENTRY="deb [signed-by=$TAILSCALE_KEYRING] https://pkgs.tailscale.com/stable/ubuntu resolute main"
-echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
-echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Tailscale's apt source ($TAILSCALE_LIST): differs from what setup writes; re-run the ubuntu step"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Rewrite Tailscale's apt source for resolute"
-assert_file_not_contains "$STUB_LOG" "install -y tailscale"
-assert_eq key "$(cat "$TAILSCALE_KEYRING")" "Tailscale's key after repairing the source"
-assert_eq "$TAILSCALE_ENTRY" "$(cat "$TAILSCALE_LIST")" "Tailscale's source after repairing it"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
-
-# No Tailscale packages for this release yet: wait without failing or changing the source
-echo "${TAILSCALE_ENTRY/resolute/jammy}" > "$TAILSCALE_LIST"
-stub_http_status 404
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Tailscale hasn't published packages for Ubuntu resolute yet; re-run this step later."
-assert_not_contains "$RUN_OUTPUT" "Rewrite Tailscale's apt source"
-run status
-assert_contains "$RUN_OUTPUT" "missing    Tailscale's apt source ($TAILSCALE_LIST): differs from what setup writes; Tailscale hasn't published packages for Ubuntu resolute yet"
-assert_eq "${TAILSCALE_ENTRY/resolute/jammy}" "$(cat "$TAILSCALE_LIST")" "Tailscale's source while it has no packages for resolute"
-stub_http_status
-echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
 
 # Subshell: hide changes PATH for the rest of the test
 failures="$TEST_FAILURES"
@@ -88,7 +60,7 @@ rm "$TAILSCALE_LIST"
         *"install -y tailscale") cp "'"$SANDBOX"'/tailscale-stub" "$STUB_DIR/tailscale" ;;
         *) cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true ;;
     esac'
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Tailscale"
     : > "$STUB_LOG"
     assert_exit 0 main
@@ -97,7 +69,7 @@ rm "$TAILSCALE_LIST"
     assert_eq "update --error-on=any
 install -y tailscale" "$(grep -oE '^apt-get -o DPkg::Lock::Timeout=300 (update --error-on=any|install -y tailscale)' "$STUB_LOG" |
         sed 's/^apt-get -o DPkg::Lock::Timeout=300 //')" "apt-get's runs to install Tailscale"
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "ok         Tailscale's apt source ($TAILSCALE_LIST)"
     [ "$TEST_FAILURES" -eq "$failures" ]
 ) || fail "installing Tailscale"
@@ -107,7 +79,7 @@ stub apt-get 'cat "'"$SANDBOX"'/apt-upgrade" 2> /dev/null || true'
 # enable --now doesn't start a failed smartd, so it restarts it
 rm "$SANDBOX/smartd-active"
 touch "$SANDBOX/smartd-failed"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "ok         smartmontools, with smartd enabled at boot"
 assert_contains "$RUN_OUTPUT" "missing    smartd running"
 : > "$STUB_LOG"
@@ -115,7 +87,7 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Watch disk health: start smartd"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart smartmontools.service"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         smartd running"
 
 # A failed sysctl --system leaves the file written but not in effect
@@ -124,14 +96,14 @@ touch "$SANDBOX/sysctl-fails"
 assert_exit 1 main
 assert_file_contains "$SYSCTL_CONF" "kernel.panic = 10"
 rm "$SANDBOX/sysctl-fails"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF): written but not in effect"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Put $SYSCTL_CONF in effect"
 assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_not_contains "$STUB_LOG" "tee $SYSCTL_CONF"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 # sysctl --system fails on a key the kernel lacks after setting the rest, so the step succeeds
 rm -f "$SYSCTL_CONF" "$SANDBOX/sysctl-live"
@@ -139,13 +111,13 @@ touch "$SANDBOX/sysctl-key-fails"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 rm "$SANDBOX/sysctl-key-fails"
-assert_exit 0 status
+assert_exit 0 main --status
 
 # Another file raising an inotify limit further is fine
 SYSCTL_ITEM="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
 echo "fs.inotify.max_user_watches = 2097152" > "$SANDBOX/sysctl.d/99-idea.conf"
 echo "fs.inotify.max_user_watches=2097152" >> "$SANDBOX/sysctl-live"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -153,26 +125,14 @@ assert_file_not_contains "$STUB_LOG" "sysctl --system"
 rm "$SANDBOX/sysctl.d/99-idea.conf"
 echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.d/99-low.conf"
 echo "fs.inotify.max_user_watches=8192" >> "$SANDBOX/sysctl-live"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effect (fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf; change or remove them there, and re-run the ubuntu step)"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:
     fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf"
-# Only files read after the step's count: later names across the dirs, first of each name, then sysctl.conf
-mkdir -p "$SANDBOX/lib-sysctl.d"
-SYSCTL_SOURCES=("$SANDBOX/sysctl.d" "$SANDBOX/lib-sysctl.d" "$SANDBOX/sysctl.conf")
-echo "fs.inotify.max_user_watches = 4096" > "$SANDBOX/sysctl.d/10-early.conf"
-echo "fs.inotify.max_user_watches = 4096" > "$SANDBOX/lib-sysctl.d/99-low.conf"
-echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/lib-sysctl.d/95-lib.conf"
-echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.conf"
-assert_eq "fs.inotify.max_user_watches is 8192, set by $SANDBOX/lib-sysctl.d/95-lib.conf, $SANDBOX/sysctl.d/99-low.conf, $SANDBOX/sysctl.conf" \
-    "$(sysctl_overrides)" "the files that override the step's"
-rm -r "$SANDBOX/lib-sysctl.d" "$SANDBOX/sysctl.d/10-early.conf" "$SANDBOX/sysctl.conf"
-# shellcheck disable=SC2034 # sysctl_overrides reads it
-SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
 rm "$SANDBOX/sysctl.d/99-low.conf"
 assert_exit 0 main
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
 
 # sysctl is in /usr/sbin, which a user's PATH may lack. Root's commands come only from SBIN_PATH,

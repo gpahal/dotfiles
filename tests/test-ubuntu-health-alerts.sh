@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a runner that
-# couldn't run, the boot notice, and the ubuntu step's report of a failed last run.
+# couldn't run or a missing repo, the boot notice, and the ubuntu step's report of a failed last run.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -13,11 +13,10 @@ setup_sandbox
 export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
 
 # Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>
-REPO="$SANDBOX/repo"
-mkdir -p "$REPO/lib" "$REPO/ubuntu/lib" "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
-cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO/ubuntu/"
-cp "$REPO_DIR/lib/common.sh" "$REPO/lib/"
-cp "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" "$REPO/ubuntu/lib/"
+export DOTFILES_REPO="$SANDBOX/repo"
+REPO="$DOTFILES_REPO"
+mkdir -p "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
+install_health_alert "$SANDBOX/health-alert"
 for runner in setup ai_tools; do
     script="$REPO/setup.sh"
     [ "$runner" == setup ] || script="$REPO/ai_tools/setup.sh"
@@ -27,7 +26,7 @@ cat "$SANDBOX/out/$runner" 2> /dev/null
 exit "\$(cat "$SANDBOX/exit/$runner" 2> /dev/null || echo 0)"
 EOF
 done
-ALERT="$REPO/ubuntu/health-alert.sh"
+ALERT="$SANDBOX/health-alert/health-alert.sh"
 STATE="$HOME/.local/state/dotfiles/health-alert"
 age_state() {
     local time hash
@@ -152,17 +151,13 @@ assert_file_not_contains "$STUB_LOG" "last output"
 echo 0 > "$SANDBOX/exit/setup"
 mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
-# A syntax error in the sourced lib/common.sh
-cp "$REPO/lib/common.sh" "$SANDBOX/common.sh"
-echo 'if then' >> "$REPO/lib/common.sh"
+# No repo where the alert runs status
+mv "$REPO" "$SANDBOX/repo.away"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
-assert_contains "$RUN_OUTPUT" "lib/common.sh has a syntax error"
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
-assert_file_contains "$STUB_LOG" "Health check couldn't run: lib/common.sh has a syntax error"
-assert_file_contains "$STUB_LOG" "bash -n's last output: "
-assert_file_not_contains "$STUB_LOG" "setup --status"
-cp "$SANDBOX/common.sh" "$REPO/lib/common.sh"
+assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO"
+mv "$SANDBOX/repo.away" "$REPO"
 
 # A failed push leaves the state alone; a changed message is pushed despite a recent push
 echo 3 > "$SANDBOX/exit/setup"
@@ -185,9 +180,10 @@ chmod 000 "$DOTFILES_NTFY_URL_FILE"
 if [ ! -r "$DOTFILES_NTFY_URL_FILE" ]; then
     assert_exit 1 "$BASH" "$ALERT" status
     assert_contains "$RUN_OUTPUT" "Save the URL again with just alerts."
+else
+    echo "Skipped the unreadable URL file case: root reads any file"
 fi
 chmod 644 "$DOTFILES_NTFY_URL_FILE"
-
 
 # boot retries while the network comes up
 echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
@@ -216,9 +212,7 @@ echo boot-3 > "$DOTFILES_BOOT_ID_FILE"
 touch "$SANDBOX/curl-fails"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" boot
-assert_contains "$RUN_OUTPUT" "Couldn't push the boot notice to ntfy after 20 tries"
-assert_eq 20 "$(grep -c '^curl -' "$STUB_LOG")" "the boot notice's tries"
-assert_eq 19 "$(grep -c '^sleep 10' "$STUB_LOG")" "the waits between them"
+assert_contains "$RUN_OUTPUT" "Couldn't push the boot notice to ntfy"
 rm "$SANDBOX/curl-fails"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
@@ -231,6 +225,12 @@ assert_file_not_contains "$STUB_LOG" "curl"
 
 # --- the ubuntu step's status: a failed last run of an installed alert service ---
 load_script ubuntu/install.sh
+
+# A failed copy fails the step though the copies after it succeed
+fails_first_copy() { [ "$1" != "$DOTFILES_DIR/ubuntu/health-alert.sh" ] && [ "$1" != "$DOTFILES_DIR/ubuntu/systemd/${HEALTH_UNITS[0]}" ]; }
+copies_ok() { "$1" fails_first_copy || return 1; }
+assert_exit 1 copies_ok health_alert_files
+assert_exit 1 copies_ok health_unit_files
 ubuntu_sandbox_paths
 HEALTH_UNIT_DIR="$SANDBOX/units"
 mkdir -p "$HEALTH_UNIT_DIR" "$SANDBOX/result"

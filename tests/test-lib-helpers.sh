@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# serial
 
 # lib/common.sh's confirm, regex_escape, version_at_least, run_bounded, and quitting a running app
 # to merge its settings, and stub_sudo_exec's refusals.
@@ -14,10 +13,16 @@ load_script lib/common.sh
 # --- confirm and DOTFILES_ASSUME_YES ---
 assert_exit 1 confirm "Proceed?"
 export DOTFILES_ASSUME_YES=1
+stub systemd-detect-virt
 assert_exit 0 confirm "Proceed?"
 assert_eq "Proceed? yes (DOTFILES_ASSUME_YES)" "$RUN_OUTPUT" "confirm's output"
 DOTFILES_ASSUME_YES=0
 assert_exit 1 confirm "Proceed?"
+# Off a VM, so an export on a real machine approves nothing
+DOTFILES_ASSUME_YES=1
+stub systemd-detect-virt 'exit 1'
+assert_exit 1 confirm "Proceed?"
+assert_eq "" "$RUN_OUTPUT" "confirm's output off a VM"
 
 # confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
 unset DOTFILES_ASSUME_YES
@@ -120,11 +125,7 @@ assert_contains "$RUN_OUTPUT" "refused: install would change $gone, in the repo"
 assert_exit 1 sudo cat /etc/hosts
 assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
 
-# run_bounded through timeout(1), then through perl, as on macOS. One real timeout each.
-assert_exit 124 run_bounded 1 sleep 10
-assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
-assert_eq out "$RUN_OUTPUT" "run_bounded's output"
-# timeout -k 5 exits 137 after SIGKILL; run_bounded reports 124 only past the deadline
+# run_bounded: timeout(1) exits 137 after its SIGKILL, which is a timeout only past the deadline
 run_bounded_killed() {
     stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; exit 137'
     assert_exit 124 run_bounded 0 sleep 10
@@ -132,15 +133,13 @@ run_bounded_killed() {
     rm "$STUB_DIR/timeout"
 }
 subtest run_bounded_killed
-# Its elapsed-time check is why this test is serial
+# Through perl, as on macOS, with one real timeout. 142 (SIGALRM) or 143 from the command itself
+# isn't a timeout.
 run_bounded_without_timeout() {
-    local start=$SECONDS
     hide timeout
     assert_exit 124 run_bounded 1 sleep 10
-    [ $((SECONDS - start)) -lt 5 ] || fail "run_bounded without timeout(1) waited out the command"
     assert_exit 3 run_bounded 5 bash -c 'echo out; exit 3'
-    assert_eq out "$RUN_OUTPUT" "run_bounded's output without timeout(1)"
-    # 142 (SIGALRM) or 143 from the command itself isn't a timeout
+    assert_eq out "$RUN_OUTPUT" "run_bounded's output"
     assert_exit 142 run_bounded 5 sh -c 'exit 142'
     assert_exit 143 run_bounded 5 sh -c 'kill -TERM $$'
 }

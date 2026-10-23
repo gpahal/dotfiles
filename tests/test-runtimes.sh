@@ -53,8 +53,7 @@ case "$1 ${2:-}" in
     "use --global") [ "${MISE_FAIL:-}" != use ] || exit 1 ;;
     "install --quiet") [ "${MISE_FAIL:-}" != install ] || exit 1 ;;
     "ls --missing")
-        [ -z "${MISE_LS_OUT:-}" ] || echo "$MISE_LS_OUT"
-        [ -z "${MISE_LS_ERR:-}" ] || echo "$MISE_LS_ERR" >&2 ;;
+        [ -z "${MISE_LS_OUT:-}" ] || echo "$MISE_LS_OUT" ;;
 esac'
 stub curl 'while [ $# -gt 0 ]; do
     if [ "$1" == -o ]; then
@@ -93,13 +92,8 @@ touch "$GLOBALS_FILE"
 export MISE_NODE=22
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "mise use"
-assert_exit 0 status
-# mise config get prints a table-form global as TOML lines
-MISE_NODE='version = "22"
-postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         mise's global node: yours, 22 (the repo's is lts)"
-assert_contains "$RUN_OUTPUT" "ok         mise's global go: yours, (a table) (the repo's is latest)"
-assert_not_contains "$RUN_OUTPUT" "postinstall"
 : > "$STUB_LOG"
 answer no
 assert_exit 0 main
@@ -109,15 +103,6 @@ answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global node@lts"
 assert_file_not_contains "$STUB_LOG" "go@latest"
-: > "$STUB_LOG"
-answer no
-MISE_NODE='version = "lts"
-postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run main
-assert_eq 0 "$RUN_STATUS" "main's status with table-form globals"
-assert_contains "$RUN_OUTPUT" "mise's global go is (a table), not the repo's latest. Replace it?"
-assert_contains "$RUN_OUTPUT" "mise's global node is already lts."
-assert_not_contains "$RUN_OUTPUT" "postinstall"
-assert_file_not_contains "$STUB_LOG" "mise use"
 # lib/common.sh brings back the real confirm
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -126,7 +111,7 @@ rm "$GLOBALS_FILE"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global go@latest"
 assert_file_not_contains "$STUB_LOG" "node@lts"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    mise's global go: not set; the repo's is latest"
 unset MISE_NODE
 
@@ -166,10 +151,10 @@ assert_file_not_contains "$STUB_LOG" "rustup-init"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 rm "$RUST_DEFAULT" "$RUST_HEALTHY"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" 'rustup default stable'
-assert_exit 0 status
+assert_exit 0 main --status
 echo custom > "$RUST_DEFAULT"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -180,14 +165,9 @@ RUST_FAIL=1 assert_exit 1 main
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" 'rustup toolchain install custom'
 
-MISE_LS_ERR="mise WARN  some deprecation" assert_exit 0 mise_tools_installed
-MISE_LS_OUT="node  24 (missing)  ~/.config/mise/config.toml  lts" assert_exit 1 mise_tools_installed
-MISE_LS_ERR="mise WARN  Failed to resolve tool version list for go: no versions found for go" \
-    assert_exit 1 mise_tools_installed
-assert_exit 0 mise_tools_installed
 # mise install in $HOME installs every active config, ~/mise.toml and ~/.tool-versions included
 : > "$STUB_LOG"
-MISE_LS_OUT="python  3.13 (missing)  ~/mise.toml  3.13" assert_exit 3 status
+MISE_LS_OUT="python  3.13 (missing)  ~/mise.toml  3.13" assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The tools mise's configs in ~ list installed"
 assert_file_contains "$STUB_LOG" "mise ls --missing"
 assert_file_not_contains "$STUB_LOG" "mise ls --missing --global"

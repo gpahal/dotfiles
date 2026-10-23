@@ -10,6 +10,9 @@ set -uo pipefail
 
 # A user service gets systemd's PATH, without Homebrew's or snap's
 PATH="${PATH:+$PATH:}/home/linuxbrew/.linuxbrew/bin:/snap/bin:/usr/bin:/bin"
+# The stream-deck step installs the Mac plugin's open-in-lib.sh beside this
+# shellcheck source=../../com.gpahal.dotfiles.sdPlugin/bin/open-in-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/open-in-lib.sh" || exit 127
 # Window classes
 GHOSTTY=com.mitchellh.ghostty
 ZED=dev.zed.Zed
@@ -33,15 +36,11 @@ NEW_TAB_WAIT="${DOTFILES_NEW_TAB_WAIT:-10}"
 NEW_TAB_LOCK="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dotfiles-new-tab-$UID.lock"
 CALLER="${OPEN_IN_CALLER:-Stream Deck}"
 CALLER_LOG="${OPEN_IN_LOG:-journalctl --user -u dotfiles-stream-deck}"
+FRONT_KIND=window
 # Set, not printed: a command substitution's subshell would lose FAILURE
 SHELL_REPLY=""
 CONTEXT_PATH=""
 FAILURE=""
-
-# The callers timestamp each line
-log() {
-    printf '%s\n' "$*" >&2
-}
 
 notify() {
     notify-send --app-name="$CALLER" "$CALLER" "$1" > /dev/null 2>&1
@@ -98,15 +97,6 @@ ghostty_folder() {
     [ -n "$dir" ] || log "Ghostty's title doesn't end with its folder: $title"
 }
 
-# Relies on zed/settings.json's window_title_format "${projectName}${separator}${filePath}"
-zed_file() {
-    local title="$1"
-    case "$title" in
-        *" — /"*) CONTEXT_PATH="/${title#*" — /"}" ;;
-        *" — ~/"*) CONTEXT_PATH="$HOME/${title#*" — ~/"}" ;;
-    esac
-}
-
 uri_path() {
     local path="${1#file://}"
     printf '%b' "${path//%/\\x}"
@@ -140,16 +130,14 @@ read_front() {
     FRONT_WINDOW="$(jq -r '.gtkObjectPath // ""' <<< "$SHELL_REPLY")"
 }
 
-# Remote paths, such as a Zed project over SSH, don't exist here
 read_context_path() {
     CONTEXT_PATH=""
     case "$FRONT_CLASS" in
         "$GHOSTTY") ghostty_folder "$FRONT_TITLE" ;;
-        "$ZED") zed_file "$FRONT_TITLE" ;;
+        "$ZED") zed_title_path "$FRONT_TITLE" ;;
         "$NAUTILUS") nautilus_folder "$FRONT_WINDOW" "$FRONT_TITLE" ;;
     esac
-    [ "$CONTEXT_PATH" == / ] || CONTEXT_PATH="${CONTEXT_PATH%/}"
-    [ -n "$CONTEXT_PATH" ] && [ -e "$CONTEXT_PATH" ] || CONTEXT_PATH=""
+    check_context_path
 }
 
 file_uri() {
@@ -199,34 +187,12 @@ open_path() {
         editor) open_editor "$CONTEXT_PATH" || status=1 ;;
         terminal) open_terminal "${CONTEXT_PATH:-$HOME}" || status=1 ;;
     esac
-    if [ "$status" -ne 0 ] && [ -z "$FAILURE" ]; then
-        log "ERROR couldn't open ${CONTEXT_PATH:-a new window} for $target"
-        FAILURE="Couldn't open ${CONTEXT_PATH:-a new window}. See $CALLER_LOG"
-    fi
+    open_path_result "$target" "$status"
 }
 
 chrome_in_front() {
     shell_call FocusedWindow || return 1
     [ "$(jq -r '.wmClass // ""' <<< "$SHELL_REPLY")" == "$CHROME" ]
-}
-
-# One New Tab at a time, from the Stream Deck and the hotkeys alike: two at once would each open a
-# tab, then both paste into whichever is in front. mkdir is atomic. A lock whose process is gone,
-# or that got no process ID within a minute, is taken over.
-take_new_tab_lock() {
-    local pid=""
-    if ! mkdir "$NEW_TAB_LOCK" 2> /dev/null; then
-        read -r pid < "$NEW_TAB_LOCK/pid" 2> /dev/null
-        if [ -n "$pid" ]; then
-            ! kill -0 "$pid" 2> /dev/null || return 1
-        elif [ -z "$(find "$NEW_TAB_LOCK" -maxdepth 0 -mmin +1 2> /dev/null)" ]; then
-            return 1
-        fi
-        rm -rf "$NEW_TAB_LOCK"
-        mkdir "$NEW_TAB_LOCK" 2> /dev/null || return 1
-    fi
-    echo "$$" > "$NEW_TAB_LOCK/pid"
-    trap 'rm -rf "$NEW_TAB_LOCK"' EXIT
 }
 
 modifiers_held() {
@@ -292,15 +258,8 @@ open_target_app() {
     if shell_call ClipboardHasText && [ "$SHELL_REPLY" == true ]; then
         paste="paste"
     fi
-    if ! new_tab "$paste"; then
-        [ -n "$FAILURE" ] || FAILURE="Couldn't open a new Chrome tab. See $CALLER_LOG"
-    elif [ "$NEW_TAB" == moved ]; then
-        log "$target: opened a new tab, but another window came to the front before the paste"
-    elif [ "$paste" == paste ]; then
-        log "$target: opened a new tab with the clipboard pasted"
-    else
-        log "$target: opened a new tab"
-    fi
+    new_tab "$paste"
+    new_tab_result "$target" $? "$NEW_TAB" "$paste"
 }
 
 main() {
@@ -308,7 +267,7 @@ main() {
     case "$target" in
         files | editor | terminal | claude | chrome | chrome-tab | gmail | t3-code | activity-monitor) ;;
         *)
-            echo "Usage: open-in files|editor|terminal|claude|chrome|chrome-tab|gmail|t3-code|activity-monitor" >&2
+            usage
             return 2
             ;;
     esac

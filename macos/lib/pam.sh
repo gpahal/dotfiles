@@ -13,9 +13,8 @@ TID_LINE="auth       sufficient     pam_tid.so"
 
 # A root-owned copy: sudo loads it as root, and anything running as you can write Homebrew's.
 REATTACH_MODULE="$PAM_LOCAL_MODULES_DIR/pam_reattach.so"
-# Tests override these two
+# Tests override it
 PAM_ROOT_UID=0
-PAM_TRUSTED_DIR=/
 
 REATTACH_SOURCE="${HOMEBREW_PREFIX:-/opt/homebrew}/lib/pam/pam_reattach.so"
 
@@ -60,20 +59,21 @@ pam_entry_unsafe() {
     fi
 }
 
-# Checks <path> and each parent up to $PAM_TRUSTED_DIR; prints the first problem and fails.
-pam_path_safe() {
-    local path="$1" reason
-    while :; do
-        reason="$(pam_entry_unsafe "$path")"
-        if [ -n "$reason" ]; then
-            echo "$reason"
-            return 1
-        fi
-        if [ "$path" == "$PAM_TRUSTED_DIR" ] || [ "$path" == / ]; then
-            return 0
-        fi
-        path="$(dirname "$path")"
-    done
+# Prints a problem with where sudo reads sudo_local that just touch-id can't fix, and succeeds;
+# fails when there's none. A link is refused, since writing it would write its target.
+sudo_local_blocker() {
+    local reason
+    reason="$(pam_entry_unsafe "$PAM_DIR")"
+    if [ -z "$reason" ] && [ -L "$SUDO_LOCAL" ]; then
+        reason="$(pam_entry_unsafe "$SUDO_LOCAL")"
+    fi
+    [ -n "$reason" ] && echo "$reason"
+}
+
+# Prints why non-root can change sudo_local, or nothing. just touch-id's rewrite fixes it, since it
+# installs a fresh root-owned file.
+sudo_local_unsafe() {
+    [ -L "$SUDO_LOCAL" ] || pam_entry_unsafe "$SUDO_LOCAL"
 }
 
 reattach_in_use() {
@@ -85,14 +85,15 @@ reattach_module_replaceable() {
     [ -L "$REATTACH_MODULE" ] || { [ -e "$REATTACH_MODULE" ] && ! pam_owner_safe "$REATTACH_MODULE"; }
 }
 
-# Prints a problem just touch-id can't fix, and succeeds; fails when there's none.
+# Prints a problem just touch-id can't fix, and succeeds; fails when there's none. Checks the copy
+# and its folder, not the folders above them.
 reattach_blocker() {
     local reason
     reattach_in_use || return 1
     # OpenPAM tries the name with its major version first
     if [ -e "$REATTACH_MODULE.2" ] || [ -L "$REATTACH_MODULE.2" ]; then
         echo "$REATTACH_MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $REATTACH_MODULE.2, then re-run just touch-id"
-    elif ! reason="$(pam_path_safe "$PAM_LOCAL_MODULES_DIR")"; then
+    elif reason="$(pam_entry_unsafe "$PAM_LOCAL_MODULES_DIR")" && [ -n "$reason" ]; then
         echo "sudo can't safely load $REATTACH_MODULE: $reason, then re-run just touch-id"
     elif reattach_module_replaceable; then
         reattach_source_installed && return 1
@@ -120,42 +121,10 @@ repo_sudo_local_lines() {
     echo "$TID_LINE"
 }
 
-# sudo_local with the repo's lines, keeping yours. Unchanged when the repo's lines are there in
-# order and no other line loads pam_tid or pam_reattach. Otherwise those lines go, and the repo's
-# go after the leading comments, ahead of your modules.
+# The repo owns sudo_local, so it holds only these lines
 desired_sudo_local() {
-    if [ ! -s "$SUDO_LOCAL" ]; then
-        echo "$SUDO_LOCAL_HEADER"
-        repo_sudo_local_lines
-        return 0
-    fi
-    WANTED="$(repo_sudo_local_lines)" awk '
-        function norm(s) { gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); return s }
-        BEGIN {
-            n = split(ENVIRON["WANTED"], wanted, "\n")
-            for (j = 1; j <= n; j++) want[j] = norm(wanted[j])
-        }
-        { line[NR] = $0 }
-        $1 !~ /^#/ && $3 ~ /(^|\/)pam_(tid|reattach)\.so$/ {
-            ours[NR] = 1
-            count++
-            if (matched < n && norm($0) == want[matched + 1]) matched++
-        }
-        END {
-            if (matched == n && count == n) {
-                for (i = 1; i <= NR; i++) print line[i]
-                exit
-            }
-            top = 1
-            for (i = 1; i <= NR; i++) {
-                if (top && line[i] !~ /^[ \t]*(#|$)/) {
-                    for (j = 1; j <= n; j++) print wanted[j]
-                    top = 0
-                }
-                if (!(i in ours)) print line[i]
-            }
-            if (top) for (j = 1; j <= n; j++) print wanted[j]
-        }' "$SUDO_LOCAL"
+    echo "$SUDO_LOCAL_HEADER"
+    repo_sudo_local_lines
 }
 
 has_tid() {
@@ -198,15 +167,23 @@ sudo_local_rescue() {
 
 # status_touch_id <state for off: missing|skipped>
 status_touch_id() {
-    local off="$1" module blocker rescue
+    local off="$1" module blocker unsafe rescue
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
     fi
+    if blocker="$(sudo_local_blocker)"; then
+        status_item missing "Touch ID for sudo: $blocker"
+    fi
+    unsafe="$(sudo_local_unsafe)"
     if ! has_tid; then
         status_item "$off" "Touch ID for sudo: off, an option that just touch-id turns on"
     elif [ "$(cat "$SUDO_LOCAL")" == "$(desired_sudo_local)" ]; then
-        status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
+        if [ -n "$unsafe" ]; then
+            status_item missing "Touch ID for sudo: $unsafe, or re-run just touch-id, which rewrites it"
+        else
+            status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
+        fi
         if blocker="$(reattach_blocker)"; then
             status_item missing "Touch ID in tmux: $blocker"
         elif ! reattach_in_use; then
@@ -220,7 +197,7 @@ status_touch_id() {
             fi
         fi
     else
-        status_item missing "Touch ID for sudo: $SUDO_LOCAL's pam_tid and pam_reattach lines differ from just touch-id's; run it to fix them, keeping your other lines"
+        status_item missing "Touch ID for sudo: $SUDO_LOCAL differs from what just touch-id writes; run it to replace the file"
     fi
     # A missing module can break sudo, so give a fix that doesn't need it
     rescue="If sudo fails, remove the file without it: $(sudo_local_rescue)"

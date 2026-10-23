@@ -52,6 +52,8 @@ replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
 cat "$STATE/ego-version" > "$2"'
 user_shortcut
 gsettings set org.gnome.shell enabled-extensions "['ubuntu-dock@ubuntu.com']"
+# GNOME's default
+gsettings set org.gnome.desktop.wm.keybindings switch-input-source "['<Super>space', 'XF86Keyboard']"
 
 assert_exit 3 main --status
 

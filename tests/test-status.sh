@@ -35,12 +35,12 @@ no_prompting_sudo() {
 
 : > "$STUB_LOG"
 cache_sudo no
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules"
 no_prompting_sudo
 
 cache_sudo yes
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules"
 assert_not_contains "$RUN_OUTPUT" "unverified"
 no_prompting_sudo
@@ -50,15 +50,15 @@ cp "$SSHD_DROP_IN" "$SSHD_DROP_IN.root"
 chmod 000 "$SSHD_DROP_IN"
 if [ ! -r "$SSHD_DROP_IN" ]; then
     cache_sudo no
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "unverified $SSHD_DROP_IN"
     no_prompting_sudo
     cache_sudo yes
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "ok         $SSHD_DROP_IN"
     no_prompting_sudo
     echo "# changed" > "$SSHD_DROP_IN.root"
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    $SSHD_DROP_IN"
     no_prompting_sudo
 fi

@@ -10,6 +10,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+stub systemd-detect-virt
 load_script ai_tools/claude-code/install.sh
 
 command -v jq &> /dev/null || skip "jq isn't installed"
@@ -132,19 +134,15 @@ json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied
 # `claude auth status --json` exits 1 when signed out, which pipefail mustn't take for unknown
 load_script ai_tools/claude-code/install.sh
 stub claude 'echo "{\"loggedIn\": false}"; exit 1'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code: run claude auth login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 
-# check-ai-settings.sh loads the codex step after this one
+# The steps share keepable.sh, so loading codex mustn't change Claude Code's settings
 load_script ai_tools/claude-code/install.sh
-claude_rows="$(keepable_indexes claude_code | wc -l)"
-[ "$claude_rows" -gt 0 ] || fail "no keepable values for Claude Code"
+claude_settings="$(claude_code_settings)"
 load_script ai_tools/codex/install.sh
-assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading codex"
-load_script ai_tools/claude-code/install.sh
-assert_eq "$claude_rows" "$(keepable_indexes claude_code | wc -l)" "Claude Code's keepable values after loading it again"
-[ "$(keepable_indexes codex | wc -l)" -gt 0 ] || fail "loading claude-code again dropped codex's values"
+assert_eq "$claude_settings" "$(claude_code_settings)" "Claude Code's settings after loading codex"
 
 # git wt makes the worktree hook's worktrees, so the hook is registered only with it
 load_script ai_tools/claude-code/install.sh
@@ -191,7 +189,7 @@ assert_exit 1 main
 assert_eq "null" "$(jq -c '.hooks' "$settings")" "hooks registered without git wt"
 assert_eq "claude-opus-5-5" "$(jq -r '.model' "$settings")" "model set without git wt"
 [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || fail "the hook script wasn't copied without git wt"
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Worktree hook"
 assert_eq 3 "$RUN_STATUS" "status exit without git wt"
 test_done

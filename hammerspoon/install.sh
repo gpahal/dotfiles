@@ -13,10 +13,12 @@ source "$DOTFILES_DIR/monitor-input/lib/paths.sh"
 STEP_OS=macos
 
 hammerspoon_files() {
-    local status=0
+    local file status=0
     "$1" "$DOTFILES_DIR/hammerspoon/init.lua" "$HOME/.hammerspoon/init.lua" || status=1
-    "$1" "$DOTFILES_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in" \
-        "$HOME/.hammerspoon/bin/open-in" || status=1
+    for file in open-in open-in-lib.sh; do
+        "$1" "$DOTFILES_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/$file" \
+            "$HOME/.hammerspoon/bin/$file" || status=1
+    done
     return "$status"
 }
 
@@ -39,7 +41,6 @@ status() {
     elif [ -e "$MONITOR_INPUT_MAC_CONF" ]; then
         status_item ok "Monitor input switching, with $(monitor_m1ddc)"
     fi
-    status_result
 }
 
 apply() {

@@ -8,6 +8,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 
@@ -93,10 +95,8 @@ install_ubuntu_packages() {
             echo "Then re-run this script."
             exit 1
         fi
-        # shellcheck disable=SC2119 # it passes options on to apt-get update, and needs none here
-        apt_get_update || exit 1
         # shellcheck disable=SC2086 # one word per package
-        apt_get install -y $UBUNTU_PACKAGES || exit 1
+        apt_install_fresh $UBUNTU_PACKAGES || exit 1
     fi
     if ! locale_installed; then
         echo "  The en_US.UTF-8 locale is missing, so programs will warn about LANG. The ubuntu step"
@@ -241,8 +241,7 @@ status() {
     if ! command -v brew &>/dev/null; then
         status_item missing "Homebrew"
         status_item unknown "Brewfile and casks: Homebrew isn't installed"
-        status_result
-        return
+        return 0
     fi
     status_item ok "Homebrew"
     bundle="Brewfile brew formulae"
@@ -270,7 +269,6 @@ status() {
         status_cask "$cask" "" "$apps"
     done
     is_macos || status_item skipped "Other casks: they have no Linux builds"
-    status_result
 }
 
 apply() {

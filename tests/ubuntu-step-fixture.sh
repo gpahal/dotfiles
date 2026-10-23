@@ -18,8 +18,8 @@ ubuntu_step_load() {
     replace_fn warn_no_ups :
     # No nut group in a test
     replace_fn ntfy_url_group 'id -gn'
-    # This checkout may be a worktree
-    wrap_fn in_git_worktree false
+    # The test opt-ins count here, though systemd-detect-virt says this isn't a VM
+    replace_fn on_test_machine true
 }
 
 # Defaults match 26.04; files under $SANDBOX change unit state, such as units/ufw.service.disabled
@@ -45,7 +45,7 @@ case "$1" in
         smartmontools.service) cat "'"$SANDBOX"'/smartd" 2> /dev/null || echo disabled ;;
         apt-daily.timer | apt-daily-upgrade.timer | ssh.socket) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo enabled ;;
         ssh.service) cat "'"$SANDBOX"'/units/$2" 2> /dev/null || echo disabled ;;
-        *) echo masked ;;
+        *) printf "masked\n%.0s" "${@:2}" ;;
     esac ;;
     enable)
         case "$3" in ssh.socket) echo enabled > "'"$SANDBOX"'/units/$3"; exit 0 ;; esac
@@ -102,55 +102,17 @@ ubuntu_step_setup() {
         funnel) cat "'"$SANDBOX"'/tailscale-serve" 2> /dev/null || echo "{}" ;;
     esac'
     echo Running > "$SANDBOX/tailscale-state"
-    # sshd -T takes the first value per key, Match blocks winning; test-ubuntu-sshd-real.sh checks
-    # the step against the real sshd. It reads a drop-in only root could read from <file>.root.
+    # sshd -T prints what sshd takes from the step's drop-in, after the lines a test writes to
+    # $SANDBOX/sshd-T, as sshd keeps the first value per key; test-ubuntu-sshd-real.sh checks the
+    # step against the real sshd.
     mkdir -p "$SANDBOX/sshd_config.d" "$SSHD_RUN_DIR"
     # No SSH sessions, as at the console
     stub ss
     stub sshd 'case "$1" in
         -T) [ ! -e "'"$SANDBOX"'/sshd-T-fails" ] || exit 255
-            user="" addr=""
-            [ "${2:-}" != -C ] || user="$(sed -n "s/^user=\([^,]*\).*/\1/p" <<< "$3")"
-            [ "${2:-}" != -C ] || addr="$(sed -n "s/.*addr=\([^,]*\).*/\1/p" <<< "$3")"
-            echo "port 22"
-            for f in "'"$SANDBOX"'"/sshd_config.d/*.conf; do
-                [ ! -e "$f" ] || cat "$f" 2> /dev/null || cat "$f.root"
-            done | awk -v user="$user" -v addr="$addr" '"'"'
-                { k = tolower($1) }
-                k == "match" {
-                    matched = tolower($2) == "user" && $3 == user
-                    n = tolower($2) == "address" ? split($3, entries, ",") : 0
-                    for (i = 1; i <= n; i++) {
-                        entry = entries[i]
-                        if (entry ~ /^!/) continue
-                        if (entry ~ /\.0\/24$/) {
-                            matched = matched || index(addr, substr(entry, 1, length(entry) - 4)) == 1
-                            continue
-                        }
-                        gsub(/\./, "\\.", entry)
-                        gsub(/\*/, ".*", entry)
-                        gsub(/\?/, ".", entry)
-                        matched = matched || addr ~ ("^" entry "$")
-                    }
-                    inmatch = 1
-                    next
-                }
-                inmatch && !matched { next }
-                k == "allowusers" { for (i = 2; i <= NF; i++) users = users " " $i; next }
-                k ~ /^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|x11forwarding|maxauthtries)$/ {
-                    if (inmatch) { if (!(k in m)) m[k] = $2 } else if (!(k in v)) v[k] = $2
-                }
-                END {
-                    for (k in m) v[k] = m[k]
-                    print "passwordauthentication", ("passwordauthentication" in v) ? v["passwordauthentication"] : "yes"
-                    print "kbdinteractiveauthentication", ("kbdinteractiveauthentication" in v) ? v["kbdinteractiveauthentication"] : "yes"
-                    print "permitrootlogin", ("permitrootlogin" in v) ? v["permitrootlogin"] : "without-password"
-                    # Ubuntu sets X11Forwarding yes in sshd_config
-                    print "x11forwarding", ("x11forwarding" in v) ? v["x11forwarding"] : "yes"
-                    print "maxauthtries", ("maxauthtries" in v) ? v["maxauthtries"] : "6"
-                    n = split(users, u, " ")
-                    for (i = 1; i <= n; i++) print "allowusers", u[i]
-                }'"'"' ;;
+            cat "'"$SANDBOX"'/sshd-T" 2> /dev/null
+            printf "%s\n" "port 22" "passwordauthentication no" "kbdinteractiveauthentication no" \
+                "permitrootlogin no" "x11forwarding no" "maxauthtries 3" "allowusers $(id -un)" ;;
         -t) for f in "'"$SANDBOX"'"/sshd_config.d/*.conf; do
                 if grep -q "^Bogus" "$f"; then echo "$f: line 1: Bad configuration option: Bogus" >&2; exit 255; fi
             done ;;
@@ -219,5 +181,5 @@ ubuntu_step_setup() {
 ubuntu_step_set_up() {
     export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
     assert_exit 0 main
-    assert_exit 0 status
+    assert_exit 0 main --status
 }

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # The ubuntu step from a fresh machine: declined, applied, and re-run, plus its held-back package,
-# ntfy URL, and health alert unit checks.
+# ntfy URL, and health alert checks.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,7 +14,7 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 setup_sandbox
 ubuntu_step_setup
-assert_exit 3 status
+assert_exit 3 main --status
 
 # Declined: nothing that needs sudo changes
 : > "$STUB_LOG"
@@ -43,7 +43,7 @@ assert_file_not_contains "$STUB_LOG" "smartd.conf"
 assert_file_not_contains "$STUB_LOG" "systemctl restart smartmontools.service"
 assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
 assert_eq magic "$(cat "$SANDBOX/wol")" "Wake-on-LAN"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
 # New dependencies don't hold a package back, as they don't stop unattended-upgrades
@@ -70,7 +70,7 @@ rm "$SANDBOX/apt-upgrade"
 # ssh.service enabled instead of ssh.socket: leave ssh.socket off, since it couldn't bind sshd's port
 echo disabled > "$SANDBOX/units/ssh.socket"
 echo enabled > "$SANDBOX/units/ssh.service"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -87,7 +87,7 @@ assert_file_not_contains "$STUB_LOG" "daemon-reload"
 # In a VM the host manages the disks
 stub systemd-detect-virt
 mv "$SMARTD_HOOK" "$SMARTD_HOOK.gone"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    smartd running: this is a VM"
 assert_contains "$RUN_OUTPUT" "skipped    smartd's warning hook: this is a VM"
 assert_exit 0 main
@@ -102,61 +102,36 @@ echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
 # macOS gives a new file its directory's group, wheel under /tmp
 chgrp "$(id -gn)" "$NTFY_URL_FILE"
 chmod 644 "$NTFY_URL_FILE"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): it's $(id -un) $(id -gn) 644 (owner, group, mode), not $(id -un) $(id -gn) 640"
 chmod 640 "$NTFY_URL_FILE"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
 echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): its topic isn't 20 to 64 characters"
 echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
 # smartd runs the hook only through smartd-runner, which smartd.conf names
 sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): $SMARTD_CONF has no uncommented line with -M exec"
 mv "$SMARTD_CONF.bak" "$SMARTD_CONF"
 
+# The units run a copy of the script, outside the repo
+for file in health-alert.sh ntfy.sh paths.sh status-format.sh; do
+    [ -e "$HOME/.local/share/dotfiles/health-alert/$file" ] || fail "the health alert's $file wasn't copied"
+done
+
 # After a failed daemon-reload, the next run reloads even though the files match
-sed -i.orig "s|$REPO_DIR|$SANDBOX/old-repo|" "$USER_UNITS/dotfiles-health.service"
-rm "$USER_UNITS/dotfiles-health.service.orig"
+echo "# changed" >> "$USER_UNITS/dotfiles-health.service"
 touch "$SANDBOX/reload-needed" "$SANDBOX/reload-fails"
 assert_exit 1 main
 rm "$SANDBOX/reload-fails"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
-assert_exit 0 status
-
-# From a worktree, setup leaves units that run another checkout alone
-OTHER_REPO="$SANDBOX/other-checkout"
-for unit in dotfiles-health.service dotfiles-boot-notice.service; do
-    sed -i.orig "s|$REPO_DIR|$OTHER_REPO|" "$USER_UNITS/$unit"
-    rm "$USER_UNITS/$unit.orig"
-done
-OTHER_UNIT="$(cat "$USER_UNITS/dotfiles-health.service")"
-replace_fn in_git_worktree true
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_eq "$OTHER_UNIT" "$(cat "$USER_UNITS/dotfiles-health.service")" "the units after a run from a worktree"
-assert_file_not_contains "$STUB_LOG" "systemctl --user"
-DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
-assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
-DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 status
-
-restore_fn in_git_worktree
-GIT_REPO="$SANDBOX/git-main"
-git init -q "$GIT_REPO"
-mkdir "$GIT_REPO/sub"
-git_commit "$GIT_REPO" --allow-empty -m init
-git -C "$GIT_REPO" worktree add -q "$SANDBOX/git-wt" -b wt
-mkdir "$SANDBOX/git-wt/sub"
-assert_exit 1 in_git_worktree "$GIT_REPO"
-assert_exit 1 in_git_worktree "$GIT_REPO/sub"
-assert_exit 0 in_git_worktree "$SANDBOX/git-wt"
-assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
-assert_exit 1 in_git_worktree "$SANDBOX"
+assert_exit 0 main --status
 test_done

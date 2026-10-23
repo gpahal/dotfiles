@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# The stream-deck step on macOS: the plugin, its stale files, and the profiles Stream Deck installs
-# from it in a fake ProfilesV3, with stubs for pkill, pgrep, and open. Then the profile archives,
-# which build-profile.sh must rebuild byte for byte.
+# The stream-deck step on macOS: the plugin and the profiles Stream Deck installs from it in a fake
+# ProfilesV3, with stubs for pkill, pgrep, and open. Then the profile archives, which
+# build-profile.sh must rebuild byte for byte. test-stream-deck-ubuntu.sh covers stale files.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -28,7 +28,7 @@ assert_eq "pkill -x Stream Deck
 pgrep -x Stream Deck
 open -g -b com.elgato.StreamDeck" "$(cat "$STUB_LOG")" "commands run for a new plugin"
 # Stream Deck installs the profiles itself
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck's Main profile: Stream Deck installs it when it loads the plugin"
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck's System profile: press the key that opens it"
 assert_not_contains "$RUN_OUTPUT" "differs"
@@ -38,28 +38,8 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
 
-# Stale files go, and the folders they leave empty, but nothing outside the plugin
-# shellcheck disable=SC2088 # shown, not expanded
-shown_plugin="~/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
-mkdir -p "$PLUGIN_DIR/old" "$PLUGIN_DIR/../other.sdPlugin"
-touch "$PLUGIN_DIR/bin/old-tool" "$PLUGIN_DIR/old/x.js" "$PLUGIN_DIR/plugin.js.bak" "$PLUGIN_DIR/../other.sdPlugin/x.js"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/bin/old-tool: the repo's plugin no longer has it; re-run the stream-deck step"
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/old/x.js"
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/plugin.js.bak"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Removed bin/old-tool, which the repo's plugin no longer has"
-assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin and its profiles."
-[ ! -e "$PLUGIN_DIR/bin/old-tool" ] && [ ! -e "$PLUGIN_DIR/old" ] && [ ! -e "$PLUGIN_DIR/plugin.js.bak" ] ||
-    fail "the stale files weren't removed"
-[ -f "$PLUGIN_DIR/../other.sdPlugin/x.js" ] || fail "a file outside the plugin was removed"
-[ -f "$PLUGIN_DIR/bin/open-in" ] || fail "bin/open-in was removed"
-assert_exit 3 status
-assert_not_contains "$RUN_OUTPUT" "no longer has it"
-
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "plugin.js differs from the repo's"
 stub pkill 'exit 1'
 : > "$STUB_LOG"
@@ -168,7 +148,7 @@ ln -s "$SANDBOX/outside.sdProfile" "$profiles/Link.sdProfile"
 mkdir -p "$profiles/E5.sdProfile"
 echo "not json" > "$profiles/E5.sdProfile/manifest.json"
 
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "ok         Stream Deck's Main profile"
 assert_contains "$RUN_OUTPUT" "ok         Stream Deck's System profile"
 assert_contains "$RUN_OUTPUT" "missing    extra Stream Deck profile Default Profile (3 keys): the next run deletes it"
@@ -192,13 +172,13 @@ done
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "" "$(cat "$STUB_LOG")" "commands run with the profiles in place"
-assert_exit 0 status
+assert_exit 0 main --status
 
 # A copy whose keys differ from layout.json is reinstalled
 jq '.Controllers[0].Actions["1,0"].UUID = "com.gpahal.dotfiles.files"' \
     "$profiles/B2.sdProfile/Profiles/$(profile_uuid page/system)/manifest.json" > "$SANDBOX/page.json"
 mv "$SANDBOX/page.json" "$profiles/B2.sdProfile/Profiles/$(profile_uuid page/system)/manifest.json"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck's System profile differs from layout.json: the next run reinstalls it"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Deleted B2.sdProfile from Stream Deck's profiles: Stream Deck's System profile differs from layout.json"
@@ -207,7 +187,7 @@ assert_contains "$RUN_OUTPUT" "Deleted B2.sdProfile from Stream Deck's profiles:
 # Without the Main profile, Stream Deck would replace a deleted default profile, so it waits
 rm -r "$profiles/A1.sdProfile"
 fake_profile "$profiles/C3.sdProfile" 20GBA9901 "Default Profile" 0,2
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    extra Stream Deck profile Default Profile (1 key): deleted once the Main profile is installed"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -217,7 +197,7 @@ assert_eq "" "$(cat "$STUB_LOG")" "commands run with the Main profile missing"
 # A changed archive, and a second copy, reinstall the plugin's profile
 fake_install main A1.sdProfile
 fake_install main A2.sdProfile
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    2 copies of Stream Deck's Main profile: the next run reinstalls it"
 rm -r "$profiles/A2.sdProfile"
 echo "stale" >> "$PLUGIN_DIR/profiles/Main.streamDeckProfile"

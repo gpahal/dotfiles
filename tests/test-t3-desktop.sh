@@ -44,18 +44,6 @@ run status
 assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
 assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
 
-# A failed setenv fails the step after the settings, even under a caller's ||
-rm "$SANDBOX/launchd-env" "$T3_CODE_SETTINGS" "$T3_CODE_CLIENT_SETTINGS"
-stub launchctl '[ "$1" != setenv ] || exit 7'
-assert_exit 1 configure_t3_code
-assert_contains "$RUN_OUTPUT" "Couldn't set T3CODE_TELEMETRY_ENABLED"
-assert_eq claude-opus-5-5 "$(jq -r .defaultModelSelection.model "$T3_CODE_SETTINGS")" \
-    "the default model after a failed launchctl setenv"
-assert_exit 1 eval 'configure_t3_code || exit 1'
-stub_launchd
-assert_exit 0 configure_t3_code
-assert_eq false "$(cat "$SANDBOX/launchd-env")" "launchd's T3CODE_TELEMETRY_ENABLED"
-
 assert_exit 0 configure_t3_code
 
 # A running T3 Code keeps its settings

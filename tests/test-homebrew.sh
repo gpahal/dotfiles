@@ -362,7 +362,7 @@ assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing"
 as_os ubuntu
 replace_fn missing_ubuntu_commands "printf ' %s' build-essential locale-gen"
 hide brew
-run status
+run main --status
 assert_eq 3 "$RUN_STATUS" "status's exit status without Homebrew"
 assert_contains "$RUN_OUTPUT" "missing    apt packages Homebrew needs; missing commands: build-essential locale-gen"
 assert_contains "$RUN_OUTPUT" "missing    Homebrew"

@@ -71,7 +71,6 @@ status() {
     vim_files status_file
     vim_items
     items_status
-    status_result
 }
 
 apply() {

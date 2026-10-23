@@ -43,12 +43,16 @@ replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
 [ ! -e "$SANDBOX/fetch-fails" ] || return 1
 cp "$SANDBOX/served-key" "$2"'
 stub gpg 'for key; do :; done
+if [ "$1 $2" == "--batch --dearmor" ]; then
+    grep -v "^-----"
+    exit
+fi
 [ "$1 $2" == "--show-keys --with-colons" ] || exit 2
-while IFS= read -r f; do
+grep -v "^-----" "$key" | while IFS= read -r f; do
     printf "pub:-:4096:1:%s:1487788586:::-:::scESC::::::23::0:\n" "$(echo "$f" | cut -c 25-)"
     printf "fpr:::::::::%s:\n" "$f"
     printf "sub:-:4096:1:7EA0A9C3F273FCD8:1487788586::::::s::::::23:\nfpr:::::::::D3306A018370199E527AE7997EA0A9C3F273FCD8:\n"
-done < "$key"'
+done'
 stub apt-get
 keyring="$SANDBOX/keyrings/example.gpg"
 add() {
@@ -68,6 +72,12 @@ assert_exit 0 add
 assert_eq "$content" "$(cat "$file")" "the source after adding the repo"
 assert_eq "$(cat "$SANDBOX/served-key")" "$(cat "$keyring")" "the key after adding the repo"
 assert_file_contains "$STUB_LOG" "update --error-on=any -o Dir::Etc::sourcelist=$file -o Dir::Etc::sourceparts=-"
+
+# apt's gpgv reads a .gpg keyring only unarmored
+printf '%s\n' "-----BEGIN PGP PUBLIC KEY BLOCK-----" "$fpr" "-----END PGP PUBLIC KEY BLOCK-----" > "$SANDBOX/served-key"
+assert_exit 0 add
+assert_eq "$fpr" "$(cat "$keyring")" "an armored key in a .gpg keyring"
+echo "$fpr" > "$SANDBOX/served-key"
 
 echo old-key > "$keyring"
 echo "${content/resolute/stale-suite}" > "$file"
@@ -198,8 +208,23 @@ if [ ! -r "$file" ]; then
     assert_eq old-key "$(cat "$keyring")" "the key when the source can't be read"
     assert_eq "old source" "$(cat "$file")" "an unreadable source"
     assert_file_not_contains "$STUB_LOG" "apt-get"
+else
+    echo "Skipped the unreadable source case: root reads any file"
 fi
 chmod 644 "$file"
+
+# --- apt_install_fresh ---
+# One update serves the run, until add_apt_repo changes a source or key
+reset
+stub apt-get
+# shellcheck disable=SC2034 # apt_install_fresh reads it
+APT_LISTS_FRESH=""
+apt_install_fresh one > /dev/null 2>&1 || fail "apt_install_fresh one failed"
+apt_install_fresh two > /dev/null 2>&1 || fail "apt_install_fresh two failed"
+assert_eq 1 "$(grep -c "^apt-get .* update$" "$STUB_LOG")" "apt-get updates for two installs"
+add > /dev/null 2>&1 || fail "add_apt_repo failed"
+apt_install_fresh three > /dev/null 2>&1 || fail "apt_install_fresh three failed"
+assert_eq 2 "$(grep -c "^apt-get .* update$" "$STUB_LOG")" "apt-get updates after add_apt_repo"
 
 # --- apt_get_update ---
 # Retried only for apt's lists lock, which apt-daily can hold

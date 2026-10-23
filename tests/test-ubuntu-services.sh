@@ -21,7 +21,7 @@ stub_systemctl 'case "$*" in
     "mask --now cups-browsed.service") echo masked > "'"$SANDBOX"'/cups-browsed"; exit 0 ;;
 esac'
 
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    cloud-init off"
 assert_contains "$RUN_OUTPUT" "missing    cups-browsed masked"
 assert_contains "$RUN_OUTPUT" "missing    Wi-Fi power save off"
@@ -53,7 +53,7 @@ assert_file_not_contains "$STUB_LOG" "iw dev"
 # A drop-in sorting later that turns power save back on shows, though the step's file is in place
 later="$(dirname "$WIFI_POWERSAVE_CONF")/zz-powersave-on.conf"
 printf '%s\n' "[connection]" "wifi.powersave = 3" > "$later"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Wi-Fi power save off"
 rm "$later"
 
@@ -62,12 +62,12 @@ rm "$WIFI_POWERSAVE_CONF" "$STUB_DIR/iw"
 ubuntu_step_load
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_exit 0 status
+assert_exit 0 main --status
 
 # Not installed counts as off; in a VM, cloud-init is left alone, as it may set up the network
 rm "$CLOUD_INIT_DISABLED" "$SANDBOX/cups-browsed"
 stub dpkg-query '[ "${*: -1}" == cloud-init ] || [ "${*: -1}" == cups-browsed ] || echo "install ok installed"'
-assert_exit 0 status
+assert_exit 0 main --status
 stub dpkg-query 'echo "install ok installed"'
 stub systemd-detect-virt
 assert_exit 0 main

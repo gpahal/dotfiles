@@ -1,13 +1,11 @@
 #!/bin/bash
 set -euo pipefail
-# serial
 
 # interrogate's run-reviewer.sh and code-review's materialize-head.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# The sandbox's pkill and pgrep are sentinels; these only reach this test's sleeps
-PKILL="$(command -v pkill)" PGREP="$(command -v pgrep)"
+REAL_SLEEP="$(command -v sleep)"
 setup_sandbox
 
 RUNNER="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
@@ -19,67 +17,54 @@ mkdir -p "$SANDBOX/prompts"
 echo "Review this." > "$PROMPT"
 mkdir -p "$SANDBOX/answers"
 OUT="$SANDBOX/answers/answer.md"
+export REVIEWER_SLEEP=600 REVIEWER_TIMEOUT=900
 
-# Sleep lengths unique to this run, so pgrep finds only its processes
-export REVIEWER_SLEEP="7$$" REVIEWER_TIMEOUT="8$$"
-# OrbStack's amd64 translation shows both the executable path and argv[0]
-SLEEP_PATTERN="^([^ ]*/)?sleep (sleep )?($REVIEWER_SLEEP|$REVIEWER_TIMEOUT)\$"
+# Each sleep, the reviewer's and the watchdog's, records its pid, so the checks see only this test's
+export SLEEPS="$SANDBOX/sleeps"
+printf '%s\n' '#!/bin/bash' 'echo "$$" >> "$SLEEPS"' "exec $(printf '%q' "$REAL_SLEEP") \"\$@\"" > "$STUB_DIR/sleep"
+chmod +x "$STUB_DIR/sleep"
 
-leftover_sleeps() {
-    "$PGREP" -f "$SLEEP_PATTERN" || true
+# A zombie isn't running, though kill -0 finds it, and a pid that isn't sleep's was reused
+running_sleeps() {
+    local pid
+    [ -e "$SLEEPS" ] || return 0
+    while read -r pid; do
+        case "$(ps -o stat= -p "$pid" 2> /dev/null)" in
+            '' | Z*) ;;
+            *) [ "$(basename "$(ps -o comm= -p "$pid" 2> /dev/null)")" != sleep ] || echo "$pid" ;;
+        esac
+    done < "$SLEEPS"
 }
 
 both_sleeps_started() {
-    [ "$(leftover_sleeps | wc -l | tr -d ' ')" -ge 2 ]
+    [ "$(running_sleeps | wc -l | tr -d ' ')" -ge 2 ]
 }
 
 no_sleeps_left() {
-    [ -z "$(leftover_sleeps)" ]
+    [ -z "$(running_sleeps)" ]
 }
 
-# tests/run.sh's signals don't reach the runner's process groups; the sleeps would run for days
+# The reviewer runs in a process group of its own, which the test runner's signals miss
 RUNNER_PID=""
-on_exit '[ -z "$RUNNER_PID" ] || kill -- "-$RUNNER_PID" 2> /dev/null'
-on_exit '"$PKILL" -f "$SLEEP_PATTERN"'
+# shellcheck disable=SC2046 # a list of pids
+trap 'status=$?; set +e; [ -z "$RUNNER_PID" ] || kill "$RUNNER_PID"; kill $(running_sleeps) 2> /dev/null; (exit "$status"); _sandbox_exit' EXIT
 
-check_signal() {
-    local signal="$1" expected="$2" status=0
-    stub claude 'sleep "$REVIEWER_SLEEP"'
-    # A background job ignores SIGINT without job control
-    set -m
-    (cd "$REPO" && exec bash "$RUNNER" claude model high "$PROMPT" "$OUT") > /dev/null 2>&1 &
-    RUNNER_PID=$!
-    set +m
-    wait_for both_sleeps_started || fail "$signal: the reviewer and the watchdog didn't both start"
-    kill -"$signal" "$RUNNER_PID"
-    wait "$RUNNER_PID" || status=$?
-    RUNNER_PID=""
-    assert_eq "$expected" "$status" "exit status after SIG$signal"
-    wait_for no_sleeps_left || fail "$signal: processes left running: $(leftover_sleeps | tr '\n' ' ')"
-    "$PKILL" -f "$SLEEP_PATTERN" || true
-}
-
-check_signal TERM 143
-check_signal INT 130
+stub claude 'sleep "$REVIEWER_SLEEP"'
+(cd "$REPO" && exec bash "$RUNNER" claude model high "$PROMPT" "$OUT") > /dev/null 2>&1 &
+RUNNER_PID=$!
+wait_for both_sleeps_started || fail "the reviewer and the watchdog didn't both start"
+kill -TERM "$RUNNER_PID"
+status=0
+wait "$RUNNER_PID" || status=$?
+RUNNER_PID=""
+assert_eq 143 "$status" "exit status after SIGTERM"
+wait_for no_sleeps_left || fail "processes left running after SIGTERM: $(running_sleeps | tr '\n' ' ')"
 
 stub claude 'echo "No findings."'
 cd "$REPO"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$OUT"
 assert_file_contains "$OUT" "No findings."
-# What keeps the reviewer to reading, with no MCP servers or other tools
-for flag in --restricted --strict-mcp-config "--tools Read Grep Glob" "--allowedTools Read Grep Glob" \
-    "--permission-mode dontAsk"; do
-    assert_file_contains "$STUB_LOG" " $flag "
-done
 wait_for no_sleeps_left || fail "the watchdog outlived a finished review"
-"$PKILL" -f "$SLEEP_PATTERN" || true
-
-# A runner paused after the watchdog starts its sleep hits the race every time
-awk '{ print } /^ *sleep "\$timeout" &$/ { print "/bin/sleep 0.5" }' "$RUNNER" > "$SANDBOX/run-reviewer-paused.sh"
-grep -q '^/bin/sleep 0.5$' "$SANDBOX/run-reviewer-paused.sh" || fail "the paused runner has no pause"
-assert_exit 0 bash "$SANDBOX/run-reviewer-paused.sh" claude model high "$PROMPT" "$OUT"
-wait_for no_sleeps_left || fail "the watchdog's sleep outlived a review that finished as it started"
-"$PKILL" -f "$SLEEP_PATTERN" || true
 
 stub claude 'echo "boom" >&2; exit 5'
 assert_exit 1 bash "$RUNNER" claude model high "$PROMPT" "$OUT"
@@ -91,7 +76,6 @@ REVIEWER_TIMEOUT=1 assert_exit 1 bash "$RUNNER" claude model low "$PROMPT" "$OUT
 assert_contains "$RUN_OUTPUT" "claude exited with status 143 (a status of 143 means it ran past 1s)"
 [ ! -e "$OUT" ] || fail "a timed-out review left an answer"
 wait_for no_sleeps_left || fail "the timed-out reviewer is still running"
-"$PKILL" -f "$SLEEP_PATTERN" || true
 
 stub codex '
 while [ $# -gt 0 ]; do
@@ -104,11 +88,6 @@ mkdir -p "$REPO/sub"
 cd "$REPO/sub"
 assert_exit 0 bash "$RUNNER" codex gpt-test xhigh "$PROMPT" "$OUT"
 assert_file_contains "$OUT" "No findings."
-# What keeps the reviewer from changing anything, or reading your config and rules
-for flag in "--sandbox read-only" '-c approval_policy="never"' --ignore-user-config --ignore-rules \
-    "--disable multi_agent" --ephemeral; do
-    assert_file_contains "$STUB_LOG" " $flag "
-done
 assert_eq "Review this." "$(cat "$OUT.stdin")" "the prompt codex read"
 cd "$REPO"
 

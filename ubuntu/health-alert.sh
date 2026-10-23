@@ -4,31 +4,16 @@ set -euo pipefail
 # Pushes health alerts to ntfy for the ubuntu step's user units; does nothing with no URL saved.
 # Fails when a runner couldn't run or a push failed, so the unit shows failed.
 
-HEALTH_REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The ubuntu step copies this script beside its three libraries, outside the repo
+HEALTH_ALERT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ntfy.sh
-source "$HEALTH_REPO_DIR/ubuntu/lib/ntfy.sh"
+source "$HEALTH_ALERT_DIR/ntfy.sh"
 # shellcheck source=lib/paths.sh
-source "$HEALTH_REPO_DIR/ubuntu/lib/paths.sh"
+source "$HEALTH_ALERT_DIR/paths.sh"
+# shellcheck source=../lib/status-format.sh
+source "$HEALTH_ALERT_DIR/status-format.sh"
 
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
-
-# A syntax error in lib/common.sh would kill this script on source, before it could push.
-if [ "${1:-}" == status ] && ! syntax="$("$BASH" -n "$HEALTH_REPO_DIR/lib/common.sh" 2>&1)"; then
-    echo "lib/common.sh has a syntax error:" >&2
-    printf '%s\n' "$syntax" >&2
-    [ -r "$NTFY_URL_FILE" ] || exit 1
-    url="$(head -n 1 "$NTFY_URL_FILE")"
-    [ -n "$url" ] || exit 1
-    message="Health check couldn't run: lib/common.sh has a syntax error"
-    last="$(grep -v '^[[:space:]]*$' <<< "$syntax" | tail -n 1)" || last=""
-    [ -z "$last" ] || message="$message"$'\n\n'"bash -n's last output: $last"
-    ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning" ||
-        echo "Couldn't push the health alert to ntfy." >&2
-    exit 1
-fi
-
-# shellcheck source=../lib/common.sh
-source "$HEALTH_REPO_DIR/lib/common.sh"
 # ntfy turns a message over 4096 bytes into an attachment; leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 ROOT_ONLY_TEXT='run sudo -v, then status'
@@ -37,16 +22,17 @@ ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effe
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
 REPUSH_SECONDS=604800
 # The network may come up late. 20 * (10s curl timeout + 10s wait) must fit the unit's
-# TimeoutStartSec=10min (health_unit in lib/alerts.sh).
+# TimeoutStartSec=10min (systemd/dotfiles-boot-notice.service).
 BOOT_ATTEMPTS=20
 BOOT_RETRY_SECONDS=10
 BOOT_ID_FILE="${DOTFILES_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
-    echo "Usage: bash ubuntu/health-alert.sh status | boot"
-    echo "status pushes what setup's --status --quick reports needs attention to ntfy; boot pushes"
-    echo "that this machine started. Both do nothing until just alerts saves a URL."
+    echo "Usage: bash health-alert.sh status | boot"
+    echo "status pushes what setup's --status --quick, run in $DOTFILES_REPO, reports needs"
+    echo "attention to ntfy; boot pushes that this machine started. Both do nothing until just alerts"
+    echo "saves a URL."
 }
 
 ntfy_url() {
@@ -112,9 +98,15 @@ status_alert() {
     local root_only=false
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
+    if [ ! -e "$DOTFILES_REPO/setup.sh" ]; then
+        echo "No repo at $DOTFILES_REPO, so the health check couldn't run." >&2
+        ntfy_push "$url" "Needs attention on $(hostname)" "Health check couldn't run: no repo at $DOTFILES_REPO" \
+            "Tags: warning" || echo "Couldn't push the health alert to ntfy." >&2
+        return 1
+    fi
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
-        out="$("$BASH" "$HEALTH_REPO_DIR/$runner" --status --quick < /dev/null 2>&1)" || status=$?
+        out="$("$BASH" "$DOTFILES_REPO/$runner" --status --quick < /dev/null 2>&1)" || status=$?
         ! has_root_only_items <<< "$out" || root_only=true
         case "$status" in
             0) ;;

@@ -8,7 +8,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=lib/ntfy.sh
 source "$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
 # shellcheck source=lib/paths.sh

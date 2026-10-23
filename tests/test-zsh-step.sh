@@ -44,7 +44,7 @@ assert_eq "$expected" "$(startup_files)" "the startup files"
 assert_exit 0 apply
 assert_not_contains "$RUN_OUTPUT" "Added"
 assert_eq "$expected" "$(startup_files)" "the startup files after a second run"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         profile.sh sourced in ~/.profile"
 assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zshenv"
 assert_contains "$RUN_OUTPUT" "skipped    path.zsh sourced in ~/.zprofile: macOS only"
@@ -95,7 +95,7 @@ assert_contains "$RUN_OUTPUT" "zsh is already the login shell."
 replace_fn login_zsh_path 'echo /bin/zsh'
 
 replace_fn current_login_shell 'echo /opt/homebrew/bin/zsh'
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt/homebrew/bin/zsh"
 
 # A file it can't copy fails the step after it copies the rest

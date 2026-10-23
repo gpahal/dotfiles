@@ -133,28 +133,27 @@ for os in macos ubuntu; do
 done
 
 # Status reports a check whose prerequisite is missing as unknown, not missing or a crash
-chrome_status_without_curl() {
+chrome_status_without_gpg() {
     stub_apt_config
     load_script chrome/install.sh
     as_os ubuntu
-    stub dpkg-query 'exit 1'
-    stub_dpkg_arch
-    hide curl
-    assert_exit 3 status
-    assert_contains "$RUN_OUTPUT" "unknown    google-chrome-stable from Google's .deb: curl isn't installed"
+    stub dpkg-query 'echo "install ok installed"'
+    stub snap 'exit 1'
+    hide gpg
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "unknown    Google's apt key ($GOOGLE_KEYRING) is the one the step pins: gpg isn't installed"
     assert_not_contains "$RUN_OUTPUT" "command not found"
-    # The report carries on past it
-    assert_contains "$RUN_OUTPUT" "Chrome origins allowed in unattended-upgrades"
+    assert_contains "$RUN_OUTPUT" "missing    Firefox removed, since Chrome replaces it"
 }
 codex_status_without_brew() {
     load_script ai_tools/codex/install.sh
     as_os ubuntu
     hide brew codex
     stub bwrap
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "unknown    codex: brew isn't installed"
     assert_not_contains "$RUN_OUTPUT" "missing    codex (cask)"
 }
-subtest chrome_status_without_curl
+subtest chrome_status_without_gpg
 subtest codex_status_without_brew
 test_done

@@ -7,6 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 
 STEP_OS=ubuntu
 
@@ -39,18 +41,11 @@ setting_state() {
     [ "$current" == "$3" ]
 }
 
-sushi_installed() {
-    apt_installed gnome-sushi
-}
-
-install_sushi() {
-    apt_get_update && apt_get install -y gnome-sushi
-}
-
 gnome_items() {
     items_reset
     item --sudo "Quick Look: gnome-sushi, so Space in Files previews the selected file" \
-        "Install gnome-sushi, so Space in Files previews the selected file" sushi_installed install_sushi
+        "Install gnome-sushi, so Space in Files previews the selected file" \
+        "apt_installed gnome-sushi" "apt_install_fresh gnome-sushi"
 }
 
 status() {
@@ -59,7 +54,7 @@ status() {
         status_item skipped "GNOME settings: no GNOME desktop"
         return 0
     fi
-    status_require_cmd gsettings "GNOME settings" || { status_result; return; }
+    status_require_cmd gsettings "GNOME settings" || return 0
     for setting in "${GNOME_SETTINGS[@]}"; do
         IFS='|' read -r schema key value text <<< "$setting"
         state=0
@@ -72,7 +67,6 @@ status() {
     done
     gnome_items
     items_status
-    status_result
 }
 
 apply() {

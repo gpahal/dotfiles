@@ -235,7 +235,6 @@ status() {
     else
         status_skills
     fi
-    status_result
 }
 
 apply() {

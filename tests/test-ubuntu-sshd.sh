@@ -102,15 +102,13 @@ me="$(id -un)"
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 item="sshd's effective settings match $SSHD_DROP_IN"
 : > "$STUB_LOG"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
 assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
-printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd_config.d/00-local.conf"
-# A later file loses to the drop-in, so it isn't named
-echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
+printf '%s\n' "passwordauthentication yes" "allowusers someone" > "$SANDBOX/sshd-T"
 first="another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $item (AllowUsers is someone $me; $first)"
 assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes; $first)"
 assert_eq 1 "$(grep -c "PasswordAuthentication is yes" <<< "$RUN_OUTPUT")" "items naming PasswordAuthentication"
@@ -119,7 +117,7 @@ stub id 'if [ "$*" == -u ]; then echo 0; else exec /usr/bin/id "$@"; fi'
 cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-as-you"
 sshd_drop_in > "$SANDBOX/drop-in-as-root"
 mv "$SANDBOX/drop-in-as-root" "$SSHD_DROP_IN"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Password and keyboard-interactive SSH logins off: the step leaves them to root"
 assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes; $first)"
 rm "$STUB_DIR/id"
@@ -131,75 +129,43 @@ assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_
     AllowUsers is someone $me
     PasswordAuthentication is yes"
 assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
-assert_eq "PasswordAuthentication yes
-AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-rm "$SANDBOX/sshd_config.d/00-local.conf" "$SANDBOX/sshd_config.d/50-cloud-init.conf"
-# sshd -T applies a Match block for a login by you from this machine
+rm "$SANDBOX/sshd-T"
+# A Match block can override the drop-in for some logins, which sshd -T doesn't show, so the
+# settings are unverified and the file named
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
-: > "$STUB_LOG"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "ok         $item"
-assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes;"
-assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "unverified $item ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
+assert_contains "$RUN_OUTPUT" "unverified Password and keyboard-interactive SSH logins off ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
 rm "$SSHD_DROP_IN"
-DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "    PasswordAuthentication is yes"
+DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/99-match.conf has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
-# Match Address: private, tailnet, and named addresses are each sampled, and a negated one never
-# is. status_sshd alone, after one full status run.
-assert_exit 0 status
-ubuntu_items
-for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.0.113.7" \
-    "!10.9.9.9,192.168.7.1 192.168.7.1"; do
-    addr="${match##* }"
-    printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
-    : > "$STUB_LOG"
-    run status_sshd
-    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for $addr;"
-    assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
-done
-assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
-rm "$SANDBOX/sshd_config.d/99-match.conf"
-for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \
-    "fd00:*:1 fd00:1::1:1" "2001:db8:0:0:0:0:0:* 2001:db8:0:0:0:0:0:1" "fe80::1 fe80::1"; do
-    assert_eq "${match##* }" "$(range_sample "${match% *}")" "range_sample ${match% *}"
-done
-export SSH_CONNECTION="198.51.100.4 51000 192.168.1.5 22"
-: > "$STUB_LOG"
-assert_exit 0 status
-unset SSH_CONNECTION
-assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=198.51.100.4,addr=198.51.100.4"
 # Password logins went off at the reload even though another setting failed
-echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/00-local.conf"
+echo "permitrootlogin yes" > "$SANDBOX/sshd-T"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PermitRootLogin is yes"
 assert_contains "$RUN_OUTPUT" "Password logins are off now"
-rm "$SANDBOX/sshd_config.d/00-local.conf"
-# sshd -T failing after the reload: keep the drop-in, and leave ufw alone without the SSH ports
+rm "$SANDBOX/sshd-T"
+# sshd -T failing after the reload: keep the drop-in
 touch "$SANDBOX/sshd-T-fails"
-rm "$SSHD_DROP_IN" "$SANDBOX/ufw-on"
-: > "$STUB_LOG"
+rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed"
+assert_contains "$RUN_OUTPUT" "sudo sshd -T failed, so whether sshd takes $SSHD_DROP_IN is unchecked"
 assert_eq "$(DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in when sshd -T fails"
 # Unchecked, so it doesn't claim they're off
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-assert_contains "$RUN_OUTPUT" "Couldn't read the SSH ports with sudo sshd -T"
-assert_file_not_contains "$STUB_LOG" "ufw default"
-assert_file_not_contains "$STUB_LOG" "ufw allow"
-assert_file_not_contains "$STUB_LOG" "ufw --force enable"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T failed"
 rm "$SANDBOX/sshd-T-fails"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 cache_sudo no
 : > "$STUB_LOG"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified $item"
 assert_file_not_contains "$STUB_LOG" "sshd -T"
 
@@ -229,7 +195,7 @@ key_only_pending() {
     assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
     assert_contains "$RUN_OUTPUT" "Password logins stay on: $1"
     [ "${3:-}" == status ] || return 0
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off ($1"
 }
 # A console run proves nothing

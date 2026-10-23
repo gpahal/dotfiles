@@ -84,7 +84,6 @@ status() {
     fi
     status_check "rustup" rustup_installed
     status_check "Rust default toolchain (rustc and cargo)" rust_ready
-    status_result
 }
 
 apply() {

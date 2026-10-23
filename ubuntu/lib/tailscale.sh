@@ -6,9 +6,14 @@
 # run funnel or `set --ssh`, which bypasses sshd, so status reports both.
 tailscale_configured() {
     local prefs
-    prefs="$(tailscale debug prefs 2>/dev/null)" || return 1
+    prefs="$(tailscale_prefs)" || return 1
     jq -e --arg user "$(id -un)" '.AutoUpdate.Apply == true and .OperatorUser == $user' \
         <<< "$prefs" &>/dev/null
+}
+
+# Read once through a status run, which declares TAILSCALE_PREFS_CACHE_STATUS
+tailscale_prefs() {
+    memo TAILSCALE_PREFS_CACHE tailscale debug prefs 2>/dev/null
 }
 
 tailscale_state() {
@@ -35,9 +40,14 @@ tailscale_list_line() {
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
 
 # Only once apt_repo_published says Tailscale has packages for this release
-add_tailscale_repo() {
+install_tailscale() {
     add_apt_repo Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" \
-        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$TAILSCALE_KEY_FPR"
+        "$TAILSCALE_REPO/$(ubuntu_codename).noarmor.gpg" "$TAILSCALE_KEYRING" "$TAILSCALE_KEY_FPR" || return 1
+    command -v tailscale &>/dev/null || apt_get install -y tailscale
+}
+
+set_up_tailscale() {
+    sudo tailscale set --auto-update --operator="$(id -un)"
 }
 
 # Prints the host:port of each funnel, including a foreground one, or fails when it can't ask
@@ -50,7 +60,7 @@ tailscale_funnels() {
 
 tailscale_ssh_off() {
     local prefs
-    prefs="$(tailscale debug prefs 2>/dev/null)" || return 1
+    prefs="$(tailscale_prefs)" || return 1
     jq -e '.RunSSH == false' <<< "$prefs" &>/dev/null
 }
 

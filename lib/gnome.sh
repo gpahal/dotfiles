@@ -127,22 +127,70 @@ gnome_accelerator() {
     printf '%s%s\n' "$(printf '%s' "$mods" | sort -u | tr -d '\n')" "$accel"
 }
 
-# gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
-# same keys, however it's spelled, which GNOME would run instead
-gnome_keybinding_clash() {
-    local own="$2" want path binding
-    want="$(gnome_accelerator "$1")"
+# Each custom shortcut's path and binding as gnome_accelerator spells it, a tab between. Filled on
+# first use and emptied when a shortcut changes; fill it outside $( ) to keep it for the process.
+GNOME_KEYBINDING_MAP=""
+GNOME_KEYBINDING_MAP_FILLED=false
+
+gnome_keybinding_map_fill() {
+    local path binding
+    ! "$GNOME_KEYBINDING_MAP_FILLED" || return 0
+    GNOME_KEYBINDING_MAP=""
     while IFS= read -r path; do
-        [ "$path" != "$own" ] || continue
         binding="$(gnome_keybinding_get "$path" binding)" || continue
         binding="${binding#[\'\"]}"
         binding="${binding%[\'\"]}"
-        if [ -n "$binding" ] && [ "$(gnome_accelerator "$binding")" == "$want" ]; then
+        [ -n "$binding" ] || continue
+        GNOME_KEYBINDING_MAP="$GNOME_KEYBINDING_MAP$path"$'\t'"$(gnome_accelerator "$binding")"$'\n'
+    done < <(gnome_keybinding_paths)
+    GNOME_KEYBINDING_MAP_FILLED=true
+}
+
+# gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
+# same keys, however it's spelled, which GNOME would run instead
+gnome_keybinding_clash() {
+    local own="$2" want path accel
+    gnome_keybinding_map_fill
+    want="$(gnome_accelerator "$1")"
+    while IFS=$'\t' read -r path accel; do
+        if [ -n "$path" ] && [ "$path" != "$own" ] && [ "$accel" == "$want" ]; then
             echo "$path"
             return 0
         fi
-    done < <(gnome_keybinding_paths)
+    done <<< "$GNOME_KEYBINDING_MAP"
     return 1
+}
+
+# gnome_keybinding_refuse_clash <keys> <path> <name> <binding>: fails, saying so, when another
+# custom shortcut has the keys. <keys> is how messages name them, such as Super+Space.
+gnome_keybinding_refuse_clash() {
+    local clash
+    gnome_keybinding_map_fill
+    clash="$(gnome_keybinding_clash "$4" "$2")" || return 0
+    echo "  Your shortcut at $clash has $1, so $3 doesn't get it." >&2
+    return 1
+}
+
+# status_gnome_keybinding <keys> <path> <name> <command> <binding>
+status_gnome_keybinding() {
+    local clash
+    gnome_keybinding_map_fill
+    if clash="$(gnome_keybinding_clash "$5" "$2")"; then
+        status_item missing "$1 for $3: your shortcut at $clash has it; change one"
+    else
+        status_check "$1 opens $3" gnome_keybinding_is "$2" "$3" "$4" "$5"
+    fi
+}
+
+# apply_gnome_keybinding <keys> <path> <name> <command> <binding>: sets the custom shortcut unless
+# it's set or another has the keys. Sets GNOME_KEYBINDING_CHANGED=true when it changes it.
+apply_gnome_keybinding() {
+    ! gnome_keybinding_is "$2" "$3" "$4" "$5" || return 0
+    gnome_keybinding_refuse_clash "$1" "$2" "$3" "$5" || return 1
+    gnome_set_keybinding "$2" "$3" "$4" "$5" || return 1
+    echo "  $1 opens $3"
+    # shellcheck disable=SC2034 # the hotkeys step reads it
+    GNOME_KEYBINDING_CHANGED=true
 }
 
 # gnome_set_keybinding <path> <name> <command> <binding>, adding the path to the list, keeping yours.
@@ -150,6 +198,7 @@ gnome_keybinding_clash() {
 gnome_set_keybinding() {
     local path="$1" paths
     paths="$(gnome_keybinding_paths)" || return 1
+    GNOME_KEYBINDING_MAP_FILLED=false
     gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" name "$(_gsettings_string "$2")" &&
         gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" command "$(_gsettings_string "$3")" &&
         gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$path" binding "$(_gsettings_string "$4")" || return 1

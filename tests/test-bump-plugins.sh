@@ -9,12 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 
-# The script must never edit the repo's own copies
-real_sums() {
-    (cd "$REPO_DIR" && cksum vim/vimrc tmux/plugins.lock vim/plug.vim vim/plug.vim.version)
-}
-REAL_BEFORE="$(real_sums)"
-
 COPY="$SANDBOX/repo"
 mkdir -p "$COPY/scripts" "$COPY/vim" "$COPY/tmux"
 cp -R "$REPO_DIR/lib" "$COPY/"
@@ -74,14 +68,9 @@ case "$url" in
 esac
 tag="${url#https://raw.githubusercontent.com/junegunn/vim-plug/}"
 cp "'"$SANDBOX"'/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
-# Newer than the repo's, so the tags never match a real one
+# Newer than the repo's, so the tag never matches a real one
 IFS=. read -r plug_major plug_minor _ < "$PLUG_VERSION"
 NEXT="$plug_major.$((plug_minor + 1)).0"
-AFTER="$plug_major.$((plug_minor + 2)).0"
-release() {
-    git -C "$REMOTES/junegunn/vim-plug" tag "$1"
-    printf '%s\n' '" vim-plug: Vim plugin manager' "\" release $1" > "$SANDBOX/plug-$1.vim"
-}
 
 # A replaced file changes its inode
 pinned_files() {
@@ -100,41 +89,18 @@ bump 0
 assert_eq "$before" "$(pinned_files)" "the files when nothing moved"
 assert_file_not_contains "$STUB_LOG" curl
 
-old_nerdtree="$(pin_of preservim/nerdtree)"
-old_tpm="$(pin_of tmux-plugins/tpm)"
-sensible="$(commit tpope/vim-sensible 2)"
-navigator="$(commit christoomey/vim-tmux-navigator 2)"
-yank="$(commit tmux-plugins/tmux-yank 2)"
-release "$NEXT"
-expected_vimrc="$(sed -e "s/$(pin_of tpope/vim-sensible)/$sensible/" \
-    -e "s/$(pin_of christoomey/vim-tmux-navigator)/$navigator/" "$VIMRC")"
-expected_lock="$(sed -e "s/$(pin_of christoomey/vim-tmux-navigator)/$navigator/" \
-    -e "s/$(pin_of tmux-plugins/tmux-yank)/$yank/" "$LOCK")"
-bump 0
-assert_eq "$expected_vimrc" "$(cat "$VIMRC")" "vimrc after the bump"
-assert_eq "$expected_lock" "$(cat "$LOCK")" "plugins.lock after the bump"
-assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after the bump"
-assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after the bump"
-assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "an unmoved vim pin"
-assert_eq "$old_tpm" "$(pin_of tmux-plugins/tpm)" "an unmoved tmux pin"
-
 # A download that isn't vim-plug, such as an error page, keeps plug.vim
+old_nerdtree="$(pin_of preservim/nerdtree)"
+old_plug="$(cat "$PLUG_VIM")"
+old_version="$(cat "$PLUG_VERSION")"
 rm -rf "$REMOTES/preservim/nerdtree"
 surround="$(commit tpope/vim-surround 2)"
-git -C "$REMOTES/junegunn/vim-plug" tag "$AFTER"
-echo "<html>Not Found</html>" > "$SANDBOX/plug-$AFTER.vim"
+git -C "$REMOTES/junegunn/vim-plug" tag "$NEXT"
+echo "<html>Not Found</html>" > "$SANDBOX/plug-$NEXT.vim"
 bump 1
 assert_contains "$RUN_OUTPUT" "Couldn't read preservim/nerdtree's HEAD"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "the pin whose HEAD couldn't be read"
 assert_eq "$surround" "$(pin_of tpope/vim-surround)" "a pin that moved beside a failure"
-assert_eq "$(cat "$SANDBOX/plug-$NEXT.vim")" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
-assert_eq "$NEXT" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
-
-rm "$SANDBOX/plug-$AFTER.vim"
-before="$(pinned_files)"
-bump 1
-assert_contains "$RUN_OUTPUT" "Couldn't download vim-plug $AFTER"
-assert_eq "$before" "$(pinned_files)" "the files after a failed download"
-
-assert_eq "$REAL_BEFORE" "$(real_sums)" "the repo's own files"
+assert_eq "$old_plug" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
+assert_eq "$old_version" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
 test_done

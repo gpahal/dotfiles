@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
-# Not run by setup.sh, since it changes /etc with sudo. Adds its lines and keeps yours.
+# Not run by setup.sh, since it changes /etc with sudo. The repo owns the file: a run replaces
+# what you added.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -27,7 +28,6 @@ install_reattach_module() {
 
 status() {
     status_touch_id missing
-    status_result
 }
 
 apply() {
@@ -40,6 +40,10 @@ apply() {
         echo "Touch ID in tmux: $blocker." >&2
         return 1
     fi
+    if blocker="$(sudo_local_blocker)"; then
+        echo "Touch ID for sudo: $blocker." >&2
+        return 1
+    fi
 
     echo "Touch ID for sudo ($SUDO_LOCAL):"
     if [ ! -f "$REATTACH_MODULE" ] && ! reattach_source_installed; then
@@ -48,7 +52,8 @@ apply() {
     fi
     desired="$(desired_sudo_local)"
     reattach_copy_needed && copy=true
-    [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ] || write=true
+    [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ] && [ -z "$(sudo_local_unsafe)" ] ||
+        write=true
     if ! "$copy" && ! "$write"; then
         echo "  Touch ID for sudo is already on."
         return 0

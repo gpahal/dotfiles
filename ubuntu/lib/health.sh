@@ -1,17 +1,18 @@
 # shellcheck shell=bash
 # ubuntu/install.sh sets the constants.
 
-smartd_enabled() {
-    apt_installed smartmontools && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
+# Read once through a status run, which declares SMARTMONTOOLS_CACHE_STATUS
+smartmontools_installed() {
+    memo SMARTMONTOOLS_CACHE apt_installed smartmontools > /dev/null
 }
 
-# smartd's unit has ConditionVirtualization=no. IN_VM_CACHE is set by cache_checks.
+smartd_enabled() {
+    smartmontools_installed && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
+}
+
+# smartd's unit has ConditionVirtualization=no. Cached once cache_checks runs.
 in_vm() {
-    if [ -n "${IN_VM_CACHE:-}" ]; then
-        [ "$IN_VM_CACHE" == yes ]
-        return
-    fi
-    systemd-detect-virt -q 2>/dev/null
+    memo IN_VM_CACHE systemd-detect-virt -q &>/dev/null
 }
 
 smartd_active() {
@@ -154,7 +155,7 @@ status_firmware() {
 # but failed unit failed, so restart it.
 install_smartd() {
     if ! apt_installed smartmontools; then
-        apt_get install -y --no-install-recommends smartmontools || return 1
+        apt_install_fresh --no-install-recommends smartmontools || return 1
     fi
     sudo systemctl enable --now "$SMARTD_UNIT" || return 1
     in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
@@ -188,7 +189,7 @@ status_smartd_hook() {
         else
             status_item missing "$label"
         fi
-    elif apt_installed smartmontools && ! smartd_runs_hooks; then
+    elif smartmontools_installed && ! smartd_runs_hooks; then
         status_item missing "$label: $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner, which runs the hook; put it back on the DEVICESCAN line"
     else
         status_item ok "$label"

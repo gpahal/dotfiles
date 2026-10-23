@@ -75,7 +75,7 @@ open_manual_steps() {
     "$open_extension" && targets="${targets:+$targets and }the Chrome extension page"
     [ -n "$targets" ] || return 0
     # DOTFILES_ASSUME_YES means a test machine, where nobody is there to set anything.
-    if [ "${DOTFILES_ASSUME_YES:-}" == 1 ]; then
+    if [ "${DOTFILES_ASSUME_YES:-}" == 1 ] && on_test_machine; then
         echo "  Not opening $targets: DOTFILES_ASSUME_YES is set."
         return 0
     fi

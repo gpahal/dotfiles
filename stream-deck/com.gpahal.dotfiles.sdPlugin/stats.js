@@ -150,6 +150,10 @@ function createSampler({
   let topPrev = null;
   let cpuPrev = cpuTimes();
   let netPrev = null;
+  // Found after each reset(), and again only when a found sensor stops reading, since /sys's layout
+  // rarely changes while the keys show
+  let sensorPaths = null;
+  const physicalNames = new Map();
   const cpuHistory = [];
   const gpuHistory = [];
   let macmon = null;
@@ -229,6 +233,8 @@ function createSampler({
     topPrev = null;
     cpuHistory.length = 0;
     gpuHistory.length = 0;
+    sensorPaths = null;
+    physicalNames.clear();
   }
 
   // A missing or unreadable file is null, so its key shows a dash
@@ -241,7 +247,10 @@ function createSampler({
 
   // Physical interfaces only: docker0 and tailscale0 carry traffic they already count, and lo's
   // never leaves the machine
-  const physical = (name) => fs.existsSync(`${sysRoot}/class/net/${name}/device`);
+  const physical = (name) => {
+    if (!physicalNames.has(name)) physicalNames.set(name, fs.existsSync(`${sysRoot}/class/net/${name}/device`));
+    return physicalNames.get(name);
+  };
 
   // Shares of each process's CPU time since the last sample; one core is 100%, as on macOS
   async function linuxTop() {
@@ -274,13 +283,43 @@ function createSampler({
     return Promise.all(dirs.map(async (dir) => ({ dir: `${base}/${dir}`, name: (await read(`${base}/${dir}/name`))?.trim() })));
   }
 
-  // The first of the labels the sensor has; in °C
-  async function hwmonTemp(dir, labels) {
+  // The input of the first of the labels the sensor has
+  async function hwmonTempInput(dir, labels) {
     const files = (await fs.promises.readdir(dir).catch(() => [])).filter((f) => /^temp\d+_label$/.test(f));
     const found = new Map(await Promise.all(files.map(async (f) => [(await read(`${dir}/${f}`))?.trim(), f])));
     const file = labels.map((label) => found.get(label)).find(Boolean);
-    const value = file ? await readNumber(`${dir}/${file.replace("_label", "_input")}`) : null;
-    return value == null ? null : value / 1000;
+    return file ? `${dir}/${file.replace("_label", "_input")}` : null;
+  }
+
+  async function findSensors() {
+    const sensors = await hwmons();
+    const cpuDir = sensors.find((h) => h.name === "k10temp")?.dir;
+    const gpuDir = sensors.find((h) => h.name === "amdgpu")?.dir;
+    return {
+      cpuTemp: cpuDir ? await hwmonTempInput(cpuDir, CPU_LABELS) : null,
+      gpuTemp: gpuDir ? await hwmonTempInput(gpuDir, ["edge"]) : null,
+      gpuPower: gpuDir ? `${gpuDir}/power1_input` : null,
+    };
+  }
+
+  // The values of the sensors the keys name. A failed read of a found sensor finds the sensors
+  // again, once a sample, since a driver that reloads can move them. paths survives a reset()
+  // during an await.
+  async function readSensors(keys) {
+    let paths = sensorPaths;
+    let fresh = !paths;
+    if (fresh) paths = sensorPaths = await findSensors();
+    const values = {};
+    for (const key of keys) {
+      let value = paths[key] ? await readNumber(paths[key]) : null;
+      if (value == null && !fresh && paths[key]) {
+        paths = sensorPaths = await findSensors();
+        fresh = true;
+        value = paths[key] ? await readNumber(paths[key]) : null;
+      }
+      values[key] = value;
+    }
+    return values;
   }
 
   async function gpuBusy() {
@@ -343,19 +382,17 @@ function createSampler({
     if (needed.has("temperature") || needed.has("power")) {
       jobs.push(
         (async () => {
-          const sensors = await hwmons();
-          const cpuDir = sensors.find((h) => h.name === "k10temp")?.dir;
-          const gpuDir = sensors.find((h) => h.name === "amdgpu")?.dir;
+          const keys = [];
+          if (needed.has("temperature")) keys.push("cpuTemp", "gpuTemp");
+          if (needed.has("power")) keys.push("gpuPower");
+          // Temperatures in m°C, and power in µW
+          const { cpuTemp, gpuTemp, gpuPower } = await readSensors(keys);
           if (needed.has("temperature")) {
-            const cpu = cpuDir ? await hwmonTemp(cpuDir, CPU_LABELS) : null;
-            const gpu = gpuDir ? await hwmonTemp(gpuDir, ["edge"]) : null;
-            s.temperature = cpu == null ? null : { cpu, gpu };
+            s.temperature = cpuTemp == null ? null : { cpu: cpuTemp / 1000, gpu: gpuTemp == null ? null : gpuTemp / 1000 };
           }
           if (needed.has("power")) {
-            // In µW
-            const gpuMicro = gpuDir ? await readNumber(`${gpuDir}/power1_input`) : null;
             const rapl = await raplPower();
-            s.power = rapl && { package: rapl.pkg, cores: rapl.cores, gpu: gpuMicro == null ? null : gpuMicro / 1e6 };
+            s.power = rapl && { package: rapl.pkg, cores: rapl.cores, gpu: gpuPower == null ? null : gpuPower / 1e6 };
           }
         })(),
       );

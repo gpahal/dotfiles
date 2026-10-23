@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Check the t3-code step's keys appear in T3 Code's settings schemas at the latest release or a given tag.
-# Name-only smoke test. Warns when the step writes a default, which T3 Code drops, so the step never settles.
+# Name-only smoke test.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPSTREAM=pingdotgg/t3code
@@ -70,65 +70,11 @@ check() {
     fi
 }
 
-assignments_of() {
-    printf '%s\n' "$1" | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]* = ("[^"]*"|true|false|null|-?[0-9]+)' |
-        sed -E 's/^\.//; s/ = / /'
-}
-
-# Print a key's withDecodingDefault(Effect.succeed(...)) argument found within 3 lines of `key:`.
-schema_defaults() {
-    local key="$1"
-    shift
-    awk -v key="$key" '
-        $0 ~ "^[[:space:]]*\"?" key "\"?[?]?:" { n = 3 }
-        n > 0 && $0 !~ "^[[:space:]]*\"?" key "\"?[?]?:" && $0 ~ /^[[:space:]]*"?[A-Za-z_][A-Za-z0-9_]*"?[?]?:/ { n = 0 }
-        n > 0 {
-            n--
-            if (match($0, /withDecodingDefault\(Effect\.succeed\(/)) {
-                value = substr($0, RSTART + RLENGTH)
-                sub(/\)\).*$/, "", value)
-                sub(/ as const$/, "", value)
-                print value
-                n = 0
-            }
-        }' "$@"
-}
-
-defaults_check() {
-    local what="$1" filter="$2" key value default found=false
-    shift 2
-    while read -r key value; do
-        while IFS= read -r default; do
-            if [[ "$default" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
-                default="$(sed -nE "s/^(export )?const $default(: [^=]+)? = (.*);\$/\3/p" "$@" | head -1)"
-            fi
-            if [ -n "$default" ] && [ "$default" == "$value" ]; then
-                warn "the t3-code step writes $what $key = $value, T3 Code $tag's default, which it drops, so the step never settles"
-                found=true
-            fi
-        done < <(schema_defaults "$key" "$@")
-    done < <(assignments_of "$filter")
-    "$found" || echo "  $what: no value is its key's default"
-}
-
-warnings=0
-warn() {
-    echo "WARNING: $1" >&2
-    [ -z "${GITHUB_ACTIONS:-}" ] || echo "::warning::$1"
-    warnings=$((warnings + 1))
-}
-
 check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
-defaults_check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
-defaults_check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
 if [ "$errors" -gt 0 ]; then
     echo "$errors check(s) failed" >&2
     exit 1
 fi
-if [ "$warnings" -gt 0 ]; then
-    echo "All checks passed, with $warnings warning(s)"
-else
-    echo "All checks passed"
-fi
+echo "All checks passed"

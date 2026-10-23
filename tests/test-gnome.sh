@@ -69,7 +69,7 @@ rm "$SANDBOX/gsettings/no-schema"
 source "$REPO_DIR/lib/gnome.sh"
 # Another custom shortcut on the same keys clashes however its binding is spelled
 user_shortcut
-gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "<Ctrl><Super>t"
+gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "'<Ctrl><Super>t'"
 own="$GNOME_KEYBINDING_DIR/dotfiles/"
 for binding in "<Ctrl><Super>t" "<Super><Control>T" "<super><primary>t"; do
     assert_eq "$GNOME_KEYBINDING_DIR/custom0/" "$(gnome_keybinding_clash "$binding" "$own")" "the clash with $binding"
@@ -78,6 +78,10 @@ for binding in "<Super>t" "<Shift><Control><Super>t" "<Ctrl><Super>y"; do
     assert_exit 1 gnome_keybinding_clash "$binding" "$own"
 done
 assert_exit 1 gnome_keybinding_clash "<Super><Control>t" "$GNOME_KEYBINDING_DIR/custom0/"
+# The map of bindings is kept through a run, so a change must refresh it
+gnome_keybinding_map_fill
+gnome_set_keybinding "$own" Own own "<Super>y"
+assert_eq "$own" "$(gnome_keybinding_clash "<Super>y" "$GNOME_KEYBINDING_DIR/custom0/")" "the clash with a shortcut set in this run"
 
 # An enabled extension's state, as GNOME Shell reports it
 extension_states() {
@@ -109,7 +113,7 @@ else
 fi
 
 # A failed set fails the step, and it carries on with the rest
-gsettings set org.gnome.desktop.peripherals.keyboard delay 500
+gsettings set org.gnome.desktop.peripherals.keyboard delay "uint32 500"
 gsettings set org.gnome.nautilus.preferences default-folder-viewer "'icon-view'"
 stub gsettings 'file="$SANDBOX/gsettings/$2.$3"
 case "$1" in

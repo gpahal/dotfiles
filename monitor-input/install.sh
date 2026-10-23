@@ -8,7 +8,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=lib/paths.sh
 source "$DOTFILES_DIR/monitor-input/lib/paths.sh"
 
@@ -16,14 +16,6 @@ STEP_OS=ubuntu
 
 SCRIPT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input"
 UNIT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input.service"
-
-ddcutil_installed() {
-    apt_installed ddcutil
-}
-
-install_ddcutil() {
-    apt_install_fresh ddcutil
-}
 
 script_installed() {
     cmp -s "$SCRIPT_SRC" "$MONITOR_INPUT_SCRIPT" && [ -x "$MONITOR_INPUT_SCRIPT" ]
@@ -44,7 +36,7 @@ install_unit() {
 monitor_input_items() {
     items_reset
     item --sudo "ddcutil" "Install ddcutil, which sets the monitor's input over DDC/CI" \
-        ddcutil_installed install_ddcutil
+        "apt_installed ddcutil" "apt_install_fresh ddcutil"
     item --sudo "Input switcher ($MONITOR_INPUT_SCRIPT)" "Install $MONITOR_INPUT_SCRIPT" \
         script_installed install_script
     item --sudo "Input switcher's service ($MONITOR_INPUT_UNIT)" "Install $MONITOR_INPUT_UNIT" \
@@ -86,7 +78,6 @@ status() {
     monitor_input_items
     items_status
     status_settings
-    status_result
 }
 
 apply() {

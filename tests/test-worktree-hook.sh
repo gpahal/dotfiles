@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# serial
 
 # Claude Code's worktree hook, run against local repos: WorktreeCreate's base, fetch, and copies,
 # and what WorktreeRemove and SessionEnd remove or keep. test-claude-settings.sh covers its

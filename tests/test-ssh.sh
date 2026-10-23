@@ -33,7 +33,7 @@ snapshot "$SSH_CONFIG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "$(printf '    IgnoreUnknown UseKeychain\n    AddKeysToAgent yes\n    UseKeychain yes')"
 assert_unchanged "$SSH_CONFIG" "with your Host * block"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The Host * block in ~/.ssh/config has IgnoreUnknown UseKeychain, AddKeysToAgent, and UseKeychain; add IgnoreUnknown UseKeychain and AddKeysToAgent yes and UseKeychain yes to the top of it by hand"
 
 # ssh reads in order: IgnoreUnknown must precede UseKeychain
@@ -75,7 +75,7 @@ AGENT="$HOME/Library/LaunchAgents/dotfiles.ssh-add.plist"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The dotfiles.ssh-add LaunchAgent is loaded"
 
 replace_fn home_is_real 'return 0'
@@ -88,7 +88,7 @@ stub launchctl 'case "$1" in
 esac'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Loaded the dotfiles.ssh-add LaunchAgent"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         The dotfiles.ssh-add LaunchAgent is loaded"
 
 # A Match line with * isn't a Host * block
@@ -116,7 +116,7 @@ assert_exit 0 main
 [ ! -e "$SSH_CONFIG" ] || fail "Ubuntu got $SSH_CONFIG: $(cat "$SSH_CONFIG")"
 [ ! -e "$AGENT" ] || fail "Ubuntu got the LaunchAgent"
 assert_file_not_contains "$STUB_LOG" "launchctl"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    A Host * block that loads keys from the keychain: macOS only"
 assert_contains "$RUN_OUTPUT" "skipped    The dotfiles.ssh-add LaunchAgent: macOS only"
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
@@ -125,33 +125,24 @@ snapshot "$SSH_CONFIG"
 assert_exit 0 main
 assert_unchanged "$SSH_CONFIG" "on Ubuntu"
 assert_eq 600 "$(file_mode "$SSH_CONFIG")" "the config's mode"
-chmod 755 "$HOME/.ssh"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh (mode 700)"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Set ~/.ssh to mode 700"
+# Too open a mode is fixed; a symlink is judged by its target
+for case in "755 $HOME/.ssh 700" "644 $SSH_CONFIG 600"; do
+    read -r bad path mode <<< "$case"
+    label="Only you can read ~${path#"$HOME"} (mode $mode)"
+    chmod "$bad" "$path"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    $label"
+    assert_exit 0 main
+    assert_exit 0 main --status
+    mv "$path" "$SANDBOX/real"
+    ln -s "$SANDBOX/real" "$path"
+    assert_exit 0 main --status
+    assert_contains "$RUN_OUTPUT" "ok         $label"
+    rm "$path"
+    mv "$SANDBOX/real" "$path"
+done
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "/.ssh and its config are already private"
-assert_exit 0 status
-chmod 644 "$SSH_CONFIG"
-assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh/config (mode 600)"
-assert_exit 0 main
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
-# Symlinks are judged by their targets
-mv "$HOME/.ssh" "$SANDBOX/ssh-real"
-ln -s "$SANDBOX/ssh-real" "$HOME/.ssh"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
-rm "$HOME/.ssh"
-mv "$SANDBOX/ssh-real" "$HOME/.ssh"
-mv "$SSH_CONFIG" "$SANDBOX/ssh-config"
-ln -s "$SANDBOX/ssh-config" "$SSH_CONFIG"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
-rm "$SSH_CONFIG"
-mv "$SANDBOX/ssh-config" "$SSH_CONFIG"
 
 # An unwritable config fails; main runs it under ||, which turns set -e off inside it
 add_host_star_checked() {

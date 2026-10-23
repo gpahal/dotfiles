@@ -10,10 +10,29 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
+
+# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
+# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
+# mean owned by you. Call it after load_script.
+pam_sandbox() {
+    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
+    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
+        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    # OpenPAM finds macOS's .so.2 modules by bare name
+    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
+    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
+        TID_LINE="auth       sufficient     pam_tid.so"
+}
+
 stub scutil 'echo Garvits-MacBook-Pro'
 
 load_script macos/install.sh
 as_os macos
+# firewall() below stubs socketfilterfw here
+APP_FIREWALL_DIR="$STUB_DIR"
 # The macos step mustn't load the Touch ID script's functions
 assert_eq "" "$(declare -F usage install_reattach_module || true)" "the Touch ID script's functions"
 pam_sandbox
@@ -68,27 +87,16 @@ firewall() {
     *) exit 1 ;;
 esac"
 }
-firewall 'Firewall is enabled. (State = 1)\n'
-firewall_on || fail "firewall state 1 read as off"
-firewall 'Firewall is blocking all non-essential incoming connections. (State = 2)\n'
-firewall_on || fail "firewall state 2, blocking all, read as off"
-firewall 'Firewall is disabled. (State = 0)\n'
-! firewall_on || fail "firewall state 0 read as on"
-firewall 'Must be root to change settings.\n'
-! firewall_on || fail "an unreadable firewall state read as on"
-firewall '' 'Firewall stealth mode is on\n'
-stealth_mode_on || fail "stealth mode on read as off"
-firewall '' 'Firewall stealth mode is off\n'
-! stealth_mode_on || fail "stealth mode off read as on"
-# socketfilterfw isn't on PATH on macOS
-firewall_off_path() {
-    hide socketfilterfw
+# The step runs the system's socketfilterfw, not one earlier on PATH
+firewall_system_copy() {
+    firewall 'Firewall is disabled. (State = 0)\n'
     APP_FIREWALL_DIR="$SANDBOX/alf"
     mkdir -p "$APP_FIREWALL_DIR"
-    cp "$STUB_DIR/fdesetup" "$APP_FIREWALL_DIR/socketfilterfw"
-    assert_eq "$APP_FIREWALL_DIR/socketfilterfw" "$(firewall_cmd)" "socketfilterfw's path"
+    mv "$STUB_DIR/socketfilterfw" "$APP_FIREWALL_DIR/socketfilterfw"
+    firewall 'Firewall is enabled. (State = 1)\n'
+    ! firewall_on || fail "firewall_on ran the socketfilterfw on PATH"
 }
-subtest firewall_off_path
+subtest firewall_system_copy
 read_only
 
 replace_fn default_matches 'return 0'
@@ -98,7 +106,7 @@ rm "$SUDO_LOCAL"
 firewall 'Firewall is disabled. (State = 0)\n' 'Firewall stealth mode is off\n'
 stub defaults 'exit 1'
 df_lines "/dev/disk3s5 $((994 * GIB)) $((600 * GIB)) $((380 * GIB)) 62% /System/Volumes/Data"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo"
 assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"

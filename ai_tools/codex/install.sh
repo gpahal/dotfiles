@@ -13,8 +13,6 @@ source "$DOTFILES_DIR/lib/casks.sh"
 source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
-# shellcheck source=../lib/user-instructions.sh
-source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -43,48 +41,24 @@ codex_yq_too_old() {
     echo "yq ${version:-on PATH} isn't mikefarah's yq $YQ_MIN_VERSION or newer, which the Codex config edit needs; run brew upgrade yq"
 }
 
-# Usage: codex_keepable <yq path> <TOML value> <name> [ubuntu]
-codex_keepable() {
-    keepable codex "$1" "$2" "Codex's $3" "${4:-}"
-}
-keepable_forget codex
-codex_keepable .model '"gpt-6.1-sol"' "model (model)"
-codex_keepable .model_reasoning_effort '"high"' "reasoning effort (model_reasoning_effort)"
-codex_keepable .tui.status_line '["model-with-reasoning", "current-dir", "git-branch", "context-used"]' \
-    "status line (tui.status_line)"
-# Over SSH a tmux pane may lack TERM_PROGRAM, and `auto` then rings the bell; OSC 9 reaches Ghostty.
-codex_keepable .tui.notification_method '"osc9"' "notification method (tui.notification_method)" ubuntu
-
-codex_keep_current() {
-    local value
-    value="$(yq -p toml -o json -I=0 "$1" "$CODEX_CONFIG" 2>/dev/null)" || return 0
-    [ "$value" == null ] || keepable_unquote "$value"
+# Values of your own are kept (keepable.sh). Built when used, since tests switch the OS after
+# loading. The values are TOML that is also JSON.
+codex_keep_list() {
+    CODEX_KEEP=(
+        .model '"gpt-6.1-sol"' "Codex's model (model)"
+        .model_reasoning_effort '"high"' "Codex's reasoning effort (model_reasoning_effort)"
+        .tui.status_line '["model-with-reasoning", "current-dir", "git-branch", "context-used"]'
+        "Codex's status line (tui.status_line)"
+    )
+    # Over SSH a tmux pane may lack TERM_PROGRAM, and `auto` then rings the bell; OSC 9 reaches Ghostty.
+    if is_ubuntu; then
+        CODEX_KEEP+=(.tui.notification_method '"osc9"' "Codex's notification method (tui.notification_method)")
+    fi
 }
 
-codex_keep_wanted() {
-    keepable_unquote "$(printf 'v = %s\n' "$1" | yq -p toml -o json -I=0 '.v')"
-}
-
-# -I=0 keeps each value on one line, so output lines line up with the paths
-codex_keep_current_all() {
-    local filter values value
-    filter="$(printf '%s, ' "$@")"
-    values="$(yq -p toml -o json -I=0 "[${filter%, }] | .[]" "$CODEX_CONFIG" 2>/dev/null)" || return 0
-    while IFS= read -r value; do
-        if [ "$value" == null ]; then echo; else keepable_unquote "$value"; fi
-    done <<< "$values"
-}
-
-codex_keep_wanted_all() {
-    local i=0 toml="" filter="" value
-    for value; do
-        toml+="v$i = $value"$'\n'
-        filter+="${filter:+, }.v$i"
-        i=$((i + 1))
-    done
-    printf '%s' "$toml" | yq -p toml -o json -I=0 "[$filter] | .[]" | while IFS= read -r value; do
-        keepable_unquote "$value"
-    done
+codex_keep_read() {
+    codex_keep_list
+    keep_read CODEX_KEEP "$(yq -p toml -o json -I=0 "$CODEX_CONFIG" 2>/dev/null)"
 }
 
 # Values are TOML, which for the types used here is also a yq literal
@@ -94,12 +68,13 @@ codex_set() {
 }
 
 codex_settings() {
-    local i
+    local k
     CODEX_PATHS=()
     CODEX_VALUES=()
-    for i in $(keepable_indexes codex); do
-        if "${KEEP_REPLACE[i]}" || [ -z "$(keepable_current codex "$i")" ]; then
-            codex_set "${KEEP_PATHS[i]}" "${KEEP_VALUES[i]}"
+    codex_keep_read
+    for ((k = 0; k < ${#CODEX_KEEP[@]} / 3; k++)); do
+        if [ "$(keep_value CODEX_KEEP REPLACE "$k")" == true ] || [ -z "$(keep_value CODEX_KEEP CURRENT "$k")" ]; then
+            codex_set "${CODEX_KEEP[k * 3]}" "${CODEX_KEEP[k * 3 + 1]}"
         fi
     done
     codex_set .model_verbosity '"low"'
@@ -186,52 +161,6 @@ codex_comments_kept() {
     [ -z "$(LC_ALL=C comm -23 <(codex_comments "$2") <(codex_comments "$1"))" ]
 }
 
-# Usage: codex_add_tail <edited> <source>. Restores the comments after the source's last key, which
-# yq drops, at the end of the last table both files share. Headers compare by normalized path,
-# since yq rewrites them.
-codex_add_tail() {
-    local edited="$1" tmp
-    tmp="$(mktemp)" || return 1
-    awk -v source="$2" -v q="'" '
-        function path(s,   key) {
-            sub(/^[[:space:]]+/, "", s)
-            sub(/\][[:space:]]*#.*$/, "]", s)
-            sub(/[[:space:]]+$/, "", s)
-            gsub(/[[:space:]]*\.[[:space:]]*/, ".", s)
-            gsub(/\[[[:space:]]+/, "[", s)
-            gsub(/[[:space:]]+\]/, "]", s)
-            while (match(s, q "[^" q "\"\\\\]*" q)) {
-                s = substr(s, 1, RSTART - 1) "\"" substr(s, RSTART + 1, RLENGTH - 2) "\"" \
-                    substr(s, RSTART + RLENGTH)
-            }
-            while (match(s, /"[A-Za-z0-9_-]+"/)) {
-                s = substr(s, 1, RSTART - 1) substr(s, RSTART + 1, RLENGTH - 2) \
-                    substr(s, RSTART + RLENGTH)
-            }
-            return s
-        }
-        FILENAME == source {
-            if (/^[[:space:]]*\[/) header[path($0)] = 1
-            if (/^[[:space:]]*(#|$)/) tail = tail $0 "\n"; else tail = ""
-            next
-        }
-        FNR == 1 { pass++ }
-        pass == 1 {
-            if (/^\[/) {
-                if (path($0) in header) { at = 0; last = FNR }
-                else if (!at) at = FNR
-            }
-            next
-        }
-        FNR == at {
-            sub(/^\n+/, "", tail)
-            if (tail != "") printf "%s\n", tail
-        }
-        { print }
-        END { if (!at) printf "%s", tail }
-    ' "$2" "$edited" "$edited" > "$tmp" && mv "$tmp" "$edited"
-}
-
 # Print the path of an edited copy of the config. yq can drop trailing comments and misplace values
 # after top-level dotted keys or arrays of inline tables, so the copy is verified before use.
 codex_config_edited() {
@@ -254,10 +183,6 @@ codex_config_edited() {
         rm -f "$edited"
         return 1
     fi
-    if ! codex_comments_kept "$edited" "$source" && ! codex_add_tail "$edited" "$source"; then
-        rm -f "$edited"
-        return 1
-    fi
     if ! codex_comments_kept "$edited" "$source"; then
         echo "  yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged." >&2
         rm -f "$edited"
@@ -276,17 +201,10 @@ codex_config_matches() {
 }
 
 configure_codex() {
-    local result=0
-    keepable_load codex
-    configure_codex_settings || result=$?
-    keepable_unload
-    return "$result"
-}
-
-configure_codex_settings() {
     echo "Configuring Codex..."
     local edited
-    keepable_choose codex
+    codex_keep_read
+    keep_choose CODEX_KEEP
     local settings="model, output, sandbox, approval, data-sharing, and status line settings"
     if is_macos; then
         settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
@@ -296,11 +214,13 @@ configure_codex_settings() {
         return 0
     fi
 
-    # Check the edit works before asking to quit ChatGPT, which can rewrite the config as it quits
-    edited="$(codex_config_edited)" || return 1
-    rm -f "$edited"
+    # Check the edit works before asking to quit ChatGPT, which can rewrite the config as it quits,
+    # so the edit is made again after
+    if pgrep -ax "$(regex_escape ChatGPT)" > /dev/null 2>&1; then
+        edited="$(codex_config_edited)" || return 1
+        rm -f "$edited"
+    fi
     ensure_app_quit "ChatGPT" || return 0
-    keepable_load codex
     edited="$(codex_config_edited)" || return 1
     if ! maybe_backup "$CODEX_CONFIG"; then
         rm -f "$edited"
@@ -312,18 +232,16 @@ configure_codex_settings() {
 }
 
 user_instructions_files() {
-    user_instructions_to "$CODEX_INSTRUCTIONS" "$@"
+    "$1" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$CODEX_INSTRUCTIONS"
 }
 
 install_codex_cli() {
     install_cask codex "$(codex_cask_path)"
 }
 
-# Prints nothing without brew, rather than /bin/codex
+# Prints nothing without Homebrew's environment, rather than /bin/codex
 codex_cask_path() {
-    local prefix
-    prefix="$(brew --prefix 2>/dev/null)" && [ -n "$prefix" ] || return 0
-    echo "$prefix/bin/codex"
+    [ -z "${HOMEBREW_PREFIX:-}" ] || echo "$HOMEBREW_PREFIX/bin/codex"
 }
 
 codex_status_signed_in() {
@@ -437,13 +355,14 @@ status() {
     if tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$CODEX_DIR"; then
         if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             :
+        elif ! status_require_cmd jq "Settings in ~/.codex/config.toml"; then
+            :
         elif ! codex_yq_new_enough; then
             status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
         else
-            keepable_load codex
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
-            keepable_status codex
-            keepable_unload
+            codex_keep_read
+            keep_status CODEX_KEEP
         fi
         user_instructions_files status_file
         codex_items
@@ -454,13 +373,13 @@ status() {
     else
         status_item skipped "Codex's sandbox: macOS's built-in sandbox needs no setup"
     fi
-    status_result
 }
 
 apply() {
     echo "Setting up Codex..."
     tool_home_guard Codex CODEX_HOME "$CODEX_DIR" || return 1
     require_cmd yq || return 1
+    require_cmd jq || return 1
     if ! codex_yq_new_enough; then
         echo "  $(codex_yq_too_old)" >&2
         return 1
@@ -472,7 +391,8 @@ apply() {
     fi
     install_codex_cli || result=1
     configure_codex || result=1
-    install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
+    echo "  User-level instructions:"
+    user_instructions_files copy_file || result=1
     if is_ubuntu; then
         codex_items
         items_apply codex_credentials_private || result=1

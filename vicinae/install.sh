@@ -46,21 +46,12 @@ VICINAE_KEYBINDING="$GNOME_KEYBINDING_DIR/dotfiles-vicinae/"
 INPUT_SOURCE_SCHEMA=org.gnome.desktop.wm.keybindings
 INPUT_SOURCE_KEY=switch-input-source
 
-# macOS always uses ~/.config
-vicinae_config_dir() {
-    if is_macos; then
-        echo "$HOME/.config/vicinae"
-    else
-        echo "${XDG_CONFIG_HOME:-$HOME/.config}/vicinae"
-    fi
-}
-
 vicinae_settings() {
-    echo "$(vicinae_config_dir)/settings.json"
+    echo "$(app_config_dir vicinae)/settings.json"
 }
 
 vicinae_files() {
-    "$1" "$VICINAE_SHARED" "$(vicinae_config_dir)/$VICINAE_IMPORT"
+    "$1" "$VICINAE_SHARED" "$(app_config_dir vicinae)/$VICINAE_IMPORT"
 }
 
 # <key>|<value as JSON>|<what it does>: this OS's settings, which settings.json gets when it lacks
@@ -202,19 +193,11 @@ status_settings() {
     [ -z "$overrides" ] || status_item info "$file overrides the repo's $VICINAE_IMPORT for: $overrides"
 }
 
-libopengl_installed() {
-    apt_installed "$VICINAE_APT_PACKAGE"
-}
-
-install_libopengl() {
-    apt_install_fresh "$VICINAE_APT_PACKAGE"
-}
-
 vicinae_items() {
     items_reset
     item --sudo "$VICINAE_APT_PACKAGE, which Vicinae needs to start" \
         "Install $VICINAE_APT_PACKAGE, the OpenGL library Vicinae needs to start" \
-        libopengl_installed install_libopengl
+        "apt_installed $VICINAE_APT_PACKAGE" "apt_install_fresh $VICINAE_APT_PACKAGE"
 }
 
 # The installer installs or updates to the latest release, and does nothing when it's current.
@@ -278,8 +261,9 @@ vicinae_command() {
     printf "'%s' toggle" "$VICINAE_BIN"
 }
 
-hotkey_current() {
-    gnome_keybinding_is "$VICINAE_KEYBINDING" Vicinae "$(vicinae_command)" "$VICINAE_KEYS"
+# vicinae_hotkey <status|apply>_gnome_keybinding
+vicinae_hotkey() {
+    "$1" Super+Space "$VICINAE_KEYBINDING" Vicinae "$(vicinae_command)" "$VICINAE_KEYS"
 }
 
 input_switch_free() {
@@ -295,16 +279,11 @@ free_input_switch() {
     echo "  Freed Super+Space from switching keyboard layouts"
 }
 
+# Frees the layout switch only when Vicinae can have the keys
 setup_hotkey() {
-    local clash
-    if clash="$(gnome_keybinding_clash "$VICINAE_KEYS" "$VICINAE_KEYBINDING")"; then
-        echo "  Your shortcut at $clash has Super+Space, so Vicinae doesn't get it." >&2
-        return 1
-    fi
+    gnome_keybinding_refuse_clash Super+Space "$VICINAE_KEYBINDING" Vicinae "$VICINAE_KEYS" || return 1
     input_switch_free || free_input_switch || return 1
-    hotkey_current && return 0
-    gnome_set_keybinding "$VICINAE_KEYBINDING" Vicinae "$(vicinae_command)" "$VICINAE_KEYS" || return 1
-    echo "  Super+Space opens Vicinae"
+    vicinae_hotkey apply_gnome_keybinding
 }
 
 # Restarts a running server when the installer changed it, so it runs the new version
@@ -350,7 +329,6 @@ status_service() {
 }
 
 status_ubuntu() {
-    local clash
     status_require_cmd gsettings "Vicinae's GNOME extension and shortcut" || return 0
     status_check "Vicinae ($VICINAE_BIN)" vicinae_installed
     vicinae_items
@@ -358,11 +336,7 @@ status_ubuntu() {
     status_service
     status_check "Vicinae's GNOME extension installed ($VICINAE_EXTENSION_DIR)" extension_installed
     status_gnome_extension "$VICINAE_EXTENSION_UUID" "$VICINAE_EXTENSION_DIR" "Vicinae's GNOME extension"
-    if clash="$(gnome_keybinding_clash "$VICINAE_KEYS" "$VICINAE_KEYBINDING")"; then
-        status_item missing "Super+Space for Vicinae: your shortcut at $clash has it; change one"
-    else
-        status_check "Super+Space opens Vicinae" hotkey_current
-    fi
+    vicinae_hotkey status_gnome_keybinding
     status_check "Super+Space doesn't switch keyboard layouts ($INPUT_SOURCE_SCHEMA $INPUT_SOURCE_KEY)" input_switch_free
 }
 
@@ -380,7 +354,6 @@ status() {
         status_ubuntu
     fi
     status_settings
-    status_result
 }
 
 apply_ubuntu() {
@@ -388,12 +361,9 @@ apply_ubuntu() {
     require_cmd jq || return 1
     require_cmd gsettings || return 1
     require_cmd gnome-extensions || return 1
-    local result=0 changed=false pending=()
+    local result=0 changed=false
     vicinae_items
-    items_pending
-    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        items_apply || result=1
-    fi
+    items_apply_confirmed || result=1
     if ! vicinae_installed; then
         if run_vicinae_installer; then
             changed=true

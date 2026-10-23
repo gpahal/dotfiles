@@ -9,7 +9,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -103,13 +103,12 @@ status() {
     items_status solaar_pinned
     status_apt_source "The Solaar team's PPA" "$SOLAAR_SOURCES" "$(solaar_sources)" logitech "$(apt_release_url "$SOLAAR_PPA")"
     items_status solaar_current
-    status_result
 }
 
 apply() {
     echo "Setting up Logitech devices..."
     # Without the PPA for this release, the next run adds it, and Ubuntu's Solaar stands in
-    local pending=() wanted=(solaar_pinned solaar_source_ok solaar_current)
+    local wanted=(solaar_pinned solaar_source_ok solaar_current)
     if ! solaar_source_ok; then
         require_cmd curl || return 1
         if apt_repo_published "The Solaar team's PPA" "$(apt_release_url "$SOLAAR_PPA")"; then
@@ -121,13 +120,11 @@ apply() {
         fi
     fi
     logitech_items
-    items_pending "${wanted[@]}"
-    if [ ${#pending[@]} -eq 0 ]; then
+    if items_ok "${wanted[@]}"; then
         echo "  Solaar $(solaar_version) is already installed."
         return 0
     fi
-    confirm_sudo_changes "${pending[@]}" || return 0
-    items_apply "${wanted[@]}"
+    items_apply_confirmed "${wanted[@]}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

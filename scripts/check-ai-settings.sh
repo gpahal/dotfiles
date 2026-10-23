@@ -21,11 +21,6 @@ temp_tool_home "$tmp"
 # claude doctor also reads the settings in the current directory
 cd "$HOME"
 
-# shellcheck source=../ai_tools/claude-code/install.sh
-source "$REPO_DIR/ai_tools/claude-code/install.sh"
-# shellcheck source=../ai_tools/codex/install.sh
-source "$REPO_DIR/ai_tools/codex/install.sh"
-
 claude_invalid_settings() {
     claude doctor < /dev/null 2>&1 | sed -n '/^Invalid settings/,/^$/p'
 }
@@ -37,40 +32,57 @@ codex_config_check() {
     jq -ce '.checks[] | select(.id == "config.load")' <<< "$report"
 }
 
-echo "Claude Code settings:"
-echo '{"tui": "not-a-mode"}' > "$CLAUDE_CODE_SETTINGS"
-[ -n "$(claude_invalid_settings)" ] ||
-    fail "claude doctor didn't report a broken settings.json, so it can't check the step's"
-write_claude_settings
-invalid="$(claude_invalid_settings)"
-if [ -n "$invalid" ]; then
-    printf '%s\n' "$invalid" >&2
-    fail "claude doctor rejects settings the claude-code step writes"
-else
-    echo "  claude doctor accepts them"
-fi
-if bash "$REPO_DIR/scripts/check-claude-keys.sh" < /dev/null > /dev/null; then
-    echo "  its keys are all in scripts/claude-settings-keys.txt"
-else
-    fail "the claude-code step writes keys that scripts/claude-settings-keys.txt doesn't list"
-fi
+# Each runs in its own subshell, since both steps define status, apply, and other names, and exits
+# with its own failure count
+check_claude_code() {
+    errors=0
+    # shellcheck source=../ai_tools/claude-code/install.sh
+    source "$REPO_DIR/ai_tools/claude-code/install.sh"
+    echo "Claude Code settings:"
+    echo '{"tui": "not-a-mode"}' > "$CLAUDE_CODE_SETTINGS"
+    [ -n "$(claude_invalid_settings)" ] ||
+        fail "claude doctor didn't report a broken settings.json, so it can't check the step's"
+    write_claude_settings || { fail "couldn't write the claude-code step's settings"; return "$errors"; }
+    invalid="$(claude_invalid_settings)"
+    if [ -n "$invalid" ]; then
+        printf '%s\n' "$invalid" >&2
+        fail "claude doctor rejects settings the claude-code step writes"
+    else
+        echo "  claude doctor accepts them"
+    fi
+    if bash "$REPO_DIR/scripts/check-claude-keys.sh" < /dev/null > /dev/null; then
+        echo "  its keys are all in scripts/claude-settings-keys.txt"
+    else
+        fail "the claude-code step writes keys that scripts/claude-settings-keys.txt doesn't list"
+    fi
+    return "$errors"
+}
 
-echo "Codex config:"
-echo 'model = 5' > "$CODEX_CONFIG"
-check="$(codex_config_check)" || check=""
-[ -n "$check" ] && [ "$(jq -r .status <<< "$check")" != ok ] ||
-    fail "codex doctor didn't reject a broken config.toml, so it can't check the step's"
-rm -f "$CODEX_CONFIG"
-edited="$(codex_config_edited)"
-mv "$edited" "$CODEX_CONFIG"
-if ! check="$(codex_config_check)"; then
-    fail "codex doctor --json has no config.load check"
-elif [ "$(jq -r .status <<< "$check")" != ok ]; then
-    jq . <<< "$check" >&2
-    fail "codex doctor doesn't load the config the codex step writes cleanly"
-else
-    echo "  codex doctor loads it"
-fi
+check_codex() {
+    errors=0
+    # shellcheck source=../ai_tools/codex/install.sh
+    source "$REPO_DIR/ai_tools/codex/install.sh"
+    echo "Codex config:"
+    echo 'model = 5' > "$CODEX_CONFIG"
+    check="$(codex_config_check)" || check=""
+    [ -n "$check" ] && [ "$(jq -r .status <<< "$check")" != ok ] ||
+        fail "codex doctor didn't reject a broken config.toml, so it can't check the step's"
+    rm -f "$CODEX_CONFIG"
+    edited="$(codex_config_edited)" || { fail "couldn't build the codex step's config"; return "$errors"; }
+    mv "$edited" "$CODEX_CONFIG" || { fail "couldn't write the codex step's config"; return "$errors"; }
+    if ! check="$(codex_config_check)"; then
+        fail "codex doctor --json has no config.load check"
+    elif [ "$(jq -r .status <<< "$check")" != ok ]; then
+        jq . <<< "$check" >&2
+        fail "codex doctor doesn't load the config the codex step writes cleanly"
+    else
+        echo "  codex doctor loads it"
+    fi
+    return "$errors"
+}
+
+(check_claude_code) || errors=$((errors + $?))
+(check_codex) || errors=$((errors + $?))
 
 # A made-up flag must be reported missing, so the check can fail.
 echo "Reviewer flags:"

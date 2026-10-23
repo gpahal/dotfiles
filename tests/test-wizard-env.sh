@@ -95,41 +95,16 @@ done
 
 # The temp file holds secrets; mv stands in for the interrupted write
 printf 'KEEP=1\n' > "$ENV_FILE"
-for sig in INT TERM HUP; do
-    run "$BASH" -c 'sig="$3"; source "$1"; ENV_FILE="$2"; mv() { kill -s "$sig" "$$"; }; write_env ADDED 2' \
-        _ "$SANDBOX/wizard-lib.sh" "$ENV_FILE" "$sig"
-    [ "$RUN_STATUS" -gt 128 ] || fail "write_env's status on $sig is $RUN_STATUS"
-    assert_eq "KEEP=1" "$(cat "$ENV_FILE")" ".env after $sig"
-    assert_eq "$ENV_FILE" "$(find "$SANDBOX" -maxdepth 1 -name '.env*' ! -name '*.link')" "files beside .env after $sig"
-done
-trap 'echo own' TERM
-write_env ADDED 2 > /dev/null
-assert_eq "trap -- 'echo own' SIGTERM" "$(trap -p TERM)" "the wizard's own trap after write_env"
-assert_eq "" "$(trap -p INT HUP)" "the INT and HUP traps after write_env"
-trap - TERM
+run "$BASH" -c 'source "$1"; ENV_FILE="$2"; mv() { kill -s TERM "$$"; }; write_env ADDED 2' \
+    _ "$SANDBOX/wizard-lib.sh" "$ENV_FILE"
+[ "$RUN_STATUS" -gt 128 ] || fail "write_env's status on TERM is $RUN_STATUS"
+assert_eq "KEEP=1" "$(cat "$ENV_FILE")" ".env after TERM"
+assert_eq "$ENV_FILE" "$(find "$SANDBOX" -maxdepth 1 -name '.env*' ! -name '*.link')" "files beside .env after TERM"
 
-chmod 640 "$SANDBOX/real.env"
-ENV_FILE="$ENV_FILE.link" write_env ADDED 3 > /dev/null
-[ -L "$ENV_FILE.link" ] || fail "write_env replaced the symlinked .env with a file"
-assert_eq "KEEP=1${nl}ADDED=3" "$(cat "$SANDBOX/real.env")" "the symlink's target after a second write_env"
-assert_eq "$SANDBOX/real.env" "$(find "$SANDBOX/real.env" -perm 640)" "the target's mode after a second write_env"
-mkdir "$SANDBOX/sub"
-ln -s ../.env.link "$SANDBOX/sub/.env"
-ENV_FILE="$SANDBOX/sub/.env" write_env ADDED 4 > /dev/null
-[ -L "$SANDBOX/sub/.env" ] && [ -L "$ENV_FILE.link" ] || fail "write_env replaced a link in a chain"
-assert_eq "KEEP=1${nl}ADDED=4" "$(cat "$SANDBOX/real.env")" "the chain's target after write_env"
-ln -s missing.env "$SANDBOX/dangling.env"
-ENV_FILE="$SANDBOX/dangling.env" write_env NEW 1 > /dev/null
-[ -L "$SANDBOX/dangling.env" ] || fail "write_env replaced a dangling .env link"
-assert_eq "NEW=1" "$(cat "$SANDBOX/missing.env")" "a dangling link's new target"
-assert_eq "$SANDBOX/missing.env" "$(find "$SANDBOX/missing.env" -perm 600)" "a dangling link's new target's mode"
-
+# The new .env holds secrets
 rm -f "$ENV_FILE"
 (umask 022; write_env NEW 1 > /dev/null)
 assert_eq "$ENV_FILE" "$(find "$ENV_FILE" -perm 600)" "a new .env's mode"
-chmod 644 "$ENV_FILE"
-(umask 077; write_env NEW 2 > /dev/null)
-assert_eq "$ENV_FILE" "$(find "$ENV_FILE" -perm 644)" "an existing .env's mode after write_env"
 
 # perl starts a new session, which has no controlling terminal even when the tests run in one
 no_tty() {

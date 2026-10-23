@@ -12,6 +12,10 @@ source "$DOTFILES_DIR/macos/lib/pam.sh"
 
 STEP_OS=macos
 
+# macOS's sudo keeps your PATH, which starts with dirs you can write (~/.local/bin, mise's shims,
+# Homebrew's), so sudo, and what it runs, come from the system's dirs first
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 APP_STORE_PREFS=/Library/Preferences/com.apple.commerce
 SOFTWARE_UPDATE_PREFS=/Library/Preferences/com.apple.SoftwareUpdate
@@ -22,11 +26,6 @@ SYSTEM_ADMIN_DIR=/System/Library/PrivateFrameworks/SystemAdministration.framewor
 # Space bar is key code 49
 hotkey_off_plist() {
     echo "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>$1</integer></array><key>type</key><string>standard</string></dict></dict>"
-}
-
-# <hotkey id> <modifiers> <description> <app taking it>; Cmd is 1048576
-symbolic_hotkeys() {
-    "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Vicinae"
 }
 
 # " domain:key" per change; " domain key," per failure
@@ -75,12 +74,14 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Unset or without an enabled key means on. Entries start at a four-space indent.
+# Hotkey 64 is Spotlight's Cmd+Space, which Vicinae takes. Unset or without an enabled key means
+# on. Entries start at a four-space indent.
 hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
         awk -v id="$1" '/^    [0-9]+ = / { on_id = $1 == id } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
+# disable_hotkey <hotkey id> <modifiers, where Cmd is 1048576> <description>
 disable_hotkey() {
     hotkey_off "$1" && return 0
     if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" "$(hotkey_off_plist "$2")" 2>/dev/null; then
@@ -90,12 +91,6 @@ disable_hotkey() {
     fi
     echo "  Turned off $3"
     CHANGED_KEYS+=" com.apple.symbolichotkeys:$1"
-}
-
-status_hotkey() {
-    local item
-    item="$(printf '%s' "${3:0:1}" | tr '[:lower:]' '[:upper:]')${3:1}"
-    status_check "$item off, so $4 can take it" hotkey_off "$1"
 }
 
 activate_settings_cmd() {
@@ -181,23 +176,16 @@ status_filevault() {
     esac
 }
 
-firewall_cmd() {
-    PATH="$PATH:$APP_FIREWALL_DIR" command -v socketfilterfw
-}
-
 # State 2 also blocks all incoming connections
 firewall_on() {
-    local cmd
-    cmd="$(firewall_cmd)" || return 1
-    case "$(run_bounded 10 "$cmd" --getglobalstate 2>/dev/null)" in
+    case "$(run_bounded 10 "$APP_FIREWALL_DIR/socketfilterfw" --getglobalstate 2>/dev/null)" in
         *"State = 1"* | *"State = 2"*) return 0 ;;
     esac
     return 1
 }
 
 enable_firewall() {
-    local cmd
-    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setglobalstate on > /dev/null; then
+    if ! sudo "$APP_FIREWALL_DIR/socketfilterfw" --setglobalstate on > /dev/null; then
         echo "  Couldn't turn on the application firewall." >&2
         return 1
     fi
@@ -205,14 +193,11 @@ enable_firewall() {
 }
 
 stealth_mode_on() {
-    local cmd
-    cmd="$(firewall_cmd)" || return 1
-    [[ "$(run_bounded 10 "$cmd" --getstealthmode 2>/dev/null)" == *"stealth mode is on"* ]]
+    [[ "$(run_bounded 10 "$APP_FIREWALL_DIR/socketfilterfw" --getstealthmode 2>/dev/null)" == *"stealth mode is on"* ]]
 }
 
 enable_stealth_mode() {
-    local cmd
-    if ! cmd="$(firewall_cmd)" || ! sudo "$cmd" --setstealthmode on > /dev/null; then
+    if ! sudo "$APP_FIREWALL_DIR/socketfilterfw" --setstealthmode on > /dev/null; then
         echo "  Couldn't turn on the firewall's stealth mode." >&2
         return 1
     fi
@@ -280,28 +265,22 @@ status() {
     macos_items
     each_default status_default
     items_status screenshots_dir
-    symbolic_hotkeys status_hotkey
+    status_check "Spotlight's Cmd+Space shortcut off, so Vicinae can take it" hotkey_off 64
     items_status hostname_valid
     # Optional (just touch-id)
     status_touch_id skipped
     status_filevault
     items_status firewall_on stealth_mode_on app_store_auto_updates
     status_disk_space "$HOME"
-    status_result
 }
 
 apply() {
     echo "Setting macOS defaults..."
-    local status=0 pending=()
+    local status=0
     macos_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
-        items_apply || status=1
-    else
-        items_apply --no-sudo || status=1
-    fi
+    items_apply_confirmed || status=1
     each_default set_default
-    symbolic_hotkeys disable_hotkey
+    disable_hotkey 64 1048576 "Spotlight's Cmd+Space shortcut"
 
     if [ -z "$CHANGED_KEYS$FAILED_KEYS$SANDBOXED_KEYS$RUNNING_KEYS" ]; then
         echo "  macOS defaults are already set."

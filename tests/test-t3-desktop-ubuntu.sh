@@ -47,7 +47,7 @@ stub pgrep 'exit 1'
 stub ss 'exit 1'
 stub_sudo_exec
 
-assert_exit 3 status
+assert_exit 3 main --status
 
 answer no
 assert_exit 0 setup_t3_code_desktop_ubuntu

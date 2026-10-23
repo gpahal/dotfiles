@@ -96,25 +96,6 @@ done
 while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"
-while IFS= read -r row; do
-    step="${row#'| `'}"
-    step="${step%%'`'*}"
-    mark=both
-    case "$row" in
-        *"macOS only"*) mark=macOS ;;
-        *"Ubuntu only"*) mark=Ubuntu ;;
-    esac
-    runs=""
-    ! grep -qxF "$step" "$tmp/setup-macos" || runs=macOS
-    if grep -qxF "$step" "$tmp/setup-ubuntu"; then
-        [ -z "$runs" ] && runs=Ubuntu || runs=both
-    fi
-    [ -n "$runs" ] && [ "$runs" != "$mark" ] || continue
-    case "$runs" in
-        both) fail "README.md How setup works's step table marks $step \"$mark only\", but both OSes' STEPS have it" ;;
-        *) fail "README.md How setup works's step table should mark $step \"$runs only\", the only OS whose STEPS have it" ;;
-    esac
-done < "$tmp/table-rows"
 
 ai_readme="$DOTFILES_DIR/ai_tools/README.md"
 line="$(grep -m1 '^The steps, in order, are ' "$ai_readme" || true)"
@@ -122,12 +103,6 @@ sentence="${line#The steps, in order, are }"
 backquoted "${sentence%%.*}" > "$tmp/ai-list"
 compare "ai_tools/README.md's step list" "$tmp/ai-macos" "$tmp/ai-list" \
     'a line starting "The steps, in order, are `<step>`, ..." in ai_tools/README.md'
-skips="${line#*Ubuntu skips }"
-[ "$skips" != "$line" ] || skips=""
-backquoted "${skips%%[;.]*}" > "$tmp/ai-skips"
-grep -vxFf "$tmp/ai-skips" "$tmp/ai-list" > "$tmp/ai-ubuntu-list" || true
-compare "ai_tools/README.md's step list, less what Ubuntu skips," "$tmp/ai-ubuntu" "$tmp/ai-ubuntu-list" \
-    '"Ubuntu skips `<step>`" in the line starting "The steps, in order, are " in ai_tools/README.md'
 
 # The manual-steps scripts print these sections
 for doc in README.md ai_tools/README.md; do

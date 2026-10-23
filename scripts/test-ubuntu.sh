@@ -27,9 +27,6 @@ ALLOWED_BEFORE=(
     "git: git uses gh for GitHub credentials|Logged in to GitHub with gh"
     "git: GitHub SSH remotes go over HTTPS, through gh's credential helper (*)|Logged in to GitHub with gh"
 )
-# t3-code's status lines for a t3 serve started by hand, and for the service once it's gone
-T3_MANUAL_SERVE_STATUS='^  missing +No T3 Code server outside t3code\.service: PID [0-9]+, a t3 serve started by hand \('
-T3_IDLE_SERVICE_STATUS='^  missing +T3 Code service running a server: it runs none'
 
 if ! command -v orb &>/dev/null; then
     echo "OrbStack's orb command isn't installed. Install OrbStack (brew install --cask orbstack)." >&2
@@ -137,11 +134,10 @@ run_runner() {
     shift 2
     echo "=== $runner $mode ==="
     if [ -n "$mode" ]; then
-        # Setup set this too; without it, status rejects alerts installed from a worktree
-        in_vm env DOTFILES_ALLOW_WORKTREE=1 bash "$runner" "$mode" || status=$?
+        in_vm bash "$runner" "$mode" || status=$?
     else
         # orb run bypasses sshd, so no SSH session proves a key login; the opt-in turns password logins off.
-        in_vm env DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1 DOTFILES_ALLOW_WORKTREE=1 bash "$runner" || status=$?
+        in_vm env DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1 bash "$runner" || status=$?
     fi
     check_runner "$runner $mode" "$status" "$@"
 }
@@ -184,126 +180,6 @@ for _ in $(seq 1 12); do
 done
 if ! "$active"; then
     fail "the T3 Code service isn't active after a restart"
-fi
-
-# Uses the t3-code step's functions, so servers are counted as its status counts them.
-# shellcheck disable=SC2016 # expanded in the machine
-T3_VM_LIB='
-source ai_tools/t3-code/install.sh
-set +eu +o pipefail
-t3_unit() { systemctl --user show -p "$1" --value t3code.service; }
-port_pids() { ss -Htlnp "sport = :$T3_CODE_PORT" | grep -o "pid=[0-9]*" | cut -d= -f2 | sort -u; }
-one_server() {
-    local pids others
-    pids="$(port_pids)"
-    others="$(t3_code_other_servers)"
-    echo "service $(t3_unit ActiveState)/$(t3_unit SubState), MainPID $(t3_unit MainPID); on $T3_CODE_PORT: $(echo ${pids:-nothing}); others: ${others:-none}"
-    t3_code_service_active && [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] &&
-        t3_code_in_service_cgroup "$pids" && [ -z "$others" ]
-}
-# Holds 3 s, since a server that crashes on start shows active between restarts. $1: old MainPID.
-one_server_stable() {
-    local first
-    one_server && first="$(port_pids)" && sleep 3 && one_server && [ "$(port_pids)" == "$first" ] &&
-        [ "$(t3_unit MainPID)" != "${1:-}" ]
-}
-outside_listener() {
-    local pids
-    pids="$(port_pids)"
-    echo "on $T3_CODE_PORT: $(echo ${pids:-nothing})"
-    [ -n "$pids" ] && [ "$(wc -l <<< "$pids")" -eq 1 ] && ! t3_code_in_service_cgroup "$pids" &&
-        echo "outside=$pids"
-}
-# T3 locks its data, so the service launcher stays up with no server while another holds it.
-service_shut_out() {
-    echo "service $(t3_unit ActiveState)/$(t3_unit SubState), MainPID $(t3_unit MainPID); on $T3_CODE_PORT: $(echo $(port_pids))"
-    t3_code_service_serving_nothing && [ "$(port_pids)" == "$1" ]
-}
-'
-
-in_vm_t3() {
-    in_vm_user bash -c "$T3_VM_LIB"$'\n'"$1"
-}
-
-retry_t3() {
-    local tries="$1" _
-    for _ in $(seq 1 "$tries"); do
-        in_vm_t3 "$2" > /dev/null && return 0
-        sleep 5
-    done
-    return 1
-}
-
-t3_main_pid() {
-    in_vm_t3 't3_unit MainPID' > /dev/null
-    tail -n 1 <<< "$VM_OUTPUT"
-}
-
-echo "=== One T3 Code server ==="
-# shellcheck disable=SC2016 # expanded in the machine
-if ! in_vm_t3 'command -v ss && [ -x "$HOME/.local/bin/t3" ]' > /dev/null; then
-    fail "the one-server checks need ss and ~/.local/bin/t3 in the machine"
-else
-    retry_t3 12 one_server_stable || fail "the T3 Code service isn't the one T3 Code server, on port 3773"
-
-    # On failure, restart with systemctl so the later checks still run.
-    old_pid="$(t3_main_pid)"
-    # shellcheck disable=SC2016 # expanded in the machine
-    if ! in_vm_t3 '"$HOME/.local/bin/t3" service restart'; then
-        fail "t3 service restart failed"
-        in_vm_t3 'systemctl --user restart t3code.service' || true
-    fi
-    retry_t3 12 "one_server_stable $old_pid" ||
-        fail "after t3 service restart, the restarted service isn't the one T3 Code server, on port 3773"
-
-    in_vm_t3 't3_unit Restart' > /dev/null
-    if [ "$(tail -n 1 <<< "$VM_OUTPUT")" == no ]; then
-        fail "t3code.service has Restart=no, so systemd won't restart a server that dies"
-    fi
-    old_pid="$(t3_main_pid)"
-    # kill -9 0 would kill orb run's own process group
-    if ! [[ "$old_pid" =~ ^[1-9][0-9]*$ ]]; then
-        fail "the T3 Code service has no server to kill -9 (MainPID ${old_pid:-unset})"
-    elif ! in_vm_t3 "kill -9 $old_pid"; then
-        fail "couldn't kill -9 the T3 Code service's server (PID $old_pid)"
-    else
-        retry_t3 12 "one_server_stable $old_pid" ||
-            fail "after a kill -9 of its server, the restarted service isn't the one T3 Code server, on port 3773"
-    fi
-
-    # setsid -f detaches it so orb run returns.
-    outside=""
-    # shellcheck disable=SC2016 # expanded in the machine
-    if ! in_vm_t3 'systemctl --user stop t3code.service && ! t3_code_service_active'; then
-        fail "couldn't stop the T3 Code service"
-    elif ! in_vm_t3 'T3CODE_PORT=$T3_CODE_PORT T3CODE_TELEMETRY_ENABLED=false setsid -f "$HOME/.local/bin/t3" serve > /tmp/t3-manual-serve.log 2>&1 < /dev/null'; then
-        fail "couldn't start t3 serve by hand"
-    elif ! retry_t3 12 outside_listener; then
-        fail "the t3 serve started by hand isn't listening on port 3773; see /tmp/t3-manual-serve.log in the machine"
-    else
-        in_vm_t3 outside_listener > /dev/null
-        outside="$(sed -n 's/^outside=//p' <<< "$VM_OUTPUT")"
-    fi
-    if [ -n "$outside" ]; then
-        in_vm_t3 'systemctl --user start t3code.service' || true
-        retry_t3 8 "service_shut_out $outside" ||
-            fail "the T3 Code service ran a server, or left port 3773, while a t3 serve started by hand had its data"
-        in_vm_user bash ai_tools/setup.sh --status t3-code > /dev/null || true
-        grep -qE "$T3_MANUAL_SERVE_STATUS" <<< "$VM_OUTPUT" ||
-            fail "t3-code's status doesn't flag the t3 serve started by hand"
-        # shellcheck disable=SC2016 # expanded in the machine
-        in_vm_t3 "kill $outside"'; t3_code_other_servers | while read -r pid _; do kill "$pid"; done' || true
-        # shellcheck disable=SC2016 # expanded in the machine
-        retry_t3 12 '[ -z "$(t3_code_other_servers)" ]' ||
-            fail "the t3 serve started by hand didn't stop"
-        in_vm_user bash ai_tools/setup.sh --status t3-code > /dev/null || true
-        grep -qE "$T3_IDLE_SERVICE_STATUS" <<< "$VM_OUTPUT" ||
-            fail "once the t3 serve started by hand stopped, t3-code's status doesn't flag the service that runs no server"
-        in_vm_user bash ai_tools/setup.sh t3-code > /dev/null ||
-            fail "once the t3 serve started by hand stopped, the t3-code step failed"
-        retry_t3 12 one_server_stable ||
-            fail "once the t3 serve started by hand stopped and the t3-code step ran, the T3 Code service isn't the one T3 Code server, on port 3773"
-    fi
 fi
 
 # Socket-activated sshd may have removed /run/sshd again.

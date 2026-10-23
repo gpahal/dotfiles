@@ -176,7 +176,6 @@ status() {
     else
         status_item missing "GitHub SSH remotes go over HTTPS, through gh's credential helper ($GITHUB_HTTPS_HINT)"
     fi
-    status_result
 }
 
 apply() {

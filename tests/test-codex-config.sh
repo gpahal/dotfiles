@@ -15,7 +15,7 @@ stub bwrap
 stub codex 'echo "Logged in using ChatGPT" >&2'
 as_os macos
 
-require_mikefarah_yq
+yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 
 mkdir -p "$HOME/.codex"
 
@@ -136,30 +136,6 @@ assert_eq '{"gpt-6":1}' "$(get .tui.model_availability_nux)" "[tui.model_availab
 assert_eq '["model-with-reasoning","current-dir","git-branch","context-used"]' "$(get .tui.status_line)" \
     "the status line beside it"
 
-# yq 4.54.1 drops comments after the last key, so the step adds them back
-printf 'model = "x"\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_file_contains "$CODEX_CONFIG" "# [profiles.fast]"
-assert_file_contains "$CODEX_CONFIG" '# model = "y"'
-printf '# only\n# comments\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_file_contains "$CODEX_CONFIG" "# only"
-assert_file_contains "$CODEX_CONFIG" "# comments"
-printf 'model = "x"\n\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq '# [profiles.fast]|# model = "y"||[analytics]' \
-    "$(grep -A3 -F '# [profiles.fast]' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comments' place"
-first="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run with trailing comments"
-printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n# "gpt-7" = 1\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq 'gpt-6 = 1||# "gpt-7" = 1||[analytics]' \
-    "$(grep -B2 -A2 -F '# "gpt-7"' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment below a new parent table"
-printf 'model = "x"\n\n[ "tui" ] # mine\nnotifications = true\n  [\x27desktop\x27]\nx = 1\n# y = 2\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq 'x = 1||# y = 2||[analytics]' \
-    "$(grep -B2 -A2 -F '# y = 2' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment under a rewritten header"
 printf 'developer_instructions = """\n# Style\nBe brief.\n"""\nx = '"'''"'\n# raw\n'"'''"'\n# real\n[tui]\nnotifications = true\n' \
     > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
@@ -167,9 +143,10 @@ assert_eq '"# Style\nBe brief.\n"' "$(get .developer_instructions)" "a multi-lin
 assert_file_contains "$CODEX_CONFIG" "# real"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
-for repro in 'model = "o" # wrap in """ if needed\n# keep me\n' \
-    'note = "it'"'''"'s"\n[tui]\nnotifications = true\n# keep me\n' \
-    "lit = 'say \"\"\"'\n# keep me\n" 'esc = "a\\\\" # """\n# keep me\n'; do
+# Quotes that look like a multi-line string mustn't hide the comment after them
+for repro in 'model = "o" # wrap in """ if needed\n# keep me\nz = 1\n' \
+    'note = "it'"'''"'s"\n[tui]\nnotifications = true\n# keep me\nz = 1\n' \
+    "lit = 'say \"\"\"'\n# keep me\nz = 1\n" 'esc = "a\\\\" # """\n# keep me\nz = 1\n'; do
     # shellcheck disable=SC2059 # the fixture's escapes
     printf "$repro" > "$CODEX_CONFIG"
     assert_exit 0 configure_codex
@@ -205,19 +182,14 @@ assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "is it valid TOML? Leaving it unchanged."
 assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 
-# A value of your own is kept without a terminal and replaced on yes; test-claude-settings.sh covers
-# the rest of the consent matrix, which both steps share
+# A value of your own is replaced on yes; test-claude-settings.sh covers the rest of the consent
+# matrix, which both steps share
 repo_line='["model-with-reasoning","current-dir","git-branch","context-used"]'
 printf 'model = "gpt-6.1-sol"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq "$repo_line" "$(get .tui.status_line)" "the status line when it was unset"
 set_key .tui.status_line '["model", "git-branch"]'
-mine="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "Kept your value for Codex's status line (tui.status_line), [\"model\",\"git-branch\"]."
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config with a status line of your own"
 answer yes
 assert_exit 0 configure_codex
+assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model\",\"git-branch\"], not the repo's"
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"
 load_script ai_tools/codex/install.sh
 as_os macos
@@ -225,7 +197,7 @@ as_os macos
 stub brew 'exit 1'
 replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
 stub codex 'echo "Not logged in" >&2; exit 1'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 
@@ -246,7 +218,7 @@ assert_eq 1 "$RUN_STATUS" "apply's exit with yq 4.54.0"
 assert_contains "$RUN_OUTPUT" "yq 4.54.0 isn't mikefarah's yq 4.54.1 or newer"
 assert_file_not_contains "$STUB_LOG" "brew"
 stub yq 'echo "yq 3.4.3"'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
 assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
 rm -f "$STUB_DIR/yq"

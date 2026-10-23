@@ -9,37 +9,27 @@ for cmd in brew curl claude codex bwrap; do
     stub "$cmd" 'exit 1'
 done
 
-# Codex
-load_script ai_tools/codex/install.sh
-export CODEX_HOME="$SANDBOX/codex-home"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "setup assumes Codex's default home (~/.codex); unset CODEX_HOME or move it"
-[ ! -e "$HOME/.codex" ] || fail "the codex step wrote ~/.codex"
-[ ! -e "$CODEX_HOME" ] || fail "the codex step wrote CODEX_HOME"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the codex step ran"
-run main --status
-assert_contains "$RUN_OUTPUT" "unknown    Codex settings and instructions: setup assumes Codex's default home"
-assert_eq 3 "$RUN_STATUS" "codex status exit"
+# <step>|<variable>|<default home>|<app>|<status item>
+for tool in "codex|CODEX_HOME|.codex|Codex|Codex settings and instructions" \
+    "claude-code|CLAUDE_CONFIG_DIR|.claude|Claude Code|Claude Code settings, status line, and instructions"; do
+    IFS='|' read -r step var home app item <<< "$tool"
+    load_script "ai_tools/$step/install.sh"
+    export "$var=$SANDBOX/$var"
+    assert_exit 1 main
+    assert_contains "$RUN_OUTPUT" "setup assumes $app's default home (~/$home); unset $var or move it"
+    [ ! -e "$HOME/$home" ] || fail "the $step step wrote ~/$home"
+    [ ! -e "$SANDBOX/$var" ] || fail "the $step step wrote $var"
+    assert_eq "" "$(cat "$STUB_LOG")" "commands the $step step ran"
+    run main --status
+    assert_contains "$RUN_OUTPUT" "unknown    $item: setup assumes $app's default home"
+    assert_eq 3 "$RUN_STATUS" "$step status exit"
+    unset "$var"
+done
 
-CODEX_HOME="$HOME/.codex/"
-assert_exit 0 tool_home_is "$CODEX_HOME" "$HOME/.codex"
+assert_exit 0 tool_home_is "$HOME/.codex/" "$HOME/.codex"
 mkdir -p "$HOME/.codex"
 ln -s "$HOME/.codex" "$HOME/codex-link"
 assert_exit 0 tool_home_is "$HOME/codex-link" "$HOME/.codex"
 assert_exit 1 tool_home_is "$SANDBOX/codex-home" "$HOME/.codex"
 assert_exit 0 tool_home_is "" "$HOME/.codex"
-unset CODEX_HOME
-
-# Claude Code
-load_script ai_tools/claude-code/install.sh
-: > "$STUB_LOG"
-export CLAUDE_CONFIG_DIR="$SANDBOX/claude-home"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "setup assumes Claude Code's default home (~/.claude); unset CLAUDE_CONFIG_DIR or move it"
-[ ! -e "$HOME/.claude" ] || fail "the claude-code step wrote ~/.claude"
-[ ! -e "$CLAUDE_CONFIG_DIR" ] || fail "the claude-code step wrote CLAUDE_CONFIG_DIR"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the claude-code step ran"
-run main --status
-assert_contains "$RUN_OUTPUT" "unknown    Claude Code settings, status line, and instructions: setup assumes Claude Code's default home"
-assert_eq 3 "$RUN_STATUS" "claude-code status exit"
 test_done

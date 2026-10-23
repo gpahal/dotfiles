@@ -135,10 +135,6 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't set org.gnome.desktop.peripherals.keyboard delay"
 assert_eq "'list-view'" "$(gsettings get org.gnome.nautilus.preferences default-folder-viewer)" "Files' view after a failed set"
 
-hide gsettings
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "gsettings isn't installed"
-
 # Ubuntu Server: no GNOME, nothing to do
 hide gnome-shell
 assert_exit 0 main

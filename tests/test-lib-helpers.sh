@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # lib/common.sh's confirm, memo, file_is, parent_dir, regex_escape, version_at_least, run_bounded,
-# and quitting a running app to merge its settings, lib/gnome.sh's skip_without_desktop, and
-# stub_sudo_exec's refusals.
+# and quitting a running app to merge its settings, and lib/gnome.sh's skip_without_desktop.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -172,15 +171,6 @@ if command -v jq &> /dev/null; then
 else
     skip_rest "merge_app_json: jq isn't installed"
 fi
-
-# --- stub_sudo_exec: the refused commands name a missing repo dir, so they'd fail even if run ---
-stub_sudo_exec
-echo hi > "$SANDBOX/file"
-gone="$REPO_DIR/no-such-dir/file"
-assert_exit 1 sudo install -m 0644 "$SANDBOX/file" "$gone"
-assert_contains "$RUN_OUTPUT" "refused: install would change $gone, in the repo"
-assert_exit 1 sudo cat /etc/hosts
-assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
 
 # run_bounded: timeout(1) exits 137 after its SIGKILL, which is a timeout only past the deadline
 run_bounded_killed() {

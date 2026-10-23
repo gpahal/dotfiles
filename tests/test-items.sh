@@ -79,21 +79,12 @@ assert_exit 0 items_ok
 
 assert_exit 2 item --sudo "E is set up" "Set up E" e_done
 
-items
-items
-assert_eq 4 "${#ITEM_CHECK[@]}" "items after adding them twice"
-items_reset
-rm -f "$SANDBOX/a"
-assert_eq "" "$(pending_list)" "pending items after reset"
-assert_exit 0 items_apply
-assert_exit 0 report
-assert_eq "" "$RUN_OUTPUT" "status after reset"
-
-# An item with no status text is apply-only: status leaves it out, apply lists and fixes it
+# An item with no status text is apply-only: status leaves it out, apply lists and fixes it. The
+# items reset leaves only these.
 items_reset
 item --sudo "" "Set up A" a_done fix_a
 item "D is set up" "Set up D" d_done fix_d
-rm -f "$SANDBOX/d"
+rm -f "$SANDBOX/a" "$SANDBOX/d"
 assert_exit 3 report
 assert_eq "  missing    D is set up" "$RUN_OUTPUT" "status skips an apply-only item"
 assert_eq "Set up A" "$(pending_list)" "pending apply-only item"

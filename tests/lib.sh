@@ -11,9 +11,9 @@
 # Reuse before writing your own: stub_at, stub_sudo_exec, stub_sudo_cacheable, stub_uname,
 # stub_dpkg_arch, stub_apt_packages, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
 # stub_gsettings, stub_gnome_session, stub_systemctl_units, sandbox_paths, fake_step,
-# fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit,
-# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, wait_for, and
-# process_exited.
+# fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit, diag,
+# assert_sudo_noninteractive, assert_read_only, assert_idempotent, snapshot and assert_unchanged,
+# as_unwritable, wait_for, and process_exited. A test sets df's output in $SANDBOX/df-table.
 # tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox, and
 # tests/ubuntu-step-fixture.sh, which sources it, stubs an Ubuntu machine for that step.
 # shellcheck shell=bash
@@ -72,8 +72,18 @@ setup_sandbox() {
     stub sudo 'exit 1'
     export DOTFILES_PAM_DIR="$SANDBOX/pam.d" DOTFILES_PAM_MODULES_DIR="$SANDBOX/pam-modules" \
         DOTFILES_PAM_LOCAL_MODULES_DIR="$SANDBOX/pam-local-modules"
-    # Real free space would sway status reports
+    # Real free space would sway status reports. A test sets its own in $SANDBOX/df-table, as df
+    # prints them: df prints the first line that names the path, else the first line, and fails
+    # for a path listed in $SANDBOX/df-fails.
     stub df 'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+if [ -e "$SANDBOX/df-table" ]; then
+    path="${!#}"
+    ! grep -qxF -- "$path" "$SANDBOX/df-fails" 2> /dev/null || { echo "df: $path: No such file or directory" >&2; exit 1; }
+    line="$(grep -F " $path" "$SANDBOX/df-table" | head -n 1)"
+    [ -n "$line" ] || line="$(head -n 1 "$SANDBOX/df-table")"
+    echo "$line"
+    exit 0
+fi
 for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857600 943718400 10% $path" ;; esac; done'
     exec < /dev/null
     # Else a relative path would reach the repo's tests/
@@ -825,6 +835,12 @@ assert_file_not_contains() {
     return 0
 }
 
+# Usage: diag <check> [args]: one status check, such as status_smart, exiting as status does
+diag() {
+    "$@"
+    status_result
+}
+
 # Fails if $STUB_LOG has a sudo without -n, which could prompt. $1 says what ran it.
 assert_sudo_noninteractive() {
     local prompting
@@ -833,6 +849,134 @@ assert_sudo_noninteractive() {
     fail "${1:-status} ran sudo without -n:"
     _show "$prompting"
     return 0
+}
+
+# Commands that change the machine, as $STUB_LOG logs them, with or without sudo; apt-get -s only
+# simulates. A sudo running anything but SUDO_READS changes it too.
+CHANGES_MACHINE="systemctl ([^ ]+ )*(start|stop|restart|try-restart|reload|reload-or-restart|try-reload-or-restart|enable|disable|mask|unmask|daemon-reload|reset-failed|kill)
+fwupdmgr (refresh|update|install|upgrade)
+smartctl .* (-t|--test)
+docker ([^ ]+ )*(prune|stop|start|restart|rm|kill|run)
+apt-get ([^ ]+ )*(install|purge|remove|autoremove|update|upgrade|full-upgrade|dist-upgrade)
+apt-mark (hold|unhold)
+snap (install|remove|refresh)
+brew ([^ ]+ )*(install|reinstall|upgrade|uninstall|tap|untap)
+mas (install|get|upgrade|uninstall)
+softwareupdate .*(-i|--install)
+xcode-select --install
+mise (install|use|uninstall|upgrade|prune)
+uv tool (install|upgrade|uninstall)
+rustup (install|update|default|toolchain install|component add|target add|self update)
+pnpm (install|i|add|remove|update)
+npm (install|i|uninstall|update)
+pkill
+killall
+launchctl (bootstrap|bootout|kickstart|load|unload|enable|disable|kill)
+defaults (write|delete|import)
+osascript .*quit
+open
+xdg-open
+gsettings (set|reset)
+dconf (write|reset|load)
+gnome-extensions (enable|disable|install|uninstall)
+chsh
+usermod
+useradd
+userdel
+groupadd
+gpasswd
+passwd
+chpasswd
+loginctl (enable-linger|disable-linger|terminate-[a-z]+|kill-[a-z]+)
+locale-gen
+sysctl (--system|-w|-p|--load)
+ufw (allow|deny|reject|limit|prepend|insert|delete|default|enable|disable|reload|reset|route|--force)
+nmcli (connection|con|c) (modify|mod|up|down|add|delete|reload)
+tailscale (up|down|set|login|logout)"
+SUDO_READS="true|cat|test|sh -c|bash -c|sshd -T|ufw status|docker (system df|ps)|smartctl (-H|--scan)"
+
+# Usage: machine_changes <log>: prints the log's lines for commands that change the machine
+machine_changes() {
+    local changes
+    changes="^(sudo (-n )?)?([^ ]*/)?($(tr '\n' '|' <<< "$CHANGES_MACHINE" | sed 's/|$//'))( |$)"
+    {
+        grep -E "$changes" "$1" | grep -vE '^(sudo (-n )?)?([^ ]*/)?apt-get( [^ ]+)* (-s|--simulate)( |$)' || true
+        grep -E '^sudo ' "$1" | grep -vE "^sudo (-n )?([^ ]*/)?($SUDO_READS)( |$)" || true
+    } | awk '!seen[$0]++'
+}
+
+# Usage: assert_read_only <status> <cmd>...: assert_exit, and fails if the command ran a sudo that
+# could prompt, or changed the machine
+assert_read_only() {
+    local changes
+    assert_exit "$@"
+    shift
+    assert_sudo_noninteractive "'$*'"
+    changes="$(machine_changes "$STUB_LOG")"
+    [ -z "$changes" ] && return 0
+    fail "'$*' changed the machine:"
+    _show "$changes"
+    return 0
+}
+
+# Usage: assert_idempotent [--ignore <path>]... <cmd>...: runs the command twice, each run
+# succeeding, and fails if the second changed the sandbox (a path, mode, symlink target, or file's
+# content, but not a time) or the machine. --ignore leaves out a file the command rewrites on every
+# run, such as a log. Leaves the second run's $RUN_OUTPUT and $STUB_LOG, and the first's output and
+# log in $FIRST_OUTPUT and $FIRST_LOG.
+assert_idempotent() {
+    local ignores=() before after changes
+    while [ "${1:-}" == --ignore ]; do
+        case "$2" in
+            "$SANDBOX"/*) ignores+=("./${2#"$SANDBOX"/}") ;;
+            *)
+                fail "assert_idempotent: $2 isn't in the sandbox"
+                return 0
+                ;;
+        esac
+        shift 2
+    done
+    run "$@"
+    # shellcheck disable=SC2034 # tests read them
+    FIRST_OUTPUT="$RUN_OUTPUT" FIRST_LOG="$(cat "$STUB_LOG")"
+    if [ "$RUN_STATUS" != 0 ]; then
+        fail "'$*' exited $RUN_STATUS on its first run. Its output:"
+        _show "$RUN_OUTPUT"
+        return 0
+    fi
+    before="$(_sandbox_tree ${ignores[@]+"${ignores[@]}"})"
+    run "$@"
+    after="$(_sandbox_tree ${ignores[@]+"${ignores[@]}"})"
+    if [ "$RUN_STATUS" != 0 ]; then
+        fail "'$*' exited $RUN_STATUS on its second run. Its output:"
+        _show "$RUN_OUTPUT"
+    fi
+    if [ "$before" != "$after" ]; then
+        fail "'$*' changed the sandbox on its second run (< before, > after):"
+        _show "$(diff <(echo "$before") <(echo "$after") | grep '^[<>]')"
+    fi
+    changes="$(machine_changes "$STUB_LOG")"
+    if [ -n "$changes" ]; then
+        fail "'$*' changed the machine on its second run:"
+        _show "$changes"
+    fi
+    return 0
+}
+
+# Each path in the sandbox but $STUB_LOG and the given ./<path>s, sorted: its mode and path, with a
+# symlink's target, and each file's checksum, or why it can't be read
+_sandbox_tree() {
+    local prune=(-path "./${STUB_LOG#"$SANDBOX"/}") path
+    for path; do
+        prune+=(-o -path "$path")
+    done
+    (
+        cd "$SANDBOX" || exit 1
+        # ls -ln's fields up to the path: mode, links, user, group, size, and three for the time
+        LC_ALL=C find . \( "${prune[@]}" \) -prune -o -exec /bin/ls -ldn {} + 2>&1 |
+            awk '{ mode = $1; sub(/^[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +/, ""); print mode, $0 }'
+        find . \( "${prune[@]}" \) -prune -o -type f -exec cksum {} + 2>&1
+    ) | LC_ALL=C sort || true
 }
 
 # snapshot <file> saves a copy for assert_unchanged <file> <when>, which fails if it now differs

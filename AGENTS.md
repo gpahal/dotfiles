@@ -11,7 +11,7 @@ Dotfiles for macOS 27 and an Ubuntu 26.04 desktop used over SSH, the only suppor
 - **New step.**
   1. Add it to `MACOS_STEPS`, `UBUNTU_STEPS`, or both.
   2. Write `<step>/install.sh`: a header whose first line is one sentence saying what it does (`--help` lists it), then `*_files` functions, `status`, and `apply`.
-  3. Add a contract test in `tests/`: a second apply changes nothing, `--status` reports what apply set, and a missing prerequisite fails before any change. A config-only step joins the list in `tests/test-config-steps.sh`.
+  3. Add a contract test in `tests/`: a second apply changes nothing (`assert_idempotent`), `--status` reports what apply set, and a missing prerequisite fails before any change. A config-only step joins the list in `tests/test-config-steps.sh`.
   4. Update the docs **Docs change with the code** names.
 - **Copied, not linked.** Setup copies configs into `$HOME`, so a repo edit applies only when its step re-runs; `just copy-back` copies differing installed configs back. Every function named `*_files` is treated as a files function, so name nothing else that way. Run setup against your real `$HOME` only when asked; a temp `HOME`, as below, is fine. `--status` (`just status`) only reads.
 - **Testing a step by hand.** The step's header says whether it changes the system regardless of `HOME`, and where to test it instead. Run a macOS step that does so only when asked. Otherwise, run `T="$(mktemp -d)"; env -u <var>... HOME="$T" TMUX_TMPDIR="$T" bash setup.sh <step> </dev/null`, unsetting each variable `setup_sandbox` in `tests/lib.sh` unsets that your shell sets. A second run changes nothing, and `--status` then reports nothing needing attention beyond what needs a person, such as the GitHub login.

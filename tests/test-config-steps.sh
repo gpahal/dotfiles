@@ -16,16 +16,11 @@ stub_login_shell_zsh
 # A temp HOME mustn't load the LaunchAgent into your session
 stub launchctl '[ "$1" == print ]'
 
-assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
-assert_contains "$RUN_OUTPUT" "Copied"
-cp "$STUB_LOG" "$SANDBOX/both.log"
-
-assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
-cat "$STUB_LOG" >> "$SANDBOX/both.log"
-changes="$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added|Installed' || true)"
-assert_eq "" "$changes" "the second run's Copied, Added, and Installed lines"
+assert_idempotent bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
+assert_contains "$FIRST_OUTPUT" "Copied"
 for cmd in brew chsh sudo "launchctl bootstrap"; do
-    assert_file_not_contains "$SANDBOX/both.log" "$cmd"
+    assert_not_contains "$FIRST_LOG
+$(cat "$STUB_LOG")" "$cmd" "both runs' commands"
 done
 
 # gh sets up the credential helper (and Ubuntu's HTTPS rewrite) only after login

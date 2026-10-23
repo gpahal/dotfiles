@@ -24,16 +24,12 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS"
 
 git config --file "$HOME/.gitconfig" --add url.https://github.com/.insteadOf ssh://git@github.com/
-assert_exit 0 main
+assert_idempotent main
 assert_eq "ssh://git@github.com/
 git@github.com:" "$(insteadof)" "insteadOf after the first run"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url git@github.com:me/repo.git)" "rewritten scp-style URL"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url ssh://git@github.com/me/repo.git)" "rewritten ssh URL"
 assert_exit 0 main --status
-
-snapshot "$HOME/.gitconfig"
-assert_exit 0 main
-assert_unchanged "$HOME/.gitconfig" "on a re-run"
 
 # Repo-local settings mustn't satisfy the machine-wide checks
 rm "$HOME/.gitconfig"

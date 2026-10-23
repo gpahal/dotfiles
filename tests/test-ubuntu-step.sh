@@ -2,7 +2,7 @@
 # shellcheck disable=SC2329 # the step calls the replaced functions
 
 # The ubuntu step from a fresh machine: declined, applied, and re-run, plus its held-back package,
-# ntfy URL, and health alert checks.
+# ntfy URL, and health alert checks, and a status that never prompts or changes anything.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -132,5 +132,14 @@ assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.co
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/units/reload-needed" ] || fail "the units weren't reloaded"
-assert_exit 0 main --status
+
+# Status never prompts or changes anything, and checks what only root can read once sudo's
+# credentials are cached
+cache_sudo no
+assert_read_only 0 main --status
+assert_contains "$RUN_OUTPUT" "unverified ufw rules"
+cache_sudo yes
+assert_read_only 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         ufw rules"
+assert_not_contains "$RUN_OUTPUT" "unverified"
 test_done

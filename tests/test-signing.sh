@@ -19,9 +19,9 @@ assert_exit 1 main
 [ ! -e "$SIGNING" ] || fail "the key was generated without asking"
 
 answer yes
-assert_exit 0 main
+assert_idempotent main
 # --insecure-storage keeps the refreshed token in hosts.yml, out of the keyring
-assert_contains "$RUN_OUTPUT" "gh auth refresh -h github.com -s admin:ssh_signing_key --insecure-storage"
+assert_contains "$FIRST_OUTPUT" "gh auth refresh -h github.com -s admin:ssh_signing_key --insecure-storage"
 assert_exit 0 ssh-keygen -y -P '' -f "$SIGNING"
 assert_eq "$SIGNING.pub" "$(signingkey)" "user.signingkey"
 assert_file_contains "$ALLOWED" "$(awk '{print $2}' "$SIGNING.pub")"
@@ -32,11 +32,6 @@ assert_eq 0 "$RUN_STATUS" "signed commit exit status: $RUN_OUTPUT"
 run git -C "$SANDBOX/repo" log --show-signature -1
 assert_contains "$RUN_OUTPUT" 'Good "git" signature'
 
-snapshot "$HOME/.gitconfig"
-snapshot "$ALLOWED"
-assert_exit 0 main
-assert_unchanged "$HOME/.gitconfig" "on a re-run"
-assert_unchanged "$ALLOWED" "on a re-run"
 answer no
 
 # macOS signs with ~/.ssh/id_ed25519 and prints the ssh-add that stores its passphrase in the keychain

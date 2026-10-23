@@ -74,17 +74,11 @@ assert_not_contains "$RUN_OUTPUT" "overrides"
 
 # At the desktop it starts Vicinae; then a re-run changes nothing
 export SESSION=1 SHELL_STATE=1
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Started Vicinae."
-assert_file_not_contains "$STUB_LOG" "installer"
-: > "$STUB_LOG"
-snapshot "$settings"
-assert_exit 0 main
-assert_file_not_contains "$STUB_LOG" "gsettings set"
+assert_idempotent main
+assert_contains "$FIRST_OUTPUT" "Started Vicinae."
+assert_not_contains "$FIRST_LOG" "installer" "the first run's commands"
 assert_file_not_contains "$STUB_LOG" "download-extension"
-assert_file_not_contains "$STUB_LOG" "daemon-reload"
 assert_file_not_contains "$STUB_LOG" "apt-get"
-assert_unchanged "$settings" "on a re-run"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae running"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae's GNOME extension loaded"

@@ -1,18 +1,50 @@
 #!/bin/bash
 
-# run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries.
+# run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries,
+# with how health-alert.sh parses status lines and picks the ones it pushes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 load_script lib/common.sh
 load_script lib/runner.sh
+install_health_alert "$SANDBOX/health-alert"
+# shellcheck source=../ubuntu/health-alert.sh
+source "$SANDBOX/health-alert/health-alert.sh"
+
+# --- status lines, as health-alert.sh parses them ---
+for state in $STATUS_STATES; do
+    status_parse_line "$(status_item "$state" "the $state item: with  spaces")" ||
+        fail "status_parse_line didn't parse the $state item"
+    assert_eq "$state" "$STATUS_LINE_STATE" "the state parsed from the $state item"
+    assert_eq "the $state item: with  spaces" "$STATUS_LINE_TEXT" "the text parsed from the $state item"
+done
+for line in "  missing in the text is not an item" "  bogus      text" "missing    no indent" \
+    "Needs attention: x. Run: bash setup.sh x"; do
+    ! status_parse_line "$line" || fail "status_parse_line parsed '$line'"
+done
+# Root-only items: health-alert.sh adds its note when a report has one
+assert_eq "  unverified Disk health: reading it needs root; run sudo -v, then status, to check it" \
+    "$(status_needs_root "Disk health:" "reading it needs root")" "a root-only item with a colon"
+assert_eq "  unverified The rules (only root can read them; run sudo -v, then status, to check them)" \
+    "$(status_needs_root "The rules" "only root can read them" them)" "a root-only item with an aside"
+status_needs_root "The rules" "only root can read them" them | has_root_only_items ||
+    fail "health-alert.sh didn't find the root-only item"
+
+# --- run_steps ---
 
 fake_step first 'echo "first ran"'
 fake_step broken 'echo "broken output" >&2; exit 1'
 fake_step last 'echo "last ran"'
 fake_step interrupted 'kill -INT $$'
-fake_step attention '[ "${1:-}" != --status ] || { echo "  missing    something"; exit 3; }'
+# An item in each state
+fake_step attention "[ \"\${1:-}\" != --status ] || {
+source \"$REPO_DIR/lib/common.sh\"
+for state in \$STATUS_STATES; do status_item \"\$state\" \"the \$state item\"; done
+exit 3
+}"
 fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; exit 3; }'
 # A report set -e cut short at a command that exited 3, such as jq
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
@@ -94,6 +126,9 @@ assert_exit 3 run_steps --status first attention
 assert_contains "$RUN_OUTPUT" "Needs attention: attention. Run: bash $0 attention"
 assert_eq "attention --status
 first --status" "$(sort "$SANDBOX/ran")" "steps run with --status"
+assert_eq "$STATUS_SUMMARY_ATTENTION: attention. Run: bash $0 attention
+attention: the missing item
+attention: the unknown item" "$(attention_lines <<< "$RUN_OUTPUT")" "the lines health-alert.sh pushes"
 assert_exit 3 run_steps --status unknown
 assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
 assert_exit 1 run_steps --status cut-short

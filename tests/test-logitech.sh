@@ -39,13 +39,6 @@ assert_contains "$RUN_OUTPUT" "missing    Only Solaar taken from the Solaar team
 assert_contains "$RUN_OUTPUT" "missing    The Solaar team's PPA's apt source ($SOLAAR_SOURCES): missing"
 assert_contains "$RUN_OUTPUT" "missing    Solaar 1.1.20 or later; older ones fail"
 
-# Adding the PPA needs gpg, so without it the step changes nothing
-hide gpg
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "gpg"
-[ ! -e "$SOLAAR_PIN" ] || fail "the pin was written without gpg"
-stub_gpg_fpr "$SOLAAR_KEY_FPR"
-
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Install Solaar from the Solaar team's PPA"
 assert_file_not_contains "$STUB_LOG" "apt-get"

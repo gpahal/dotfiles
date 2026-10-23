@@ -32,10 +32,7 @@ deck_dir="$HOME/.local/share/dotfiles/stream-deck"
 echo "@as ['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com']" > "$SANDBOX/gsettings/org.gnome.shell.enabled-extensions"
 the_step
 
-# Without Node from mise, it fails before changing anything
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Node LTS isn't at $node_bin. Run bash setup.sh runtimes first."
-[ ! -e "$deck_dir" ] || fail "the step changed things without Node"
+# Node from mise; test-step-prereqs.sh covers it missing
 mkdir -p "$(dirname "$node_bin")"
 printf '#!/bin/sh\n' > "$node_bin"
 chmod +x "$node_bin"

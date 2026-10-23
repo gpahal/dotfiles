@@ -30,6 +30,16 @@ is_ubuntu() {
     [ "$_DOTFILES_OS" == ubuntu ]
 }
 
+# app_config_dir <app>: the app's folder in XDG_CONFIG_HOME. On macOS, Zed, Ghostty and Vicinae read
+# ~/.config whatever it is, since an app started from the Dock doesn't see a shell's.
+app_config_dir() {
+    if is_macos; then
+        echo "$HOME/.config/$1"
+    else
+        echo "${XDG_CONFIG_HOME:-$HOME/.config}/$1"
+    fi
+}
+
 # Ubuntu Desktop, rather than Server, which has no apps to open
 has_gnome_desktop() {
     command -v gnome-shell &>/dev/null

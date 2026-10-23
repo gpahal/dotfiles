@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Turn on Touch ID for sudo on macOS in /etc/pam.d/sudo_local, which OS updates keep.
-# Not run by setup.sh, since it changes /etc with sudo. Adds its lines and keeps yours.
+# Not run by setup.sh, since it changes /etc with sudo. The repo owns the file: a run replaces
+# what you added.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"

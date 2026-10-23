@@ -40,10 +40,13 @@ DOCKER_DAEMON_SETTINGS='
       )) else . end'
 
 docker_installed() {
-    local package
-    for package in "${DOCKER_PACKAGES[@]}"; do
-        apt_installed "$package" || return 1
-    done
+    [ "$(dpkg-query -W -f='${Status}\n' "${DOCKER_PACKAGES[@]}" 2>/dev/null | grep -c "install ok installed")" \
+        -eq "${#DOCKER_PACKAGES[@]}" ]
+}
+
+# Cached through one status run, which declares DOCKER_ACTIVE_CACHE_STATUS
+docker_active() {
+    memo DOCKER_ACTIVE_CACHE systemctl is-active --quiet docker.service &>/dev/null
 }
 
 docker_auto_updates_configured() {
@@ -125,7 +128,7 @@ daemon_configured() {
 }
 
 daemon_restart_note() {
-    systemctl is-active --quiet docker.service 2>/dev/null || return 0
+    docker_active || return 0
     printf '%s' ". This restarts the running daemon, which stops running containers unless"
     printf '%s' " live-restore was already on; only those with a restart policy come back. The port"
     printf '%s' " binding applies to the default bridge, and to networks created from now on"
@@ -167,7 +170,7 @@ status_docker_usage() {
         status_item unverified "$label: skipped by --quick"
         return 0
     fi
-    if ! systemctl is-active --quiet docker.service 2>/dev/null; then
+    if ! docker_active; then
         status_item info "$label: the daemon isn't running, and status doesn't start it"
         return 0
     fi
@@ -207,7 +210,7 @@ status_docker_ports() {
     local label="Container ports published on every address, which ufw doesn't filter"
     local none="No container ports published on every address, which ufw doesn't filter"
     local out status=0 name ports open="" port DOCKER_OUT DOCKER_STATUS
-    if ! systemctl is-active --quiet docker.service 2>/dev/null; then
+    if ! docker_active; then
         if pgrep -f 'containerd-shi[m].* -namespace moby( |$)' > /dev/null 2>&1; then
             status_item unknown "$label: containers are running while the Docker daemon is down, so their published ports can't be checked; start it with sudo systemctl start docker"
         else
@@ -238,8 +241,11 @@ status_docker_ports() {
 # Never asks for sudo; uses sudo -n only when credentials are cached.
 status() {
     # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
+    local installed=false SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS="" DOCKER_ACTIVE_CACHE="" \
+        DOCKER_ACTIVE_CACHE_STATUS=""
     sudo_ready || true
+    # Here, not first in docker_items' $( ), which would lose the cache
+    docker_active || true
     docker_installed && installed=true
     docker_items
     items_status docker_installed

@@ -546,7 +546,7 @@ jq_edit() {
 
 # PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
 # Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
-# mean owned by you, with the parent walk stopping at $SANDBOX. Call it after load_script.
+# mean owned by you. Call it after load_script.
 pam_sandbox() {
     rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
     mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
@@ -555,7 +555,7 @@ pam_sandbox() {
     # OpenPAM finds macOS's .so.2 modules by bare name
     touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
     # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
-    PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
         HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
         TID_LINE="auth       sufficient     pam_tid.so"
 }

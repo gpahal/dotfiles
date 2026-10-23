@@ -42,22 +42,15 @@ hotkey_command() {
         "$OPEN_IN" "$1"
 }
 
-hotkey_current() {
-    local key="$1" target="$2" name="${3//_/ }"
-    gnome_keybinding_is "$(hotkey_path "$target")" "$name" "$(hotkey_command "$target")" "<Control><Alt><Super>$key"
-}
-
-hotkey_clash() {
-    gnome_keybinding_clash "<Control><Alt><Super>$1" "$(hotkey_path "$2")"
-}
-
-set_hotkey() {
-    local key="$1" target="$2" name="${3//_/ }"
-    gnome_set_keybinding "$(hotkey_path "$target")" "$name" "$(hotkey_command "$target")" "<Control><Alt><Super>$key"
+# hotkey <status|apply>_gnome_keybinding <key> <target> <name>
+hotkey() {
+    local key="$2" target="$3"
+    "$1" "Ctrl+Alt+Super+$(key_label "$key")" "$(hotkey_path "$target")" "${4//_/ }" \
+        "$(hotkey_command "$target")" "<Control><Alt><Super>$key"
 }
 
 status() {
-    local hotkey key target name clash
+    local hotkey key target name
     if ! has_gnome_desktop; then
         status_item skipped "GNOME shortcuts: no GNOME desktop"
         return 0
@@ -68,11 +61,7 @@ status() {
     fi
     for hotkey in "${HOTKEYS[@]}"; do
         read -r key target name <<< "$hotkey"
-        if clash="$(hotkey_clash "$key" "$target")"; then
-            status_item missing "Ctrl+Alt+Super+$(key_label "$key") for ${name//_/ }: your shortcut at $clash has it; change one"
-        else
-            status_check "Ctrl+Alt+Super+$(key_label "$key") opens ${name//_/ }" hotkey_current "$key" "$target" "$name"
-        fi
+        hotkey status_gnome_keybinding "$key" "$target" "$name"
     done
 }
 
@@ -87,23 +76,12 @@ apply() {
         echo "  The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck" >&2
         return 1
     fi
-    local hotkey key target name clash status=0 changed=false
+    local hotkey key target name status=0 GNOME_KEYBINDING_CHANGED=false
     for hotkey in "${HOTKEYS[@]}"; do
         read -r key target name <<< "$hotkey"
-        hotkey_current "$key" "$target" "$name" && continue
-        if clash="$(hotkey_clash "$key" "$target")"; then
-            echo "  Your shortcut at $clash has Ctrl+Alt+Super+$(key_label "$key"), so ${name//_/ } doesn't get it." >&2
-            status=1
-            continue
-        fi
-        if set_hotkey "$key" "$target" "$name"; then
-            echo "  Ctrl+Alt+Super+$(key_label "$key") opens ${name//_/ }"
-            changed=true
-        else
-            status=1
-        fi
+        hotkey apply_gnome_keybinding "$key" "$target" "$name" || status=1
     done
-    "$changed" || [ "$status" -ne 0 ] || echo "  The shortcuts are already set."
+    "$GNOME_KEYBINDING_CHANGED" || [ "$status" -ne 0 ] || echo "  The shortcuts are already set."
     return "$status"
 }
 

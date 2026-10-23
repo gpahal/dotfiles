@@ -7,12 +7,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# Ghostty started from the Dock doesn't see a shell's XDG_CONFIG_HOME
-if is_macos; then
-    GHOSTTY_DIR="$HOME/.config/ghostty"
-else
-    GHOSTTY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
-fi
+GHOSTTY_DIR="$(app_config_dir ghostty)"
 
 # Not apt: 26.04's archive stays on 1.3.0
 ghostty_snap_installed() {

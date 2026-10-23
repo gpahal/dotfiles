@@ -30,7 +30,10 @@ stub_docker_group() {
 # dpkg-query reports the packages listed in $SANDBOX/installed
 stub_docker_packages() {
     : > "$SANDBOX/installed"
-    stub dpkg-query 'grep -qxF "${!#}" "'"$SANDBOX"'/installed" && echo "install ok installed"'
+    stub dpkg-query 'for p in "$@"; do
+    case "$p" in -*) continue ;; esac
+    grep -qxF "$p" "'"$SANDBOX"'/installed" && echo "install ok installed" || echo "unknown ok not-installed"
+done'
 }
 
 # Docker installed and set up as the step leaves it, with you in the docker group. Needs

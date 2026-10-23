@@ -211,7 +211,7 @@ The CLI tools are in [`homebrew/Brewfile`](homebrew/Brewfile), and the macOS app
 
 ### Touch ID for sudo
 
-`just touch-id` makes `sudo` take Touch ID, inside tmux too. It adds its lines at the top of `/etc/pam.d/sudo_local` and keeps yours. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
+`just touch-id` makes `sudo` take Touch ID, inside tmux too. It writes `/etc/pam.d/sudo_local` whole, replacing any lines you added. Re-run it after `brew upgrade` updates pam-reattach; `--status` says when. If `sudo` breaks, remove the file with an admin password, then re-run it:
 
 ```sh
 osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator privileges'

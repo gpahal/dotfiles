@@ -28,11 +28,6 @@ hotkey_off_plist() {
     echo "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>32</integer><integer>49</integer><integer>$1</integer></array><key>type</key><string>standard</string></dict></dict>"
 }
 
-# <hotkey id> <modifiers> <description> <app taking it>; Cmd is 1048576
-symbolic_hotkeys() {
-    "$@" 64 1048576 "Spotlight's Cmd+Space shortcut" "Vicinae"
-}
-
 # " domain:key" per change; " domain key," per failure
 CHANGED_KEYS=""
 FAILED_KEYS=""
@@ -79,12 +74,14 @@ set_default() {
     CHANGED_KEYS+=" $domain:$key"
 }
 
-# Unset or without an enabled key means on. Entries start at a four-space indent.
+# Hotkey 64 is Spotlight's Cmd+Space, which Vicinae takes. Unset or without an enabled key means
+# on. Entries start at a four-space indent.
 hotkey_off() {
     defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys 2>/dev/null |
         awk -v id="$1" '/^    [0-9]+ = / { on_id = $1 == id } on_id && /^ +enabled = / { off = $3 == "0;"; on_id = 0 } END { exit !off }'
 }
 
+# disable_hotkey <hotkey id> <modifiers, where Cmd is 1048576> <description>
 disable_hotkey() {
     hotkey_off "$1" && return 0
     if ! defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add "$1" "$(hotkey_off_plist "$2")" 2>/dev/null; then
@@ -94,12 +91,6 @@ disable_hotkey() {
     fi
     echo "  Turned off $3"
     CHANGED_KEYS+=" com.apple.symbolichotkeys:$1"
-}
-
-status_hotkey() {
-    local item
-    item="$(printf '%s' "${3:0:1}" | tr '[:lower:]' '[:upper:]')${3:1}"
-    status_check "$item off, so $4 can take it" hotkey_off "$1"
 }
 
 activate_settings_cmd() {
@@ -274,7 +265,7 @@ status() {
     macos_items
     each_default status_default
     items_status screenshots_dir
-    symbolic_hotkeys status_hotkey
+    status_check "Spotlight's Cmd+Space shortcut off, so Vicinae can take it" hotkey_off 64
     items_status hostname_valid
     # Optional (just touch-id)
     status_touch_id skipped
@@ -289,7 +280,7 @@ apply() {
     macos_items
     items_apply_confirmed || status=1
     each_default set_default
-    symbolic_hotkeys disable_hotkey
+    disable_hotkey 64 1048576 "Spotlight's Cmd+Space shortcut"
 
     if [ -z "$CHANGED_KEYS$FAILED_KEYS$SANDBOXED_KEYS$RUNNING_KEYS" ]; then
         echo "  macOS defaults are already set."

@@ -19,8 +19,6 @@ source "$DOTFILES_DIR/lib/systemd.sh"
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/app-json.sh
 source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
-# shellcheck source=../lib/keepable.sh
-source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -155,14 +153,6 @@ T3_CODE_REPLACE_MODEL=false
 T3_CODE_EFFORT="medium"
 T3_CODE_EFFORT_NAME="T3 Code's default effort (defaultModelSelection.options effort)"
 T3_CODE_REPLACE_EFFORT=false
-# Read through keepable.sh. The effort counts only on the repo's model, whichever instance runs it.
-# shellcheck disable=SC2034 # keep_read reads it
-T3_CODE_KEEP=(
-    .defaultModelSelection.model "\"$T3_CODE_MODEL\"" "$T3_CODE_MODEL_NAME"
-    "[.defaultModelSelection | select(.model == \"$T3_CODE_MODEL\") | .options[]? | select(.id == \"effort\") | .value][0]"
-    "\"$T3_CODE_EFFORT\"" "$T3_CODE_EFFORT_NAME"
-)
-
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
 
 # Objects are set key by key so keys a newer T3 Code adds survive. T3 Code drops values equal to a
@@ -233,11 +223,20 @@ t3_code_server_filter() {
 '
 }
 
-# Sets the caller's model and effort
+# Sets the caller's model and effort, empty when unset. The effort counts only on the repo's model,
+# whichever instance runs it.
 t3_code_read_custom_values() {
-    keep_read T3_CODE_KEEP "$(jq -c . "$T3_CODE_SETTINGS" 2>/dev/null)"
-    model="$(keep_value T3_CODE_KEEP CURRENT 0)"
-    effort="$(keep_value T3_CODE_KEEP CURRENT 1)"
+    local values
+    # shellcheck disable=SC2016 # jq variables, not shell ones
+    values="$(jq -rs --arg model "$T3_CODE_MODEL" 'if length == 1 then .[0] else null end
+        | [try .defaultModelSelection.model][0],
+          [try (.defaultModelSelection | select(.model == $model) | .options[]?
+              | select(.id == "effort") | .value)][0]
+        | if . == null then "" elif type == "string" then . else tojson end' "$T3_CODE_SETTINGS" 2>/dev/null)" ||
+        values=""
+    model="${values%%$'\n'*}"
+    effort=""
+    [ "$values" == "$model" ] || effort="${values#*$'\n'}"
 }
 
 # A model of your own that stays leaves its effort alone

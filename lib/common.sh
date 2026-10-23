@@ -398,17 +398,17 @@ report_failed() {
 
 # Replaces a differing file without asking or backing up. Sets COPIED=true when it copies.
 copy_file() {
-    local src="$1" dest="$2" new_mode=644 exec=""
+    local src="$1" dest="$2"
     if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
         echo "  $dest is already up to date"
         return 0
     fi
     mkdir -p "$(dirname "$dest")" || return 1
     if [ -x "$src" ]; then
-        new_mode=755
-        exec=x
-    fi
-    replace_file "$src" "$dest" "$new_mode" "$exec" || {
+        replace_file "$src" "$dest" 755 x
+    else
+        replace_file "$src" "$dest" 644
+    fi || {
         if [ $? -eq 2 ]; then
             echo "  $dest is read-only, so left it unchanged." >&2
         else
@@ -419,37 +419,6 @@ copy_file() {
     # shellcheck disable=SC2034 # callers read it
     COPIED=true
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
-}
-
-# <file>.bak, or a timestamped name when .bak holds something else
-backup_path() {
-    local bak="$1.bak" base n=1
-    if [ -e "$bak" ] && ! cmp -s "$1" "$bak"; then
-        base="$1.bak.$(date +%Y%m%d-%H%M%S)"
-        bak="$base"
-        while [ -e "$bak" ] && ! cmp -s "$1" "$bak"; do
-            n=$((n + 1))
-            bak="$base-$n"
-        done
-    fi
-    echo "$bak"
-}
-
-# Never overwrites a differing backup. On failure the caller must leave the file as it is.
-backup_file() {
-    local file="$1" bak="${2:-}"
-    if [ -z "$bak" ] || { [ -e "$bak" ] && ! cmp -s "$file" "$bak"; }; then
-        bak="$(backup_path "$file")"
-    fi
-    if cmp -s "$file" "$bak"; then
-        echo "  $file is already backed up to $bak"
-        return 0
-    fi
-    if ! cp "$file" "$bak"; then
-        echo "  Couldn't back up $file to $bak, so left it unchanged." >&2
-        return 1
-    fi
-    echo "  Backed up $file to $bak"
 }
 
 # Succeeds when the repo's value should be written: unset, already equal, or the user agrees
@@ -494,18 +463,36 @@ append_line() {
     printf '%s\n' "$line" >> "$file"
 }
 
-# On failure the caller must leave the file as it is
+# maybe_backup <file>: offers to copy the file to <file>.bak, or to a timestamped name when .bak
+# holds something else, and never overwrites a differing backup. On failure the caller must leave
+# the file as it is.
 maybe_backup() {
-    local file="$1" bak
+    local file="$1" bak="$1.bak" base n=1
     [ -f "$file" ] || return 0
-    cmp -s "$file" "$file.bak" && return 0
-    bak="$(backup_path "$file")"
+    if [ -e "$bak" ]; then
+        ! cmp -s "$file" "$bak" || return 0
+        base="$file.bak.$(date +%Y%m%d-%H%M%S)"
+        bak="$base"
+        while [ -e "$bak" ] && ! cmp -s "$file" "$bak"; do
+            n=$((n + 1))
+            bak="$base-$n"
+        done
+    fi
     case "${DOTFILES_BACKUP:-}" in
         no) return 0 ;;
         yes) ;;
         *) confirm "  Back up $file to $bak?" || return 0 ;;
     esac
-    backup_file "$file" "$bak"
+    # The loop stopped at a backup made earlier this second
+    if [ -e "$bak" ]; then
+        echo "  $file is already backed up to $bak"
+        return 0
+    fi
+    if ! cp "$file" "$bak"; then
+        echo "  Couldn't back up $file to $bak, so left it unchanged." >&2
+        return 1
+    fi
+    echo "  Backed up $file to $bak"
 }
 
 # Succeeds when a process named $1 is an ancestor of this script
@@ -602,30 +589,44 @@ file_mode() {
     fi
 }
 
-# replace_file <src> <dest> <new-mode> [x]: writes a temp file and renames it, so a script
-# running from the old file reads on unchanged. Follows symlinks. Returns 2 when dest is read-only.
+# replace_file [--sudo] <src> <dest> <mode> [x] [install-option...]: writes a temp file beside dest
+# and renames it into place, so a script running from the old file reads on unchanged, and sudo tee
+# can't cut a drop-in short. The leading dot hides the temp file from run-parts and *.conf globs.
+# Follows symlinks. <mode> is a new file's: an existing one keeps its own, plus exec bits with x,
+# unless <mode> starts with =. --sudo runs each command through sudo. Returns 2 when dest is
+# read-only, 3 when it's a directory, which mv would move the file into, and 4 when it's a dangling
+# symlink, which stat reads as 777 and mv would replace.
+# shellcheck disable=SC2086 # $as is empty or sudo
 replace_file() {
-    local src="$1" dest="$2" mode="$3" tmp target
-    if [ -L "$dest" ]; then
+    local as="" src dest mode exec="" tmp target
+    [ "$1" != --sudo ] || { as=sudo; shift; }
+    src="$1" dest="$2" mode="$3"
+    shift 3
+    [ "${1:-}" != x ] || { exec=x; shift; }
+    if $as test -L "$dest"; then
         # On a dangling link macOS's readlink -f fails and GNU's succeeds, so check the target
-        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
-            return 1
+        if ! target="$($as readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
+            ! $as test -e "$target"; then
+            return 4
         fi
         dest="$target"
     fi
-    # mv would move the copy into a directory
-    [ ! -d "$dest" ] || return 1
-    [ ! -e "$dest" ] || [ -w "$dest" ] || return 2
-    if [ -e "$dest" ]; then
-        mode="$(file_mode "$dest")" || return 1
-        [ -z "${4:-}" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
+    ! $as test -d "$dest" || return 3
+    if $as test -e "$dest"; then
+        [ -n "$as" ] || [ -w "$dest" ] || return 2
+        if [ "${mode#=}" == "$mode" ]; then
+            # Through sudo, since the file or its directory may be root-only
+            # shellcheck disable=SC2016 # expanded by the inner bash
+            mode="$($as bash -c "$(declare -f file_mode)"'; file_mode "$1"' _ "$dest")" || return 1
+            [ -z "$exec" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
+        fi
     fi
-    tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
-    # cp onto the existing temp file keeps mktemp's 600 until chmod
-    if cp "$src" "$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$dest"; then
+    mode="${mode#=}"
+    tmp="$($as mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
+    if $as install -m "$mode" ${1+"$@"} "$src" "$tmp" && $as mv -f "$tmp" "$dest"; then
         return 0
     fi
-    rm -f "$tmp"
+    $as rm -f "$tmp"
     return 1
 }
 
@@ -642,39 +643,67 @@ write_back() {
     rm -f "$new"
 }
 
-# A file the expression doesn't change is left untouched
-json_merge() {
-    local file="$1" filter="$2" tmp input="" values
-    require_cmd jq || return 1
-    ! json_applied "$file" "$filter" || return 0
-    # An unreadable file, such as a dangling symlink, fails rather than start from {} and lose data
-    if [ -e "$file" ] || [ -L "$file" ]; then
-        if ! input="$(cat -- "$file")"; then
-            echo "  Couldn't read $file, so it was left as it is." >&2
-            return 1
+# file_contents <file>: prints the file, or nothing when it's missing; fails, saying so, when it
+# can't be read, such as a dangling symlink, rather than start afresh and lose data
+file_contents() {
+    [ -e "$1" ] || [ -L "$1" ] || return 0
+    cat -- "$1" && return 0
+    echo "  Couldn't read $1, so it was left as it is." >&2
+    return 1
+}
+
+# merge_file <file> <transform-fn> [reader-fn]: pipes what the reader prints (file_contents by
+# default) through the transform, and writes the result when it differs from the file, after
+# offering a backup. Both get the file's path, and print their own errors. Check first that the
+# file needs a change, as the transform's output can differ from the file in form alone.
+merge_file() {
+    local file="$1" transform="$2" input tmp status=1
+    input="$("${3:-file_contents}" "$file")" || return 1
+    tmp="$(mktemp)" || return 1
+    if printf '%s\n' "$input" | "$transform" "$file" > "$tmp"; then
+        if cmp -s "$tmp" "$file"; then
+            status=0
+        elif maybe_backup "$file" && mkdir -p "$(dirname "$file")"; then
+            write_back "$tmp" "$file"
+            return
         fi
     fi
+    rm -f "$tmp"
+    return "$status"
+}
+
+# A file the expression doesn't change is left untouched
+json_merge() {
+    local filter="$2"
+    require_cmd jq || return 1
+    ! json_applied "$1" "$filter" || return 0
+    merge_file "$1" _json_merge_filter _json_merge_read
+}
+
+# One JSON value; {} for a missing or blank file
+_json_merge_read() {
+    local input values
+    input="$(file_contents "$1")" || return 1
     [[ "$input" =~ [^[:space:]] ]] || input='{}'
     # jq's own error says where invalid JSON goes wrong
     if ! values="$(printf '%s\n' "$input" | jq -s length)"; then
-        echo "  $file isn't valid JSON, so it was left as it is." >&2
+        echo "  $1 isn't valid JSON, so it was left as it is." >&2
         return 1
     elif [ "$values" != 1 ]; then
-        echo "  $file holds $values JSON values, not one, so it was left as it is." >&2
+        echo "  $1 holds $values JSON values, not one, so it was left as it is." >&2
         return 1
     fi
-    tmp="$(mktemp)"
-    if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
-        echo "  Couldn't update $file with jq." >&2
-        rm -f "$tmp"
+    printf '%s\n' "$input"
+}
+
+# Runs json_merge's filter, which it reads from json_merge's local
+_json_merge_filter() {
+    local out
+    if ! out="$(jq "$filter")" || [ "$(jq -s length <<< "$out" 2>/dev/null)" != 1 ]; then
+        echo "  Couldn't update $1 with jq." >&2
         return 1
     fi
-    if ! maybe_backup "$file"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    mkdir -p "$(dirname "$file")"
-    write_back "$tmp" "$file"
+    printf '%s\n' "$out"
 }
 
 STATUS_NEEDS_ATTENTION=false
@@ -995,10 +1024,19 @@ _item_run() {
     esac
 }
 
+# shown_path <path>: relative to the repo for a repo file, and starting ~/ under HOME
+# shellcheck disable=SC2088 # shown, not expanded
+shown_path() {
+    case "$1" in
+        "$DOTFILES_DIR"/*) echo "${1#"$DOTFILES_DIR"/}" ;;
+        "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
+        *) echo "$1" ;;
+    esac
+}
+
 status_file() {
-    local src="$1" dest="$2" shown="$2"
-    # shellcheck disable=SC2088 # shown, not expanded
-    [[ "$dest" == "$HOME/"* ]] && shown="~/${dest#"$HOME"/}"
+    local src="$1" dest="$2" shown
+    shown="$(shown_path "$dest")"
     if cmp -s "$src" "$dest"; then
         # A command the step makes executable, such as git-wt, can't run without the bit
         if [ -x "$src" ] && [ ! -x "$dest" ]; then
@@ -1007,7 +1045,7 @@ status_file() {
             status_item ok "$shown"
         fi
     elif [ -e "$dest" ]; then
-        status_item missing "$shown differs from the repo's ${src#"$DOTFILES_DIR"/}"
+        status_item missing "$shown differs from the repo's $(shown_path "$src")"
     else
         status_item missing "$shown"
     fi

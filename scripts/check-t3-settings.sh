@@ -52,19 +52,20 @@ keys_of() {
         sed -E 's/^\.//; s/^"//; s/":$//' | sort -u
 }
 
-# check <what> <filter> <schema file>...; a made-up key must be missing, so the search can fail.
+# Reads check's schemas
+in_schemas() {
+    grep -qE "(^|[^A-Za-z0-9_\$])\"?$1\"?\??:" "${schemas[@]}"
+}
+
+# check <what> <filter> <schema file>...
 check() {
-    local what="$1" filter="$2" key missing=""
+    local what="$1" filter="$2" schemas
     shift 2
-    for key in $(keys_of "$filter") dotfilesNoSuchT3Setting; do
-        grep -qE "(^|[^A-Za-z0-9_\$])\"?$key\"?\??:" "$@" || missing="$missing $key"
-    done
-    case "$missing" in
-        *" dotfilesNoSuchT3Setting") missing="${missing% dotfilesNoSuchT3Setting}" ;;
-        *) fail "the search for $what found a made-up key, so it can't check the real ones" ;;
-    esac
-    if [ -n "$missing" ]; then
-        fail "T3 Code $tag's schema lacks these $what keys the t3-code step writes:$missing"
+    schemas=("$@")
+    # shellcheck disable=SC2046 # a list of keys
+    missing_names "for $what" key dotfilesNoSuchT3Setting in_schemas $(keys_of "$filter")
+    if [ -n "$MISSING" ]; then
+        fail "T3 Code $tag's schema lacks these $what keys the t3-code step writes:$MISSING"
     else
         echo "  $what: every key is in the schema"
     fi
@@ -73,8 +74,4 @@ check() {
 check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
-if [ "$errors" -gt 0 ]; then
-    echo "$errors check(s) failed" >&2
-    exit 1
-fi
-echo "All checks passed"
+finish_checks

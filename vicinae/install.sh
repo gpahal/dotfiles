@@ -126,6 +126,11 @@ settings_filter() {
     done < <(vicinae_os_settings)
 }
 
+# For merge_file
+settings_merged() {
+    jq "$(settings_filter)"
+}
+
 settings_imported() {
     jq -e --arg f "$VICINAE_IMPORT" 'any(.imports[]?; . == $f)' <<< "$1" > /dev/null
 }
@@ -142,7 +147,7 @@ settings_overrides() {
 
 # Rewrites settings.json without its comments, as Vicinae does when it saves
 setup_settings() {
-    local file current new tmp key value text now
+    local file current new key value text now
     vicinae_files copy_file || return 1
     file="$(vicinae_settings)"
     if ! current="$(vicinae_settings_json)"; then
@@ -163,13 +168,7 @@ setup_settings() {
         echo "  $file already imports $VICINAE_IMPORT and has this OS's settings"
         return 0
     fi
-    maybe_backup "$file" || return 1
-    mkdir -p "$(dirname "$file")" && tmp="$(mktemp)" || return 1
-    if ! jq . <<< "$new" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    write_back "$tmp" "$file" || return 1
+    merge_file "$file" settings_merged vicinae_settings_json || return 1
     settings_imported "$current" || echo "  $file imports $VICINAE_IMPORT"
     while IFS='|' read -r key value text; do
         [ "$(jq -c ".$key" <<< "$current")" != null ] || echo "  $text ($key = $value)"

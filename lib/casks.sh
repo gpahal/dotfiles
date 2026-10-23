@@ -47,10 +47,13 @@ install_cask() {
 # "" for a cask with no app, such as a font or a pkg installer
 CASK_APP_JQ='[.artifacts[] | objects | select(has("app")) | .target // ("/Applications/" + .app[0])][0] // ""'
 
-# Prints nothing without jq, so a caller falls back to where the app usually is
+# Prints nothing without jq, so a caller falls back to where the app usually is. Fails with brew's
+# status when brew info fails, so a failure can't pass for a cask with no app.
 cask_app_path() {
+    local info
     command -v jq &>/dev/null || return 0
-    brew info --json=v2 --cask "$1" 2>/dev/null | jq -r ".casks[0] | $CASK_APP_JQ"
+    info="$(brew info --json=v2 --cask "$1" 2>/dev/null)" || return
+    jq -r ".casks[0] | $CASK_APP_JQ" <<< "$info"
 }
 
 # Pkg casks, whose metadata names no app

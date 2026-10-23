@@ -2,41 +2,21 @@
 # Source after lib/common.sh.
 # shellcheck shell=bash
 
-# install_root_file <src> <dest> [mode] [group] [owner]: writes a temp file and renames it, since
-# sudo tee could cut a drop-in short and lose a setting. The leading dot hides the temp file from
-# run-parts and *.conf globs. A dangling symlink fails: stat reads it as 777 and mv would replace
-# the link. A new directory gets 755 regardless of umask so hook users such as nut can read it.
+# install_root_file <src> <dest> [mode] [group] [owner]: replace_file through sudo. A given mode is
+# set; otherwise an existing file keeps its own, and a new one gets 644. The group is set in the
+# install that writes the file, so a failed chgrp can't leave it root:root. A new directory gets
+# 755 regardless of umask so hook users such as nut can read it.
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" owner="${5:-}" dir tmp opts target
-    dir="$(dirname "$dest")"
-    sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
-    # mv would move the new file into the directory, and succeed
-    if sudo test -d "$dest"; then
-        echo "  $dest is a directory; remove it and re-run." >&2
-        return 1
-    fi
-    if sudo test -L "$dest"; then
-        if ! target="$(sudo readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
-            ! sudo test -e "$target"; then
-            echo "  $dest is a symlink to nothing; remove it and re-run." >&2
-            return 1
-        fi
-        dest="$target"
-        dir="$(dirname "$dest")"
-    fi
-    # Through sudo, since the file or its directory may be root-only
-    if [ -z "$mode" ]; then
-        mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
-            return 1
-    fi
-    tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
-    opts=(-m "${mode:-644}")
-    [ -z "$group" ] || opts+=(-g "$group")
-    [ -z "$owner" ] || opts+=(-o "$owner")
-    if sudo install "${opts[@]}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
-        return 0
-    fi
-    sudo rm -f "$tmp"
+    local src="$1" dest="$2" mode="${3:+=$3}" opts=() status=0
+    [ -z "${4:-}" ] || opts+=(-g "$4")
+    [ -z "${5:-}" ] || opts+=(-o "$5")
+    sudo test -d "$(dirname "$dest")" || sudo install -d -m 0755 "$(dirname "$dest")" || return 1
+    replace_file --sudo "$src" "$dest" "${mode:-644}" ${opts[@]+"${opts[@]}"} || status=$?
+    case "$status" in
+        0) return 0 ;;
+        3) echo "  $dest is a directory; remove it and re-run." >&2 ;;
+        4) echo "  $dest is a symlink to nothing; remove it and re-run." >&2 ;;
+    esac
     return 1
 }
 

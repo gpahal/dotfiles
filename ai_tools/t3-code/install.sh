@@ -9,6 +9,8 @@ set -euo pipefail
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
+# shellcheck source=../../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/app-json.sh
@@ -44,10 +46,6 @@ T3_CODE_DESKTOP_SETTINGS="$HOME/.t3/userdata/desktop-settings.json"
 T3_CODE_DESKTOP_FILTER='.localEnvironmentEnabled = false'
 T3_CODE_RELEASE_API=https://api.github.com/repos/pingdotgg/t3code/releases/latest
 
-t3_code_desktop_installed() {
-    apt_installed t3code
-}
-
 # The latest release's .deb, checked against GitHub's digest. It updates itself after, asking for
 # your password. Runs where set -e is off: each command checks its own failure.
 install_t3_code_desktop() {
@@ -81,26 +79,16 @@ install_t3_code_desktop() {
     return "$status"
 }
 
-t3_code_have_libatomic() {
-    apt_installed libatomic1
-}
-
-install_t3_code_libatomic() {
-    # shellcheck disable=SC2119 # needs no options
-    apt_get_update || return 1
-    apt_get install -y libatomic1
-}
-
 # Ubuntu's sudo changes: the desktop app on a GNOME desktop, and libatomic1 while the t3 CLI is missing
 t3_code_ubuntu_items() {
     items_reset
     if has_gnome_desktop; then
         item --sudo "T3 Code desktop app" "Install the T3 Code desktop app from its latest GitHub release" \
-            t3_code_desktop_installed install_t3_code_desktop
+            "apt_installed t3code" install_t3_code_desktop
     fi
     if [ ! -x "$HOME/.local/bin/t3" ]; then
         item --sudo "libatomic1, which the t3 CLI needs" "$T3_CODE_LIBATOMIC_PENDING" \
-            t3_code_have_libatomic install_t3_code_libatomic
+            "apt_installed libatomic1" "apt_install_fresh libatomic1"
     fi
 }
 
@@ -125,15 +113,15 @@ setup_t3_code_desktop_ubuntu() {
         merged=false
     fi
     t3_code_ubuntu_items
-    if items_ok t3_code_desktop_installed; then
+    if items_ok "apt_installed t3code"; then
         echo "  The T3 Code desktop app is already installed; it updates itself."
     elif ! "$merged"; then
         echo "  Not installing the T3 Code desktop app without its settings, as its own server would" >&2
         echo "  share the service's data." >&2
     else
         # The question lists libatomic1 too, which install_t3_cli then installs on the same answer
-        [ -x "$HOME/.local/bin/t3" ] || t3_code_have_libatomic || notes=(--note "$T3_CODE_LIBATOMIC_PENDING")
-        items_apply_confirmed ${notes[@]+"${notes[@]}"} t3_code_desktop_installed || result=1
+        [ -x "$HOME/.local/bin/t3" ] || apt_installed libatomic1 || notes=(--note "$T3_CODE_LIBATOMIC_PENDING")
+        items_apply_confirmed ${notes[@]+"${notes[@]}"} "apt_installed t3code" || result=1
     fi
     return "$result"
 }
@@ -456,10 +444,6 @@ t3_code_describe_server() {
     echo "PID $pid, $name ($cmd); to fix it, $fix"
 }
 
-t3_code_lingering() {
-    [ -e "/var/lib/systemd/linger/$(id -un)" ]
-}
-
 t3_code_service_enabled() {
     systemctl --user is-enabled --quiet t3code.service 2>/dev/null
 }
@@ -557,10 +541,10 @@ install_t3_cli() {
         echo "  t3 already installed."
         return 0
     fi
-    if ! t3_code_have_libatomic; then
+    if ! apt_installed libatomic1; then
         t3_code_ubuntu_items
-        items_apply_confirmed t3_code_have_libatomic || return 1
-        t3_code_have_libatomic || return 2
+        items_apply_confirmed "apt_installed libatomic1" || return 1
+        apt_installed libatomic1 || return 2
     fi
     echo "  Installing the t3 CLI to ~/.local/bin..."
     run_installer sh https://t3.codes/install.sh "the t3 installer" || return 1
@@ -728,7 +712,7 @@ restart_t3_code_service_serving_nothing() {
 ensure_t3_code_service() {
     local changed=false
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
-        if ! t3_code_lingering; then
+        if ! lingering; then
             echo "  Linger is off, so the service would only start once you log in; skipping it. Run:" >&2
             echo "  bash setup.sh ubuntu, then re-run this script." >&2
             return 1
@@ -738,7 +722,7 @@ ensure_t3_code_service() {
         restart_t3_code_service_serving_nothing || return 1
         echo "  Installed the T3 Code service, which starts at boot"
     else
-        if ! t3_code_lingering; then
+        if ! lingering; then
             echo "  Linger is off, so the service only starts once you log in. Run: bash setup.sh ubuntu"
         fi
         if ! t3_code_service_enabled; then
@@ -859,7 +843,7 @@ t3_code_status_connect() {
 }
 
 t3_code_status_service() {
-    if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! t3_code_lingering; then
+    if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! lingering; then
         status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
     elif [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
         status_item missing "T3 Code service: re-run the t3-code step (bash ai_tools/setup.sh t3-code), which runs t3 service install"
@@ -901,7 +885,7 @@ status() {
         status_item skipped "T3 Code desktop app: no GNOME desktop"
     else
         t3_code_ubuntu_items
-        items_status t3_code_desktop_installed
+        items_status "apt_installed t3code"
         t3_code_files status_file
         if "$jq"; then
             status_check "Desktop app's own server off in ~/.t3/userdata/desktop-settings.json" \
@@ -921,7 +905,7 @@ status() {
     t3_code_status_service
     if [ -f "$T3_CODE_SERVICE_UNIT" ]; then
         status_check "T3 Code service enabled at boot" t3_code_service_enabled
-        status_check "Linger enabled for T3 Code to start without login" t3_code_lingering
+        status_check "Linger enabled for T3 Code to start without login" lingering
     fi
     t3_code_status_listeners
     if t3_code_restart_pending; then
@@ -954,7 +938,7 @@ apply() {
     require_cmd jq || return 1
     if is_macos; then
         require_cmd brew || return 1
-    elif [ ! -x "$HOME/.local/bin/t3" ] || { has_gnome_desktop && ! t3_code_desktop_installed; }; then
+    elif [ ! -x "$HOME/.local/bin/t3" ] || { has_gnome_desktop && ! apt_installed t3code; }; then
         # The t3 installer and the desktop app's .deb are downloads
         require_cmd curl || return 1
     fi

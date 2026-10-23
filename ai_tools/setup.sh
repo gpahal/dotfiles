@@ -6,6 +6,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/runner.sh
+source "$DOTFILES_DIR/lib/runner.sh"
 
 MACOS_STEPS=(claude-code claude-desktop codex t3-code skills manual-steps)
 UBUNTU_STEPS=("${MACOS_STEPS[@]}")

@@ -2,10 +2,7 @@
 # ubuntu/install.sh sets the constants.
 
 nut_installed() {
-    local package
-    for package in "${NUT_PACKAGES[@]}"; do
-        apt_installed "$package" || return 1
-    done
+    apt_installed "${NUT_PACKAGES[@]}"
 }
 
 # Prints <vendor>:<product> per UPS. upower's hwdb tags them, so this needs neither sudo nor NUT.
@@ -324,7 +321,7 @@ status_ups() {
     case "$configured" in
         0) status_item ok "$label" ;;
         1) status_item missing "$label: not set up for it (re-run the ubuntu step)" ;;
-        *) status_item unverified "$label: can't read NUT configuration files in $NUT_DIR without sudo; run sudo -v, then status, to check them" ;;
+        *) status_needs_root "$label:" "can't read NUT configuration files in $NUT_DIR without sudo" them ;;
     esac
     if state="$(upsc_value ups.status)" && [ -n "$state" ]; then
         case " $state " in

@@ -6,6 +6,7 @@
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 load_script lib/common.sh
+load_script lib/runner.sh
 
 fake_step first 'echo "first ran"'
 fake_step broken 'echo "broken output" >&2; exit 1'
@@ -42,15 +43,23 @@ if is_macos; then
 else
     this=ubuntu other=macos label="macOS only"
 fi
-fake_step elsewhere "STEP_OS=$other"
-fake_step here "STEP_OS=\"$this\""
+# The step's own main skips it, as it does when run alone
+for step in elsewhere:$other here:$this; do
+    fake_step "${step%%:*}" "STEP_OS=${step#*:}
+source \"$REPO_DIR/lib/common.sh\"
+status() { echo \"  ok         ${step%%:*} reported\"; }
+apply() { echo \"${step%%:*} applied\"; }
+main \"\$@\""
+done
 rm -f "$SANDBOX/ran"
 assert_exit 0 run_steps "" elsewhere here
-assert_eq "elsewhere: skipped, $label" "$RUN_OUTPUT" "a run with a step for the other OS"
-assert_eq "here" "$(cat "$SANDBOX/ran")" "steps run beside one for the other OS"
-assert_exit 0 run_steps --status elsewhere
+assert_eq "elsewhere: skipped, $label
+here applied" "$RUN_OUTPUT" "a run with a step for the other OS"
+assert_exit 0 run_steps --status elsewhere here
 assert_eq "elsewhere:
-  skipped    $label" "$RUN_OUTPUT" "the status of a step for the other OS"
+  skipped    $label
+here:
+  ok         here reported" "$RUN_OUTPUT" "the status of a step for the other OS"
 
 rm -f "$SANDBOX/ran"
 assert_exit 130 run_steps "" first interrupted last
@@ -137,8 +146,8 @@ runner_dir="$SANDBOX/runner"
 mkdir -p "$runner_dir/slow"
 printf '%s\n' '#!/bin/bash' "touch \"$SANDBOX/slow-started\"" 'sleep 30' > "$runner_dir/slow/install.sh"
 printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.sh\"" \
-    'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' \
-    > "$runner_dir/setup.sh"
+    "source \"$REPO_DIR/lib/runner.sh\"" 'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' \
+    "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' > "$runner_dir/setup.sh"
 printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
 stub_uname Darwin

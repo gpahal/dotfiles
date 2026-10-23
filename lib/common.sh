@@ -49,9 +49,12 @@ locale_installed() {
     locale -a 2>/dev/null | grep -qiE '^en_US\.utf-?8$'
 }
 
-# Excludes packages removed with their config left
+# apt_installed <package>...: all are installed. Excludes packages removed with their config left.
 apt_installed() {
-    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+    local package
+    for package in "$@"; do
+        [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" == *"install ok installed"* ]] || return 1
+    done
 }
 
 # unattended-upgrades holds dpkg's lock for a while after boot
@@ -91,6 +94,18 @@ apt_get_update() {
     done
 }
 
+# Updates apt's lists first, since stale ones can name a version the mirror no longer has. One
+# successful update serves the rest of the run, until add_apt_repo, in lib/system.sh, changes a
+# source or key.
+APT_LISTS_FRESH=""
+apt_install_fresh() {
+    if [ -z "$APT_LISTS_FRESH" ]; then
+        apt_get_update || return 1
+        APT_LISTS_FRESH=true
+    fi
+    apt_get install -y "$@"
+}
+
 file_is() {
     [ "$(cat "$1" 2>/dev/null)" == "$2" ]
 }
@@ -122,14 +137,6 @@ require_supported_os() {
     is_ubuntu && return 0
     echo "Only macOS and Ubuntu are supported." >&2
     return 1
-}
-
-warn_untested_platform() {
-    local arch
-    is_macos && return 0
-    arch="$(uname -m)"
-    [ "$arch" == x86_64 ] && return 0
-    echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2
 }
 
 # Homebrew's default prefixes, macOS's then Linux's. zsh/path.zsh, and zsh/profile.sh for Linux's,
@@ -246,29 +253,6 @@ step_os_skip() {
     else
         echo "$step: skipped, $label"
     fi
-}
-
-# Prints the first STEP_NEEDS entry among the failed steps
-_failed_need() {
-    local script="$1" need
-    shift
-    [ $# -gt 0 ] || return 1
-    for need in $(step_header_value "$script" STEP_NEEDS); do
-        if has_arg "$need" "$@"; then
-            echo "$need"
-            return 0
-        fi
-    done
-    return 1
-}
-
-# Reads STEP_OS or STEP_NEEDS without sourcing, so they must be literals on their own lines
-step_header_value() {
-    sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -n 1
-}
-
-step_header_line() {
-    awk 'NR > 1 && /^# / && !/^# shellcheck/ { sub(/^# /, ""); print; exit }' "$1"
 }
 
 step_name() {
@@ -410,11 +394,6 @@ report_failed() {
     [ $# -gt 0 ] || return 0
     echo "Failed: $(printf '%s\n' "$@" | join_lines ', ')" >&2
     return 1
-}
-
-# A path for a unit's ExecStart, which expands % and $
-systemd_quote() {
-    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
 }
 
 # Replaces a differing file without asking or backing up. Sets COPIED=true when it copies.
@@ -663,17 +642,6 @@ write_back() {
     rm -f "$new"
 }
 
-# write_content <dest> <text>: writes the text and a newline beside dest, then moves it into place
-write_content() {
-    local tmp
-    tmp="$(mktemp "$(dirname "$1")/.${1##*/}.XXXXXX")" || return 1
-    if ! printf '%s\n' "$2" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    write_back "$tmp" "$1"
-}
-
 # A file the expression doesn't change is left untouched
 json_merge() {
     local file="$1" filter="$2" tmp input="" values
@@ -719,23 +687,6 @@ status_item() {
     ! status_state_needs_attention "$1" || STATUS_NEEDS_ATTENTION=true
 }
 
-# Succeeds when an item needs attention. The exit code can't tell: set -e can cut a report short
-# at a command that itself exited 3.
-_status_relay() {
-    local line attention=1 first=true
-    while IFS= read -r line || [ -n "$line" ]; do
-        if "$first"; then
-            printf '%s\n' "$1"
-            first=false
-        fi
-        printf '%s\n' "$line"
-        if status_parse_line "$line" && status_state_needs_attention "$STATUS_LINE_STATE"; then
-            attention=0
-        fi
-    done
-    return "$attention"
-}
-
 sudo_cached() {
     sudo -n true 2> /dev/null
 }
@@ -779,10 +730,6 @@ sudo_ready() {
     memo SUDO_READY sudo_cached > /dev/null
 }
 
-# yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
-# shellcheck disable=SC2034 # the codex step reads it
-YQ_MIN_VERSION=4.54.1
-
 # Missing parts count as 0
 version_at_least() {
     local IFS=. i have_parts want_parts
@@ -795,31 +742,8 @@ version_at_least() {
     done
 }
 
-# Exits 124 on timeout. macOS lacks timeout(1), so perl's alarm stops only the command, not its
-# children; without perl it runs unbounded.
-run_bounded() {
-    local seconds="$1" status=0 start=$SECONDS
-    shift
-    if command -v timeout &>/dev/null; then
-        timeout -k 5 "$seconds" "$@" || status=$?
-        # 137 means timeout had to SIGKILL
-        if [ "$status" -eq 137 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
-            status=124
-        fi
-        return "$status"
-    fi
-    if ! command -v perl &>/dev/null; then
-        "$@"
-        return
-    fi
-    # exec's block form skips the shell; the alarm survives exec
-    perl -e 'alarm shift; exec { $ARGV[0] } @ARGV or exit 127' "$seconds" "$@" || status=$?
-    # 142 is SIGALRM
-    if [ "$status" -eq 142 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
-        status=124
-    fi
-    return "$status"
-}
+# shellcheck source=run-bounded.sh
+source "$DOTFILES_DIR/lib/run-bounded.sh"
 
 DISK_FREE_MIN_PERCENT=10
 DISK_FREE_MIN_KIB=$((10 * 1024 * 1024))
@@ -1100,158 +1024,7 @@ status_result() {
     return 0
 }
 
-# Either OS's steps resolve, so a step for the other OS reaches its own skip message
-step_script() {
-    case "$1" in
-        '' | *[[:space:]/]*) return 1 ;;
-    esac
-    case " ${MACOS_STEPS[*]-} ${UBUNTU_STEPS[*]-} " in
-        *" $1 "*) ;;
-        *) return 1 ;;
-    esac
-    # shellcheck disable=SC2154 # STEPS_DIR is set by the caller
-    if [ "$1" == manual-steps ]; then
-        echo "$STEPS_DIR/manual-steps.sh"
-    else
-        echo "$STEPS_DIR/$1/install.sh"
-    fi
-}
-
-# Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Returns only after a setup run succeeds;
-# otherwise exits.
-runner_main() {
-    local name="$1" for_alerts="$2" script status=0
-    shift 2
-    script="$(_repo_path "${BASH_SOURCE[1]}")"
-    if is_macos; then
-        STEPS=("${MACOS_STEPS[@]}")
-    else
-        STEPS=("${UBUNTU_STEPS[@]}")
-    fi
-    check_args _runner_usage words "$@"
-    RUNNER_STEPS=(${ARG_WORDS[@]+"${ARG_WORDS[@]}"})
-    if status_requested "$@"; then
-        echo "=== $name status ==="
-        run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
-        reraise_interrupt "$status"
-        exit "$status"
-    fi
-    echo "=== $name setup ==="
-    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
-    reraise_interrupt "$status"
-    [ "$status" -eq 0 ] || exit "$status"
-    echo ""
-    echo "=== $name setup complete! ==="
-}
-
-_runner_usage() {
-    local step
-    echo "Usage: bash $script [--status] [--backup | --no-backup] [step...]"
-    echo "Steps, run in this order by default: ${STEPS[*]}"
-    for step in "${STEPS[@]}"; do
-        printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"
-    done
-    echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
-    echo "unknown items."
-    echo "--for-alerts, with --status, is what the daily health alert runs: it skips"
-    echo "$for_alerts."
-    echo "A config file that differs from the repo's is replaced. Settings merged into files other"
-    echo "tools also edit ask whether to back up the file first. --backup or --no-backup answers"
-    echo "every backup question yes or no."
-    echo "Flags may come before or after the step names."
-}
-
 # brew catches SIGINT and exits 130, so bash wouldn't stop on its own
 interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
-}
-
-# Re-raise so callers stop too: bash carries on after exit 130, not after death by SIGINT
-reraise_interrupt() {
-    local sig
-    case "$1" in
-        129) sig=HUP ;;
-        130) sig=INT ;;
-        143) sig=TERM ;;
-        *) return 0 ;;
-    esac
-    trap - INT TERM HUP
-    kill -s "$sig" $$
-    exit "$1"
-}
-
-# run_steps <''|--status> [step...]: a failed step doesn't stop the rest. --status returns 3 when
-# an item needs attention, 1 when a step failed.
-run_steps() {
-    local mode="$1" step script status codes skipped blocker interrupted="" failed=() attention=()
-    shift
-    require_supported_os || return 1
-    # step_script takes either OS's steps, so the error lists both
-    for step in "$@"; do
-        step_script "$step" > /dev/null || {
-            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
-            return 1
-        }
-    done
-    warn_untested_platform
-    # shellcheck disable=SC2154 # STEPS is set by the caller
-    [ $# -gt 0 ] || set -- "${STEPS[@]}"
-    # bash takes a step that exits normally after Ctrl-C to have handled it
-    trap 'interrupted=130' INT
-    trap 'interrupted=143' TERM
-    trap 'interrupted=129' HUP
-    for step in "$@"; do
-        script="$(step_script "$step")"
-        status=0
-        # An invalid STEP_OS is left for the step's own main to report
-        if [ -n "$mode" ] && skipped="$(step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" --status 2>/dev/null)"; then
-            printf '%s:\n%s\n' "$step" "$skipped"
-            continue
-        elif [ -z "$mode" ] && step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" 2>/dev/null; then
-            continue
-        fi
-        if [ -z "$mode" ] && blocker="$(_failed_need "$script" ${failed[@]+"${failed[@]}"})"; then
-            echo "$step: skipped, $blocker failed" >&2
-            failed+=("$step")
-            continue
-        fi
-        if [ -n "$mode" ]; then
-            # The header prints only before a first line. -e is off in the group, so read
-            # PIPESTATUS.
-            {
-                "$BASH" "$script" --status | _status_relay "$step:"
-                codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
-            } || true
-            status="${codes% *}"
-            # Exit 3 with no item needing attention means set -e cut the report short
-            if [ "$status" -eq 3 ] && [ "${codes#* }" -ne 0 ]; then
-                status=1
-            fi
-        else
-            "$BASH" "$script" || status=$?
-        fi
-        [ -z "$interrupted" ] || status="$interrupted"
-        if interrupted_status "$status"; then
-            echo "  The $step step was interrupted; stopping." >&2
-            trap - INT TERM HUP
-            return "$status"
-        elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then
-            attention+=("$step")
-        elif [ "$status" -ne 0 ]; then
-            echo "  The $step step failed." >&2
-            failed+=("$step")
-        fi
-    done
-    trap - INT TERM HUP
-    if [ ${#attention[@]} -gt 0 ]; then
-        echo ""
-        echo "$STATUS_SUMMARY_ATTENTION: ${attention[*]}. Run: bash $0 ${attention[*]}"
-    fi
-    if [ ${#failed[@]} -gt 0 ]; then
-        echo "" >&2
-        echo "$STATUS_SUMMARY_FAILED: ${failed[*]}" >&2
-        echo "Fix the errors above, then re-run them with: bash $0 ${mode:+$mode }${failed[*]}" >&2
-        return 1
-    fi
-    [ ${#attention[@]} -eq 0 ] || return 3
 }

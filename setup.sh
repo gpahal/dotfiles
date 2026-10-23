@@ -5,6 +5,8 @@ set -euo pipefail
 
 # shellcheck source=lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+# shellcheck source=lib/runner.sh
+source "$DOTFILES_DIR/lib/runner.sh"
 
 # On the Mac, OrbStack provides Docker, and the homebrew step installs Chrome and Logi Options+
 MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon vicinae

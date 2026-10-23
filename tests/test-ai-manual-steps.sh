@@ -2,13 +2,13 @@
 # The step's functions call the replaced ones
 # shellcheck disable=SC2329
 
-# ai_tools/manual-steps.sh: which apps' notifications still need allowing, read from macOS's
+# ai_tools/manual-steps/install.sh: which apps' notifications still need allowing, read from macOS's
 # notification settings, and opening those settings only on a yes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-load_script ai_tools/manual-steps.sh
+load_script ai_tools/manual-steps/install.sh
 
 # plutil prints $SANDBOX/ncprefs; with no file it fails, as without Full Disk Access
 NCPREFS="$SANDBOX/ncprefs"

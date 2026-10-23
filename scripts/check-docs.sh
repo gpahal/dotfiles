@@ -7,6 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/runner.sh
+source "$DOTFILES_DIR/lib/runner.sh"
 # shellcheck source=lib/markdown.sh
 source "$DOTFILES_DIR/scripts/lib/markdown.sh"
 # shellcheck source=lib/runners.sh
@@ -64,10 +66,7 @@ check_header_line() {
     fi
 }
 while IFS= read -r step; do
-    case "$step" in
-        */manual-steps) check_header_line "$step.sh" ;;
-        *) check_header_line "$step/install.sh" ;;
-    esac
+    check_header_line "$step/install.sh"
 done < <({
     sed "s|^|$DOTFILES_DIR/|" "$tmp/setup-macos" "$tmp/setup-ubuntu"
     sed "s|^|$DOTFILES_DIR/ai_tools/|" "$tmp/ai-macos" "$tmp/ai-ubuntu"

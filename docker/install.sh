@@ -40,8 +40,7 @@ DOCKER_DAEMON_SETTINGS='
       )) else . end'
 
 docker_installed() {
-    [ "$(dpkg-query -W -f='${Status}\n' "${DOCKER_PACKAGES[@]}" 2>/dev/null | grep -c "install ok installed")" \
-        -eq "${#DOCKER_PACKAGES[@]}" ]
+    apt_installed "${DOCKER_PACKAGES[@]}"
 }
 
 # Cached through a memo scope, such as one status run
@@ -152,7 +151,7 @@ docker_status_run() {
     DOCKER_STATUS=0
     if ! in_docker_group; then
         if ! sudo_ready; then
-            status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
+            status_needs_root "$label:" "$(id -un) isn't in the docker group"
             return 1
         fi
         docker=(sudo -n docker)
@@ -265,7 +264,7 @@ status() {
     fi
     items_status socket_ready starts_at_boot
     if daemon_config_unreadable && ! sudo_ready; then
-        status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
+        status_needs_root "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "only root can read it"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         items_status daemon_configured
     fi

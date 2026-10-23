@@ -53,7 +53,6 @@ AllowHibernation=no
 AllowHybridSleep=no
 AllowSuspendThenHibernate=no'
 REBOOT_REQUIRED=/var/run/reboot-required
-LINGER_DIR=/var/lib/systemd/linger
 APT_TIMERS=(apt-daily.timer apt-daily-upgrade.timer)
 SYSCTL_CONF=/etc/sysctl.d/90-dotfiles.conf
 SYSCTL_SOURCES=(/etc/sysctl.d /run/sysctl.d /usr/local/lib/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf)
@@ -325,10 +324,6 @@ turn_on_wake_on_lan() {
     echo "  Wake-on-LAN applies the next time the connection comes up. It also needs the BIOS settings"
     echo "  in the README's Manual steps: Wake-on-LAN on, and ErP/EuP off."
     return "$result"
-}
-
-lingering() {
-    [ -e "$LINGER_DIR/$(id -un)" ]
 }
 
 enable_linger() {

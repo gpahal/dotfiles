@@ -498,7 +498,7 @@ stub_uname() {
 
 # Usage: fake_step <name> [body]: a step in $SANDBOX/steps that logs "<name> <args>" to
 # $SANDBOX/ran, then runs the body. step_script then finds only fake steps; set STEPS for
-# run_steps. Call it after load_script lib/common.sh.
+# run_steps. Call it after load_script lib/common.sh and lib/runner.sh.
 fake_step() {
     mkdir -p "$SANDBOX/steps"
     printf '%s\n' '#!/bin/bash' "echo \"$1\${*:+ \$*}\" >> \"$SANDBOX/ran\"" "${2:-}" > "$SANDBOX/steps/$1.sh"
@@ -563,7 +563,7 @@ load_script() {
     done
     # lib/common.sh defines its default main only when none exists
     case "$script" in
-        "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
+        "$REPO_DIR"/lib/*.sh) ;;
         *) unset -f main ;;
     esac
     # Else an earlier step's values would gate this one

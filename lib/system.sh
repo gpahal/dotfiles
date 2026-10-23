@@ -1,4 +1,5 @@
-# Helpers for sudo changes: root-owned files and third-party apt repos. Source after lib/common.sh.
+# Helpers for sudo changes and system state: root-owned files, third-party apt repos, and linger.
+# Source after lib/common.sh.
 # shellcheck shell=bash
 
 # install_root_file <src> <dest> [mode] [group] [owner]: writes a temp file and renames it, since
@@ -81,15 +82,11 @@ sbin_cmd() {
     PATH="$SBIN_PATH" command -v "$1"
 }
 
-# Updates apt's lists first, since stale ones can name a version the mirror no longer has. One
-# successful update serves the rest of the run, until add_apt_repo changes a source or key.
-APT_LISTS_FRESH=""
-apt_install_fresh() {
-    if [ -z "$APT_LISTS_FRESH" ]; then
-        apt_get_update || return 1
-        APT_LISTS_FRESH=true
-    fi
-    apt_get install -y "$@"
+LINGER_DIR=/var/lib/systemd/linger
+
+# systemd starts your user services at boot, without a login
+lingering() {
+    [ -e "$LINGER_DIR/$(id -un)" ]
 }
 
 # 000 when the host can't be reached
@@ -211,6 +208,7 @@ add_apt_repo() {
         return 1
     fi
     rm -f "$key"
+    # shellcheck disable=SC2034 # apt_install_fresh, in lib/common.sh, reads it
     APT_LISTS_FRESH=""
     # The key has changed, so a failed write gets the same rollback as a failed update. --error-on=any
     # fails on an unverifiable key, which apt-get update otherwise only warns about.

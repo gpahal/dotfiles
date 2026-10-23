@@ -41,7 +41,7 @@ unattended_upgrades_running() {
 status_unattended_upgrades() {
     local item="unattended-upgrades runs daily"
     if auto_upgrades_unreadable && ! sudo_ready; then
-        status_item unverified "$item (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
+        status_needs_root "$item" "only root can read $AUTO_UPGRADES_CONF"
     else
         status_check "$item" unattended_upgrades_running
     fi

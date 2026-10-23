@@ -10,6 +10,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 load_script lib/common.sh
+load_script lib/runner.sh
 install_health_alert "$SANDBOX/health-alert"
 # shellcheck source=../ubuntu/health-alert.sh
 source "$SANDBOX/health-alert/health-alert.sh"
@@ -25,6 +26,14 @@ for line in "  missing in the text is not an item" "  bogus      text" "missing 
     "Needs attention: x. Run: bash setup.sh x"; do
     ! status_parse_line "$line" || fail "status_parse_line parsed '$line'"
 done
+
+# Root-only items: health-alert.sh adds its note when a report has one
+assert_eq "  unverified Disk health: reading it needs root; run sudo -v, then status, to check it" \
+    "$(status_needs_root "Disk health:" "reading it needs root")" "a root-only item with a colon"
+assert_eq "  unverified The rules (only root can read them; run sudo -v, then status, to check them)" \
+    "$(status_needs_root "The rules" "only root can read them" them)" "a root-only item with an aside"
+status_needs_root "The rules" "only root can read them" them | has_root_only_items ||
+    fail "health-alert.sh didn't find the root-only item"
 
 every="source \"$REPO_DIR/lib/common.sh\""
 for state in $STATUS_STATES; do

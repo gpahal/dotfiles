@@ -23,6 +23,8 @@ CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
 CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+# yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
+YQ_MIN_VERSION=4.54.1
 
 # Prints nothing for a yq other than mikefarah's
 codex_yq_version() {
@@ -326,9 +328,7 @@ setup_codex_sandbox() {
 
     confirm_sudo_changes "${pending[@]}" || return 0
     if "$install"; then
-        # shellcheck disable=SC2119 # needs no options
-        apt_get_update || return 1
-        apt_get install -y bubblewrap || return 1
+        apt_install_fresh bubblewrap || return 1
     fi
     if ! bwrap_works; then
         bwrap_profile_can_fix || return 1

@@ -17,12 +17,9 @@ set -uo pipefail
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
 
-# Sourcing all of lib/common.sh would change the tests' PATH and environment
-eval "$(sed -n '/^run_bounded() {$/,/^}$/p' ../lib/common.sh)"
-if ! declare -F run_bounded > /dev/null; then
-    echo "No run_bounded() in lib/common.sh" >&2
-    exit 1
-fi
+# Not all of lib/common.sh, which would change the tests' PATH and environment
+# shellcheck source=../lib/run-bounded.sh
+source ../lib/run-bounded.sh || exit 1
 
 # For a test SIGKILLed before its EXIT trap ran: a tmux server outlives its socket's dir
 clean_test_dir() {

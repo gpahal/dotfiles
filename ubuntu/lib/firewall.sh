@@ -227,7 +227,7 @@ status_ufw() {
         return 0
     fi
     if ! sudo_ready; then
-        status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
+        status_needs_root "$rules" "only root can read them" them
         return 0
     fi
     ufw_configured -n || ufw=$?

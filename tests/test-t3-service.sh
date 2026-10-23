@@ -88,7 +88,10 @@ stub_at "$HOME/.local/bin/t3" 'if [ "$*" == "service install" ]; then
 fi'
 
 replace_fn t3_code_in_service_cgroup 'false'
-replace_fn t3_code_lingering 'true'
+# Linger on
+LINGER_DIR="$SANDBOX/systemd-linger"
+mkdir -p "$LINGER_DIR"
+touch "$LINGER_DIR/$(id -un)"
 # always-idle survives a start.
 replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] && [ ! -e "$STATE/always-idle" ]'
 # The running server lacks the drop-in's environment: stale-env all of it, stale-env-host its host.
@@ -245,14 +248,14 @@ assert_contains "$RUN_OUTPUT" "The T3 Code service runs no server. Check ~/.t3/u
 
 # Linger off with no unit: don't install, since it would start only at login
 reset
-replace_fn t3_code_lingering 'false'
+rm "$LINGER_DIR/$(id -un)"
 assert_exit 1 configure_t3_code_ubuntu
 assert_contains "$RUN_OUTPUT" "Linger is off"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu"
 assert_file_not_contains "$STUB_LOG" "t3 service install"
 run status
 assert_contains "$RUN_OUTPUT" 'missing    T3 Code service: turn on linger: `bash setup.sh ubuntu`'
-replace_fn t3_code_lingering 'true'
+touch "$LINGER_DIR/$(id -un)"
 
 reset
 installed_unit
@@ -342,7 +345,7 @@ stub ss '[ ! -f "$SANDBOX/state/active" ] || echo "LISTEN 0 511 127.0.0.1:3773 0
 desktop_app() {
     local backend="/opt/T3 Code (Beta)/t3code --require /opt/T3 Code (Beta)/resources/app.asar/apps/desktop/dist-electron/compileCache.cjs /opt/T3 Code (Beta)/resources/app.asar/apps/server/dist/bin.mjs --bootstrap-fd 3"
     replace_fn has_gnome_desktop 'true'
-    replace_fn t3_code_desktop_installed 'true'
+    replace_fn apt_installed '[ "$1" == t3code ]'
     replace_fn running_inside 'false'
 
     printf '%s\n' "400|t3code|/opt/T3 Code (Beta)/t3code" "401|t3code|$backend" > "$SANDBOX/procs"
@@ -368,10 +371,14 @@ subtest desktop_app
 desktop_install() {
     replace_fn has_gnome_desktop 'true'
     replace_fn running_inside 'false'
-    replace_fn t3_code_desktop_installed '[ -e "$STATE/desktop" ]'
     replace_fn install_t3_code_desktop 'echo "install the desktop app" >> "$STUB_LOG"; touch "$STATE/desktop"'
-    replace_fn apt_installed '[ "$1" != libatomic1 ] || [ -e "$STATE/libatomic1" ]'
-    replace_fn install_t3_code_libatomic 'echo "install libatomic1" >> "$STUB_LOG"; touch "$STATE/libatomic1"'
+    replace_fn apt_installed 'case "$1" in
+    t3code) [ -e "$STATE/desktop" ] ;;
+    libatomic1) [ -e "$STATE/libatomic1" ] ;;
+esac'
+    replace_fn apt_install_fresh '[ "$1" == libatomic1 ] || return 1
+echo "install libatomic1" >> "$STUB_LOG"
+touch "$STATE/libatomic1"'
     replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
     mv "$HOME/.local/bin/t3" "$SANDBOX/t3"
     answer yes

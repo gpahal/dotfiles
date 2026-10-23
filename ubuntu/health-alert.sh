@@ -16,7 +16,6 @@ source "$HEALTH_ALERT_DIR/status-format.sh"
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 # ntfy turns a message over 4096 bytes into an attachment; leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
-ROOT_ONLY_TEXT='run sudo -v, then status'
 ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
 # "<epoch of last push> <cksum of message, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"

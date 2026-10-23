@@ -23,7 +23,7 @@ done
 assert_exit 0 "$BASH" "$setup_sh" vim --help
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-header="$(load_script lib/common.sh && step_header_line "$REPO_DIR/vim/install.sh")"
+header="$(load_script lib/common.sh && load_script lib/runner.sh && step_header_line "$REPO_DIR/vim/install.sh")"
 [ -n "$header" ] || fail "vim/install.sh has no header line"
 assert_contains "$RUN_OUTPUT" "  vim             $header"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"

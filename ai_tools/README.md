@@ -26,7 +26,7 @@ bash ai_tools/setup.sh codex skills # only these
 bash ai_tools/setup.sh --status     # report only
 ```
 
-The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`, except `ai_tools/manual-steps.sh`.
+The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`.
 
 It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. On macOS it asks to quit the Claude, ChatGPT, and T3 Code apps, which overwrite their settings, and skips their settings while they run. It adds no MCP servers.
 

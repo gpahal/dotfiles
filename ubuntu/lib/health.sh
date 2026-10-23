@@ -76,7 +76,7 @@ status_smart() {
         return 0
     fi
     if ! sudo_ready; then
-        status_item unverified "$label: reading it needs root; run sudo -v, then status, to check it"
+        status_needs_root "$label:" "reading it needs root"
         return 0
     fi
     # e.g. /dev/sda -d sat # /dev/sda [SAT], ATA device

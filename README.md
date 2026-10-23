@@ -29,7 +29,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## How setup works
 
-`bash setup.sh` runs these steps in order. Each is `<step>/install.sh`, except `manual-steps.sh`, and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
 
 | Step | What it does |
 | :- | :- |

@@ -272,7 +272,7 @@ status_sshd() {
     items_status openssh_installed
     ! "$installed" || items_status sshd_enabled_once_installed
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_ready; then
-        status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
+        status_needs_root "$SSHD_DROP_IN" "only root can read it"
     else
         status_check "$SSHD_DROP_IN" sshd_configured
     fi
@@ -281,7 +281,7 @@ status_sshd() {
         if [ ! -d "$SSHD_RUN_DIR" ]; then
             status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         elif ! sudo_ready; then
-            status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
+            status_needs_root "$item" "the effective values need sudo -v" them
         elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
             status_item unverified "$item (sudo sshd -T failed; run it to see why)"
         else
@@ -302,7 +302,7 @@ status_sshd() {
     if [ "$(id -u)" == 0 ]; then
         status_item skipped "$item: the step leaves them to root"
     elif ! todo="$(key_only_todo)"; then
-        status_item unverified "$item (only root can read $SSHD_DROP_IN; run sudo -v, then status, to check it)"
+        status_needs_root "$item" "only root can read $SSHD_DROP_IN"
     elif [ -z "$todo" ] && grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         status_item missing "$item ($(grep -E "$PASSWORD_PROBLEMS" <<< "$problems" | join_lines '; '); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
     elif [ -z "$todo" ] && [ -n "$SSHD_MATCH_FILES" ]; then

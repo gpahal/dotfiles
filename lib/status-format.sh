@@ -1,5 +1,6 @@
 # The --status format, which run_steps and ubuntu/health-alert.sh parse. lib/common.sh sources it;
-# it needs nothing else, so it also works sourced on its own. Don't run it.
+# apart from status_needs_root, it needs nothing else, so it also works sourced on its own. Don't
+# run it.
 # shellcheck shell=bash
 
 # Only missing and unknown need attention
@@ -7,6 +8,8 @@ STATUS_STATES="ok missing skipped unverified unknown info"
 STATUS_STATE_WIDTH=10
 STATUS_SUMMARY_ATTENTION="Needs attention"
 STATUS_SUMMARY_FAILED="Failed steps"
+# health-alert.sh finds root-only items by it
+ROOT_ONLY_TEXT='run sudo -v, then status'
 
 status_state_needs_attention() {
     case "$1" in
@@ -37,4 +40,15 @@ status_summary_line() {
         "$STATUS_SUMMARY_ATTENTION: "* | "$STATUS_SUMMARY_FAILED: "*) return 0 ;;
     esac
     return 1
+}
+
+# status_needs_root <label> <reason> [it | them]: an unverified item that only root can check. A
+# label ending in a colon reads "<label> <reason>; run ...", any other "<label> (<reason>; run ...)".
+# It needs status_item, from lib/common.sh.
+status_needs_root() {
+    local hint="$ROOT_ONLY_TEXT, to check ${3:-it}"
+    case "$1" in
+        *:) status_item unverified "$1 $2; $hint" ;;
+        *) status_item unverified "$1 ($2; $hint)" ;;
+    esac
 }

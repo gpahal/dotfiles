@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
 MACOS_STEPS=(claude-code claude-desktop codex t3-code skills manual-steps)
-UBUNTU_STEPS=(claude-code claude-desktop codex t3-code skills manual-steps)
+UBUNTU_STEPS=("${MACOS_STEPS[@]}")
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR/ai_tools"
 

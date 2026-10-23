@@ -765,7 +765,7 @@ sudo_ready() {
 }
 
 # yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
-# shellcheck disable=SC2034 # the codex step and scripts/check-tool-versions.sh read it
+# shellcheck disable=SC2034 # the codex step reads it
 YQ_MIN_VERSION=4.54.1
 
 # Missing parts count as 0

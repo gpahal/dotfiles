@@ -188,7 +188,7 @@ T3_CODE_KEEP=(
 T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
 
 # Objects are set key by key so keys a newer T3 Code adds survive. T3 Code drops values equal to a
-# key's default, so setting one never settles (scripts/check-t3-settings.sh warns). Setup actions
+# key's default, so setting one never settles. Setup actions
 # get async=false per list, as T3 has no global default.
 t3_code_server_filter() {
     # shellcheck disable=SC2016 # jq variables, not shell ones

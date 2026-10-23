@@ -105,15 +105,17 @@ profiles_to_delete() {
     done < <(profile_plan $CHANGED_PAGES)
 }
 
+# delete_profiles <profiles_to_delete's lines>
 delete_profiles() {
     local dir text status=0
+    [ -n "$1" ] || return 0
     while IFS="$SEP" read -r dir text; do
         if delete_profile "$dir"; then
             echo "  Deleted ${dir##*/} from Stream Deck's profiles: ${text%: the next run *}"
         else
             status=1
         fi
-    done < <(profiles_to_delete)
+    done <<< "$1"
     return "$status"
 }
 
@@ -130,7 +132,7 @@ status_profiles() {
 
 # Stream Deck writes its profiles from memory when it quits, so they change only while it's quit.
 # SIGTERM is safe: it saves as it goes. open fails with -600 while the old process quits and
-# briefly after, hence the wait and retries.
+# briefly after, hence the wait and retries. update_stream_deck <profiles_to_delete's lines>
 update_stream_deck() {
     local running=true opened=false status=0 killed=0
     pkill -x "Stream Deck" || killed=$?
@@ -144,7 +146,7 @@ update_stream_deck() {
         echo "  Stream Deck didn't quit; quit it and re-run the step to load the plugin and its profiles." >&2
         return 1
     fi
-    delete_profiles || status=1
+    delete_profiles "$1" || status=1
     if ! "$running"; then
         echo "  Stream Deck isn't running; it loads the plugin and its profiles when it starts."
         return "$status"
@@ -186,15 +188,16 @@ apply() {
     fi
     echo "Installing the Stream Deck plugin and its profiles..."
     require_cmd jq || return 1
-    local status=0
+    local status=0 deletions
     PLUGIN_CHANGED=false
     CHANGED_PAGES=""
     each_plugin_file copy_plugin_file || status=1
     COPIED=false
     remove_stale "$PLUGIN_DIR" "the repo's plugin" plugin_file_list || status=1
     ! "$COPIED" || PLUGIN_CHANGED=true
-    if "$PLUGIN_CHANGED" || [ -n "$(profiles_to_delete)" ]; then
-        update_stream_deck || status=1
+    deletions="$(profiles_to_delete)"
+    if "$PLUGIN_CHANGED" || [ -n "$deletions" ]; then
+        update_stream_deck "$deletions" || status=1
     fi
     return "$status"
 }

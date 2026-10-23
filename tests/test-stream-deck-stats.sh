@@ -222,6 +222,12 @@ network {"rx":2000,"tx":200}' "$out" "the Linux sampler"
 rm "$LINUX/sys/class/hwmon/hwmon1/temp1_label"
 out="$(linux_sampler "console.log(JSON.stringify((await sampler.sample(['temperature'])).temperature));")"
 assert_eq '{"cpu":61,"gpu":41}' "$out" "the CPU temperature from Tccd1"
+# A driver that reloads can move its sensors; a failed read finds them again
+out="$(linux_sampler "const first = (await sampler.sample(['temperature'])).temperature;
+fs.renameSync(root + '/sys/class/hwmon/hwmon1', root + '/sys/class/hwmon/hwmon2');
+const second = (await sampler.sample(['temperature'])).temperature;
+console.log(JSON.stringify([first, second]));")"
+assert_eq '[{"cpu":61,"gpu":41},{"cpu":61,"gpu":41}]' "$out" "a moved sensor"
 
 # A stale or missing power file and missing sensors leave dashes with Linux hints, not macmon's
 out="$(linux_sampler "fs.utimesSync(root + '/power', new Date(t / 1000 - 60), new Date(t / 1000 - 60));

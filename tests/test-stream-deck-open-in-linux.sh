@@ -9,7 +9,11 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
-OPEN_IN="$REPO_DIR/stream-deck/linux/bin/open-in"
+# Beside the lib it sources, as the stream-deck step installs it
+OPEN_IN="$SANDBOX/bin/open-in"
+mkdir -p "$SANDBOX/bin"
+cp "$REPO_DIR/stream-deck/linux/bin/open-in" "$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in-lib.sh" \
+    "$SANDBOX/bin/"
 dir="$SANDBOX/my project"
 file="$dir/main.go"
 mkdir -p "$dir" "$HOME/notes"

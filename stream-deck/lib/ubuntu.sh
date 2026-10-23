@@ -30,6 +30,7 @@ stream_deck_ubuntu_files() {
     for file in daemon.js package.json pnpm-lock.yaml pnpm-workspace.yaml bin/open-in; do
         "$1" "$LINUX_SRC/$file" "$DECK_DIR/$file" || status=1
     done
+    "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/bin/open-in-lib.sh" "$DECK_DIR/bin/open-in-lib.sh" || status=1
     for file in keys.js stats.js layout.json manifest.json; do
         "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/$file" "$DECK_DIR/$file" || status=1
     done

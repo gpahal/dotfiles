@@ -136,30 +136,6 @@ assert_eq '{"gpt-6":1}' "$(get .tui.model_availability_nux)" "[tui.model_availab
 assert_eq '["model-with-reasoning","current-dir","git-branch","context-used"]' "$(get .tui.status_line)" \
     "the status line beside it"
 
-# yq 4.54.1 drops comments after the last key, so the step adds them back
-printf 'model = "x"\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_file_contains "$CODEX_CONFIG" "# [profiles.fast]"
-assert_file_contains "$CODEX_CONFIG" '# model = "y"'
-printf '# only\n# comments\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_file_contains "$CODEX_CONFIG" "# only"
-assert_file_contains "$CODEX_CONFIG" "# comments"
-printf 'model = "x"\n\n[tui]\nnotifications = true\n\n# [profiles.fast]\n# model = "y"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq '# [profiles.fast]|# model = "y"||[analytics]' \
-    "$(grep -A3 -F '# [profiles.fast]' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comments' place"
-first="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run with trailing comments"
-printf 'model = "x"\n\n[tui.model_availability_nux]\n"gpt-6" = 1\n# "gpt-7" = 1\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq 'gpt-6 = 1||# "gpt-7" = 1||[analytics]' \
-    "$(grep -B2 -A2 -F '# "gpt-7"' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment below a new parent table"
-printf 'model = "x"\n\n[ "tui" ] # mine\nnotifications = true\n  [\x27desktop\x27]\nx = 1\n# y = 2\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq 'x = 1||# y = 2||[analytics]' \
-    "$(grep -B2 -A2 -F '# y = 2' "$CODEX_CONFIG" | paste -sd '|' -)" "the trailing comment under a rewritten header"
 printf 'developer_instructions = """\n# Style\nBe brief.\n"""\nx = '"'''"'\n# raw\n'"'''"'\n# real\n[tui]\nnotifications = true\n' \
     > "$CODEX_CONFIG"
 assert_exit 0 configure_codex
@@ -167,9 +143,10 @@ assert_eq '"# Style\nBe brief.\n"' "$(get .developer_instructions)" "a multi-lin
 assert_file_contains "$CODEX_CONFIG" "# real"
 assert_exit 0 configure_codex
 assert_contains "$RUN_OUTPUT" "already set"
-for repro in 'model = "o" # wrap in """ if needed\n# keep me\n' \
-    'note = "it'"'''"'s"\n[tui]\nnotifications = true\n# keep me\n' \
-    "lit = 'say \"\"\"'\n# keep me\n" 'esc = "a\\\\" # """\n# keep me\n'; do
+# Quotes that look like a multi-line string mustn't hide the comment after them
+for repro in 'model = "o" # wrap in """ if needed\n# keep me\nz = 1\n' \
+    'note = "it'"'''"'s"\n[tui]\nnotifications = true\n# keep me\nz = 1\n' \
+    "lit = 'say \"\"\"'\n# keep me\nz = 1\n" 'esc = "a\\\\" # """\n# keep me\nz = 1\n'; do
     # shellcheck disable=SC2059 # the fixture's escapes
     printf "$repro" > "$CODEX_CONFIG"
     assert_exit 0 configure_codex

@@ -20,26 +20,28 @@ CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
 # Registered without git wt, every `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
 
-# Usage: claude_code_keepable <jq path> <JSON value> <name> [ubuntu]
-claude_code_keepable() {
-    keepable claude_code "$1" "$2" "Claude Code's $3" "${4:-}"
+# Values of your own are kept (keepable.sh). Built when used, since tests switch the OS after loading.
+claude_code_keep_list() {
+    CLAUDE_CODE_KEEP=(
+        .model '"claude-opus-5-5"' "Claude Code's model (model)"
+        '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"'
+        "Claude Code's claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"
+        '.modelSettings["claude-sonnet-5-5"].effortLevel' '"high"'
+        "Claude Code's claude-sonnet-5-5 effort (modelSettings.claude-sonnet-5-5.effortLevel)"
+        .statusLine.type '"command"' "Claude Code's status line type (statusLine.type)"
+        .statusLine.command '"~/.claude/statusline.sh"' "Claude Code's status line command (statusLine.command)"
+        .statusLine.refreshInterval 5 "Claude Code's status line refresh interval (statusLine.refreshInterval)"
+    )
+    # Over SSH, `auto` notifies nothing when TERM_PROGRAM didn't reach the tmux pane; ghostty's
+    # OSC 777 reaches the Mac either way.
+    if is_ubuntu; then
+        CLAUDE_CODE_KEEP+=(.preferredNotifChannel '"ghostty"' "Claude Code's notification channel (preferredNotifChannel)")
+    fi
 }
-keepable_forget claude_code
-claude_code_keepable .model '"claude-opus-5-5"' "model (model)"
-claude_code_keepable '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"' \
-    "claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"
-claude_code_keepable '.modelSettings["claude-sonnet-5-5"].effortLevel' '"high"' \
-    "claude-sonnet-5-5 effort (modelSettings.claude-sonnet-5-5.effortLevel)"
-claude_code_keepable .statusLine.type '"command"' "status line type (statusLine.type)"
-claude_code_keepable .statusLine.command '"~/.claude/statusline.sh"' "status line command (statusLine.command)"
-claude_code_keepable .statusLine.refreshInterval 5 \
-    "status line refresh interval (statusLine.refreshInterval)"
-# Over SSH, `auto` notifies nothing when TERM_PROGRAM didn't reach the tmux pane; ghostty's
-# OSC 777 reaches the Mac either way.
-claude_code_keepable .preferredNotifChannel '"ghostty"' "notification channel (preferredNotifChannel)" ubuntu
 
-claude_code_keep_current() {
-    jq -cr "$1 // empty" "$CLAUDE_CODE_SETTINGS" 2>/dev/null || true
+claude_code_keep_read() {
+    claude_code_keep_list
+    keep_read CLAUDE_CODE_KEEP "$(jq -c . "$CLAUDE_CODE_SETTINGS" 2>/dev/null)"
 }
 
 claude_code_have_git_wt() {
@@ -98,11 +100,12 @@ claude_code_settings() {
     # Surveys off: they can attach the transcript. Telemetry stays on: DO_NOT_TRACK and
     # DISABLE_TELEMETRY also stop feature flags (/advisor, skill sync), and
     # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC stops Remote Control and so mobile pushes.
-    local i op keepable=""
-    for i in $(keepable_indexes claude_code); do
+    local k op keepable=""
+    claude_code_keep_list
+    for ((k = 0; k < ${#CLAUDE_CODE_KEEP[@]} / 3; k++)); do
         op="//="
-        if "${KEEP_REPLACE[i]}"; then op="="; fi
-        keepable+="| ${KEEP_PATHS[i]} $op ${KEEP_VALUES[i]}"
+        [ "$(keep_value CLAUDE_CODE_KEEP REPLACE "$k")" != true ] || op="="
+        keepable+="| ${CLAUDE_CODE_KEEP[k * 3]} $op ${CLAUDE_CODE_KEEP[k * 3 + 1]}"
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
     local settings='
@@ -158,7 +161,8 @@ claude_code_settings() {
 configure_claude_code() {
     echo "Configuring Claude Code..."
     local settings
-    keepable_choose claude_code
+    claude_code_keep_read
+    keep_choose CLAUDE_CODE_KEEP
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
         echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
@@ -208,7 +212,8 @@ status() {
     fi
     if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
         status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
-        keepable_status claude_code
+        claude_code_keep_read
+        keep_status CLAUDE_CODE_KEEP
     fi
     claude_code_have_git_wt || status_item missing "Worktree hook: $CLAUDE_CODE_NO_GIT_WT"
     while IFS= read -r line; do

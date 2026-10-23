@@ -76,6 +76,8 @@ while IFS="|" read -r pid name cmd; do
 done < "$procs"
 exit "$found"'
 stub sleep
+# The service's main process has run 100 s, or 1 s with $STATE/young
+stub ps 'if [ -e "$(dirname "$STUB_LOG")/state/young" ]; then echo "      1"; else echo "    100"; fi'
 stub ss '
 state="$(dirname "$STUB_LOG")/state"
 [ ! -f "$state/active" ] || echo "LISTEN 0      511        127.0.0.1:3773      0.0.0.0:*"
@@ -114,7 +116,7 @@ reset() {
 installed_unit() {
     mkdir -p "$(dirname "$T3_CODE_SERVICE_DROP_IN")"
     touch "$T3_CODE_SERVICE_UNIT"
-    printf '%s\n' "$T3_CODE_SERVICE_DROP_IN_CONTENT" > "$T3_CODE_SERVICE_DROP_IN"
+    cp "$REPO_DIR/ai_tools/t3-code/dotfiles.conf" "$T3_CODE_SERVICE_DROP_IN"
     cp "$T3_CODE_SERVICE_DROP_IN" "$STATE/loaded-drop-in"
     json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" > /dev/null
     : > "$STUB_LOG"
@@ -334,13 +336,13 @@ assert_exit 1 t3_code_restart_pending
 answer no
 
 # A fresh drop-in sets only telemetry, the port, and the host, leaving the start limit and oomd
-# preference to T3's unit
+# preference to T3's unit. The port and host checks read T3_CODE_PORT and T3_CODE_HOST.
 reset
 assert_exit 0 configure_t3_code_ubuntu
 assert_eq "[Service]
 Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=3773
-Environment=T3CODE_HOST=127.0.0.1" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in"
+Environment=T3CODE_PORT=$T3_CODE_PORT
+Environment=T3CODE_HOST=$T3_CODE_HOST" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in"
 # A current drop-in systemd hasn't loaded is loaded without a restart, which only a server lacking
 # its environment needs
 installed_unit
@@ -361,14 +363,14 @@ assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
 assert_exit 1 t3_code_restart_pending
 answer no
 
-# Every listener on the port must be loopback; other ports don't count, and an ss failure is unknown
+# Every listener on the port must be loopback, and an ss failure is unknown
 reset
 installed_unit
 running_service
-printf '%s\n' "LISTEN 0 511 [::1]:3773 [::]:*" "LISTEN 0 511 127.0.0.1%lo:3773 0.0.0.0:*" \
-    "LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*" "LISTEN 0 511 *:37730 *:*" > "$STATE/listeners"
+printf '%s\n' "LISTEN 0 511 [::1]:3773 [::]:*" "LISTEN 0 511 127.0.0.1%lo:3773 0.0.0.0:*" > "$STATE/listeners"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Port 3773 open only on loopback"
+assert_file_contains "$STUB_LOG" "ss -Hltn sport = :3773"
 printf '%s\n' "LISTEN 0 511 0.0.0.0:3773 0.0.0.0:*" "LISTEN 0 511 [::]:3773 [::]:*" >> "$STATE/listeners"
 run main --status
 assert_eq 3 "$RUN_STATUS" "status's exit with the port open beyond loopback"
@@ -472,27 +474,31 @@ running_service
 systemctl_fails daemon-reload
 answer yes
 assert_exit 1 configure_t3_code_ubuntu
-assert_contains "$RUN_OUTPUT" "Left the T3 Code service stopped, since it would start without its drop-in"
-assert_file_not_contains "$STUB_LOG" "systemctl --user start"
+assert_contains "$RUN_OUTPUT" "Couldn't write and load $T3_CODE_SERVICE_DROP_IN"
+assert_file_not_contains "$STUB_LOG" "systemctl --user stop"
+[ -f "$STATE/active" ] || fail "the service was stopped though its drop-in couldn't load"
 answer no
 stub systemctl "$SYSTEMCTL_STUB"
 
-# --quick skips the 10 s watch of the service and t3 browser setup, but still finds it stopped. No
-# drop-in, so only the service's own checks query systemd.
+# A main process under 2 s old may be crash-looping. --quick skips that check and t3 browser setup,
+# but still finds the service stopped. No drop-in, so only the service's own checks query systemd.
 reset
 mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
 touch "$T3_CODE_SERVICE_UNIT"
 running_service
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
-assert_file_contains "$STUB_LOG" "sleep"
+assert_file_contains "$STUB_LOG" "ps -o etimes= -p 4242"
 assert_file_contains "$STUB_LOG" "t3 browser setup"
+touch "$STATE/young"
+run status
+assert_contains "$RUN_OUTPUT" "missing    T3 Code service running; check ~/.t3/userdata/logs/boot-service.log"
 : > "$STUB_LOG"
 DOTFILES_STATUS_QUICK=1 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
 assert_eq 1 "$(grep -c 'is-active' "$STUB_LOG")" "is-active checks with --quick"
 assert_eq 1 "$(grep -c 'systemctl --user show -p MainPID' "$STUB_LOG")" "MainPID checks with --quick"
-assert_file_not_contains "$STUB_LOG" "sleep"
+assert_file_not_contains "$STUB_LOG" "ps -o etimes"
 assert_file_not_contains "$STUB_LOG" "t3 browser setup"
 assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --quick"
 rm "$STATE/active"

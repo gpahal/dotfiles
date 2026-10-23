@@ -24,9 +24,11 @@ die() {
     exit 1
 }
 
-field() {
-    printf '%s' "$input" | jq -r --arg key "$1" '.[$key] // empty'
-}
+# Every input field the hook reads, in one jq call. Invalid input leaves them empty.
+event="" name="" cwd="" session="" worktree_path="" reason=""
+eval "$(printf '%s' "$input" | jq -r '@sh "event=\(.hook_event_name // "" | tostring)
+    name=\(.name // "" | tostring) cwd=\(.cwd // "" | tostring) session=\(.session_id // "" | tostring)
+    worktree_path=\(.worktree_path // "" | tostring) reason=\(.reason // "" | tostring)"' 2> /dev/null)"
 
 base_ref() {
     local file value
@@ -159,9 +161,7 @@ copy_worktree_include() {
 }
 
 create() {
-    local name cwd base="" path other own gitdir session existed=false
-    name="$(field name)"
-    cwd="$(field cwd)"
+    local base="" path other own gitdir existed=false
     [ -n "$name" ] || die "no worktree name in the input"
     cd "${cwd:-.}"
     GIT_SSH_COMMAND="$(batch_ssh_command)"
@@ -187,7 +187,6 @@ create() {
     if ! "$existed"; then
         gitdir="$(git -C "$path" rev-parse --absolute-git-dir)"
         touch "$gitdir/$CREATED_BRANCH_MARKER"
-        session="$(field session_id)"
         [ -z "$session" ] || printf '%s\n' "$session" > "$gitdir/$SESSION_MARKER"
     fi
     copy_worktree_include "$path" ||
@@ -197,7 +196,7 @@ create() {
 
 remove() {
     local path dir common branch name created=false
-    path="$(field worktree_path)"
+    path="$worktree_path"
     [ -n "$path" ] || die "no worktree_path in the input"
     [ -d "$path" ] || return 0
     common="$(git -C "$path" rev-parse --path-format=absolute --git-common-dir)" ||
@@ -227,15 +226,13 @@ remove() {
 
 # Not on /clear, which ends the session id while its background agents may still use their worktrees
 session_end() {
-    local session cwd
-    [ "$(field reason)" != clear ] || return 0
-    session="$(field session_id)" && cwd="$(field cwd)" || return 0
+    [ "$reason" != clear ] || return 0
     [ -n "$session" ] && [ -n "$cwd" ] || return 0
     git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1 || return 0
     git -C "$cwd" wt prune --session "$session" >&2 || true
 }
 
-case "$(field hook_event_name)" in
+case "$event" in
     WorktreeCreate) create ;;
     WorktreeRemove) remove ;;
     SessionEnd) session_end || true ;;

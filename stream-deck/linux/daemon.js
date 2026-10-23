@@ -15,6 +15,9 @@ const ALERT = [
   `<rect x="66" y="56" width="12" height="34" rx="6" fill="#18181b"/><circle cx="72" cy="102" r="7" fill="#18181b"/>`,
   `</svg>`,
 ].join("");
+// Elgato's app sets the deck's brightness on the Mac. Here it's set on each connect, since the deck
+// otherwise shows whatever it was left at, which looks dull.
+const BRIGHTNESS = 60;
 
 // The options are test seams; main() passes the real ones. actions are the manifest's, and keys is
 // keys.js.
@@ -174,6 +177,12 @@ function createDaemon({
           if (deck === opened) lost(error);
         });
         log(`Stream Deck connected: ${opened.PRODUCT_NAME}`);
+        try {
+          await opened.setBrightness(BRIGHTNESS);
+        } catch (error) {
+          lost(error);
+          return;
+        }
         await showPage("main");
         return;
       }

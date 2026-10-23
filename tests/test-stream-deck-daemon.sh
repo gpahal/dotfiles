@@ -44,6 +44,8 @@ const deck = (columns = 5, rows = 3) => {
       d.CONTROLS.push({ type: 'button', feedbackType: 'lcd', index: row * columns + column, row, column, pixelSize: { width: 72, height: 72 } });
   d.log = [];
   d.fail = false;
+  d.brightness = null;
+  d.setBrightness = async (p) => { if (d.fail) throw new Error('write failed'); d.brightness = p; };
   d.fillKeyBuffer = async (i, svg) => { if (d.fail) throw new Error('write failed'); fills.push([d, i, svg]); };
   d.close = async () => d.log.push('close');
   d.resetToLogo = async () => d.log.push('logo');
@@ -75,14 +77,15 @@ process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });" "$DAEMON" "$PLUGIN_SRC"
 }
 
-# The main page: icons where layout.json puts actions, blank keys elsewhere, then Overview's stats
+# The main page at 60% brightness: icons where layout.json puts actions, blank keys elsewhere, then
+# Overview's stats
 out="$(daemon_js "decks = [deck()];
 await d.start();
-console.log(JSON.stringify(d.state()), opened[0].log.length);
+console.log(JSON.stringify(d.state()), opened[0].log.length, opened[0].brightness);
 console.log([0, 1, 2, 3, 4, 5, 9, 10].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
 console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
-assert_eq '{"connected":true,"page":"main"} 0
+assert_eq '{"connected":true,"page":"main"} 0 60
 icon:overview icon:editor icon:terminal icon:files blank icon:chrome icon:claude blank
 stat:overview:1 overview 1' "$out" "the main page"
 

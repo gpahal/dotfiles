@@ -82,16 +82,8 @@ status() {
 
 apply() {
     echo "Setting up monitor input switching..."
-    local pending=()
     monitor_input_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  ddcutil and the input switcher are already installed."
-    else
-        confirm_sudo_changes "${pending[@]}" || return 0
-        items_apply || return 1
-        echo "  Applied."
-    fi
+    items_apply_confirmed --done "  ddcutil and the input switcher are already installed." || return 1
     [ -e "$MONITOR_INPUT_CONF" ] || echo "  Switching stays off until just monitor-input sets this machine's inputs."
 }
 

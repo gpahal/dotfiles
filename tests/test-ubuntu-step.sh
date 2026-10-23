@@ -42,6 +42,19 @@ assert_eq magic "$(cat "$SANDBOX/wol")" "Wake-on-LAN"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
+# sshd gets enabled in the run that installs openssh-server, which apply checks again after
+stub dpkg-query 'case "${!#}" in
+    openssh-server) [ ! -e "$SANDBOX/openssh" ] || echo "install ok installed" ;;
+    *) echo "install ok installed" ;;
+esac'
+stub apt-get '[[ "$*" != *"install -y openssh-server"* ]] || touch "$SANDBOX/openssh"'
+echo disabled > "$SANDBOX/units/ssh.socket"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "install -y openssh-server"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
+stub dpkg-query 'echo "install ok installed"'
+stub apt-get 'cat "$SANDBOX/apt-upgrade" 2> /dev/null || true'
+
 # New dependencies don't hold a package back, as they don't stop unattended-upgrades
 printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
     "The following packages have been kept back:" "  nut-client nut-server" "  ubuntu-drivers-common" \

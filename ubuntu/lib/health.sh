@@ -1,18 +1,18 @@
 # shellcheck shell=bash
 # ubuntu/install.sh sets the constants.
 
-# Read once through a status run, which declares SMARTMONTOOLS_CACHE_STATUS
+# Cached through a memo scope, such as one status or apply run
 smartmontools_installed() {
-    memo SMARTMONTOOLS_CACHE apt_installed smartmontools > /dev/null
+    memo SMARTMONTOOLS_INSTALLED apt_installed smartmontools > /dev/null
 }
 
 smartd_enabled() {
     smartmontools_installed && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
 }
 
-# smartd's unit has ConditionVirtualization=no. Cached once cache_checks runs.
+# smartd's unit has ConditionVirtualization=no. Cached through a memo scope.
 in_vm() {
-    memo IN_VM_CACHE systemd-detect-virt -q &>/dev/null
+    memo IN_VM systemd-detect-virt -q &>/dev/null
 }
 
 smartd_active() {

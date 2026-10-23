@@ -11,9 +11,9 @@ tailscale_configured() {
         <<< "$prefs" &>/dev/null
 }
 
-# Read once through a status run, which declares TAILSCALE_PREFS_CACHE_STATUS
+# Cached through a memo scope, once called outside a $( )
 tailscale_prefs() {
-    memo TAILSCALE_PREFS_CACHE tailscale debug prefs 2>/dev/null
+    memo TAILSCALE_PREFS tailscale debug prefs 2>/dev/null
 }
 
 tailscale_state() {

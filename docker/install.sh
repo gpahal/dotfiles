@@ -44,9 +44,9 @@ docker_installed() {
         -eq "${#DOCKER_PACKAGES[@]}" ]
 }
 
-# Cached through one status run, which declares DOCKER_ACTIVE_CACHE_STATUS
+# Cached through a memo scope, such as one status run
 docker_active() {
-    memo DOCKER_ACTIVE_CACHE systemctl is-active --quiet docker.service &>/dev/null
+    memo DOCKER_ACTIVE systemctl is-active --quiet docker.service &>/dev/null
 }
 
 docker_auto_updates_configured() {
@@ -101,22 +101,31 @@ write_docker_auto_updates() {
     write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
 }
 
-# Order matters: the daemon config goes before enabling the service, so it isn't restarted for it.
+# docker_items [repair]: repair adds apply's rewrite of Docker's apt source. Order matters: the
+# daemon config goes before enabling the service, so it isn't restarted for it.
 docker_items() {
     local daemon_pending="Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
     daemon_config_unreadable && daemon_pending="Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it"
     items_reset
     item --sudo "Docker Engine from Docker's apt repo" "Install ${DOCKER_PACKAGES[*]} from Docker's apt repo" \
         docker_installed install_docker
+    [ "${1:-}" != repair ] ||
+        item --sudo "" "Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES" \
+            docker_source_ok add_docker_repo
     item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
     item --sudo "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "$daemon_pending$(daemon_restart_note)" \
-        daemon_configured configure_daemon
+        daemon_configured configure_installed_daemon
     item --sudo "Docker starts at boot (docker.service enabled)" \
         "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
         starts_at_boot enable_docker_service
     item --sudo "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
         "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
         docker_auto_updates_configured write_docker_auto_updates
+}
+
+# After a failed install there's no dockerd to check the config with
+configure_installed_daemon() {
+    docker_installed && configure_daemon
 }
 
 daemon_config_unreadable() {
@@ -240,11 +249,9 @@ status_docker_ports() {
 
 # Never asks for sudo; uses sudo -n only when credentials are cached.
 status() {
-    # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS="" DOCKER_ACTIVE_CACHE="" \
-        DOCKER_ACTIVE_CACHE_STATUS=""
+    local installed=false MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     sudo_ready || true
-    # Here, not first in docker_items' $( ), which would lose the cache
+    # Here, since docker_items first asks inside a $( ), which would keep the answer to itself
     docker_active || true
     docker_installed && installed=true
     docker_items
@@ -332,45 +339,25 @@ apply() {
     require_cmd gpg || return 1
 
     # A release upgrade disables the source; rewrite it once Docker publishes for the new release.
-    local installed=false repair_source=false
+    local installed=false repair="" result=0 fresh=false
     docker_installed && installed=true
     if ! "$installed" && ! apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
         return 0
     fi
     if "$installed" && ! docker_source_ok && apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
-        repair_source=true
+        repair=repair
     fi
-    local pending=()
-    docker_items
-    items_pending docker_installed
-    ! "$repair_source" ||
-        pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
+    docker_items "$repair"
     if "$installed"; then
-        items_pending socket_ready daemon_configured starts_at_boot docker_auto_updates_configured
-    else
-        # Fresh packages enable and start both units
-        items_pending daemon_configured docker_auto_updates_configured
+        items_apply_confirmed --done "  Docker is already installed and set up." || result=1
+        return "$result"
     fi
-
-    local result=0 fresh=false
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Docker is already installed and set up."
-        return 0
-    elif confirm_sudo_changes "${pending[@]}"; then
-        if items_apply docker_installed; then
-            "$installed" || fresh=true
-            ! "$repair_source" || add_docker_repo || result=1
-            items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
-        else
-            # Without the packages there are no units, dockerd, or docker group to set up
-            result=1
-            items_apply docker_auto_updates_configured || result=1
-        fi
-        if [ "$result" -ne 0 ]; then
-            echo "  Applied the rest. Some changes failed; see the errors above." >&2
-        else
-            echo "  Applied."
-        fi
+    # Fresh packages enable and start both units, so they're left out of the list, and checked only
+    # once the packages are in
+    items_apply_confirmed docker_installed daemon_configured docker_auto_updates_configured || result=1
+    if docker_installed; then
+        fresh=true
+        items_apply_confirmed socket_ready starts_at_boot || result=1
     fi
     # Asked only in the run that installs Docker, so a no lasts
     if "$fresh" && ! in_docker_group; then

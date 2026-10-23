@@ -99,31 +99,18 @@ t3_code_ubuntu_items() {
             t3_code_desktop_installed install_t3_code_desktop
     fi
     if [ ! -x "$HOME/.local/bin/t3" ]; then
-        item --sudo "libatomic1, which the t3 CLI needs" "Install libatomic1, which the t3 CLI needs" \
+        item --sudo "libatomic1, which the t3 CLI needs" "$T3_CODE_LIBATOMIC_PENDING" \
             t3_code_have_libatomic install_t3_code_libatomic
     fi
 }
 
-# Asks once for the pending sudo changes of the items its check functions name, or of all of them.
-# apply declares t3_code_sudo, which keeps the answer, so one apply asks at most once.
-t3_code_confirm_sudo() {
-    local pending=() answer=no
-    if [ -n "${t3_code_sudo:-}" ]; then
-        [ "$t3_code_sudo" == yes ]
-        return
-    fi
-    t3_code_ubuntu_items
-    items_pending "$@"
-    ! confirm_sudo_changes "${pending[@]}" || answer=yes
-    [ -z "${t3_code_sudo+x}" ] || t3_code_sudo="$answer"
-    [ "$answer" == yes ]
-}
+T3_CODE_LIBATOMIC_PENDING="Install libatomic1, which the t3 CLI needs"
 
 # The settings go first, so the app's first launch doesn't try to start a server; without them it
 # isn't installed
 setup_t3_code_desktop_ubuntu() {
     echo "Setting up the T3 Code desktop app..."
-    local result=0 merged=true
+    local result=0 merged=true notes=()
     if ! has_gnome_desktop; then
         echo "  No GNOME desktop, so no desktop app; the service runs the server."
         return 0
@@ -143,8 +130,10 @@ setup_t3_code_desktop_ubuntu() {
     elif ! "$merged"; then
         echo "  Not installing the T3 Code desktop app without its settings, as its own server would" >&2
         echo "  share the service's data." >&2
-    elif t3_code_confirm_sudo; then
-        items_apply t3_code_desktop_installed || result=1
+    else
+        # The question lists libatomic1 too, which install_t3_cli then installs on the same answer
+        [ -x "$HOME/.local/bin/t3" ] || t3_code_have_libatomic || notes=(--note "$T3_CODE_LIBATOMIC_PENDING")
+        items_apply_confirmed ${notes[@]+"${notes[@]}"} t3_code_desktop_installed || result=1
     fi
     return "$result"
 }
@@ -401,11 +390,7 @@ configure_t3_code() {
     echo "  LaunchAgent that opens T3 Code at login with telemetry off:"
     t3_code_files copy_file || result=1
     t3_code_macos_items
-    if items_ok t3_code_telemetry_off; then
-        echo "  Telemetry is already off in launchd's environment"
-    else
-        items_apply t3_code_telemetry_off || result=1
-    fi
+    items_apply_confirmed --done "  Telemetry is already off in launchd's environment" t3_code_telemetry_off || result=1
 
     t3_code_choose_custom_values
     merge_app_json "${app_name:-T3 Code}" \
@@ -573,8 +558,9 @@ install_t3_cli() {
         return 0
     fi
     if ! t3_code_have_libatomic; then
-        t3_code_confirm_sudo t3_code_have_libatomic || return 2
-        install_t3_code_libatomic || return 1
+        t3_code_ubuntu_items
+        items_apply_confirmed t3_code_have_libatomic || return 1
+        t3_code_have_libatomic || return 2
     fi
     echo "  Installing the t3 CLI to ~/.local/bin..."
     run_installer sh https://t3.codes/install.sh "the t3 installer" || return 1
@@ -983,7 +969,8 @@ apply() {
         configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
-        local desktop_failed=0 t3_code_sudo=""
+        # One scope, so the desktop app and the t3 CLI share one sudo question
+        local desktop_failed=0 MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
         setup_t3_code_desktop_ubuntu || desktop_failed=1
         configure_t3_code_ubuntu || return 1
         return "$desktop_failed"

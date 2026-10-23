@@ -120,11 +120,7 @@ apply() {
         fi
     fi
     logitech_items
-    if items_ok "${wanted[@]}"; then
-        echo "  Solaar $(solaar_version) is already installed."
-        return 0
-    fi
-    items_apply_confirmed "${wanted[@]}"
+    items_apply_confirmed --done "  Solaar $(solaar_version) is already installed." "${wanted[@]}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

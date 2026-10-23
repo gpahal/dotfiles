@@ -152,11 +152,7 @@ apply() {
         install_cask claude /Applications/Claude.app || result=1
     else
         claude_desktop_ubuntu_items
-        if items_ok; then
-            echo "  claude-desktop is already installed from Anthropic's apt repo."
-        else
-            items_apply_confirmed || result=1
-        fi
+        items_apply_confirmed --done "  claude-desktop is already installed from Anthropic's apt repo." || result=1
     fi
     claude_desktop_files copy_file || result=1
     configure_claude_desktop || result=1

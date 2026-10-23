@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# lib/common.sh's confirm, regex_escape, version_at_least, run_bounded, and quitting a running app
+# lib/common.sh's confirm, memo, regex_escape, version_at_least, run_bounded, and quitting a running app
 # to merge its settings, and stub_sudo_exec's refusals.
 
 # shellcheck source=lib.sh
@@ -21,6 +21,43 @@ DOTFILES_ASSUME_YES=1
 stub systemd-detect-virt 'exit 1'
 assert_exit 1 confirm "Proceed?"
 assert_eq "" "$RUN_OUTPUT" "confirm's output off a VM"
+
+# --- memo: one run per scope, which a function opens or joins ---
+runs="$SANDBOX/memo-runs"
+: > "$runs"
+counted() {
+    echo x >> "$runs"
+    echo "out $1"
+    return "$1"
+}
+assert_exit 3 memo COUNTED counted 3
+assert_eq "out 3" "$RUN_OUTPUT" "memo's output"
+memo COUNTED counted 4 > /dev/null || true
+assert_eq "out 4 4" "$COUNTED $COUNTED_STATUS" "memo's variables"
+memo COUNTED counted 0 > /dev/null
+assert_eq 3 "$(wc -l < "$runs" | tr -d ' ')" "runs without a scope"
+inner() {
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    memo COUNTED counted "$1"
+}
+outer() {
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    memo COUNTED counted 5 || true
+    inner 6 || true
+    memo COUNTED counted 7 || true
+}
+: > "$runs"
+assert_eq "out 5
+out 5
+out 5" "$(outer)" "output in one scope"
+assert_eq 1 "$(wc -l < "$runs" | tr -d ' ')" "runs in one scope"
+: > "$runs"
+seq_before="$MEMO_SEQ"
+outer > /dev/null
+outer > /dev/null
+assert_eq 2 "$(wc -l < "$runs" | tr -d ' ')" "runs in two scopes"
+assert_eq $((seq_before + 2)) "$MEMO_SEQ" "scopes opened"
+assert_exit 6 inner 6
 
 # confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
 unset DOTFILES_ASSUME_YES

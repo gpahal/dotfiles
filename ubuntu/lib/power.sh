@@ -44,8 +44,15 @@ sysctl_in_effect() {
     differences="$(sysctl_differences)" && [ -z "$differences" ]
 }
 
+# Sets ITEM_DETAIL to why a written file isn't in effect
 sysctl_written() {
-    sysctl_file_written && sysctl_in_effect
+    local overrides
+    sysctl_file_written || return 1
+    sysctl_in_effect && return 0
+    overrides="$(sysctl_overrides | join_lines '; ')"
+    # shellcheck disable=SC2034 # the item drivers read it
+    ITEM_DETAIL="written but not in effect (${overrides:+$overrides; change or remove them there, and }re-run the ubuntu step)"
+    return 1
 }
 
 # Files sysctl --system reads after $SYSCTL_CONF, which override it: *.conf sorted by name, first

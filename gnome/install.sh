@@ -76,7 +76,7 @@ apply() {
         return 0
     fi
     require_cmd gsettings || return 1
-    local setting schema key value text state result=0 changed=false pending=()
+    local setting schema key value text state result=0 changed=false
     for setting in "${GNOME_SETTINGS[@]}"; do
         IFS='|' read -r schema key value text <<< "$setting"
         state=0
@@ -99,11 +99,7 @@ apply() {
     "$changed" || [ "$result" -ne 0 ] || echo "  The settings are already set."
 
     gnome_items
-    items_pending
-    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        items_apply || result=1
-        [ "$result" -ne 0 ] || echo "  Applied."
-    fi
+    items_apply_confirmed || result=1
     return "$result"
 }
 

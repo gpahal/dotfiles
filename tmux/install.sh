@@ -113,11 +113,8 @@ apply() {
     echo "Installing tmux plugins..."
     sync_tmux_plugins || status=1
     tmux_items
-    if ! items_ok; then
-        items_apply || status=1
-    elif is_ubuntu; then
-        echo "tmux already starts at boot."
-    fi
+    # Only Ubuntu has items
+    ! is_ubuntu || items_apply_confirmed --done "tmux already starts at boot." || status=1
     return "$status"
 }
 

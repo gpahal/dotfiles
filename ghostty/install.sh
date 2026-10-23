@@ -29,7 +29,9 @@ ghostty_terminfo_installed() {
     cmp -s "$GHOSTTY_TERMINFO" "$HOME/.terminfo/x/xterm-ghostty"
 }
 
+# Waits for the snap, which a no to sudo leaves out
 install_ghostty_terminfo() {
+    ghostty_snap_installed || return 0
     if [ ! -r "$GHOSTTY_TERMINFO" ]; then
         echo "  No xterm-ghostty terminfo at $GHOSTTY_TERMINFO." >&2
         return 1
@@ -49,17 +51,8 @@ ghostty_items() {
 }
 
 install_ghostty() {
-    local pending=()
     ghostty_items
-    if items_ok; then
-        echo "  Ghostty and its terminfo already installed."
-        return 0
-    fi
-    items_pending
-    if [ ${#pending[@]} -gt 0 ]; then
-        confirm_sudo_changes "${pending[@]}" || return 0
-    fi
-    items_apply
+    items_apply_confirmed --done "  Ghostty and its terminfo already installed."
 }
 
 ghostty_files() {

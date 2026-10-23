@@ -157,11 +157,7 @@ apply() {
     zsh_files copy_file || status=1
     echo "Setting up the startup files..."
     zsh_items
-    if ! items_ok; then
-        items_apply || status=1
-    else
-        echo "  The startup files already source the zsh config"
-    fi
+    items_apply_confirmed --done "  The startup files already source the zsh config" || status=1
     set_login_shell || status=1
     return "$status"
 }

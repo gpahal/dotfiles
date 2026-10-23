@@ -740,28 +740,43 @@ sudo_cached() {
     sudo -n true 2> /dev/null
 }
 
-# memo <var> <cmd...>: runs the command once, keeping its output in <var> and its status in
-# <var>_STATUS, then prints the output and returns the status on every call. It caches only when a
-# caller has declared <var>_STATUS="" (as a local, so the cache lasts one status or apply);
-# otherwise it just runs the command.
+# memo <var> <cmd...>: runs the command, keeping its output in <var> and its status in
+# <var>_STATUS, then prints the output and returns the status. While MEMO_SCOPE is set, later calls
+# in the same scope reuse them instead, so a check that runs many times runs its command once. A
+# function opens a scope, or joins its caller's, by declaring:
+#   local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+# A call inside $( ) caches only in that subshell, so call it once outside one first.
+MEMO_SEQ="${MEMO_SEQ:-0}"
+
 memo() {
-    local _memo_status="$1_STATUS" _memo_out _memo_rc=0
-    if [ -z "${!_memo_status+x}" ]; then
-        "${@:2}"
-        return
+    local _memo_var="$1" _memo_out _memo_status=0
+    shift
+    if ! _memo_current "$_memo_var"; then
+        _memo_out="$("$@")" || _memo_status=$?
+        printf -v "$_memo_var" '%s' "$_memo_out"
+        printf -v "${_memo_var}_STATUS" '%s' "$_memo_status"
+        printf -v "${_memo_var}_SCOPE" '%s' "${MEMO_SCOPE:-}"
     fi
-    if [ -z "${!_memo_status}" ]; then
-        _memo_out="$("${@:2}")" || _memo_rc=$?
-        printf -v "$1" '%s' "$_memo_out"
-        printf -v "$_memo_status" '%s' "$_memo_rc"
-    fi
-    [ -z "${!1}" ] || printf '%s\n' "${!1}"
+    [ -z "${!_memo_var}" ] || printf '%s\n' "${!_memo_var}"
+    _memo_status="${_memo_var}_STATUS"
     return "${!_memo_status}"
 }
 
-# Keeps the answer fixed through one status run whose caller declares SUDO_CACHED_CACHE_STATUS
+# memo_forget <var>: the next memo call for <var> runs its command again, as after a change to
+# what it reads
+memo_forget() {
+    unset "$1_SCOPE"
+}
+
+# Succeeds when <var> was set in the current memo scope
+_memo_current() {
+    local scope="$1_SCOPE"
+    [ -n "${MEMO_SCOPE:-}" ] && [ "${!scope:-}" == "$MEMO_SCOPE" ]
+}
+
+# Keeps the answer fixed through a memo scope
 sudo_ready() {
-    memo SUDO_CACHED_CACHE sudo_cached > /dev/null
+    memo SUDO_READY sudo_cached > /dev/null
 }
 
 # yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
@@ -862,14 +877,7 @@ status_check() {
 # are each a function, or a command and its arguments in one string split on spaces, such as
 # "apt_installed ddcutil". Declare items in one function starting with items_reset and call it
 # from status and apply. The drivers take checks, as given to item, to filter by, or drive every
-# item.
-ITEM_STATUS=()
-ITEM_PENDING=()
-ITEM_CHECK=()
-ITEM_FIX=()
-ITEM_SUDO=()
-ITEM_HINT=()
-
+# item. An empty status text makes an apply-only item, which items_status leaves out.
 items_reset() {
     ITEM_STATUS=()
     ITEM_PENDING=()
@@ -878,6 +886,8 @@ items_reset() {
     ITEM_SUDO=()
     ITEM_HINT=()
 }
+
+items_reset
 
 item() {
     local sudo=false hint=""
@@ -904,71 +914,144 @@ item() {
     ITEM_HINT+=("$hint")
 }
 
-# shellcheck disable=SC2120 # with no check functions, it drives every item
-items_status() {
-    local i=0
+# _items_each <fn> [check...]: calls <fn> <index> for each item the checks pick, in the order they
+# were added, and stops at the first call that fails, returning its status
+_items_each() {
+    local fn="$1" i=0
+    shift
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
         if _item_wanted "$i" "$@"; then
-            if _item_run "${ITEM_CHECK[i]}"; then
-                status_item ok "${ITEM_STATUS[i]}"
-            else
-                status_item missing "${ITEM_STATUS[i]}${ITEM_HINT[i]:+; ${ITEM_HINT[i]}}"
-            fi
+            "$fn" "$i" || return
         fi
         i=$((i + 1))
     done
 }
 
+# shellcheck disable=SC2120 # with no check functions, it drives every item
+items_status() {
+    _items_each _item_status "$@"
+}
+
+_item_status() {
+    local state=ok text="${ITEM_STATUS[$1]}"
+    [ -n "$text" ] || return 0
+    _item_check "$1" || state=missing
+    state="${ITEM_STATE:-$state}"
+    text="$text${ITEM_DETAIL:+: $ITEM_DETAIL}"
+    [ "$state" != missing ] || text="$text${ITEM_HINT[$1]:+; ${ITEM_HINT[$1]}}"
+    status_item "$state" "$text"
+}
+
 # shellcheck disable=SC2120 # with no check functions, it checks every item
 items_ok() {
-    local i=0
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            return 1
-        fi
-        i=$((i + 1))
-    done
+    _items_each _item_ok "$@"
+}
+
+# A check may set ITEM_DETAIL, which status shows after its text, and ITEM_STATE, which status
+# shows instead of ok or missing and the other drivers take as done when it's skipped or info.
+# Variables, not output, since a check in a $( ) would lose what it caches.
+_item_check() {
+    ITEM_DETAIL=""
+    ITEM_STATE=""
+    _item_run "${ITEM_CHECK[$1]}"
+}
+
+_item_ok() {
+    _item_check "$1" && return 0
+    case "$ITEM_STATE" in
+        skipped | info) return 0 ;;
+    esac
+    return 1
 }
 
 # Appends to the caller's pending array
 # shellcheck disable=SC2120 # with no check functions, it lists every sudo item
 items_pending() {
-    local i=0
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if "${ITEM_SUDO[i]}" && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            pending+=("${ITEM_PENDING[i]}")
+    local others=false
+    _items_each _item_pending "$@"
+}
+
+# Appends a pending sudo item to the caller's pending, and sets the caller's others for one that
+# needs no sudo
+_item_pending() {
+    if ! _item_ok "$1"; then
+        if "${ITEM_SUDO[$1]}"; then
+            pending+=("${ITEM_PENDING[$1]}")
+        else
+            others=true
         fi
-        i=$((i + 1))
-    done
+    fi
 }
 
 # shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply() {
-    local i=0 result=0 sudo=true
+    local result=0 sudo=true
     if [ "${1:-}" == --no-sudo ]; then
         sudo=false
         shift
     fi
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if { "$sudo" || ! "${ITEM_SUDO[i]}"; } && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            _item_run "${ITEM_FIX[i]}" || result=1
-        fi
-        i=$((i + 1))
-    done
+    _items_each _item_apply "$@"
     return "$result"
 }
 
-# items_apply_confirmed [check...]: asks once for the sudo items pending, then applies them all,
-# or after a no, only those that need no sudo. Returns items_apply's status.
+# Reads items_apply's sudo and result
+_item_apply() {
+    if { "$sudo" || ! "${ITEM_SUDO[$1]}"; } && ! _item_ok "$1"; then
+        _item_run "${ITEM_FIX[$1]}" || result=1
+    fi
+}
+
+# items_apply_confirmed [--done <message>] [--note <line>]... [check...]: asks for the sudo items
+# pending, with each note as one more line, then applies them all, or after a no, only those that
+# need no sudo. A note is a change the step makes itself after a yes. It opens a memo scope unless
+# the caller has one, and asks once per scope: later calls reuse the answer. With nothing pending,
+# prints the --done message. Returns items_apply's status. A check that runs before the question
+# can read pending, the sudo changes listed so far.
 # shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply_confirmed() {
-    local pending=()
-    items_pending "$@"
-    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
-        items_apply "$@"
-    else
+    local done_message="" notes=() pending=() others=false result=0
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --done) done_message="$2" ;;
+            --note) notes+=("$2") ;;
+            *) break ;;
+        esac
+        shift 2
+    done
+    _items_each _item_pending "$@"
+    pending+=(${notes[@]+"${notes[@]}"})
+    if [ ${#pending[@]} -eq 0 ]; then
+        if ! "$others"; then
+            [ -z "$done_message" ] || printf '%s\n' "$done_message"
+            return 0
+        fi
         items_apply --no-sudo "$@"
+        return
     fi
+    if ! _memo_current SUDO_ANSWER; then
+        SUDO_ANSWER=no
+        ! confirm_sudo_changes "${pending[@]}" || SUDO_ANSWER=yes
+        # shellcheck disable=SC2034 # _memo_current reads it
+        SUDO_ANSWER_SCOPE="$MEMO_SCOPE"
+    fi
+    if ! sudo_confirmed; then
+        items_apply --no-sudo "$@"
+        return
+    fi
+    if items_apply "$@"; then
+        echo "  Applied."
+    else
+        result=1
+        echo "  Applied the rest. Some changes failed; see the errors above." >&2
+    fi
+    return "$result"
+}
+
+# Succeeds once items_apply_confirmed has had a yes, which a memo scope keeps for its later calls.
+# A check can call it to look at root-only state only once sudo is agreed to.
+sudo_confirmed() {
+    _memo_current SUDO_ANSWER && [ "$SUDO_ANSWER" == yes ]
 }
 
 _item_wanted() {

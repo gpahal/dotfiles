@@ -182,19 +182,25 @@ ups_ready() {
         ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
 }
 
-# Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, once per run of a caller that
-# declares UPS_STATE="" local
+# Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, looking once per memo scope
 ups_state() {
-    [ -z "${UPS_STATE:-}" ] || return 0
+    memo UPS_FOUND read_ups_state > /dev/null || true
+    UPS_STATE="${UPS_FOUND%%$'\n'*}"
     UPS_PLUGGED=""
+    [[ "$UPS_FOUND" != *$'\n'* ]] || UPS_PLUGGED="${UPS_FOUND#*$'\n'}"
+}
+
+# Prints the state, then the UPSes on USB a line each
+read_ups_state() {
+    local plugged=""
     if in_vm; then
-        UPS_STATE=vm
-    elif [ ! -e "$UPOWER_HWDB" ] || ! UPS_PLUGGED="$(ups_plugged)"; then
-        UPS_STATE=unknown
-    elif [ -z "$UPS_PLUGGED" ]; then
-        UPS_STATE=none
+        echo vm
+    elif [ ! -e "$UPOWER_HWDB" ] || ! plugged="$(ups_plugged)"; then
+        echo unknown
+    elif [ -z "$plugged" ]; then
+        echo none
     else
-        UPS_STATE=plugged
+        printf '%s\n%s\n' plugged "$plugged"
     fi
 }
 

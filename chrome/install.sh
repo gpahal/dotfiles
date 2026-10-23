@@ -78,7 +78,12 @@ firefox_removed() {
     ! snap list firefox &>/dev/null && ! apt_installed firefox
 }
 
+# Only once Chrome is in, so the machine always has a browser
 remove_firefox() {
+    if ! apt_installed google-chrome-stable; then
+        echo "  Firefox stays until Chrome is installed." >&2
+        return 1
+    fi
     if snap list firefox &>/dev/null; then
         sudo snap remove --purge firefox || return 1
     fi
@@ -87,12 +92,20 @@ remove_firefox() {
     fi
 }
 
-# Installing Chrome isn't an item: it's skipped on a CPU Google doesn't build for.
+# Needs Google's source, which the item before adds
+install_chrome() {
+    google_source_exists && stop_repo_readd && apt_install_fresh google-chrome-stable
+}
+
+# Installing Chrome is apply-only, since status reports it on its own: apply skips a CPU Google
+# doesn't build for before declaring the items.
 chrome_items() {
     items_reset
     item --sudo "Google's apt source ($GOOGLE_SOURCES)" \
         "Add Google's apt repo, which Chrome updates from, with its pinned key: write $GOOGLE_SOURCES" \
         google_source_exists add_google_repo
+    item --sudo "" "Install google-chrome-stable from Google's apt repo, with repo_add_once=\"false\" in $CHROME_DEFAULTS so it leaves the source alone" \
+        "apt_installed google-chrome-stable" install_chrome
     item --sudo "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" \
         "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" auto_updates_configured write_auto_updates
     item --sudo "Firefox removed, since Chrome replaces it" \
@@ -134,7 +147,7 @@ status() {
 apply() {
     echo "Setting up Google Chrome..."
 
-    local pending=() result=0 installed=false problem arch
+    local result=0 installed=false problem arch
     ! apt_installed google-chrome-stable || installed=true
     if ! "$installed"; then
         arch="$(dpkg --print-architecture)"
@@ -149,23 +162,7 @@ apply() {
     fi
     require_cmd gpg || return 1
     chrome_items
-    items_pending google_source_exists
-    "$installed" ||
-        pending+=("Install google-chrome-stable from Google's apt repo, with repo_add_once=\"false\" in $CHROME_DEFAULTS so it leaves the source alone")
-    items_pending auto_updates_configured firefox_removed
-    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        if "$installed"; then
-            items_apply google_source_exists auto_updates_configured firefox_removed || result=1
-        elif items_apply google_source_exists && stop_repo_readd && apt_install_fresh google-chrome-stable; then
-            items_apply auto_updates_configured firefox_removed || result=1
-        else
-            result=1
-            items_apply auto_updates_configured || result=1
-        fi
-        [ "$result" -ne 0 ] || echo "  Applied. A running Chrome keeps the old version until you restart it."
-    elif [ ${#pending[@]} -eq 0 ]; then
-        echo "  Chrome is already installed and updates automatically."
-    fi
+    items_apply_confirmed --done "  Chrome is already installed and updates automatically." || result=1
     if apt_installed google-chrome-stable; then
         problem="$(google_key_problem)"
         if [ -n "$problem" ]; then

@@ -159,8 +159,10 @@ install_ntfy_lib() {
 }
 
 # Status reports the items by check, beside what it checks itself. With apply, this also declares
-# what only apply drives, in the order apply lists and fixes them; those checks read apply's
-# locals (ufw, tailscale_repo, auto_upgrades_unchecked, confirmed, and the pending list so far).
+# what only apply drives, in the order apply lists and fixes them, from apply's locals (ufw,
+# tailscale_repo, tailscale_source, and auto_upgrades_unchecked). What's unknown without sudo is
+# checked for real only once sudo_confirmed: before that, its checks read the driver's pending list
+# so far, so it's listed only beside other changes.
 ubuntu_items() {
     local apply=false text why="" wol="" uuid name
     [ "${1:-}" != apply ] || apply=true
@@ -168,11 +170,10 @@ ubuntu_items() {
     item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
     item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
         "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
-    if "$apply"; then
-        text="Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF"
-        ! sysctl_file_written || text="Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system"
-        item --sudo "" "$text" sysctl_written apply_sysctl
-    fi
+    text="Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF"
+    ! sysctl_file_written || text="Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system"
+    item --sudo "Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)" \
+        "$text" sysctl_written apply_sysctl
     item --sudo "Linger, so user services start at boot" \
         "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
     if "$apply"; then
@@ -193,7 +194,7 @@ ubuntu_items() {
         "apt_installed qrencode" "apt_install_fresh qrencode"
     item --sudo "unattended-upgrades runs daily" \
         "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
-        unattended_upgrades_checked turn_on_unattended_upgrades
+        "unattended_upgrades_checked ${auto_upgrades_unchecked:-false}" turn_on_unattended_upgrades
     item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
@@ -234,7 +235,7 @@ ubuntu_items() {
     fi
     [ "$ufw" -eq 0 ] ||
         item --sudo "" "Firewall: $text, so ufw denies incoming connections but SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denies SSH on Docker's bridges" \
-            ufw_settled configure_ufw
+            "ufw_settled $ufw" configure_ufw
     # One item, listed a line per connection
     while IFS=$'\t' read -r uuid name; do
         wake_on_lan_on "$uuid" && continue
@@ -247,21 +248,23 @@ ubuntu_items() {
             auto_upgrades_settled true
 }
 
-# When only root can read $AUTO_UPGRADES_CONF, it's checked only once other changes ask for sudo
+# unattended_upgrades_checked <unchecked>: when only root can read $AUTO_UPGRADES_CONF, it's
+# checked only once other changes ask for sudo
 unattended_upgrades_checked() {
-    { "$auto_upgrades_unchecked" && ! "$confirmed"; } || unattended_upgrades_running
+    { "$1" && ! sudo_confirmed; } || unattended_upgrades_running
 }
 
 auto_upgrades_settled() {
-    "$confirmed" || [ ${#pending[@]} -eq 0 ]
+    sudo_confirmed || [ ${#pending[@]} -eq 0 ]
 }
 
-# Rules unverified without cached sudo aren't worth asking for sudo just to read
+# ufw_settled <ufw_configured -n's status>: rules unverified without cached sudo aren't worth
+# asking for sudo just to read
 ufw_settled() {
-    if "$confirmed"; then
-        [ "$ufw" -eq 0 ] || ufw_configured
+    if sudo_confirmed; then
+        [ "$1" -eq 0 ] || ufw_configured
     else
-        [ "$ufw" -eq 0 ] || { [ "$ufw" -eq 2 ] && [ ${#pending[@]} -eq 0 ]; }
+        [ "$1" -eq 0 ] || { [ "$1" -eq 2 ] && [ ${#pending[@]} -eq 0 ]; }
     fi
 }
 
@@ -269,8 +272,7 @@ sshd_enabled_once_installed() {
     ! openssh_installed || sshd_enabled
 }
 
-# Callers declare the *_CACHE and *_CACHE_STATUS vars local first; the checks run many times,
-# some in subshells
+# Fills the caller's memo scope with what checks also read inside a $( )
 cache_checks() {
     in_vm || true
     key_login > /dev/null || true
@@ -335,25 +337,10 @@ enable_linger() {
 
 # Root-only state is checked with sudo -n when credentials are cached, else left unverified
 status() {
-    local uuid name wired=false item packages overrides UPS_STATE="" UPS_PLUGGED=""
-    # shellcheck disable=SC2034 # memo reads the caches
-    local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
-        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS="" OPENSSH_INSTALLED_CACHE="" \
-        OPENSSH_INSTALLED_CACHE_STATUS="" SMARTMONTOOLS_CACHE="" SMARTMONTOOLS_CACHE_STATUS="" \
-        TAILSCALE_PREFS_CACHE="" TAILSCALE_PREFS_CACHE_STATUS=""
+    local uuid name wired=false packages MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     cache_checks
     ubuntu_items
-    items_status sleep_masked sleep_conf_written
-    item="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
-    if ! sysctl_file_written; then
-        status_item missing "$item"
-    elif ! sysctl_in_effect; then
-        overrides="$(sysctl_overrides | join_lines '; ')"
-        status_item missing "$item: written but not in effect (${overrides:+$overrides; change or remove them there, and }re-run the ubuntu step)"
-    else
-        status_item ok "$item"
-    fi
-    items_status lingering
+    items_status sleep_masked sleep_conf_written sysctl_written lingering
     status_check "smartmontools, with smartd enabled at boot" smartd_enabled
     if in_vm; then
         status_item skipped "smartd running: this is a VM, whose host manages the disks"
@@ -415,12 +402,8 @@ status() {
 
 apply() {
     echo "Setting up Ubuntu to run around the clock..."
-    local pending=() ufw=0 result=0 confirmed=false auto_upgrades_unchecked=false stay_on=""
-    local tailscale_source="" tailscale_repo=false
-    # shellcheck disable=SC2034 # memo reads the caches
-    local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
-        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
-    local UPS_STATE="" UPS_PLUGGED=""
+    local ufw=0 result=0 auto_upgrades_unchecked=false stay_on="" done_message
+    local tailscale_source="" tailscale_repo=false MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and its updater reads only tailscale.list
     if command -v tailscale &>/dev/null && apt_installed tailscale; then
@@ -445,25 +428,15 @@ apply() {
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
-    items_pending
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Everything it can check is already set up."
-        if [ "$ufw" -ne 0 ] && sudo_ready; then
-            echo "  ufw is on, but its rules couldn't be checked: sudo ufw status fails."
-        elif [ "$ufw" -ne 0 ]; then
-            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
-        fi
-        ! "$auto_upgrades_unchecked" ||
-            echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
-    elif confirm_sudo_changes "${pending[@]}"; then
-        confirmed=true
-        items_apply || result=1
-        if [ "$result" -eq 0 ]; then
-            echo "  Applied."
-        else
-            echo "  Applied the rest. Some changes failed; see the errors above." >&2
-        fi
+    done_message="  Everything it can check is already set up."
+    if [ "$ufw" -ne 0 ] && sudo_ready; then
+        done_message="$done_message"$'\n'"  ufw is on, but its rules couldn't be checked: sudo ufw status fails."
+    elif [ "$ufw" -ne 0 ]; then
+        done_message="$done_message"$'\n'"  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
     fi
+    ! "$auto_upgrades_unchecked" ||
+        done_message="$done_message"$'\n'"  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
+    items_apply_confirmed --done "$done_message" || result=1
     if command -v nmcli &>/dev/null && [ -z "$(wired_connections)" ]; then
         echo "  No wired connection, so Wake-on-LAN is left off. It works only over Ethernet."
     fi

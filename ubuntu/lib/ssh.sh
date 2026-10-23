@@ -5,12 +5,14 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
-# Read once through a status run, which declares OPENSSH_INSTALLED_CACHE_STATUS
+# Cached through a memo scope, such as one status or apply run
 openssh_installed() {
-    memo OPENSSH_INSTALLED_CACHE apt_installed openssh-server > /dev/null
+    memo OPENSSH_INSTALLED apt_installed openssh-server > /dev/null
 }
 
+# Apply checks openssh_installed again after this, to enable sshd
 install_openssh() {
+    memo_forget OPENSSH_INSTALLED
     apt_install_fresh openssh-server
 }
 
@@ -37,7 +39,7 @@ authorized_key_fingerprints() {
 # ExposeAuthInfo's $SSH_USER_AUTH; every method must be an authorized publickey, since
 # AuthenticationMethods can require several.
 key_login() {
-    memo KEY_LOGIN_CACHE read_key_login
+    memo KEY_LOGIN read_key_login
 }
 
 read_key_login() {
@@ -71,9 +73,9 @@ read_key_login() {
     echo "$found"
 }
 
-# Read once through a status_sshd run, which declares SSHD_DROP_IN_CACHE_STATUS
+# Cached through a memo scope, such as a status_sshd run, once called outside a $( )
 current_sshd_drop_in() {
-    memo SSHD_DROP_IN_CACHE read_root_file "$SSHD_DROP_IN" -n
+    memo SSHD_DROP_IN_CURRENT read_root_file "$SSHD_DROP_IN" -n
 }
 
 key_only_in() {
@@ -263,8 +265,8 @@ PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 
 # status declares the items first (ubuntu_items)
 status_sshd() {
-    # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_CACHE_STATUS="" SSHD_MATCH_FILES=""
+    local installed=false item problems="" others todo SSHD_MATCH_FILES=""
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     current_sshd_drop_in > /dev/null || true
     openssh_installed && installed=true
     items_status openssh_installed

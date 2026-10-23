@@ -78,11 +78,7 @@ apply() {
     require_cmd git || return 1
     copy_step "Copying vim config..." vim_files || status=1
     vim_items
-    if ! items_ok; then
-        items_apply || status=1
-    else
-        echo "  vim-plug and the vim plugins already at their pinned versions"
-    fi
+    items_apply_confirmed --done "  vim-plug and the vim plugins already at their pinned versions" || status=1
     return "$status"
 }
 

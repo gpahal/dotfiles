@@ -56,14 +56,15 @@ stub_dpkg_arch
 
 answer yes
 
-touch "$SANDBOX/fetch-fails"
+# A failed install leaves Firefox, so the machine keeps a browser
+touch "$SANDBOX/fetch-fails" "$SANDBOX/firefox-snap"
 assert_exit 1 main
 [ ! -e "$SANDBOX/installed" ] || fail "Chrome was installed without Google's key"
 [ ! -e "$GOOGLE_SOURCES" ] || fail "Google's apt source was added without its key"
+[ -e "$SANDBOX/firefox-snap" ] || fail "Firefox's snap was removed without Chrome"
 rm "$SANDBOX/fetch-fails"
 
 # A fresh install adds the repo, keeps Chrome from rewriting it, and removes Firefox's snap
-touch "$SANDBOX/firefox-snap"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $KEY_URL"

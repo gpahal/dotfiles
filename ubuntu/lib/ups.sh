@@ -273,9 +273,8 @@ setup_ups() {
         # so a plugged-in UPS wouldn't get the nut group
         sudo udevadm trigger --settle --subsystem-match=usb --action=change || return 1
     fi
-    # NUT 2.8.4's nut-scanner exits 0 whether or not it finds a device (main's end in
-    # tools/nut-scanner/nut-scanner.c), and prints library warnings on stderr even then. So only a
-    # non-zero exit, as from a fatal error or sudo, is a failure, and only then is stderr shown.
+    # nut-scanner (NUT 2.8.4) exits 0 whether or not it finds a UPS and prints library warnings
+    # to stderr, so only a non-zero exit fails, and only then is stderr shown.
     scan_err="$(mktemp)" || return 1
     scan="$(sudo nut-scanner -U -q 2>"$scan_err")" || scan_status=$?
     if [ "$scan_status" -ne 0 ]; then

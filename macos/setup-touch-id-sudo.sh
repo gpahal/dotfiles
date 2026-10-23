@@ -8,8 +8,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
-# shellcheck source=pam.sh
-source "$DOTFILES_DIR/macos/pam.sh"
+# shellcheck source=lib/pam.sh
+source "$DOTFILES_DIR/macos/lib/pam.sh"
 
 STEP_OS=macos
 

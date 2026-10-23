@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# A CODEX_HOME or CLAUDE_CONFIG_DIR away from the default fails its step before any change.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 

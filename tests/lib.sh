@@ -2,6 +2,12 @@
 # assert_*, and ends with test_done. Stub every SENTINELS command it reaches; hide makes one missing.
 # Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer yes|no.
 # tests/run.sh covers skips, timeouts, and the serial and os marks.
+# Reuse before writing your own: stub_sudo_exec, stub_sudo_cacheable, stub_uname, stub_dpkg_arch,
+# stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch, stub_gsettings,
+# stub_gnome_session, fake_step, fake_tmux_plugins, pam_sandbox, user_shortcut, git_commit,
+# in_terminal, jq_edit, require_mikefarah_yq, assert_sudo_noninteractive, snapshot and
+# assert_unchanged, as_unwritable, and wait_for. tests/ubuntu-sandbox.sh points the ubuntu step's
+# system paths into the sandbox.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +34,9 @@ setup_sandbox() {
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
     # A test that clones rewrites the url to a local repo, as fake_tmux_plugins does
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
+    # The sandbox has no git identity
+    export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t \
+        GIT_COMMITTER_EMAIL=t@example.com
     export HOME="$SANDBOX/home" TMUX_TMPDIR="$SANDBOX/tmux" WORKTREES_DIR="$SANDBOX/worktrees"
     # macOS's mktemp ignores TMPDIR without a template, so a wrapper below adds one
     export TMPDIR="$SANDBOX/tmp"
@@ -53,6 +62,8 @@ setup_sandbox() {
     stub df 'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857600 943718400 10% $path" ;; esac; done'
     exec < /dev/null
+    # Else a relative path would reach the repo's tests/
+    cd "$SANDBOX"
 }
 
 _sandbox_exit() {
@@ -130,8 +141,8 @@ stub() {
     chmod +x "$STUB_DIR/$name"
 }
 
-# Stub sudo to run its command as you. It refuses paths outside the sandbox and repo files the
-# command would change. The optional body runs first and may rewrite "$@" with set --.
+# Stub sudo to run its command as you. It refuses paths outside the sandbox and /dev, and repo
+# files the command would change. The optional body runs first and may rewrite "$@" with set --.
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
@@ -158,7 +169,7 @@ i=0
 for arg in "$@"; do
     i=$((i + 1))
     case "$arg" in
-        /dev/null | "$sandbox" | "$sandbox"/* | *=/dev/null | *="$sandbox" | *="$sandbox"/*) ;;
+        /dev/* | "$sandbox" | "$sandbox"/* | *=/dev/* | *="$sandbox" | *="$sandbox"/*) ;;
         "$repo"/* | *="$repo"/*)
             case "$reads" in
                 all) continue ;;
@@ -194,10 +205,16 @@ cache_sudo() {
     esac
 }
 
-# Stub `apt-config shell`; the body prints the config as `apt-config dump` would
+# Stub `apt-config shell`; the body prints the config as `apt-config dump` would. Without one,
+# periodic package list updates and unattended upgrades are on.
 stub_apt_config() {
+    local config="${1:-}"
+    if [ -z "$config" ]; then
+        config='echo "APT::Periodic::Update-Package-Lists \"1\";"
+echo "APT::Periodic::Unattended-Upgrade \"1\";"'
+    fi
     stub apt-config "config() {
-${1:-:}
+$config
 }
 $(
         cat << 'EOF'
@@ -304,7 +321,7 @@ restore_fn() {
     unset -f "real_$1"
 }
 
-# A step run as its own process needs a uname stub instead
+# A step run as its own process needs stub_uname instead
 as_os() {
     case "$1" in
         macos)
@@ -332,16 +349,19 @@ test_done() {
     TEST_DONE=true
 }
 
-# A gsettings keeping each key in a file, printing values as gsettings does: a list as set, and a
-# string in single quotes, or double quotes when it holds a single one. set takes a string quoted
-# that way too, and, like gsettings, fails on a quoted string followed by more. Unset keys print
-# GNOME's defaults for the lists the steps edit, else ''.
+# A gsettings keeping each key in $SANDBOX/gsettings/<schema>.<key>, printing values as gsettings
+# does: a list, bool, uint32, or quoted string as set, a number set on a uint32 key as a uint32, and
+# other strings in single quotes, or double quotes when they hold a single one. set takes a string
+# quoted that way too, and, like gsettings, fails on a quoted string followed by more. Unset keys
+# print GNOME's defaults for the lists the steps edit, else ''. A schema listed in
+# $SANDBOX/gsettings/no-schema is missing, as the dock's is on GNOME without Ubuntu's.
 stub_gsettings() {
     local body
     mkdir -p "$SANDBOX/gsettings"
-    # Not a heredoc in $(...): bash 3.2 misparses the case patterns' ) there
-    IFS= read -r -d '' body << 'STUB' || true
+    # Not a heredoc in $( ): bash 3.2 would end it at a case pattern's )
+    IFS= read -r -d '' body << 'EOF' || true
 file="$dir/${2//\//_}.$3"
+! grep -qxF "$2" "$dir/no-schema" 2> /dev/null || { echo "No such schema “$2”" >&2; exit 1; }
 case "$1" in
     get)
         if [ -e "$file" ]; then cat "$file"
@@ -351,8 +371,9 @@ case "$1" in
             *) echo "''" ;;
         esac; fi ;;
     set)
+        case "$(cat "$file" 2> /dev/null)" in uint32\ *) set -- "$1" "$2" "$3" "uint32 ${4#uint32 }" ;; esac
         case "$4" in
-            "["* | "@as"*) printf "%s\n" "$4" > "$file" ;;
+            "["* | "@as"* | true | false | "uint32 "*) printf "%s\n" "$4" > "$file" ;;
             \'* | \"*)
                 # Without its escapes, a quoted string has its quote only at the end
                 quote="${4:0:1}" rest="${4:1}"
@@ -367,16 +388,63 @@ case "$1" in
             *) printf "'%s'\n" "$4" > "$file" ;;
         esac ;;
 esac
-STUB
+EOF
     stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")
 $body"
 }
 
-# The sandbox has no git identity
+# A GNOME session keeping its state in dir $1: stub_gsettings, GNOME Shell 50.1, busctl answering
+# for the shell while $SHELL_STATE is set, with an extension in that state (unknown: none) and
+# $SHELL_ERROR, and a systemctl keeping units in [user-]<unit>.enabled and .active files, with
+# graphical-session.target active while $SESSION is set. daemon-reload fails while reload-fails
+# exists, and else makes show report units loaded.
+stub_gnome_session() {
+    local state="$1" body
+    mkdir -p "$state"
+    stub_gsettings
+    stub gnome-shell 'echo "GNOME Shell 50.1"'
+    IFS= read -r -d '' body << 'EOF' || true
+case "$*" in
+    "--user status org.gnome.Shell") [ -n "${SHELL_STATE:-}" ] ;;
+    *GetExtensionInfo*)
+        if [ "$SHELL_STATE" == unknown ]; then echo "{\"type\":\"a{sv}\",\"data\":[{}]}"
+        else echo "{\"type\":\"a{sv}\",\"data\":[{\"state\":{\"type\":\"d\",\"data\":$SHELL_STATE.0},\"error\":{\"type\":\"s\",\"data\":\"${SHELL_ERROR:-}\"}}]}"; fi ;;
+esac
+EOF
+    stub busctl "$body"
+    IFS= read -r -d '' body << 'EOF' || true
+user=""
+[ "$1" != --user ] || { user=user-; shift; }
+case "$1" in
+    show-environment | try-restart) ;;
+    daemon-reload) [ ! -e "$state/reload-fails" ] && touch "$state/loaded" ;;
+    show) if [ -e "$state/loaded" ]; then echo loaded; else echo not-found; fi ;;
+    is-enabled) [ -e "$state/$user${*: -1}.enabled" ] ;;
+    is-active)
+        case "${*: -1}" in
+            graphical-session.target) [ -n "${SESSION:-}" ] ;;
+            *) [ -e "$state/$user${*: -1}.active" ] ;;
+        esac ;;
+    enable) touch "$state/$user${*: -1}.enabled"; [ "$2" != --now ] || touch "$state/$user${*: -1}.active" ;;
+    start | restart) touch "$state/$user${*: -1}.active" ;;
+esac
+EOF
+    stub systemctl "$(printf 'state=%q' "$state")
+$body"
+}
+
+# A custom shortcut of yours, custom0 on Super+Return, which the steps' shortcuts must keep
+user_shortcut() {
+    local dir=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$dir/custom0/']"
+    gsettings set "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$dir/custom0/" \
+        binding "<Super>Return"
+}
+
 git_commit() {
     local repo="$1"
     shift
-    git -C "$repo" -c user.name=test -c user.email=test@example.com commit -q "$@"
+    git -C "$repo" commit -q "$@"
 }
 
 in_terminal_available() {
@@ -402,6 +470,114 @@ stub_login_shell_zsh() {
     stub dscl 'case "$*" in *UserShell*) echo "UserShell: /bin/zsh" ;; *) exit 1 ;; esac'
     stub getent 'echo "$2:x:1000:1000::$HOME:/usr/bin/zsh"'
     stub chsh 'exit 1'
+}
+
+# A uname that says $1, Darwin or Linux, and for -m $2, by default arm64 on Darwin and x86_64 on
+# Linux. Unlike a stub, it doesn't log.
+stub_uname() {
+    local arch="${2:-}"
+    if [ -z "$arch" ]; then
+        arch=x86_64
+        [ "$1" != Darwin ] || arch=arm64
+    fi
+    printf '%s\n' '#!/bin/bash' "case \"\${1:-}\" in -m) echo $arch ;; *) echo $1 ;; esac" > "$STUB_DIR/uname"
+    chmod +x "$STUB_DIR/uname"
+}
+
+# Usage: fake_step <name> [body]: a step in $SANDBOX/steps that logs "<name> <args>" to
+# $SANDBOX/ran, then runs the body. step_script then finds only fake steps; set STEPS for
+# run_steps. Call it after load_script lib/common.sh.
+fake_step() {
+    mkdir -p "$SANDBOX/steps"
+    printf '%s\n' '#!/bin/bash' "echo \"$1\${*:+ \$*}\" >> \"$SANDBOX/ran\"" "${2:-}" > "$SANDBOX/steps/$1.sh"
+    replace_fn step_script "$(printf 'local steps=%q' "$SANDBOX/steps")"'
+[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
+}
+
+# dpkg --print-architecture says $1, by default amd64
+stub_dpkg_arch() {
+    stub dpkg '[ "$1" != --print-architecture ] || echo '"${1:-amd64}"
+}
+
+# dpkg-query reports package $1 installed once apt-get's last argument named it. The marker file
+# $2, by default $SANDBOX/installed-$1, records that.
+stub_apt_package() {
+    local marker
+    marker="$(printf '%q' "${2:-$SANDBOX/installed-$1}")"
+    stub dpkg-query '[ "${*: -1}" == '"$1"' ] && [ -e '"$marker"' ] && printf "install ok installed"'
+    stub apt-get '[ "${*: -1}" != '"$1"' ] || touch '"$marker"
+}
+
+# A gpg listing a key with fingerprint $1, as --show-keys --with-colons does, and with $2 a subkey
+# with that fingerprint
+stub_gpg_fpr() {
+    local body="printf 'pub:-\\nfpr:::::::::%s:\\n' $1"
+    [ -z "${2:-}" ] || body="$body
+printf 'sub:-\\nfpr:::::::::%s:\\n' $2"
+    stub gpg "$body"
+}
+
+# A curl answering a release check with the HTTP status in $SANDBOX/http-status, which this sets
+# to $1, by default 200
+stub_http_status() {
+    echo "${1:-200}" > "$SANDBOX/http-status"
+    stub curl 'cat "'"$SANDBOX"'/http-status"'
+}
+
+# Replace fetch: it logs "fetch <url>", fails while $SANDBOX/fetch-fails exists, and else writes
+# $1, by default "key", to the file
+stub_fetch() {
+    replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+[ ! -e "$SANDBOX/fetch-fails" ] || return 1
+echo '"$(printf '%q' "${1:-key}")"' > "$2"'
+}
+
+# Skip the rest of the test unless yq is mikefarah's, which the codex step needs
+require_mikefarah_yq() {
+    yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
+}
+
+# Usage: jq_edit <file> <jq args>...: edits the file in place, as you would by hand
+jq_edit() {
+    local file="$1"
+    shift
+    jq "$@" "$file" > "$SANDBOX/jq_edit.json" && cp "$SANDBOX/jq_edit.json" "$file"
+}
+
+# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
+# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
+# mean owned by you, with the parent walk stopping at $SANDBOX. Call it after load_script.
+pam_sandbox() {
+    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
+    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
+        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    # OpenPAM finds macOS's .so.2 modules by bare name
+    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
+    PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
+        TID_LINE="auth       sufficient     pam_tid.so"
+}
+
+# A defaults keeping each key in $SANDBOX/defaults/<domain>.<key>, by the domain's last path part,
+# with a -bool read back as 1 or 0. A write to a domain listed in $SANDBOX/defaults-fail fails. The
+# optional body runs first.
+stub_defaults() {
+    mkdir -p "$SANDBOX/defaults"
+    stub defaults "${1:-}
+$(printf 'sandbox=%q' "$SANDBOX")"'
+file="$sandbox/defaults/${2##*/}.$3"
+case "$1" in
+    read) cat "$file" 2> /dev/null ;;
+    write)
+        ! grep -qxF "$2" "$sandbox/defaults-fail" 2> /dev/null || exit 1
+        value="$5"
+        [ "$4" != -bool ] || { [ "$5" == true ] && value=1 || value=0; }
+        printf "%s\n" "$value" > "$file"
+        ;;
+    *) exit 1 ;;
+esac'
 }
 
 # Local repos stand in for GitHub; each plugin is pinned to its first commit, not HEAD
@@ -445,17 +621,6 @@ load_script() {
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first
-}
-
-# Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and
-# PATH, so the copy points them at the sandbox.
-ntfy_hook_copy() {
-    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
-        -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
-    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4" ||
-        ! grep -qxF "PATH=\"$PATH\"" "$4"; then
-        fail "$1 has no NTFY_URL_FILE=, NTFY_LIB=, or PATH= line to point at the sandbox"
-    fi
 }
 
 # Run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always succeeds
@@ -539,6 +704,48 @@ assert_sudo_noninteractive() {
     return 0
 }
 
+# snapshot <file> saves a copy for assert_unchanged <file> <when>, which fails if it now differs
+snapshot() {
+    mkdir -p "$SANDBOX/snapshots"
+    cp "$1" "$(_snapshot_path "$1")"
+}
+
+assert_unchanged() {
+    cmp -s "$(_snapshot_path "$1")" "$1" && return 0
+    fail "$1 changed ${2:-since its snapshot}"
+    return 0
+}
+
+_snapshot_path() {
+    printf '%s/snapshots/%s\n' "$SANDBOX" "$(printf '%s' "$1" | tr / %)"
+}
+
+# Usage: as_unwritable <path> <cmd>...: asserts the command fails with the path read-only, leaving
+# $RUN_OUTPUT, then makes it writable again. Fails, running nothing, when it's writable anyway, as
+# to root.
+as_unwritable() {
+    local path="$1"
+    shift
+    chmod a-w "$path"
+    if [ ! -w "$path" ]; then
+        assert_exit 1 "$@"
+        chmod u+w "$path"
+        return 0
+    fi
+    chmod u+w "$path"
+    return 1
+}
+
+# Poll the command every 0.1 s until it succeeds; fails after 10 s
+wait_for() {
+    local i=0
+    until "$@"; do
+        [ "$i" -lt 100 ] || return 1
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
+
 # Leaves $RUN_OUTPUT for further checks
 assert_exit() {
     local expected="$1"
@@ -548,4 +755,18 @@ assert_exit() {
     fail "'$*' exited $RUN_STATUS, not $expected. Its output:"
     _show "$RUN_OUTPUT"
     return 0
+}
+
+# Usage: assert_stub_log <exclude-regex> <expected> [what]: $STUB_LOG, less the lines matching the
+# extended regex, is the expected text
+assert_stub_log() {
+    assert_eq "$2" "$(grep -vE "$1" "$STUB_LOG" || true)" "${3:-the stub log}"
+}
+
+# A t3 CLI in ~/.local/bin, where the t3 installer puts it, logging as a stub does, then running
+# the optional body
+fake_t3() {
+    mkdir -p "$HOME/.local/bin"
+    printf '%s\n' '#!/bin/bash' 'printf "%s\n" "t3 $*" >> "$STUB_LOG"' "${1:-}" > "$HOME/.local/bin/t3"
+    chmod +x "$HOME/.local/bin/t3"
 }

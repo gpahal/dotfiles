@@ -1,4 +1,4 @@
-# -e fails a loop on any iteration; pipefail fails on a command before a pipe.
+# just's default sh -cu ignores a failure before ; or | within a recipe line.
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # List recipes
@@ -29,7 +29,7 @@ check:
     bash scripts/check-skills.sh
     bash scripts/check-claude-keys.sh > /dev/null
 
-# Run all tests, or the named ones, under /bin/bash 3.2
+# Run all tests, or the named ones, under /bin/bash (3.2 on macOS)
 [positional-arguments]
 test *tests:
     /bin/bash tests/run.sh "$@"
@@ -64,7 +64,7 @@ setup-ai *steps:
 status mode="":
     @case {{quote(mode)}} in "") f="" ;; quick) f=--quick ;; *) echo "Usage: just status [quick]" >&2; exit 2 ;; esac; a=0; bash setup.sh --status $f || a=$?; echo; b=0; bash ai_tools/setup.sh --status $f || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
 
-# Sign git commits with an SSH key
+# Sign git commits and tags with an SSH key
 git-signing:
     bash git/setup-signing.sh
 

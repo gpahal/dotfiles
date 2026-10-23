@@ -68,7 +68,7 @@ load_repo_skills() {
     return "$result"
 }
 
-# Print a skill dir's executable files, sorted, leaving out what skill_current does
+# Print a skill dir's executable files, sorted, skipping __pycache__ and .git as skill_current does
 skill_executables() {
     (cd "$1" && find . \( -name __pycache__ -o -name .git \) -prune -o -type f -perm -u+x -print) |
         LC_ALL=C sort
@@ -83,12 +83,10 @@ skill_current() {
         [ "$(skill_executables "$src")" == "$(skill_executables "$dest")" ]
 }
 
-# Succeeds when ~/.claude/skills/<name> is the link to the skill's copy
 skill_linked() {
     [ -L "$CLAUDE_SKILLS/$1" ] && [ "$(readlink "$CLAUDE_SKILLS/$1")" == "$AGENTS_SKILLS/$1" ]
 }
 
-# Print the skills dirs the step owns: ~/.agents/skills, and ~/.claude/skills with claude_skills_on
 skill_dirs() {
     echo "$AGENTS_SKILLS"
     ! claude_skills_on || echo "$CLAUDE_SKILLS"
@@ -135,7 +133,6 @@ extra_skill_entries() {
     done < <(skill_dirs)
 }
 
-# Print a path under HOME as ~/...
 shown() {
     # shellcheck disable=SC2088 # shown, not expanded
     printf '%s\n' "~/${1#"$HOME"/}"

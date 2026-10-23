@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Check the READMEs' step lists match the runners' STEPS on both OSes, step header lines,
-# the Manual steps sections, and local links.
+# that each STEP_NEEDS names a setup.sh step, the Manual steps sections, and local links.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -73,6 +73,18 @@ done < <({
     sed "s|^|$DOTFILES_DIR/ai_tools/|" "$tmp/ai-macos" "$tmp/ai-ubuntu"
 } | sort -u)
 
+# run_steps skips a step when a step it needs fails, so each need must be a setup.sh step
+cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
+needs=0
+while IFS= read -r script; do
+    for need in $(step_header_value "$script" STEP_NEEDS); do
+        needs=$((needs + 1))
+        grep -qxF "$need" "$tmp/setup-all" ||
+            fail "${script#"$DOTFILES_DIR"/}'s STEP_NEEDS names $need, which isn't a setup.sh step"
+    done
+done < <(find "$DOTFILES_DIR" -name install.sh -not -path '*/.git/*' -not -path '*/node_modules/*')
+[ "$needs" -gt 0 ] || fail "No install.sh has a STEP_NEEDS line, so the STEP_NEEDS check found nothing"
+
 readme="$DOTFILES_DIR/README.md"
 section "$readme" "## How setup works" | { grep '^| `' || true; } > "$tmp/table-rows"
 sed 's/^| `\([^`]*\)`.*/\1/' "$tmp/table-rows" > "$tmp/table"
@@ -81,7 +93,6 @@ for os in macos ubuntu; do
     compare "README.md How setup works's step table, for $os," "$tmp/setup-$os" "$tmp/table-$os" \
         'table rows starting "| `<step>`" under "## How setup works"'
 done
-cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 while IFS= read -r step; do
     grep -qxF "$step" "$tmp/setup-all" || fail "README.md How setup works's step table has $step, which isn't in STEPS"
 done < "$tmp/table"

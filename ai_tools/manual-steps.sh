@@ -71,10 +71,10 @@ open_manual_steps() {
         echo "  Claude in Chrome extension already installed."
     fi
 
-    # DOTFILES_ASSUME_YES means a test machine, where nobody is there to set anything.
     [ -n "$pending_notifications" ] && targets="the notification settings"
     "$open_extension" && targets="${targets:+$targets and }the Chrome extension page"
     [ -n "$targets" ] || return 0
+    # DOTFILES_ASSUME_YES means a test machine, where nobody is there to set anything.
     if [ "${DOTFILES_ASSUME_YES:-}" == 1 ]; then
         echo "  Not opening $targets: DOTFILES_ASSUME_YES is set."
         return 0

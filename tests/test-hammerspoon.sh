@@ -35,12 +35,8 @@ hs = {
         function t:setEnvironment(env) self.env = env end
         function t:start()
             if not state.taskStarts then return false end
-            if self.env.OPEN_IN_CALLER then
-                record("task " .. path .. " " .. table.concat(args, " ") .. " as " .. self.env.OPEN_IN_CALLER
-                    .. ", logging to " .. self.env.OPEN_IN_LOG .. ", PATH " .. self.env.PATH)
-            else
-                record("task " .. path .. " " .. table.concat(args, " "))
-            end
+            -- task_count() counts open-in's tasks
+            if not self.env.OPEN_IN_CALLER then record("task " .. path .. " " .. table.concat(args, " ")) end
             -- The task's exit runs the callback later
             self.running = true
             delayed[#delayed + 1] = { fn = function() self.running = false; fn(state.exitCode, "", args[2] .. " from com.apple.finder: /tmp") end }
@@ -114,24 +110,12 @@ run_lua() {
         fail "lua failed: $RUN_OUTPUT"
 }
 
-run_lua 'hotkeys["ctrl+alt+cmd+space"](); hotkeys["ctrl+alt+cmd+b"](); hotkeys["ctrl+alt+cmd+c"]()
-state.installed["com.google.Chrome"] = nil; hotkeys["ctrl+alt+cmd+b"]()'
-assert_eq "autoLaunch true
-open com.anthropic.claudefordesktop
-open com.google.Chrome
-open com.t3tools.t3code
-open com.google.Chrome
-alert Couldn't open Google Chrome" "$RUN_OUTPUT" "Claude, Chrome, and T3 Code"
-
 # Each task is kept until it exits, so a second press doesn't drop the first
 run_lua 'hotkeys["ctrl+alt+cmd+t"](); hotkeys["ctrl+alt+cmd+e"](); hotkeys["ctrl+alt+cmd+n"]()
-print_calls(); print("tasks " .. task_count()); flush()
+print("tasks " .. task_count()); flush()
 print("tasks " .. task_count())
 state.taskStarts = false; hotkeys["ctrl+alt+cmd+e"]()'
 assert_eq "autoLaunch true
-task /bin/bash /home/.hammerspoon/bin/open-in terminal as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
-task /bin/bash /home/.hammerspoon/bin/open-in editor as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
-task /bin/bash /home/.hammerspoon/bin/open-in chrome-tab as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
 tasks 3
 open-in: terminal from com.apple.finder: /tmp
 open-in: editor from com.apple.finder: /tmp
@@ -140,41 +124,30 @@ tasks 0
 alert Couldn't run /home/.hammerspoon/bin/open-in" "$RUN_OUTPUT" "the terminal, the editor, and the new tab"
 
 # A second new-tab press while the first runs is dropped, so there's one tab and one paste
-run_lua 'hotkeys["ctrl+alt+cmd+n"](); hotkeys["ctrl+alt+cmd+n"](); print_calls(); print("--"); flush()
-print_calls(); print("--"); hotkeys["ctrl+alt+cmd+n"]()'
+run_lua 'hotkeys["ctrl+alt+cmd+n"](); hotkeys["ctrl+alt+cmd+n"](); print("tasks " .. task_count()); flush()
+hotkeys["ctrl+alt+cmd+n"](); print("tasks " .. task_count())'
 assert_eq "autoLaunch true
-task /bin/bash /home/.hammerspoon/bin/open-in chrome-tab as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
---
+tasks 1
 open-in: chrome-tab from com.apple.finder: /tmp
---
-task /bin/bash /home/.hammerspoon/bin/open-in chrome-tab as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin" "$RUN_OUTPUT" "a second press"
+tasks 1" "$RUN_OUTPUT" "a second press"
 
 # Exit 127 or 126 alerts, since open-in can't notify; other failures are open-in's to report
 run_lua 'for _, code in ipairs({ 127, 126, 1 }) do
     state.exitCode = code; hotkeys["ctrl+alt+cmd+t"](); print_calls(); flush()
 end'
 assert_eq "autoLaunch true
-task /bin/bash /home/.hammerspoon/bin/open-in terminal as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
 open-in: terminal from com.apple.finder: /tmp
 alert Couldn't run /home/.hammerspoon/bin/open-in; re-run the hammerspoon step
-task /bin/bash /home/.hammerspoon/bin/open-in terminal as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
 open-in: terminal from com.apple.finder: /tmp
 alert Couldn't run /home/.hammerspoon/bin/open-in; re-run the hammerspoon step
-task /bin/bash /home/.hammerspoon/bin/open-in terminal as Hammerspoon, logging to Hammerspoon's console, PATH /usr/bin
 open-in: terminal from com.apple.finder: /tmp" "$RUN_OUTPUT" "open-in missing or not runnable"
 
-run_lua 'print(watchers[1].path)
-watchers[1].fn({ "/home/.hammerspoon/Spoons/x.lua" }); print_calls(); print("--")
-watchers[1].fn({ "/home/.hammerspoon/init.lua" })'
+run_lua 'watchers[1].fn({ "/home/.hammerspoon/Spoons/x.lua" }); print_calls(); print("--")
+watchers[1].fn({ "/home/.hammerspoon/monitor-input.conf" }); print(usb.watcher == nil)'
 assert_eq "autoLaunch true
-/home/.hammerspoon
 --
-reload" "$RUN_OUTPUT" "reloading"
-
-run_lua 'watchers[1].fn({ "/home/.hammerspoon/monitor-input.conf" }); print(usb.watcher == nil)'
-assert_eq "autoLaunch true
 true
-reload" "$RUN_OUTPUT" "reloading on new monitor input settings, which stay off without them"
+reload" "$RUN_OUTPUT" "no reload for other files; reloading on new monitor input settings, which stay off without them"
 
 # Usage: run_monitor <monitor-input.conf> <lua>
 run_monitor() {

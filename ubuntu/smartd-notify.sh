@@ -1,7 +1,7 @@
 #!/bin/bash
 # smartd's warning hook (run.d/50dotfiles-notify), run as root; pushes to ntfy, always exits 0.
 
-# Fixed paths, since it runs as root. Tests rewrite these lines (ntfy_hook_copy in tests/lib.sh).
+# Fixed paths, since it runs as root. Tests rewrite these lines (tests/ubuntu-sandbox.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
 # smartd's PATH starts with /usr/local; use the system's curl and logger

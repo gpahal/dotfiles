@@ -23,8 +23,7 @@ UNATTENDED_CONTENT='// From the dotfiles chrome step: install Chrome updates wit
 Unattended-Upgrade::Origins-Pattern { "origin=Google LLC,suite=stable"; };'
 # Written by the .deb's postinst
 GOOGLE_KEYRING=/usr/share/keyrings/google-chrome.gpg
-# The primary key's fingerprint, as $GOOGLE_LINUX_KEYS_URL lists it. To re-verify, compare that
-# page with gpg --show-keys /usr/share/keyrings/google-chrome.gpg.
+# Primary key fingerprint from $GOOGLE_LINUX_KEYS_URL; recheck with gpg --show-keys $GOOGLE_KEYRING
 GOOGLE_KEY_FPR=EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796
 GOOGLE_LINUX_KEYS_URL=https://www.google.com/linuxrepositories/
 
@@ -87,7 +86,7 @@ readd_google_repo() {
     allow_repo_readd && install_chrome --reinstall || return 1
     google_source_exists && return 0
     echo "  Reinstalling Chrome's .deb didn't add Google's apt repo. Add it by hand:" >&2
-    echo "  https://www.google.com/linux/linuxrepositories/" >&2
+    echo "  $GOOGLE_LINUX_KEYS_URL" >&2
     return 1
 }
 

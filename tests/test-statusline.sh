@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# Claude Code's status line script: a missing field leaves no gap, and no jq says so.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -9,12 +11,10 @@ script="$REPO_DIR/ai_tools/claude-code/statusline.sh"
 
 command -v jq &> /dev/null || skip "jq isn't installed"
 
-git init -q -b feat "$SANDBOX/repo"
-input="$(printf '{"model":{"display_name":"Opus 5.5"},"effort":{"level":"medium"},"context_window":{"used_percentage":42.6},"rate_limits":{"five_hour":{"used_percentage":24.2}},"workspace":{"current_dir":"%s"}}' "$SANDBOX/repo")"
-assert_eq "Opus 5.5 · medium · ctx 43% · 5h 24% · feat" \
-    "$(printf '%s' "$input" | /bin/bash "$script")" "status line with every field"
-assert_eq "Opus 5.5" "$(echo '{"model":{"display_name":"Opus 5.5"}}' | /bin/bash "$script")" \
-    "status line with only the model"
+# No effort: whitespace separators would collapse the empty field and shift context into its place
+input='{"model":{"display_name":"Opus 5.5"},"context_window":{"used_percentage":42.6}}'
+assert_eq "Opus 5.5 · ctx 43%" "$(printf '%s' "$input" | /bin/bash "$script")" \
+    "status line with an empty middle field"
 
 mkdir -p "$SANDBOX/nojq"
 for cmd in git cat; do

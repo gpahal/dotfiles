@@ -56,7 +56,7 @@ Write one paragraph on what the change is meant to do, from the user's message, 
 
 For each split, fill in the part of [`references/reviewer-prompt.md`](references/reviewer-prompt.md) below its `---` line: the intent, the scope packet, and the split's lenses. The rubric section gets the split's `##` sections of `references/rubric.md`, demoted to `###`, without the file's title and intro line. The code-quality section gets `references/code-quality-review.md` without its top heading. Leave out a section with none of the split's lenses. Both reviewers get the same prompt file for a split.
 
-Number the splits from 1. For a sharded scope, number the shards from 1 too, and fill each shard's prompts with that shard's packet. An unsharded scope is shard 1. Save each prompt as `<tmp>/prompt-<shard>-<n>.md`, directly in the scope's temp directory. The script lets Claude read only the prompt file's directory, so that directory has to hold the diff files and any materialized `head`.
+Number the splits from 1. For a sharded scope, number the shards from 1 too, and fill each shard's prompts with that shard's packet. An unsharded scope is shard 1. Save each prompt as `<tmp>/prompt-<shard>-<n>.md`, directly in the scope's temp directory. Outside the repo, the script lets Claude read only the prompt file's directory, so that directory has to hold the diff files and any materialized `head`.
 
 Make a second temp directory, `<answers>` (`mktemp -d`), for the reviewers' answers, and leave its path out of every prompt. The script refuses an out-file under the prompt file's directory or the repo, where a reviewer would read the other reviewer's answers.
 

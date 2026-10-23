@@ -290,7 +290,12 @@ configure_sshd() {
     fi
     # sshd may not be running yet: ssh.socket starts it on the first connection
     if ! sudo systemctl try-reload-or-restart ssh.service; then
-        restore_sshd_drop_in "$existed" "$old" || return 1
+        if ! restore_sshd_drop_in "$existed" "$old"; then
+            echo "  Couldn't reload sshd or undo the change, so the new $SSHD_DROP_IN" >&2
+            echo "  is still in place. It passed sshd -t, but sshd may have stopped: check" >&2
+            echo "  systemctl status ssh and journalctl -u ssh, fix the error, and re-run." >&2
+            return 1
+        fi
         echo "  Couldn't activate the SSH settings; restored the previous drop-in. Fix the error and re-run." >&2
         return 1
     fi

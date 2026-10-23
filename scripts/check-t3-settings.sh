@@ -17,8 +17,8 @@ command -v curl &>/dev/null || { echo "curl isn't installed" >&2; exit 1; }
 source "$REPO_DIR/scripts/lib/check.sh"
 make_tmp
 
-# GITHUB_TOKEN lifts the API rate limit in CI. The header goes through stdin, since any local user
-# can read a command line.
+# GITHUB_TOKEN lifts CI's API rate limit; the header goes through stdin, since any local user can
+# read a command line.
 download() {
     if [ -z "${GITHUB_TOKEN:-}" ]; then
         curl -fsSL --proto '=https' --retry 3 --retry-delay 2 -o "$2" "$1"

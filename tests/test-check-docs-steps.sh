@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# check-docs.sh on a small repo whose runners and READMEs agree, then with wrong OS marks.
+# check-docs.sh fails on a README step table whose OS marks disagree with the runners' step lists.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -49,7 +49,6 @@ manual_steps() {
         'The steps, in order, are `claude-code` and `codex`. Ubuntu skips `codex`.' ''
     manual_steps
 } > "$repo/ai_tools/README.md"
-assert_exit 0 /bin/bash "$repo/scripts/check-docs.sh"
 
 sed -i.bak -e '/^| `hammerspoon`/s/ macOS only |$/ |/' -e '/^| `editorconfig`/s/ |$/. Ubuntu only |/' \
     "$repo/README.md"

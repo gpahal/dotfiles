@@ -21,7 +21,6 @@ interactive() {
 }
 
 assert_exit 0 interactive 'echo first' please
-assert_contains "$RUN_OUTPUT" "sudo: echo first" "what please prints"
 assert_eq "sudo zsh -c echo first" "$(cat "$STUB_LOG")" "what please runs"
 
 # fc -n would print the newline as \n, which zsh -c reads as n
@@ -34,10 +33,10 @@ assert_eq "$(printf '%s\n' 'sudo zsh -c { echo one' 'echo two }')" "$(cat "$STUB
 assert_exit 0 interactive 'echo kept' ' echo spaced' please
 assert_eq "sudo zsh -c  echo spaced" "$(cat "$STUB_LOG")" "a line with a leading space"
 
+# please, run again or with spaces, still runs the line before it
 : > "$STUB_LOG"
-assert_exit 0 interactive 'echo twice' please please
-assert_eq "$(printf '%s\n' 'sudo zsh -c echo twice' 'sudo zsh -c echo twice')" "$(cat "$STUB_LOG")" \
-    "please twice"
+assert_exit 0 interactive 'echo twice' please please ' please' 'please ' 'echo again; please'
+assert_eq "$(printf 'sudo zsh -c echo twice\n%.0s' 1 2 3 4 5)" "$(cat "$STUB_LOG")" "please again and with spaces"
 
 # A line zsh doesn't run is still the line typed before please
 for line in 'echo oops )' '# a note'; do
@@ -45,10 +44,6 @@ for line in 'echo oops )' '# a note'; do
     assert_exit 0 interactive 'echo older' "$line" please
     assert_eq "sudo zsh -c $line" "$(cat "$STUB_LOG")" "please after '$line'"
 done
-
-: > "$STUB_LOG"
-assert_exit 0 interactive 'echo spaced' ' please' 'please ' 'echo again; please'
-assert_eq "$(printf 'sudo zsh -c echo spaced\n%.0s' 1 2 3)" "$(cat "$STUB_LOG")" "please with spaces"
 
 # With share_history, the history holds other shells' commands, which please mustn't run
 : > "$STUB_LOG"

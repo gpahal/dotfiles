@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Saves this machine's monitor inputs and the USB device that marks where the USB switch points.
+# Save this machine's monitor inputs and the USB device that marks where the USB switch points.
 # Run it on each machine; with no arguments it lists the USB devices and the input codes.
 
 # shellcheck source=../lib/common.sh

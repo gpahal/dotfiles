@@ -211,8 +211,8 @@ status_touch_id() {
             status_item missing "Touch ID in tmux: $blocker"
         elif ! reattach_in_use; then
             status_item skipped "Touch ID in tmux: pam-reattach isn't installed; the homebrew step installs it, then re-run just touch-id"
+        # A missing copy is reported by the module loop below
         elif { [ -e "$REATTACH_MODULE" ] || [ -L "$REATTACH_MODULE" ]; } && reattach_copy_needed; then
-            # A missing copy is reported below
             if reattach_module_replaceable; then
                 status_item missing "Touch ID in tmux: $REATTACH_MODULE, which sudo loads, isn't a root-owned copy of Homebrew's pam-reattach module; re-run just touch-id"
             else

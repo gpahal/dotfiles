@@ -1,38 +1,39 @@
 #!/bin/bash
 set -euo pipefail
 
-# test-docker-sources.sh covers add_apt_repo's other failures
+# lib/system.sh's apt sources: status_apt_source, apt_repo_published, add_apt_repo's checks and
+# rollbacks, and apt_get_update's lock retries.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
-load_script chrome/install.sh
-APT_SOURCES_DIR="$SANDBOX/apt/sources.list.d"
+load_script lib/common.sh
+load_script lib/system.sh
 stub_sudo_exec
+real_install="$(command -v install)"
+real_mv="$(command -v mv)"
 
-# --- apt_source_state and status_apt_source ---
+# --- status_apt_source ---
 file="$APT_SOURCES_DIR/example.list"
 content="deb [signed-by=/k] https://example.com/ubuntu resolute main"
-assert_eq missing "$(apt_source_state "$file" "$content")" "no file"
-echo "$content" > "$file"
-assert_eq "" "$(apt_source_state "$file" "$content")" "the exact content"
-echo "# $content" > "$file"
-assert_eq "differs from what setup writes" "$(apt_source_state "$file" "$content")" "a changed file"
-stub curl 'cat "'"$SANDBOX"'/http-status"'
 release=https://example.com/dists/resolute/Release
-echo 200 > "$SANDBOX/http-status"
-echo "$content" > "$file"
-assert_eq "  ok         Example's apt source ($file)" \
-    "$(status_apt_source Example "$file" "$content" example "$release")" "status, ok"
+# A release upgrade's source isn't fixable by re-running the step until the repo publishes
 echo "${content/resolute/stale-suite}" > "$file"
-assert_eq "  missing    Example's apt source ($file): differs from what setup writes; re-run the example step" \
-    "$(status_apt_source Example "$file" "$content" example "$release")" "status, differing"
-echo 404 > "$SANDBOX/http-status"
-assert_eq "  missing    Example's apt source ($file): differs from what setup writes; Example hasn't published packages for Ubuntu resolute yet" \
-    "$(status_apt_source Example "$file" "$content" example "$release")" "status, differing, not yet published"
-echo 200 > "$SANDBOX/http-status"
+stub_http_status 404
+status_out="$(status_apt_source Example "$file" "$content" example "$release")"
+assert_contains "$status_out" "missing    Example's apt source"
+assert_contains "$status_out" "hasn't published packages for Ubuntu resolute yet"
 rm "$file"
-assert_eq "  missing    Example's apt source ($file): missing; re-run the example step" \
-    "$(status_apt_source Example "$file" "$content" example "$release")" "status, missing"
+
+# --- apt_repo_published ---
+release_url=https://example.com/ubuntu/dists/resolute/Release
+# An unreachable host counts as published, so add_apt_repo's own failure says what's wrong
+stub_http_status 404
+assert_exit 1 apt_repo_published Example "$release_url"
+for http in 200 000; do
+    stub_http_status "$http"
+    assert_exit 0 apt_repo_published Example "$release_url"
+done
 
 # --- add_apt_repo ---
 # served-key holds one fingerprint per key; gpg prints each as --with-colons does
@@ -53,16 +54,14 @@ keyring="$SANDBOX/keyrings/example.gpg"
 add() {
     add_apt_repo Example "$file" "$content" https://example.com/key.gpg "$keyring" "$fpr"
 }
-release_url=https://example.com/ubuntu/dists/resolute/Release
-
-# An unreachable host counts as published, so add_apt_repo's own failure says what's wrong
-echo 404 > "$SANDBOX/http-status"
-assert_exit 1 apt_repo_published Example "$release_url"
-assert_contains "$RUN_OUTPUT" "Example hasn't published packages for Ubuntu resolute yet; re-run this step later."
-for http in 200 000; do
-    echo "$http" > "$SANDBOX/http-status"
-    assert_exit 0 apt_repo_published Example "$release_url"
-done
+# shellcheck disable=SC2034 # apt_get_update reads them
+APT_UPDATE_RETRY_DELAY=0 APT_UPDATE_TRIES=4
+reset() {
+    rm -rf "$APT_SOURCES_DIR" "$SANDBOX/keyrings"
+    mkdir -p "$APT_SOURCES_DIR" "$SANDBOX/keyrings"
+    echo "$fpr" > "$SANDBOX/served-key"
+    : > "$STUB_LOG"
+}
 
 echo "${content/resolute/stale-suite}" > "$file"
 assert_exit 0 add
@@ -75,7 +74,6 @@ echo "${content/resolute/stale-suite}" > "$file"
 echo 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/served-key"
 : > "$STUB_LOG"
 assert_exit 1 add
-assert_contains "$RUN_OUTPUT" "Example's apt key from https://example.com/key.gpg has the fingerprint 0123456789ABCDEF0123456789ABCDEF01234567, not $fpr"
 assert_eq old-key "$(cat "$keyring")" "the key after a key with another fingerprint"
 assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a key with another fingerprint"
 assert_eq "sudo cat $file" "$(grep '^sudo' "$STUB_LOG")" "sudo calls for a key with another fingerprint"
@@ -83,13 +81,11 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 # apt would trust a second key too
 printf '%s\n' "$fpr" 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/served-key"
 assert_exit 1 add
-assert_contains "$RUN_OUTPUT" "has the fingerprint $fpr, 0123456789ABCDEF0123456789ABCDEF01234567, not $fpr"
 assert_eq old-key "$(cat "$keyring")" "the key after a download with a second key"
 echo "<html>" > "$SANDBOX/served-key"
 stub_gpg="$(cat "$STUB_DIR/gpg")"
 stub gpg 'echo "gpg: no valid OpenPGP data found." >&2; exit 2'
 assert_exit 1 add
-assert_contains "$RUN_OUTPUT" "has the fingerprint (none), not $fpr"
 assert_eq old-key "$(cat "$keyring")" "the key after a download that isn't a key"
 printf '%s\n' "$stub_gpg" > "$STUB_DIR/gpg"
 echo "$fpr" > "$SANDBOX/served-key"
@@ -101,20 +97,20 @@ stub apt-get 'echo "E: The repository is not signed."; exit 100'
 assert_exit 1 add
 [ ! -e "$file" ] || fail "a source that still fails was put back"
 [ ! -e "$keyring" ] || fail "the key of a source that still fails was put back"
-assert_contains "$RUN_OUTPUT" "An earlier run left it, and it still fails, so it was removed."
-assert_not_contains "$RUN_OUTPUT" "the old one is back"
 echo "${content/resolute/stale-suite}" > "$file"
 echo old-key > "$keyring"
 assert_exit 1 add
 assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a failed update"
 assert_eq old-key "$(cat "$keyring")" "the key after a failed update"
-assert_contains "$RUN_OUTPUT" "so the old one is back"
+# A new source fails its first update: it and its new key go
+reset
+assert_exit 1 add
+[ ! -e "$file" ] || fail "a new source was kept after its update failed"
+[ ! -e "$keyring" ] || fail "a new key was kept after its source's update failed"
 stub apt-get
 
 # The lock wait must show as it happens, not once the update is done
-# shellcheck disable=SC2034 # apt_get_update reads it
-APT_UPDATE_RETRY_DELAY=0
-rm "$file"
+rm -f "$file"
 stub apt-get 'if [ ! -e "'"$SANDBOX"'/locked-once" ]; then
     touch "'"$SANDBOX"'/locked-once"
     echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)"
@@ -127,26 +123,109 @@ assert_contains "$seen" "Updating apt's lists for Example" "output before the up
 assert_contains "$seen" "apt's lists lock is held by another update" "output before the update"
 stub apt-get
 
+# A lock still held isn't the source's fault, so it stays
+reset
+stub apt-get 'echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 6 (apt-get)" >&2
+exit 100'
+assert_exit 1 add
+assert_eq "$content" "$(cat "$file" 2> /dev/null)" "the source while another update held the lock"
+stub apt-get
+
+reset
 echo old-key > "$keyring"
 echo "${content/resolute/stale-suite}" > "$file"
 touch "$SANDBOX/fetch-fails"
-: > "$STUB_LOG"
 assert_exit 1 add
 rm "$SANDBOX/fetch-fails"
 assert_eq old-key "$(cat "$keyring")" "the key after its download failed"
 assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after the key's download failed"
 assert_file_not_contains "$STUB_LOG" "apt-get"
-rm -rf "$APT_SOURCES_DIR" "$SANDBOX/keyrings"
-mkdir -p "$APT_SOURCES_DIR"
 
-# --- the chrome step's google_source_exists ---
+# Writing the key fails partway: the old one stays, with no temp file beside it
+reset
+echo old-key > "$keyring"
+stub install 'dest="${!#}"
+if [[ "${dest##*/}" == .example.gpg.* ]]; then
+    echo "ne" > "$dest"
+    exit 1
+fi
+exec "'"$real_install"'" "$@"'
+assert_exit 1 add
+rm "$STUB_DIR/install"
+assert_eq old-key "$(cat "$keyring")" "the key after writing it failed partway"
+assert_eq example.gpg "$(ls -A "$SANDBOX/keyrings")" "files beside the key after writing it failed"
+[ ! -e "$file" ] || fail "the source was written after the key failed"
 
-check=google_source_exists
-GOOGLE_SOURCES="$APT_SOURCES_DIR/google-chrome.sources"
-uri=https://dl.google.com/linux/chrome-stable/deb/
-assert_exit 1 "$check"
-printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\nEnabled: no\n' "$uri" > "$GOOGLE_SOURCES"
-assert_exit 1 "$check"
-printf 'Types: deb\nURIs: %s\nSuites: stable\nComponents: main\n' "$uri" > "$GOOGLE_SOURCES"
-assert_exit 0 "$check"
+# Writing the source fails: the old key and source are back, or no source, with no temp files
+stub mv 'if [ "${!#}" = "'"$file"'" ] && rm "'"$SANDBOX"'/mv-fails-once" 2> /dev/null; then
+    exit 1
+fi
+exec "'"$real_mv"'" "$@"'
+for before in source none; do
+    reset
+    echo old-key > "$keyring"
+    [ "$before" != source ] || echo "old source" > "$file"
+    touch "$SANDBOX/mv-fails-once"
+    assert_exit 1 add
+    assert_eq old-key "$(cat "$keyring")" "the key after writing the source failed ($before before)"
+    if [ "$before" = source ]; then
+        assert_eq "old source" "$(cat "$file")" "the source after writing it failed"
+    else
+        [ ! -e "$file" ] || fail "a source was kept after writing it failed"
+    fi
+    assert_eq "$([ "$before" != source ] || echo example.list)" "$(ls -A "$APT_SOURCES_DIR")" \
+        "files beside the source after writing it failed ($before before)"
+    assert_file_not_contains "$STUB_LOG" "apt-get"
+done
+# Putting the old source back fails too: say so, rather than that it's back
+stub mv '[ "${!#}" != "'"$file"'" ] || exit 1
+exec "'"$real_mv"'" "$@"'
+reset
+echo old-key > "$keyring"
+echo "old source" > "$file"
+assert_exit 1 add
+assert_contains "$RUN_OUTPUT" "putting the old one back failed too"
+rm "$STUB_DIR/mv"
+
+# An unreadable source: nothing changes
+reset
+echo old-key > "$keyring"
+echo "old source" > "$file"
+chmod 000 "$file"
+if [ ! -r "$file" ]; then
+    assert_exit 1 add
+    chmod 644 "$file"
+    assert_eq old-key "$(cat "$keyring")" "the key when the source can't be read"
+    assert_eq "old source" "$(cat "$file")" "an unreadable source"
+    assert_file_not_contains "$STUB_LOG" "apt-get"
+fi
+chmod 644 "$file"
+
+# --- apt_get_update ---
+# Retried only for apt's lists lock, which apt-daily can hold
+stub apt-get 'S="'"$SANDBOX"'"
+if [ -e "$S/apt-broken" ]; then
+    echo "E: The repository http://example.invalid resolute Release does not have a Release file." >&2
+    exit 100
+fi
+n="$(cat "$S/locked" 2>/dev/null || echo 0)"
+[ "$n" -gt 0 ] || exit 0
+echo $((n - 1)) > "$S/locked"
+echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)" >&2
+echo "E: Unable to lock directory /var/lib/apt/lists/" >&2
+exit 100'
+updates() { grep -c "^apt-get .* update$" "$STUB_LOG" || true; }
+: > "$STUB_LOG"
+echo 2 > "$SANDBOX/locked"
+assert_exit 0 apt_get_update
+assert_eq 3 "$(updates)" "apt-get updates after two lock failures"
+: > "$STUB_LOG"
+echo 100 > "$SANDBOX/locked"
+assert_exit 100 apt_get_update
+assert_eq "$APT_UPDATE_TRIES" "$(updates)" "apt-get updates while the lock stays held"
+: > "$STUB_LOG"
+rm "$SANDBOX/locked"
+touch "$SANDBOX/apt-broken"
+assert_exit 100 apt_get_update
+assert_eq 1 "$(updates)" "apt-get updates after another error"
 test_done

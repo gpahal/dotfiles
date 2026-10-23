@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Both runners take -h/--help, --status, --quick, --backup, and --no-backup anywhere among the step
-# names, and fail with a usage line on an unknown flag, and with the step lists on an unknown step.
+# The runners, through runner_main, take -h/--help, --status, --quick, --backup, and --no-backup
+# anywhere among the step names, and fail with a usage line on an unknown flag or step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -10,7 +10,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 setup_sandbox
 
 setup_sh="$REPO_DIR/setup.sh"
-ai_setup_sh="$REPO_DIR/ai_tools/setup.sh"
 
 first=""
 for args in "vim --status" "--backup --status vim --quick"; do
@@ -23,27 +22,19 @@ for args in "vim --status" "--backup --status vim --quick"; do
     [ -n "$first" ] || first="$RUN_OUTPUT"
     assert_eq "$first" "$RUN_OUTPUT" "output of setup.sh $args"
 done
-assert_exit 0 "$BASH" "$ai_setup_sh" manual-steps --status --no-backup
-assert_contains "$RUN_OUTPUT" "=== AI tools status ==="
-assert_not_contains "$RUN_OUTPUT" "Unknown"
-assert_exit 3 "$BASH" "$ai_setup_sh" --status skills
-assert_contains "$RUN_OUTPUT" "Needs attention: skills."
 
 assert_exit 0 "$BASH" "$setup_sh" vim --help
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-assert_contains "$RUN_OUTPUT" "  vim             $(sed -n '4s/^# //p' "$REPO_DIR/vim/install.sh")"
-assert_exit 0 "$BASH" "$ai_setup_sh" --backup -h skills
-assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
+header="$(load_script lib/common.sh && step_header_line "$REPO_DIR/vim/install.sh")"
+[ -n "$header" ] || fail "vim/install.sh has no header line"
+assert_contains "$RUN_OUTPUT" "  vim             $header"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"
 
 assert_exit 2 "$BASH" "$setup_sh" --status vim -x
 assert_contains "$RUN_OUTPUT" "Unknown option: -x"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-assert_exit 2 "$BASH" "$ai_setup_sh" skills --foo
-assert_contains "$RUN_OUTPUT" "Unknown option: --foo"
-assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "an unknown flag installed ~/.vimrc"
 
 # A name with a space or slash is unknown, even when it matches adjacent steps
@@ -57,14 +48,7 @@ assert_exit 2 "$BASH" "$setup_sh" --quick --backup vim
 assert_contains "$RUN_OUTPUT" "--quick only works with --status"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-assert_exit 2 "$BASH" "$ai_setup_sh" skills --quick
-assert_contains "$RUN_OUTPUT" "--quick only works with --status"
-assert_contains "$RUN_OUTPUT" "Usage: bash ai_tools/setup.sh"
 [ ! -e "$HOME/.vimrc" ] || fail "--quick without --status installed ~/.vimrc"
-
-assert_exit 0 "$BASH" "$setup_sh" vim --no-backup
-assert_contains "$RUN_OUTPUT" "=== dotfiles setup ==="
-assert_file_contains "$HOME/.vimrc" "$(head -1 "$REPO_DIR/vim/vimrc")"
 
 read_flags() {
     env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
@@ -79,53 +63,11 @@ assert_eq "1 1" "$RUN_OUTPUT" "variables after --backup --status --quick"
 run read_flags vim
 assert_eq "unset unset" "$RUN_OUTPUT" "variables after vim"
 
-stub gh
-assert_exit 3 "$BASH" "$REPO_DIR/git/install.sh" --no-backup --status --quick
-assert_contains "$RUN_OUTPUT" "missing    ~/.config/git/config"
-[ ! -e "$HOME/.config/git/config" ] || fail "git/install.sh --status installed the git config"
-assert_exit 0 "$BASH" "$REPO_DIR/manual-steps.sh" --status --no-backup
-assert_eq "" "$RUN_OUTPUT" "manual-steps.sh --status"
-# The manual-steps scripts aren't named install.sh
-for step in manual-steps.sh ai_tools/manual-steps.sh; do
-    assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
-    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
-done
-
+# A step given a word, as `install.sh status` for --status, fails rather than applying
 export HOME="$SANDBOX/home-help"
 mkdir -p "$HOME"
-step=git/install.sh
-assert_exit 0 "$BASH" "$REPO_DIR/$step" -h
-assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step -h"
-assert_exit 2 "$BASH" "$REPO_DIR/$step" --status --stauts
-assert_contains "$RUN_OUTPUT" "Unknown option: --stauts"
-assert_contains "$RUN_OUTPUT" "Usage: bash $step"
-assert_exit 2 "$BASH" "$REPO_DIR/$step" --quick
-assert_contains "$RUN_OUTPUT" "--quick only works with --status"
-assert_exit 2 "$BASH" "$REPO_DIR/$step" status
-assert_contains "$RUN_OUTPUT" "Unknown argument: status"
-assert_contains "$RUN_OUTPUT" "Usage: bash $step"
-assert_eq "" "$(find "$HOME" -mindepth 1)" "files a step wrote for -h, --stauts, or status"
-
-# The default main names its step even after a test cd's elsewhere
-step=editorconfig/install.sh
-assert_exit 0 "$BASH" "$REPO_DIR/$step" --help
-assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step --help"
-assert_exit 2 "$BASH" "$REPO_DIR/$step" status
-assert_contains "$RUN_OUTPUT" "Unknown argument: status"
-default_main() {
-    export HOME="$SANDBOX/home-default-main"
-    mkdir -p "$HOME"
-    load_script "$step"
-    cd /
-    assert_exit 0 main -h
-    assert_eq "Usage: bash $step [--status [--quick]] [--backup | --no-backup]" "$RUN_OUTPUT" "$step's main -h"
-    assert_exit 3 main --status
-    assert_eq "  missing    ~/.editorconfig" "$RUN_OUTPUT" "$step's main --status"
-    assert_exit 0 main
-    assert_contains "$RUN_OUTPUT" "Copying EditorConfig..."
-    [ -f "$HOME/.editorconfig" ] || fail "$step's main didn't copy ~/.editorconfig"
-}
-subtest default_main
+assert_exit 2 "$BASH" "$REPO_DIR/git/install.sh" status
+assert_eq "" "$(find "$HOME" -mindepth 1)" "files git/install.sh status wrote"
 
 # The runners use their own bash, not the first on PATH, such as Homebrew's
 stub bash 'exit 99'

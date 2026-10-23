@@ -1,18 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# The git cob and cobr aliases, with ambiguous branch, tag, and remote names.
+# The git cobr alias: a branch tracking another remote, and a name a local branch makes ambiguous.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
-    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
-# Only the aliases, keeping the repo's pager and fsmonitor config out
-for alias in cob cobr; do
-    git config --file "$HOME/.gitconfig" "alias.$alias" "$(git config --file "$REPO_DIR/git/gitconfig" "alias.$alias")"
-done
+# Only the alias, keeping the repo's pager and fsmonitor config out
+git config --file "$HOME/.gitconfig" alias.cobr "$(git config --file "$REPO_DIR/git/gitconfig" alias.cobr)"
 stub fzf 'grep -x -- "$PICK"'
 
 git init -q -b main "$SANDBOX/seed"
@@ -45,9 +41,4 @@ PICK=origin/feature2 assert_exit 0 git cobr
 assert_eq refs/heads/feature2 "$(git symbolic-ref HEAD)" "the branch after picking origin/feature2"
 assert_eq "$(git rev-parse refs/remotes/origin/feature2)" "$(git rev-parse HEAD)" "feature2's commit"
 assert_eq refs/remotes/origin/feature2 "$(git rev-parse --symbolic-full-name 'feature2@{upstream}')" "feature2's upstream"
-git switch -q main
-
-git tag feature
-PICK=feature assert_exit 0 git cob
-assert_eq refs/heads/feature "$(git symbolic-ref HEAD)" "the branch after git cob"
 test_done

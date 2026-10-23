@@ -84,7 +84,6 @@ claude_desktop_settings() {
     fi
 }
 
-# Linux names the process after its executable
 configure_claude_desktop() {
     echo "Configuring Claude desktop app..."
     if is_macos; then
@@ -95,6 +94,7 @@ already set" \
 and Cowork browser, web search, and scheduled tasks" \
             "$(claude_desktop_config)" "$(claude_desktop_settings)"
     else
+        # Linux names the process after its executable
         merge_app_json claude-desktop \
             "Keep-awake, archiving, tray icon, and Cowork settings are already set" \
             "Set keep-awake, archiving, no tray icon, and Cowork browser, web search, and scheduled

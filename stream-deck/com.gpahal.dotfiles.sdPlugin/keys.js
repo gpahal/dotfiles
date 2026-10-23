@@ -40,7 +40,7 @@ function createStatKeys({ stats, sampler, log, draw, ready = () => true, interva
     }
   }
 
-  // CPU and network are rates, so the first sample waits a moment
+  // CPU, network, and Linux's top are rates, so the first sample waits a moment
   function start() {
     if (timer) return;
     sampler.reset();

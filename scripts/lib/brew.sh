@@ -1,3 +1,4 @@
+# Brewfile formulae and step cask lists for check-brew-packages.sh. Source it; don't run it.
 # shellcheck shell=bash
 
 # Prints "<formula> mac" inside an `if OS.mac?` block, else "<formula> any".

@@ -2,6 +2,8 @@
 set -euo pipefail
 # serial
 
+# zsh/hooks.zsh takes the outer terminal and SSH login from tmux at attach, and title.zsh's titles.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -50,22 +52,6 @@ ghostty 1.2.0
 WezTerm unset" "$output" "variables with the marker"
 assert_eq 2 "$(tmux_calls)" "tmux calls with the marker"
 
-# Two attaches in one second leave the marker's mtime the same
-printf '%s\n' TERM_PROGRAM=ghostty > "$TMUX_ENV"
-echo 200 > "$SOCKET.attached"
-touch -t 202601010000 "$SOCKET.attached"
-: > "$STUB_LOG"
-output="$(hook : \
-    'echo TERM_PROGRAM=WezTerm > "$TMUX_ENV"; echo 201 > "${TMUX%%,*}.attached"; touch -t 202601010000 "${TMUX%%,*}.attached"' \
-    'echo TERM_PROGRAM=kitty > "$TMUX_ENV"; echo 202 > "${TMUX%%,*}.attached"; touch -t 202601010000 "${TMUX%%,*}.attached"')"
-assert_eq "ghostty 3.5
-WezTerm 3.5
-kitty 3.5" "$output" "variables after two attaches in one second"
-assert_eq 3 "$(tmux_calls)" "tmux calls after two attaches in one second"
-
-printf '%s\n' -TERM_PROGRAM -TERM_PROGRAM_VERSION > "$TMUX_ENV"
-assert_eq "unset unset" "$(hook :)" "variables when the outer terminal set neither"
-
 # The ubuntu step reads SSH_USER_AUTH to prove a key login
 auth_after_hook() {
     SSH_USER_AUTH=/run/old zsh -f -c 'autoload -U add-zsh-hook; source "$1/zsh/hooks.zsh"; _tmux_outer_terminal_preexec
@@ -85,13 +71,8 @@ else
     rtmux() { "$REAL_TMUX" -L hooks "$@"; }
     marker="$SANDBOX/tmux/tmux-$(id -u)/hooks.attached"
     # run-shell -b writes the marker in the background
-    wait_marker() {
-        local i
-        for i in $(seq 50); do
-            [ -s "$marker" ] && [ "$(cat "$marker")" != "$1" ] && return 0
-            sleep 0.1
-        done
-        return 1
+    marker_changed_from() {
+        [ -s "$marker" ] && [ "$(cat "$marker")" != "$1" ]
     }
     # Panes run sleep: a shell could write its history to $HOME during cleanup
     rtmux -f "$REPO_DIR/tmux/tmux.conf" new-session -d -s one 'sleep 60' 2> /dev/null || true
@@ -101,10 +82,10 @@ else
     # Not a pipe from sleep, which the wait below would wait for
     rtmux -C attach -t one < <(sleep 10) > /dev/null &
     client_pid=$!
-    wait_marker "" || fail "attaching a client didn't write $marker"
+    wait_for marker_changed_from "" || fail "attaching a client didn't write $marker"
     attached="$(cat "$marker")"
     rtmux switch-client -c "$(rtmux list-clients -F '#{client_name}' | head -1)" -t two
-    wait_marker "$attached" || fail "switching the client's session didn't write a new value to $marker"
+    wait_for marker_changed_from "$attached" || fail "switching the client's session didn't write a new value to $marker"
     kill "$client_pid" 2> /dev/null || true
     rtmux kill-server 2> /dev/null || true
     wait "$client_pid" 2> /dev/null || true

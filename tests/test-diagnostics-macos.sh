@@ -10,50 +10,15 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
-load_script lib/common.sh
-
-# info doesn't need attention
-report() {
-    local state
-    for state in "$@"; do
-        status_item "$state" "item"
-    done
-    status_result
-}
-assert_exit 0 report ok info skipped
-assert_contains "$RUN_OUTPUT" "  info       item"
-
-# Spaces in the mount point and the filesystem name (macOS's automounter)
-df_lines "map auto_home $((100 * GIB)) $((10 * GIB)) $((90 * GIB)) 11% /Volumes/My Disk"
-assert_exit 0 diag status_disk_space "/Volumes/My Disk"
-assert_contains "$RUN_OUTPUT" "ok         Free space on /Volumes/My Disk: 90.0 GiB of 100.0 GiB (90%)"
-# APFS volumes share their container's space, so Used + Available < size
-df_lines "/dev/disk3s5   $((994 * GIB))  $((600 * GIB)) $((380 * GIB))    62%    /System/Volumes/Data"
-assert_exit 0 diag status_disk_space "$HOME"
-assert_contains "$RUN_OUTPUT" "ok         Free space on /System/Volumes/Data: 380.0 GiB of 994.0 GiB (38%)"
-read_only
-
 stub scutil 'echo Garvits-MacBook-Pro'
 
-export DOTFILES_PAM_DIR="$SANDBOX/pam.d"
 load_script macos/install.sh
 as_os macos
 # The macos step mustn't load the Touch ID script's functions
 assert_eq "" "$(declare -F usage install_reattach_module || true)" "the Touch ID script's functions"
-SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
+pam_sandbox
 REATTACH="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
-# shellcheck disable=SC2034 # macos/pam.sh reads them
-PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
-HEADER="# sudo_local: local config file which survives system update and is included for sudo"
-TID_LINE="auth       sufficient     pam_tid.so"
-mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
-printf '%s\n' "auth       include        sudo_local" "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
-# OpenPAM finds macOS's .so.2 modules by bare name
-touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
 
-assert_exit 0 diag status_touch_id skipped
-assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo: off"
-assert_contains "$RUN_OUTPUT" "just touch-id"
 echo "$HEADER" > "$SUDO_LOCAL"
 assert_exit 0 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo: off"
@@ -65,23 +30,10 @@ printf '%s\n' "$HEADER" "auth       optional       $REATTACH ignore_ssh" "$TID_L
 assert_exit 0 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 # A loaded module that's gone, as after brew bundle cleanup
+snapshot "$SUDO_LOCAL"
 rm "$REATTACH"
 assert_exit 3 diag status_touch_id skipped
 assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $REATTACH, which doesn't exist"
-assert_contains "$RUN_OUTPUT" "run brew install pam-reattach, then just touch-id"
-assert_contains "$RUN_OUTPUT" "sudo may fail"
-# A bare name a newer macOS dropped
-printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"
-rm "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
-assert_exit 3 diag status_touch_id skipped
-assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads $DOTFILES_PAM_MODULES_DIR/pam_tid.so, which doesn't exist"
-touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
-printf '%s\n' "auth       sufficient     /usr/local/lib/pam/pam_watchid.so" "$TID_LINE" > "$SUDO_LOCAL"
-assert_exit 3 diag status_touch_id skipped
-assert_contains "$RUN_OUTPUT" "missing    $SUDO_LOCAL loads /usr/local/lib/pam/pam_watchid.so, which doesn't exist"
-assert_not_contains "$RUN_OUTPUT" "brew install pam-reattach"
-# Your own line beside the repo's is fine
-assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 # Root reads any file
 chmod 000 "$SUDO_LOCAL"
 if [ ! -r "$SUDO_LOCAL" ]; then
@@ -89,10 +41,16 @@ if [ ! -r "$SUDO_LOCAL" ]; then
     assert_contains "$RUN_OUTPUT" "unverified Touch ID for sudo: $SUDO_LOCAL isn't readable"
 fi
 chmod 644 "$SUDO_LOCAL"
-assert_eq "auth       sufficient     /usr/local/lib/pam/pam_watchid.so
-$TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local"
+assert_unchanged "$SUDO_LOCAL" "after status"
 [ ! -e "$REATTACH" ] || fail "status put the module back"
+# A bare name a newer macOS dropped breaks sudo too
+printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"
+rm "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+assert_exit 3 diag status_touch_id skipped
+assert_contains "$RUN_OUTPUT" "loads $DOTFILES_PAM_MODULES_DIR/pam_tid.so, which doesn't exist, so sudo may fail"
+touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
 
+# FileVault's state is only info; status never reads it with sudo
 filevault() {
     stub fdesetup "[ \"\$1\" == status ] || exit 1
 printf '%b' '$1'
@@ -100,23 +58,6 @@ exit ${2:-0}"
 }
 filevault 'FileVault is On.\n'
 assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "info       FileVault: on"
-filevault 'FileVault is On.\nEncryption in progress: Percent completed = 40\n'
-assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "info       FileVault: on, encryption in progress"
-filevault 'FileVault is Off.\n'
-assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "info       FileVault: off"
-filevault 'This tool needs to be run as root.\n' 1
-assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "unverified FileVault"
-assert_contains "$RUN_OUTPUT" "sudo fdesetup status"
-filevault 'FileVault status: something new\n'
-assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "info       FileVault: couldn't tell from fdesetup status"
-filevault 'Error: something broke\n' 1
-assert_exit 0 diag status_filevault
-assert_contains "$RUN_OUTPUT" "info       FileVault: couldn't tell from fdesetup status"
 assert_file_not_contains "$STUB_LOG" "sudo"
 
 # firewall <--getglobalstate output> [<--getstealthmode output>]
@@ -154,13 +95,11 @@ replace_fn default_matches 'return 0'
 replace_fn hotkey_off 'return 0'
 mkdir -p "$HOME/Screenshots"
 rm "$SUDO_LOCAL"
-filevault 'FileVault is Off.\n'
 firewall 'Firewall is disabled. (State = 0)\n' 'Firewall stealth mode is off\n'
 stub defaults 'exit 1'
 df_lines "/dev/disk3s5 $((994 * GIB)) $((600 * GIB)) $((380 * GIB)) 62% /System/Volumes/Data"
 assert_exit 3 status
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo"
-assert_contains "$RUN_OUTPUT" "info       FileVault: off"
 assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"

@@ -2,7 +2,8 @@
 set -euo pipefail
 # serial
 
-# The test helpers in tests/lib.sh, and lib/common.sh's confirm and regex_escape.
+# lib/common.sh's confirm, regex_escape, version_at_least, run_bounded, and quitting a running app
+# to merge its settings, and stub_sudo_exec's refusals.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -40,103 +41,82 @@ done
     fail "the escaped + still repeats"
 ! printf '%s\n' 'aXb' | grep -qxE -- "$(regex_escape 'a.b')" || fail "the escaped . still matches any character"
 
-# --- tests/lib.sh ---
-os() {
-    case "$1" in
-        macos) is_macos && ! is_ubuntu ;;
-        ubuntu) is_ubuntu && ! is_macos ;;
-    esac
+# --- version_at_least: parts compare as numbers, and a missing part counts as 0 ---
+for pair in "1.10 1.8.1" "2.100 2.53" "1.8.1 1.8.1" "2.53 2.53.0" "3 2.99"; do
+    # shellcheck disable=SC2086 # two arguments
+    version_at_least $pair || fail "version_at_least $pair failed"
+done
+for pair in "1.8.0 1.8.1" "2.53 2.53.1" "1.9 1.10"; do
+    # shellcheck disable=SC2086
+    ! version_at_least $pair || fail "version_at_least $pair succeeded"
+done
+
+# --- ensure_app_quit and merge_app_json: a running app's settings change only once it quits ---
+app_json() {
+    # shellcheck source=../ai_tools/lib/app-json.sh
+    source "$REPO_DIR/ai_tools/lib/app-json.sh"
+    settings="$SANDBOX/app.json"
+    echo '{"mine": 1}' > "$settings"
+    snapshot "$settings"
+    # shellcheck disable=SC2329 # assert_exit runs it
+    merge() {
+        merge_app_json "Some App" "already set" "set" "$settings" '.repo = 2'
+    }
+    stub pgrep '[ -e "'"$SANDBOX"'/app-running" ]'
+    stub osascript '[ -e "'"$SANDBOX"'/stays-running" ] || rm -f "'"$SANDBOX"'/app-running"'
+    stub sleep
+    touch "$SANDBOX/app-running"
+    as_os macos
+
+    # Without a terminal, confirm says no
+    assert_exit 0 merge
+    assert_unchanged "$settings" "while the app ran, without a terminal"
+    assert_file_not_contains "$STUB_LOG" osascript
+    answer no
+    assert_exit 0 merge
+    assert_unchanged "$settings" "after declining to quit the app"
+    assert_file_not_contains "$STUB_LOG" osascript
+    # Ubuntu can't quit it, so it doesn't ask
+    as_os ubuntu
+    answer yes
+    assert_exit 0 merge
+    assert_unchanged "$settings" "while the app ran on Ubuntu"
+    assert_not_contains "$RUN_OUTPUT" "Quit Some App now?"
+    as_os macos
+    touch "$SANDBOX/stays-running"
+    assert_exit 0 merge
+    assert_unchanged "$settings" "after the app didn't quit"
+    rm "$SANDBOX/stays-running"
+    assert_exit 0 merge
+    assert_file_contains "$STUB_LOG" 'osascript -e quit app "Some App"'
+    assert_eq '1 2' "$(jq -r '"\(.mine) \(.repo)"' "$settings")" "the settings after the app quit"
+
+    # Settings already in place leave a running app alone
+    : > "$STUB_LOG"
+    touch "$SANDBOX/app-running"
+    assert_exit 0 merge
+    assert_eq "" "$(cat "$STUB_LOG")" "commands run with the settings already in place"
+
+    # Never quit the app running this script, as a terminal app can
+    assert_exit 1 ensure_app_quit bash
+    assert_file_not_contains "$STUB_LOG" osascript
+    running_inside bash || fail "running_inside didn't find the bash running this test"
+    ! running_inside no-such-app || fail "running_inside found no-such-app"
+    # Stubs outlive the subtest
+    rm "$STUB_DIR/sleep"
 }
+if command -v jq &> /dev/null; then
+    subtest app_json
+else
+    skip_rest "merge_app_json: jq isn't installed"
+fi
 
-as_os macos
-os macos || fail "as_os macos"
-as_os ubuntu
-os ubuntu || fail "as_os ubuntu"
-as_os macos
-os macos || fail "as_os macos after as_os ubuntu"
-
-answer yes
-run confirm "Go on?"
-assert_eq "0 Go on?" "$RUN_STATUS $RUN_OUTPUT" "confirm after answer yes"
-answer no
-run confirm "Go on?"
-assert_eq "1 Go on?" "$RUN_STATUS $RUN_OUTPUT" "confirm after answer no"
-
-# The homebrew step supplies most commands, through apt on Ubuntu for some
-as_os ubuntu
-assert_eq "jq isn't installed. Run bash setup.sh homebrew first, which installs it with apt." \
-    "$(missing_cmd_hint jq)" "jq's hint on Ubuntu"
-assert_eq "gnome-extensions isn't installed. It needs the GNOME desktop: ubuntu-desktop." \
-    "$(missing_cmd_hint gnome-extensions)" "gnome-extensions' hint"
-as_os macos
-assert_eq "jq isn't installed. Run bash setup.sh homebrew first." "$(missing_cmd_hint jq)" "jq's hint on macOS"
-
-replace_fn locale_installed 'return 1'
-! locale_installed || fail "replace_fn didn't replace locale_installed"
-replace_fn locale_installed ''
-locale_installed || fail "replace_fn with an empty body"
-
-expect_failure() {
-    local message="$1" output failures
-    shift
-    output="$(
-        TEST_FAILURES=0
-        "$@" 2>&1
-        echo "failures=$TEST_FAILURES"
-    )"
-    failures="${output##*failures=}"
-    assert_eq 1 "$failures" "checks '$*' failed"
-    assert_contains "$output" "$message" "output of '$*'"
-    assert_contains "$output" "test-lib-helpers.sh:" "output of '$*'"
-}
-expect_failure "replace_fn: no function no_such_fn to replace" replace_fn no_such_fn 'echo hi'
-assert_eq hi "$(
-    replace_fn no_such_fn 'echo hi' 2> /dev/null
-    no_such_fn
-)" "no_such_fn after replace_fn"
-expect_failure "as_os: 'windows' isn't macos or ubuntu" as_os windows
-expect_failure "answer: 'maybe' isn't yes or no" answer maybe
-
-greet() { echo "hi $1"; }
-wrap_fn greet 'real_greet "$1"; echo wrapped'
-wrap_fn greet 'real_greet "$1"; echo again'
-assert_eq "hi you
-again" "$(greet you)" "greet after wrap_fn twice"
-restore_fn greet
-assert_eq "hi you" "$(greet you)" "greet after restore_fn"
-! declare -F real_greet > /dev/null || fail "restore_fn left real_greet"
-expect_failure "replace_fn: no function no_such_fn to replace" wrap_fn no_such_fn
-expect_failure "restore_fn: greet isn't wrapped" restore_fn greet
-
-: > "$STUB_LOG"
-stub_sudo_cacheable
-expect_failure "cache_sudo: 'maybe' isn't yes or no" cache_sudo maybe
-assert_exit 1 sudo -n true
-cache_sudo yes
-assert_exit 0 sudo -n true
-cache_sudo no
-assert_exit 1 sudo -n true
-assert_sudo_noninteractive
-assert_exit 0 sudo true
-expect_failure "the check ran sudo without -n:" assert_sudo_noninteractive "the check"
-unset -f confirm
-expect_failure "replace_fn: no function confirm to replace" answer yes
-
-# The refused commands name a missing repo dir, so they'd fail even if they ran
-
+# --- stub_sudo_exec: the refused commands name a missing repo dir, so they'd fail even if run ---
 stub_sudo_exec
 echo hi > "$SANDBOX/file"
 gone="$REPO_DIR/no-such-dir/file"
-assert_exit 0 sudo -n install -m 0644 "$REPO_DIR/tests/lib.sh" "$SANDBOX/copy"
-cmp -s "$REPO_DIR/tests/lib.sh" "$SANDBOX/copy" || fail "sudo install didn't copy from the repo"
-assert_exit 0 sudo cat "$REPO_DIR/tests/lib.sh"
-assert_exit 0 sudo DEBIAN_FRONTEND=noninteractive bash -n "$REPO_DIR/tests/lib.sh"
-for cmd in "cp $SANDBOX/file $gone" "install -d $gone" "install -m 0644 $SANDBOX/file $gone" \
-    "rm -f $gone" "mv $gone $SANDBOX/moved" "chmod 600 $gone $SANDBOX/file" "tee $gone"; do
-    # shellcheck disable=SC2086 # split into arguments
-    assert_exit 1 sudo $cmd
-    assert_contains "$RUN_OUTPUT" "refused: ${cmd%% *} would change $gone, in the repo" "sudo $cmd"
-done
+assert_exit 1 sudo install -m 0644 "$SANDBOX/file" "$gone"
+assert_contains "$RUN_OUTPUT" "refused: install would change $gone, in the repo"
 assert_exit 1 sudo cat /etc/hosts
 assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
 

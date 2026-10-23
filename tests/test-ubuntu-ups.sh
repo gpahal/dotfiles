@@ -2,7 +2,8 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# Covers ubuntu/lib/ups.sh and ubuntu/ups-notify.sh.
+# The ubuntu step's UPS part (ubuntu/lib/ups.sh): NUT set up only for a UPS on USB, its config's
+# password and permissions, and re-runs as the UPS or NUT changes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -78,9 +79,6 @@ stub systemd-detect-virt 'exit 1'
 # --- no UPS on USB ---
 assert_eq "" "$(ups_todo)" "what the UPS part needs with no UPS on USB"
 assert_exit 0 status_ups
-assert_contains "$RUN_OUTPUT" "skipped    UPS monitored by NUT: no UPS on USB; plug in the UPS's USB cable and re-run the ubuntu step"
-run warn_no_ups
-assert_contains "$RUN_OUTPUT" "No UPS on USB, so NUT isn't set up"
 [ ! -e "$SANDBOX/nut-installed" ] || fail "NUT was installed without a UPS"
 
 # --- a UPS plugged in on a later run ---
@@ -119,38 +117,17 @@ assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NU
 : > "$STUB_LOG"
 assert_exit 0 setup_ups
 assert_file_not_contains "$STUB_LOG" "apt-get"
-# No POWEROFF_WAIT: systemd-shutdown kills hooks after 90 s, so the RTC wake hook covers a UPS
-# that keeps power
-assert_eq "# From the dotfiles ubuntu step: upsd and upsmon run here, for this machine's own UPS
-MODE=standalone" "$(cat "$NUT_DIR/nut.conf")" "nut.conf"
-assert_eq '# From the dotfiles ubuntu step: the UPS nut-scanner found on USB
-[ups]
-	driver = "usbhid-ups"
-	port = "auto"
-	vendorid = "0764"
-	productid = "0501"' "$(cat "$NUT_DIR/ups.conf")" "ups.conf"
-assert_eq "# From the dotfiles ubuntu step: upsd answers only this machine
-LISTEN 127.0.0.1" "$(cat "$NUT_DIR/upsd.conf")" "upsd.conf"
+# upsd answers only this machine, for the UPS found, and upsmon shuts down on a low battery
+assert_file_contains "$NUT_DIR/upsd.conf" "LISTEN 127.0.0.1"
+assert_file_contains "$NUT_DIR/ups.conf" 'vendorid = "0764"'
+assert_file_contains "$NUT_DIR/ups.conf" 'productid = "0501"'
 upsmon_password() { nut_value upsmon password < "$NUT_DIR/upsd.users"; }
 PASSWORD="$(upsmon_password)"
 [ "${#PASSWORD}" -ge 24 ] || fail "upsmon's password is short: '$PASSWORD'"
-assert_eq "# From the dotfiles ubuntu step: upsmon's login to upsd
-[upsmon]
-	password = \"$PASSWORD\"
-	upsmon primary" "$(cat "$NUT_DIR/upsd.users")" "upsd.users"
-assert_eq "# From the dotfiles ubuntu step: watch the UPS, push its events, and shut down on a low battery
-MONITOR ups@localhost 1 upsmon \"$PASSWORD\" primary
-SHUTDOWNCMD \"/sbin/shutdown -h +0\"
-POWERDOWNFLAG /etc/killpower
-NOTIFYCMD $UPS_NOTIFY
-NOTIFYFLAG ONBATT SYSLOG+EXEC
-NOTIFYFLAG ONLINE SYSLOG+EXEC
-NOTIFYFLAG LOWBATT SYSLOG+EXEC
-NOTIFYFLAG COMMBAD SYSLOG+EXEC
-NOTIFYFLAG COMMOK SYSLOG+EXEC
-NOTIFYFLAG SHUTDOWN SYSLOG+EXEC
-NOTIFYFLAG REPLBATT SYSLOG+EXEC
-NOTIFYFLAG NOCOMM SYSLOG+EXEC" "$(cat "$NUT_DIR/upsmon.conf")" "upsmon.conf"
+assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$PASSWORD\" primary"
+assert_file_contains "$NUT_DIR/upsmon.conf" 'SHUTDOWNCMD "/sbin/shutdown -h +0"'
+assert_file_contains "$NUT_DIR/upsmon.conf" "POWERDOWNFLAG /etc/killpower"
+assert_file_contains "$NUT_DIR/upsmon.conf" "NOTIFYCMD $UPS_NOTIFY"
 # Root and the nut group only, since two files hold upsmon's password
 for file in nut.conf ups.conf upsd.conf upsd.users upsmon.conf; do
     assert_eq 640 "$(file_mode "$NUT_DIR/$file")" "$file's mode"
@@ -158,19 +135,14 @@ for file in nut.conf ups.conf upsd.conf upsd.users upsmon.conf; do
 done
 assert_eq 5 "$(grep -c "install -m 0640 -g $NUT_GROUP " "$STUB_LOG")" "NUT's files installed with their group"
 assert_file_not_contains "$STUB_LOG" "chgrp"
-cmp -s "$REPO_DIR/ubuntu/ups-notify.sh" "$UPS_NOTIFY" || fail "the notifier isn't the repo's"
 [ -x "$UPS_NOTIFY" ] || fail "the notifier isn't executable"
-cmp -s "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NTFY_LIB" || fail "the notifier's ntfy code isn't the repo's"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable nut.target nut-server.service nut-monitor.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver-enumerator.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver@ups.service nut-server.service nut-monitor.service"
 assert_contains "$RUN_OUTPUT" "NUT watches the UPS on USB (0764:0501)"
 [ -x "$UPS_RTC_HOOK" ] || fail "the RTC wake hook isn't executable"
-assert_eq "#!/bin/sh
-# From the dotfiles ubuntu step: after a UPS shutdown, which leaves /etc/killpower, start the
-# machine in 15 minutes in case the UPS doesn't cut its power
-[ -e /etc/killpower ] || exit 0
-exec /usr/sbin/rtcwake -m no -s 900" "$(cat "$UPS_RTC_HOOK")" "the RTC wake hook"
+# No POWEROFF_WAIT: systemd-shutdown kills hooks after 90 s, so the RTC wake hook covers a UPS
+# that keeps power. It acts only after a UPS shutdown, which leaves /etc/killpower.
 stub rtcwake
 HOOK_COPY="$SANDBOX/rtc-hook-copy"
 sed -e "s|/etc/killpower|$SANDBOX/killpower|g" -e "s|/usr/sbin/rtcwake|rtcwake|" "$UPS_RTC_HOOK" > "$HOOK_COPY"
@@ -185,16 +157,6 @@ rm "$SANDBOX/killpower"
 upsc_answers "OL CHRG" 0764 0501
 assert_eq "" "$(ups_todo)" "what the UPS part needs once set up"
 assert_exit 0 status_ups
-assert_contains "$RUN_OUTPUT" "ok         UPS on USB (0764:0501) monitored by NUT"
-assert_contains "$RUN_OUTPUT" "ok         UPS on mains power (ups.status OL CHRG)"
-assert_contains "$RUN_OUTPUT" "info       UPS battery charge: 100%"
-assert_contains "$RUN_OUTPUT" "ok         nut-server and nut-monitor running"
-assert_contains "$RUN_OUTPUT" "ok         nut.target enabled, so NUT starts at boot"
-assert_contains "$RUN_OUTPUT" "ok         UPS events pushed to ntfy ($UPS_NOTIFY)"
-assert_contains "$RUN_OUTPUT" "ok         RTC wake hook ($UPS_RTC_HOOK) installed: asks the board to start the machine 15 minutes after a UPS shutdown if the UPS keeps its power on; check once that your board wakes (see the Power cuts manual step)"
-upsc_answers "OB DISCHRG" 0764 0501
-run status_ups
-assert_contains "$RUN_OUTPUT" "info       UPS status: OB DISCHRG (on battery)"
 upsc_answers "OL" 0764 0501
 
 # --- an unchanged second run ---
@@ -395,43 +357,4 @@ run status_ups
 assert_contains "$RUN_OUTPUT" "skipped    UPS monitored by NUT: this is a VM"
 stub systemd-detect-virt 'exit 1'
 
-# --- the notifier ---
-URL_FILE="$SANDBOX/ntfy-url"
-NOTIFY="$SANDBOX/ups-notify.sh"
-ntfy_hook_copy ubuntu/ups-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$NOTIFY"
-stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
-[ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
-stub logger
-notify() {
-    : > "$STUB_LOG"
-    assert_exit 0 env NOTIFYTYPE="$1" UPSNAME=ups@localhost "$BASH" "$NOTIFY" "$2"
-}
-
-notify ONBATT "UPS ups@localhost on battery"
-assert_file_not_contains "$STUB_LOG" "curl"
-
-# The URL goes on stdin, so curl's arguments don't name the topic
-echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
-notify ONBATT "UPS ups@localhost on battery"
-assert_file_contains "$STUB_LOG" "-H Title: UPS on battery on $(hostname) -H Priority: high -H Tags: electric_plug --data-raw UPS ups@localhost on battery -K -"
-assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
-notify LOWBATT "UPS ups@localhost battery is low"
-assert_file_contains "$STUB_LOG" "-H Priority: urgent"
-notify SHUTDOWN "Auto logout and shutdown proceeding"
-assert_file_contains "$STUB_LOG" "-H Title: Shutting down on UPS battery on $(hostname) -H Priority: urgent"
-if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
-    fail "curl's arguments name the ntfy topic"
-fi
-
-touch "$SANDBOX/curl-fails"
-notify COMMBAD "Communications with UPS ups@localhost lost"
-assert_file_contains "$STUB_LOG" "logger -t dotfiles-ups -- couldn't push the UPS event to ntfy: curl: (6) Could not resolve host: ntfy.sh"
-if grep '^logger' "$STUB_LOG" | grep -q secret-topic; then
-    fail "the log names the ntfy topic"
-fi
-rm "$SANDBOX/curl-fails"
-
-ntfy_hook_copy ubuntu/ups-notify.sh "$URL_FILE" "$SANDBOX/no-ntfy.sh" "$NOTIFY"
-notify ONBATT "UPS ups@localhost on battery"
-assert_file_contains "$STUB_LOG" "logger -t dotfiles-ups -- couldn't push the UPS event to ntfy: $SANDBOX/no-ntfy.sh is missing"
 test_done

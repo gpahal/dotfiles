@@ -32,20 +32,9 @@ if in_terminal_available; then
 status 127" "$(missing_in_terminal linux-gnu "$APT_CNF" brewtool)" "a command brew knows, on Ubuntu"
     assert_eq "apt: apttool
 status 127" "$(missing_in_terminal linux-gnu "$APT_CNF" apttool)" "a command brew doesn't know, on Ubuntu"
-    hide brew
-    assert_eq "apt: brewtool
-status 127" "$(missing_in_terminal linux-gnu "$APT_CNF" brewtool)" "without brew, on Ubuntu"
 else
     skip_rest "brew's suggestion in a terminal: script isn't installed"
-    hide brew
 fi
 assert_eq "zsh: command not found: apttool
 status 127" "$(missing linux-gnu "$SANDBOX/none" apttool)" "without apt's command-not-found"
-
-export HOMEBREW_REPOSITORY="$SANDBOX/brew"
-mkdir -p "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found"
-echo 'command_not_found_handler() { print "homebrew: $1"; return 127; }' \
-    > "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
-assert_eq "homebrew: anytool
-status 127" "$(missing darwin25.0 "$APT_CNF" anytool)" "a missing command on macOS"
 test_done

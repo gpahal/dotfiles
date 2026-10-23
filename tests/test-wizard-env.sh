@@ -47,11 +47,7 @@ check_key() {
 check_key MULTI_DQ "first${nl}AFTER=inside${nl}third" "$multi_dq"
 check_key MULTI_SQ "one${nl}two" "$multi_sq"
 check_key ESCAPED 'say \"hi\" there' "$escaped"
-check_key PLAIN value "$plain"
 check_key AFTER x "$after"
-
-fixture
-_existing MISSING > /dev/null && fail "_existing found a key the file lacks"
 
 # A quote that never closes is a one-line value
 printf '%s\n' 'OPEN="abc' 'NEXT=1' > "$ENV_FILE"

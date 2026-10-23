@@ -7,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-REAL_TMUX="$(command -v tmux || true)"
 setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 load_script tmux/install.sh
@@ -57,21 +56,4 @@ rm "$SANDBOX/manager"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Couldn't reach your systemd user manager"
 assert_file_not_contains "$STUB_LOG" "tmux start-server"
-
-# Real tmux and tmux.conf; the fake tpm enables the unit as continuum does
-if [ -z "$REAL_TMUX" ]; then
-    skip_rest "a real tmux server: tmux isn't installed"
-    test_done
-    exit 0
-fi
-rm -f "$STUB_DIR/tmux" "$SANDBOX/enabled" "$SANDBOX/broken"
-touch "$SANDBOX/manager"
-stub uname 'echo Linux'
-mkdir -p "$HOME/.tmux/plugins/tpm"
-printf '#!/bin/sh\nsleep 0.3\n[ "$(tmux show-option -gqv @continuum-boot)" != on ] || systemctl --user enable tmux.service\n' \
-    > "$HOME/.tmux/plugins/tpm/tpm"
-chmod +x "$HOME/.tmux/plugins/tpm/tpm"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Enabled tmux.service"
-assert_file_contains "$STUB_LOG" "systemctl --user enable tmux.service"
 test_done

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Status lines: how each state renders and parses, which states need attention, and the lines
+# health-alert.sh pushes.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -19,35 +22,26 @@ for line in "  missing in the text is not an item" "  bogus      text" "missing 
     ! status_parse_line "$line" || fail "status_parse_line parsed '$line'"
 done
 
-steps="$SANDBOX/steps"
-mkdir -p "$steps"
-{
-    echo '#!/bin/bash'
-    echo "source \"$REPO_DIR/lib/common.sh\""
-    for state in $STATUS_STATES; do
-        echo "status_item $state \"the $state item\""
-    done
-    echo 'echo "  missing in the text is not an item"'
-    echo 'status_result'
-} > "$steps/every.sh"
-{
-    echo '#!/bin/bash'
-    echo "source \"$REPO_DIR/lib/common.sh\""
-    for state in ok skipped unverified info; do
-        echo "status_item $state \"the $state item\""
-    done
-    echo 'status_result'
-} > "$steps/calm.sh"
+every="source \"$REPO_DIR/lib/common.sh\""
+for state in $STATUS_STATES; do
+    every="$every
+status_item $state \"the $state item\""
+done
+fake_step every "$every
+echo \"  missing in the text is not an item\"
+status_result"
+calm="source \"$REPO_DIR/lib/common.sh\""
+for state in ok skipped unverified info; do
+    calm="$calm
+status_item $state \"the $state item\""
+done
+fake_step calm "$calm
+status_result"
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(every calm)
-replace_fn step_script '[ -f "$steps/$1.sh" ] && echo "$steps/$1.sh"'
 
 assert_exit 3 run_steps --status
 report="$RUN_OUTPUT"
-assert_contains "$report" "every:
-  ok         the ok item"
-assert_contains "$report" "$STATUS_SUMMARY_ATTENTION: every. Run: bash $0 every"
-assert_not_contains "$report" "calm."
 assert_exit 0 run_steps --status calm
 
 assert_eq "$STATUS_SUMMARY_ATTENTION: every. Run: bash $0 every

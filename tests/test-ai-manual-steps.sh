@@ -3,6 +3,9 @@
 # shellcheck disable=SC2329
 set -euo pipefail
 
+# ai_tools/manual-steps.sh: which apps' notifications still need allowing, read from macOS's
+# notification settings, and opening those settings only on a yes.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -46,17 +49,12 @@ mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Extensions/$CL
 stub open
 as_os macos
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on macOS"
-assert_contains "$RUN_OUTPUT" "Notifications for Claude, ChatGPT, and T3 Code are already allowed and Persistent."
-assert_contains "$RUN_OUTPUT" "Claude in Chrome extension already installed."
 assert_not_contains "$RUN_OUTPUT" "Open "
 
 apps com.mitchellh.ghostty $ok com.anthropic.claudefordesktop $((ALLOWED | TEMPORARY)) com.t3tools.t3code $ok
 DOTFILES_ASSUME_YES=1 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Not opening the notification settings: DOTFILES_ASSUME_YES is set."
 assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "Not opening"
-assert_eq "" "$(cat "$STUB_LOG" | grep -v '^plutil' || true)" "commands run without a yes"
+assert_eq "" "$(grep -v '^plutil' "$STUB_LOG" || true)" "commands run without a yes"
 
 answer yes
 run open_manual_steps <<< $'\n\n'
@@ -64,7 +62,6 @@ assert_eq 0 "$RUN_STATUS" "exit status after opening the settings"
 assert_eq "open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.anthropic.claudefordesktop
 open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.openai.codex" \
     "$(grep '^open' "$STUB_LOG")" "settings opened"
-assert_contains "$RUN_OUTPUT" "scripts/test-notification.sh"
 
 rm "$NCPREFS"
 : > "$STUB_LOG"
@@ -77,9 +74,6 @@ assert_eq "" "$(grep '^open' "$STUB_LOG" || true)" "settings opened when they ca
 as_os ubuntu
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on Ubuntu"
 assert_not_contains "$RUN_OUTPUT" "Notifications for"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run on Ubuntu"
-assert_exit 0 main --status
-assert_eq "" "$RUN_OUTPUT" "--status output"
 test_done

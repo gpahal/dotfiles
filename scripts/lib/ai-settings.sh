@@ -1,3 +1,4 @@
+# A temp HOME and Claude Code's settings for the AI settings checks. Source it; don't run it.
 # shellcheck shell=bash
 
 # Fake git-wt so the claude-code step adds its worktree hooks. Source the steps after this; they read HOME on load.

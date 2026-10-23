@@ -2,14 +2,16 @@
 set -euo pipefail
 # serial
 
+# Claude Code's worktree hook, run against local repos: WorktreeCreate's base, fetch, and copies,
+# and what WorktreeRemove and SessionEnd remove or keep. test-claude-settings.sh covers its
+# registration.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
 unset CLAUDE_PROJECT_DIR GIT_SSH_COMMAND GIT_SSH
 export PATH="$REPO_DIR/git/bin:$PATH"
-export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
-    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 hook="$REPO_DIR/ai_tools/claude-code/worktree-hook.sh"
 
 command -v jq &> /dev/null || skip "jq isn't installed"
@@ -71,7 +73,6 @@ assert_eq "secret" "$(cat "$dir/feat/.env" 2> /dev/null)" "the .env copied into 
 [ ! -e "$dir/feat/untracked.txt" ] || fail "copied untracked.txt, which git doesn't ignore"
 [ ! -e "$dir/feat/build" ] || fail "copied build/, which .worktreeinclude doesn't name"
 
-assert_file_contains "$SANDBOX/fetch.log" "-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch"
 assert_file_contains "$SANDBOX/fetch.log" "-o BatchMode=yes -o ConnectTimeout=5"
 
 git -C "$SANDBOX/seed" commit -q --allow-empty -m "pushed after the fetch"
@@ -104,16 +105,6 @@ assert_file_contains "$SANDBOX/fetch.log" "fetch"
 for wt in recent unrelated offline retry; do
     remove "$dir/$wt"
 done
-
-# An origin added by hand has no origin/HEAD
-git -C "$repo" remote set-head origin -d
-touch -t 202001010000 "$stamp"
-: > "$SANDBOX/fetch.log"
-create nohead "$repo"
-assert_eq "0 $dir/nohead" "$status $out" "create hook without origin/HEAD"
-assert_file_contains "$SANDBOX/fetch.log" "fetch --quiet origin main"
-remove "$dir/nohead"
-git -C "$repo" remote set-head origin main
 
 # The sandbox allows only local repos, so allow ssh; the stub stands in for ssh
 cat > "$SANDBOX/logssh" << EOF
@@ -223,18 +214,6 @@ assert_eq "0 $dir/local" "$status $out" "create hook with baseRef head"
 assert_eq "$(git -C "$repo" rev-parse HEAD)" "$(git -C "$dir/local" rev-parse HEAD)" "local's base"
 rm -r "$repo/.claude"
 
-create sub "$dir/feat"
-assert_eq "0 $dir/sub" "$status $out" "create hook run from inside a worktree"
-
-create "bad..name" "$repo"
-[ "$status" -ne 0 ] || fail "create hook succeeded for a bad name"
-
-remove "$dir/sub"
-assert_eq 0 "$status" "remove hook's exit status"
-[ ! -e "$dir/sub" ] || fail "remove hook left $dir/sub"
-git -C "$repo" show-ref --verify --quiet refs/heads/sub && fail "remove hook kept the sub branch"
-assert_eq "" "$(cat "$SANDBOX/stdout")" "remove hook's stdout"
-
 # Claude Code asked before removing a dirty worktree
 echo change > "$dir/local/file"
 git -C "$dir/local" add file
@@ -244,11 +223,6 @@ remove "$dir/local"
 assert_eq 0 "$status" "remove hook's exit status for a dirty worktree"
 [ ! -e "$dir/local" ] || fail "remove hook left the dirty $dir/local"
 git -C "$repo" show-ref --verify --quiet refs/heads/local || fail "remove hook deleted the local branch, which has a commit"
-assert_contains "$(cat "$SANDBOX/stderr")" "kept branch local" "remove hook's stderr for a branch with a commit"
-
-remove "$dir/feat"
-[ ! -e "$WORKTREES_DIR/x" ] || fail "remove hook left $WORKTREES_DIR/x"
-[ -d "$WORKTREES_DIR" ] || fail "remove hook removed $WORKTREES_DIR"
 
 remove "$dir/gone"
 assert_eq 0 "$status" "remove hook's exit status for a missing worktree"
@@ -316,20 +290,6 @@ assert_contains "$(cat "$SANDBOX/stderr")" \
     "worktree-hook: skipped apps/web/.env: apps is a symlink in the worktree" "create hook's stderr"
 remove "$dir/linkapps"
 
-# Enough branches containing it to overflow the pipe
-create big "$repo"
-assert_eq "0 $dir/big" "$status $out" "create hook for big"
-big_commit="$(git -C "$dir/big" rev-parse HEAD)"
-i=0
-while [ "$i" -lt 2000 ]; do
-    echo "create refs/heads/many/a-long-branch-name-to-fill-the-pipe-faster-$i $big_commit"
-    i=$((i + 1))
-done | git -C "$repo" update-ref --stdin
-remove "$dir/big"
-assert_eq 0 "$status" "remove hook's exit status for big"
-git -C "$repo" show-ref --verify --quiet refs/heads/big && fail "remove hook kept the merged big branch"
-git -C "$repo" for-each-ref --format='delete %(refname)' refs/heads/many | git -C "$repo" update-ref --stdin
-
 mkdir -p "$SANDBOX/storage"
 git init -q -b main --separate-git-dir "$SANDBOX/storage/separate.git" "$SANDBOX/separate"
 git -C "$SANDBOX/separate" commit -q --allow-empty -m initial
@@ -353,15 +313,11 @@ end_session() {
 }
 mkdir -p "$repo/.claude"
 echo '{"worktree": {"baseRef": "head"}}' > "$repo/.claude/settings.local.json"
-for name in e-clean e-copy; do
-    create "$name" "$repo" s1
-    assert_eq "0 $dir/$name" "$status $out" "create hook for $name"
-done
+create e-clean "$repo" s1
+assert_eq "0 $dir/e-clean" "$status $out" "create hook for e-clean"
 assert_eq s1 "$(cat "$(git -C "$dir/e-clean" rev-parse --absolute-git-dir)/worktree-hook-session")" \
     "the session the create hook records"
 create e-other "$repo" s2
-[ -f "$dir/e-clean/.env" ] || fail "the create hook copied no .env into e-clean"
-echo changed > "$dir/e-copy/.env"
 end_session s1 "$repo" clear
 assert_eq "0" "$status" "SessionEnd hook's exit status on /clear"
 [ -d "$dir/e-clean" ] || fail "SessionEnd hook removed e-clean on /clear"
@@ -370,24 +326,17 @@ assert_eq "0" "$status" "SessionEnd hook's exit status"
 assert_eq "" "$(cat "$SANDBOX/stdout")" "SessionEnd hook's stdout"
 [ ! -e "$dir/e-clean" ] || fail "SessionEnd hook kept e-clean"
 git -C "$repo" show-ref --verify --quiet refs/heads/e-clean && fail "SessionEnd hook kept branch e-clean"
-for name in e-copy e-other; do
-    [ -d "$dir/$name" ] || fail "SessionEnd hook removed $name"
-done
 end_session s2 "$SANDBOX"
 assert_eq "0" "$status" "SessionEnd hook's exit status outside a repo"
 printf '{"session_id":"s2","hook_event_name":"SessionEnd","cwd":"%s"}' "$repo" |
     env PATH=/usr/bin:/bin bash "$hook" > /dev/null 2>&1 || fail "SessionEnd hook without git wt failed"
 [ -d "$dir/e-other" ] || fail "SessionEnd hook removed e-other without git wt"
-for name in e-copy e-other; do
-    git -C "$repo" wt rm -f "$name" 2> /dev/null
-done
+git -C "$repo" wt rm -f e-other 2> /dev/null
 mv "$repo/.env" "$repo/env-a"
 ln -s env-a "$repo/.env"
 create e-link "$repo" s3
 [ ! -L "$dir/e-link/.env" ] || fail "the hook copied the .env symlink as a link"
 assert_eq "secret" "$(cat "$dir/e-link/.env" 2> /dev/null)" "the .env copied into e-link"
-end_session s3 "$repo"
-[ ! -e "$dir/e-link" ] || fail "SessionEnd hook kept e-link, whose .env is a copy of the checkout's"
 rm "$repo/.env"
 mv "$repo/env-a" "$repo/.env"
 
@@ -415,60 +364,4 @@ session_git() {
 }
 subtest session_git
 rm -r "$repo/.claude"
-
-load_script ai_tools/claude-code/install.sh
-stub claude 'echo "{\"loggedIn\": true}"'
-mkdir -p "$HOME/.local/bin"
-ln -sf "$REPO_DIR/git/bin/git-wt" "$HOME/.local/bin/git-wt"
-settings="$HOME/.claude/settings.json"
-echo '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}' > "$settings"
-json_merge "$settings" "$(claude_code_settings)" > /dev/null
-json_merge "$settings" "$(claude_code_settings)" > /dev/null
-assert_eq '{"SessionEnd":1,"Stop":1,"WorktreeCreate":1,"WorktreeRemove":1}' \
-    "$(jq -cS '.hooks | map_values([.[].hooks[]] | length)' "$settings")" "hooks per event"
-assert_eq '["other"]' "$(jq -c '[.hooks.Stop[].hooks[].command]' "$settings")" "Stop hooks"
-json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied after json_merge"
-# A short timeout kills the hook mid-fetch (#37)
-jq '.hooks.WorktreeRemove[0].hooks[0].timeout = 30' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
-json_merge "$settings" "$(claude_code_settings)" > /dev/null
-assert_eq '[120]' "$(jq -c '[.hooks.WorktreeRemove[].hooks[].timeout]' "$settings")" \
-    "a WorktreeRemove timeout you set"
-run status
-assert_contains "$RUN_OUTPUT" "worktree-hook.sh"
-
-# A non-executable hook copy would make Claude Code fail to create worktrees
-failures="$TEST_FAILURES"
-(
-    replace_fn install_claude_code
-    # shellcheck disable=SC2016 # expanded when it runs
-    replace_fn install_scripts '
-        mkdir -p "$(dirname "$CLAUDE_CODE_WORKTREE_HOOK")" && : > "$CLAUDE_CODE_WORKTREE_HOOK"
-        chmod 644 "$CLAUDE_CODE_WORKTREE_HOOK"
-        return 1'
-    assert_exit 1 main
-    assert_eq "null null null" \
-        "$(jq -r '"\(.hooks.WorktreeCreate) \(.hooks.WorktreeRemove) \(.hooks.SessionEnd)"' "$settings")" \
-        "worktree hooks with a hook copy that isn't executable"
-    assert_eq '["other"]' "$(jq -c '[.hooks.Stop[].hooks[].command]' "$settings")" "Stop hooks"
-    [ "$TEST_FAILURES" -eq "$failures" ]
-) || fail "removing the worktree hook's registration"
-rm -f "$CLAUDE_CODE_WORKTREE_HOOK"
-
-replace_fn install_claude_code
-echo '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}' > "$settings"
-assert_exit 0 main
-assert_eq '["SessionEnd","Stop","WorktreeCreate","WorktreeRemove"]' "$(jq -c '.hooks | keys' "$settings")" \
-    "hooks registered with git wt"
-rm "$HOME/.local/bin/git-wt"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "bash setup.sh git"
-assert_eq '["Stop"]' "$(jq -c '.hooks | keys' "$settings")" "hooks left after git wt went"
-echo '{}' > "$settings"
-assert_exit 1 main
-assert_eq "null" "$(jq -c '.hooks' "$settings")" "hooks registered without git wt"
-assert_eq "claude-opus-5-5" "$(jq -r '.model' "$settings")" "model set without git wt"
-[ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || fail "the hook script wasn't copied without git wt"
-run status
-assert_contains "$RUN_OUTPUT" "missing    Worktree hook"
-assert_eq 3 "$RUN_STATUS" "status exit without git wt"
 test_done

@@ -27,7 +27,7 @@ HOTKEYS=(
     "n chrome-tab New_Tab"
 )
 
-# As Hammerspoon's README writes them: Space, B
+# As README's Hammerspoon section writes them: Space, B
 key_label() {
     if [ "$1" == space ]; then echo Space; else echo "$1" | tr '[:lower:]' '[:upper:]'; fi
 }

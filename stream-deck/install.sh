@@ -21,7 +21,7 @@ STEP_NEEDS="homebrew runtimes"
 PLUGIN=com.gpahal.dotfiles.sdPlugin
 PLUGIN_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
 
-# The relative paths of the files in a folder, but for Finder's and pnpm's
+# Leaves out .DS_Store and node_modules, which Finder and pnpm write, so neither counts as stale
 file_list() {
     (cd "$1" && find . -name node_modules -prune -o -type f ! -name .DS_Store -print | sed 's|^\./||')
 }
@@ -132,9 +132,14 @@ status_profiles() {
 # SIGTERM is safe: it saves as it goes. open fails with -600 while the old process quits and
 # briefly after, hence the wait and retries.
 update_stream_deck() {
-    local running=true opened=false status=0
-    if ! pkill -x "Stream Deck"; then
+    local running=true opened=false status=0 killed=0
+    pkill -x "Stream Deck" || killed=$?
+    # pkill exits 1 when nothing matched, and 2 or 3 when it failed, so Stream Deck may still run
+    if [ "$killed" -eq 1 ]; then
         running=false
+    elif [ "$killed" -ne 0 ]; then
+        echo "  Couldn't quit Stream Deck (pkill exited $killed); quit it and re-run the step to load the plugin and its profiles." >&2
+        return 1
     elif ! wait_until_quit -x "Stream Deck"; then
         echo "  Stream Deck didn't quit; quit it and re-run the step to load the plugin and its profiles." >&2
         return 1

@@ -10,7 +10,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/profiles.
 
 OUT_DIR="${1:-$DECK_SRC/com.gpahal.dotfiles.sdPlugin/profiles}"
 mkdir -p "$OUT_DIR"
-# Absolute, since zip runs in $tmp
+# Absolute, so the Built line names the full path
 OUT_DIR="$(CDPATH='' cd -- "$OUT_DIR" && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -54,7 +54,7 @@ build() {
     # deflate differently
     chmod -R u=rwX,go=rX "$tmp/$title"
     find "$tmp/$title" -exec env TZ=UTC touch -t 202001010000 {} +
-    # Built beside the profiles, then moved, so a failed build leaves the previous one
+    # Zipped in $tmp, then moved, so a failed build leaves the previous profile
     (cd "$tmp/$title" && find -- *.sdProfile | LC_ALL=C sort | TZ=UTC zip -q -X -0 "$tmp/$title.zip" -@)
     mv -f "$tmp/$title.zip" "$OUT_DIR/$title.streamDeckProfile"
     echo "Built $OUT_DIR/$title.streamDeckProfile"

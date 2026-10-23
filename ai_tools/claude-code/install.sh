@@ -231,8 +231,8 @@ apply() {
     fi
     local status=0
     install_claude_code || status=1
-    # Register the hook only if its copy is executable; otherwise worktree creation would fail.
     install_scripts || status=1
+    # Register the hook only if its copy is executable; otherwise worktree creation would fail.
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false
     configure_claude_code "$register_hook" || status=1

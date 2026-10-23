@@ -26,7 +26,7 @@ T3_CODE_APP=t3code.desktop
 T3_CODE_CLASS=com.t3tools.T3Code
 RESOURCES_APP=net.nokyan.Resources.desktop
 RESOURCES_CLASS=net.nokyan.Resources
-# How long a window the step opens may take to appear and still come to the front
+# How long a window this opens may take to appear and still come to the front
 EXPECT_MS=10000
 # Seconds New Tab waits for Chrome in front with no modifiers held; the tests shorten it
 NEW_TAB_WAIT="${DOTFILES_NEW_TAB_WAIT:-10}"

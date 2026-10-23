@@ -54,7 +54,6 @@ _capture() {
 }
 
 # Upgrade outdated casks, skipping running apps, which replacing would break.
-# An app's name can gain or lose a " (...)" suffix between releases, so match up to " (".
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
     local rerun="$1" entry cask process info path app running installed outdated one
@@ -106,6 +105,7 @@ _upgrade_self_updating_casks() {
                 _run _readopt_renamed_cask "$cask" "$path" || exit_status=1
                 continue
             fi
+            # An app's name can gain or lose a " (...)" suffix between releases, so match up to " ("
             app="${app%% (*}"
             # -a: macOS pgrep otherwise skips its own ancestors, such as the app this shell runs in
             if [ -n "$app" ] && pgrep -af "^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/" &>/dev/null; then
@@ -143,8 +143,7 @@ _readopt_renamed_cask() {
     return "$status"
 }
 
-# _step_fn <step> <fn>: runs a step's function in a new bash, where the step's set -e holds; a
-# subshell tested with || would ignore it
+# Runs in a new bash so the step's set -e holds; a subshell tested with || would ignore it
 _step_fn() {
     # shellcheck disable=SC2016 # expanded by the inner bash
     "$BASH" -c 'source "$1/$2/install.sh" && "$3"' bash "$DOTFILES_DIR" "$1" "$2"
@@ -199,7 +198,7 @@ _upgrade_ai_tools_stages() {
         claude update || _stage_failed "claude update" "$?"
     fi
 
-    # codex has no app, so it upgrades even while running; replacing a CLI binary is safe.
+    # codex has no app, so it upgrades even while running
     _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code codex || _stage_failed "AI casks" "$?"
 
     # Plugins can add hooks that run as you, so show versions before and after for review.
@@ -277,8 +276,7 @@ upgrade() {
         _step_fn tmux sync_tmux_plugins || _stage_failed "tmux plugins" "$?"
     fi
 
-    # On Ubuntu, Vicinae's installer moves it to the latest release, and extensions.gnome.org has
-    # its extension. brew upgrade updates the Mac's cask.
+    # update_vicinae updates Vicinae and its GNOME extension; brew upgrade covers the Mac's cask
     if ! is_macos && [ -x ~/.local/bin/vicinae ]; then
         _step_fn vicinae update_vicinae || _stage_failed vicinae "$?"
     fi

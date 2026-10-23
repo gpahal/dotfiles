@@ -121,7 +121,7 @@ const NEEDS = {
   network: ["network"],
 };
 
-// Linux reads each from the kernel, so needs no macmon
+// Linux reads each from /sys or the power helper, so needs no macmon
 const LINUX_NEEDS = { ...NEEDS, gpu: ["gpu"], temperature: ["temperature"], power: ["power"] };
 
 // Written by the stream-deck step's root helper, since RAPL's counters are root-only
@@ -239,7 +239,8 @@ function createSampler({
     return Number.isNaN(value) ? null : value;
   };
 
-  // Physical interfaces only: lo, docker0, and tailscale0 carry traffic they already count
+  // Physical interfaces only: docker0 and tailscale0 carry traffic they already count, and lo's
+  // never leaves the machine
   const physical = (name) => fs.existsSync(`${sysRoot}/class/net/${name}/device`);
 
   // Shares of each process's CPU time since the last sample; one core is 100%, as on macOS
@@ -468,7 +469,6 @@ function push(history, value) {
   if (history.length > HISTORY) history.shift();
 }
 
-// Stream Deck scales the 144 px keys to the device
 const COLORS = {
   background: "#18181b",
   label: "#a1a1aa",
@@ -522,6 +522,7 @@ function sparkline(history, color) {
   return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
 }
 
+// Keys are drawn at 144 px; Stream Deck, or the Ubuntu daemon, scales them to the device
 function frame(label, ...parts) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
@@ -603,8 +604,8 @@ const RENDER = {
     return card("TEMP", `${Math.round(cpu)}°`, level(cpu, 75, 90), gpu ? `GPU ${Math.round(gpu)}°` : "CPU");
   },
   power(s) {
-    // Linux has no whole-machine figure: the CPU package, its cores, and the GPU. Whole watts below,
-    // since a desktop CPU's tens of watts with decimals overflow the key.
+    // Linux has no whole-machine figure: the CPU package, its cores, and the GPU. The second line
+    // rounds to whole watts, since a desktop CPU's tens of watts with decimals overflow the key.
     if (typeof s.power?.package === "number") {
       const { package: pkg, cores, gpu } = s.power;
       const whole = (value) => (typeof value === "number" ? Math.round(value) : "—");

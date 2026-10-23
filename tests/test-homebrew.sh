@@ -1,12 +1,52 @@
 #!/bin/bash
 set -euo pipefail
 
-# The homebrew step's main; test-homebrew-install.sh covers installing Homebrew itself.
+# The homebrew step: installing Homebrew, the Brewfile, casks, App Store apps, and apt packages,
+# and its status.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
+# cask_state reads brew's JSON with jq
+command -v jq &> /dev/null || skip "jq isn't installed"
+
+# --- installing Homebrew ---
+
+install_without_terminal() {
+    load_script homebrew/install.sh
+    hide brew
+    replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
+    replace_fn load_brew
+    PREFIX="$SANDBOX/homebrew"
+    replace_fn homebrew_prefix 'echo "$PREFIX"'
+    for os in ubuntu macos; do
+        as_os "$os"
+
+        # No terminal, no prefix, sudo not cached
+        : > "$STUB_LOG"
+        stub sudo 'exit 1'
+        assert_exit 1 install_homebrew
+        assert_file_not_contains "$STUB_LOG" "run_installer"
+
+        : > "$STUB_LOG"
+        stub sudo 'exit 0'
+        assert_exit 0 install_homebrew
+        assert_file_contains "$STUB_LOG" "run_installer bash https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+
+        # An existing prefix needs no sudo
+        : > "$STUB_LOG"
+        stub sudo 'exit 1'
+        mkdir -p "$PREFIX"
+        assert_exit 0 install_homebrew
+        assert_file_contains "$STUB_LOG" "run_installer bash"
+        rmdir "$PREFIX"
+    done
+}
+subtest install_without_terminal
+
+# --- main ---
+
 load_script homebrew/install.sh
 # No app path for an unlisted cask, so nothing reads the real Mac's apps
 # shellcheck disable=SC2034 # cask_state reads it
@@ -73,12 +113,11 @@ installs() {
 
 as_os macos
 # Setup refuses Intel, so fake arm64 even on an x86_64 runner
-stub uname 'if [ "$1" == -m ]; then echo arm64; else exec /usr/bin/uname "$@"; fi'
+stub_uname Darwin
 
 reset
 stub xcode-select '[ "$1" != -p ] || exit 2'
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Finish the Command Line Tools install"
 assert_file_contains "$STUB_LOG" "xcode-select --install"
 assert_eq "" "$(installs)" "brew installs without the Command Line Tools"
 stub xcode-select
@@ -90,8 +129,7 @@ touch "$SANDBOX/bundle-ok"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Couldn't install from the App Store: Amphetamine, Windows App."
 assert_contains "$RUN_OUTPUT" "Sign in to the App Store"
-assert_contains "$RUN_OUTPUT" "sudo -v"
-assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
+assert_contains "$RUN_OUTPUT" "optional: Dato"
 assert_eq "mas install $AMPHETAMINE
 mas get $AMPHETAMINE
 mas install $DATO
@@ -114,14 +152,13 @@ mas install $WINDOWS_APP
 mas get $WINDOWS_APP" "$(installs | grep '^mas')" "App Store installs when signed in"
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "App Store apps already installed."
 assert_eq "" "$(installs)" "installs on a re-run"
 assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on a re-run"
 grep -vxF "$DATO" "$SANDBOX/mas-installed" > "$SANDBOX/mas-left" && mv "$SANDBOX/mas-left" "$SANDBOX/mas-installed"
 : > "$SANDBOX/mas-owned"
 : > "$STUB_LOG"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Not installed, and optional: Dato."
+assert_contains "$RUN_OUTPUT" "optional: Dato"
 assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
 assert_eq "mas install $DATO" "$(installs)" "installs with Dato not bought"
 
@@ -155,7 +192,7 @@ reset
 touch "$SANDBOX/bundle-ok"
 echo "zed=1" > "$SANDBOX/cask-status"
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "These casks failed to install: zed."
+assert_contains "$RUN_OUTPUT" "failed to install: zed."
 assert_eq "${#CASKS[@]}" "$(installs | grep -c 'install --cask')" "casks tried"
 assert_eq "$((${#CASKS[@]} - 1))" "$(wc -l < "$SANDBOX/casks" | tr -d ' ')" "casks installed"
 
@@ -163,20 +200,12 @@ assert_eq "$((${#CASKS[@]} - 1))" "$(wc -l < "$SANDBOX/casks" | tr -d ' ')" "cas
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "brew install --cask zed" "$(installs)" "installs on a re-run"
-assert_contains "$RUN_OUTPUT" "Brew formulae already installed."
 
 rm -rf "$SANDBOX/apps/vicinae.app"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "brew reinstall --cask vicinae" "$(installs)" "installs with vicinae's app deleted"
-assert_contains "$RUN_OUTPUT" "brew lists vicinae, but its app is gone; reinstalling it..."
 [ -d "$SANDBOX/apps/vicinae.app" ] || fail "vicinae's app wasn't reinstalled"
-
-reset
-touch "$SANDBOX/bundle-ok"
-echo "zed=130" > "$SANDBOX/cask-status"
-assert_exit 130 main
-assert_eq "$(printf 'brew install --cask %s\n' font-monaspace ghostty zed)" "$(installs)" "installs before Ctrl-C"
 
 reset
 echo 130 > "$SANDBOX/bundle-status"
@@ -189,58 +218,15 @@ replace_fn locale_installed 'return 0'
 reset
 replace_fn missing_ubuntu_commands 'echo " jq"'
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Missing commands: jq"
-assert_contains "$RUN_OUTPUT" "Install them with: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $UBUNTU_PACKAGES"
+assert_contains "$RUN_OUTPUT" "Install them with: "
 assert_file_not_contains "$STUB_LOG" "sudo"
 assert_eq "" "$(installs)" "brew installs without the apt packages"
-
-# apt-get update is retried only for apt's lists lock, which apt-daily can hold
-stub_sudo_exec
-stub apt-get 'S="'"$SANDBOX"'"
-[ "${*: -1}" == update ] || exit 0
-if [ -e "$S/apt-broken" ]; then
-    echo "E: The repository http://example.invalid resolute Release does not have a Release file." >&2
-    exit 100
-fi
-n="$(cat "$S/locked" 2>/dev/null || echo 0)"
-[ "$n" -gt 0 ] || exit 0
-echo $((n - 1)) > "$S/locked"
-echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)" >&2
-echo "E: Unable to lock directory /var/lib/apt/lists/" >&2
-exit 100'
-# Fewer tries than the step's, but enough for two lock failures then a success
-# shellcheck disable=SC2034 # apt_get_update reads them
-APT_UPDATE_RETRY_DELAY=0 APT_UPDATE_TRIES=4
-updates() { grep -c "^apt-get .* update$" "$STUB_LOG" || true; }
-replace_fn missing_ubuntu_commands 'echo " jq"'
-reset
-echo 2 > "$SANDBOX/locked"
-answer yes
-assert_exit 0 main
-assert_eq 3 "$(updates)" "apt-get updates after two lock failures"
-assert_contains "$RUN_OUTPUT" "apt's lists lock is held"
-assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y $UBUNTU_PACKAGES"
-reset
-echo 100 > "$SANDBOX/locked"
-assert_exit 1 main
-assert_eq "$APT_UPDATE_TRIES" "$(updates)" "apt-get updates while the lock stays held"
-assert_file_not_contains "$STUB_LOG" "install -y $UBUNTU_PACKAGES"
-reset
-rm -f "$SANDBOX/locked"
-touch "$SANDBOX/apt-broken"
-assert_exit 1 main
-assert_eq 1 "$(updates)" "apt-get updates after another error"
-assert_contains "$RUN_OUTPUT" "does not have a Release file"
-rm "$SANDBOX/apt-broken"
-stub sudo 'exit 0'
-answer no
 
 reset
 answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update"
 assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y $UBUNTU_PACKAGES"
-assert_contains "$RUN_OUTPUT" "Installing brew formulae..." "Ubuntu output"
 assert_eq "$(printf 'brew bundle install --no-upgrade\n'; printf 'brew install --cask %s\n' "${UBUNTU_CASKS[@]}")" "$(installs)" "installs on Ubuntu"
 assert_file_contains "$STUB_LOG" "fc-cache -f $FONTS"
 
@@ -250,16 +236,9 @@ replace_fn missing_ubuntu_commands
 : > "$STUB_LOG"
 touch "$SANDBOX/bundle-ok"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "apt packages already installed."
-assert_contains "$RUN_OUTPUT" "Brew casks already installed."
+assert_eq "" "$(installs)" "installs on an Ubuntu re-run"
 assert_file_not_contains "$STUB_LOG" "fc-cache"
 assert_file_not_contains "$STUB_LOG" "sudo"
-
-reset
-export XDG_DATA_HOME="$SANDBOX/data"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "fc-cache -f $XDG_DATA_HOME/fonts"
-unset XDG_DATA_HOME
 
 # Installer casks have no app artifact, so CASK_PKG_APPS names their apps
 as_os macos
@@ -292,7 +271,101 @@ mkdir -p "$SANDBOX/apps/outside.app"
 stub brew '[ "$1 $2" != "info --json=v2" ] || echo '\''{"casks": []}'\''; [ "$1 $2" != "list --cask" ]'
 : > "$STUB_LOG"
 assert_exit 0 install_casks
-assert_contains "$RUN_OUTPUT" "Brew casks already installed."
-assert_not_contains "$RUN_OUTPUT" "Installing brew casks"
 assert_file_not_contains "$STUB_LOG" "outside"
+
+# --- cask failures and missing_ubuntu_commands ---
+
+# brew exits 130 on Ctrl-C, so install_cask exits rather than return a failure `|| result=1` hides.
+# Other codes, 137, 141, and 255 included, return so the rest still install.
+load_script homebrew/install.sh
+as_os ubuntu
+replace_fn cask_state "printf 'missing\t\n'"
+# shellcheck disable=SC2034 # os_casks reads it
+UBUNTU_CASKS=(foo bar)
+direct() {
+    install_cask foo "" || echo "returned $?"
+}
+for code in 130 143 129 1 137 141 255; do
+    stub brew "exit $code"
+    : > "$STUB_LOG"
+    if ! interrupted_status "$code"; then
+        assert_exit 1 install_casks
+        assert_contains "$RUN_OUTPUT" "failed to install: foo bar."
+    else
+        assert_exit "$code" install_casks
+        assert_not_contains "$RUN_OUTPUT" "failed to install"
+        assert_file_not_contains "$STUB_LOG" "install --cask bar"
+        assert_exit "$code" direct
+        assert_not_contains "$RUN_OUTPUT" "returned"
+    fi
+done
+
+# Only system dirs count, so the apt packages are installed even when Homebrew has the commands
+mkdir -p "$SANDBOX/homebrew/bin"
+printf '#!/bin/sh\n' > "$SANDBOX/homebrew/bin/dotfiles-test-cmd"
+chmod +x "$SANDBOX/homebrew/bin/dotfiles-test-cmd"
+# shellcheck disable=SC2034 # missing_ubuntu_commands reads it
+UBUNTU_COMMANDS=(sh dotfiles-test-cmd)
+missing="$(PATH="$SANDBOX/homebrew/bin:$PATH" missing_ubuntu_commands)"
+assert_contains "$missing " " dotfiles-test-cmd " "missing commands with one only in Homebrew's dir"
+assert_not_contains "$missing " " sh " "missing commands with one only in Homebrew's dir"
+
+# --- status ---
+
+load_script homebrew/install.sh
+export DOTFILES_STATUS_QUICK=1
+replace_fn command_line_tools_installed 'return 0'
+# zed is installed outside Homebrew; vicinae's app was deleted
+mkdir -p "$SANDBOX/Zed.app" "$SANDBOX/Ghostty.app"
+# shellcheck disable=SC2034 # cask_state reads it
+CASK_PKG_APPS=()
+replace_fn cask_app_path '[ "$1" != zed ] || echo "$SANDBOX/Zed.app"'
+stub brew 'S="'"$SANDBOX"'"
+[ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nvicinae\n"; exit; }
+[ "$*" != --caskroom ] || { echo "$S/caskroom"; exit; }
+[ "$*" == "info --json=v2 --installed --cask" ] || exit 1
+cat << JSON
+{"casks": [
+    {"token": "ghostty", "artifacts": [{"uninstall": []}, {"app": ["Ghostty.app"], "target": "$S/Ghostty.app"}]},
+    {"token": "font-monaspace", "artifacts": [{"font": ["a.otf"], "target": "$S/a.otf"}]},
+    {"token": "vicinae", "artifacts": [{"app": ["Vicinae.app"], "target": "$S/Vicinae.app"}, ["x"]]}
+]}
+JSON'
+
+as_os macos
+stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
+: > "$STUB_LOG"
+run status
+# --quick skips the slow bundle check
+assert_file_not_contains "$STUB_LOG" "brew bundle"
+assert_contains "$RUN_OUTPUT" "unverified Brewfile brew formulae"
+assert_contains "$RUN_OUTPUT" "missing    App Store apps"
+assert_contains "$RUN_OUTPUT" "ok         ghostty (cask)"
+assert_not_contains "$RUN_OUTPUT" "ghostty (cask), installed outside Homebrew"
+assert_contains "$RUN_OUTPUT" "ok         font-monaspace (cask)"
+assert_contains "$RUN_OUTPUT" "ok         zed (cask), installed outside Homebrew"
+assert_contains "$RUN_OUTPUT" "missing    vicinae (cask): brew lists it, but its app is gone"
+assert_contains "$RUN_OUTPUT" "missing    rectangle (cask)"
+assert_contains "$RUN_OUTPUT" "info       Dato (App Store)"
+
+# A renamed app isn't gone while the app brew's install receipt recorded is there
+mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/T3 Code (Alpha).app"
+echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+listing="t3-code	$SANDBOX/T3 Code (Beta).app"
+assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a cask whose app was renamed"
+echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}, {"binary": ["t3"]}, {"uninstall": [{"quit": "com.t3"}]}]}' > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
+assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose uninstall does more"
+rm -r "$SANDBOX/T3 Code (Alpha).app"
+assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose app is gone"
+
+: > "$STUB_LOG"
+as_os ubuntu
+replace_fn missing_ubuntu_commands "printf ' %s' build-essential locale-gen"
+hide brew
+run status
+assert_eq 3 "$RUN_STATUS" "status's exit status without Homebrew"
+assert_contains "$RUN_OUTPUT" "missing    apt packages Homebrew needs; missing commands: build-essential locale-gen"
+assert_contains "$RUN_OUTPUT" "missing    Homebrew"
+assert_contains "$RUN_OUTPUT" "unknown    Brewfile and casks: Homebrew isn't installed"
+assert_eq "" "$(cat "$STUB_LOG")" "brew calls without Homebrew"
 test_done

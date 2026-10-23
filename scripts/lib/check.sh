@@ -3,7 +3,7 @@
 
 errors=0
 
-# Reports a problem and carries on; the script ends with [ "$errors" -eq 0 ]
+# Reports a problem and carries on; the script fails at the end when errors > 0
 fail() {
     echo "$1" >&2
     errors=$((errors + 1))

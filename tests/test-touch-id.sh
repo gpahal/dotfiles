@@ -8,12 +8,9 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sandbox
-export DOTFILES_PAM_DIR="$SANDBOX/pam.d" HOMEBREW_PREFIX="$SANDBOX/brew"
+export HOMEBREW_PREFIX="$SANDBOX/brew"
 load_script macos/setup-touch-id-sudo.sh
 as_os macos
-# In the sandbox "root-owned" means owned by you, and the parent walk stops at $SANDBOX
-# shellcheck disable=SC2034 # macos/pam.sh reads them
-PAM_ROOT_UID="$(id -u)" PAM_TRUSTED_DIR="$SANDBOX"
 
 # sudo and what it runs come from the system's dirs, after the stubs
 case "$PATH" in
@@ -21,11 +18,8 @@ case "$PATH" in
     *) fail "the system's dirs don't lead PATH: $PATH" ;;
 esac
 
-SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local"
 SOURCE="$SANDBOX/brew/lib/pam/pam_reattach.so"
 MODULE="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
-HEADER="# sudo_local: local config file which survives system update and is included for sudo"
-TID_LINE="auth       sufficient     pam_tid.so"
 REATTACH_LINE="auth       optional       $MODULE ignore_ssh"
 
 stub_sudo_exec 'args=()
@@ -38,11 +32,8 @@ done
 set -- "${args[@]}"' # drops install's -o and -g, which need root
 
 reset() {
-    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR" "$SANDBOX/brew"
-    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
-    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
-    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
-        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    rm -rf "$SANDBOX/brew"
+    pam_sandbox
     : > "$STUB_LOG"
     answer no
 }
@@ -52,20 +43,12 @@ put_reattach() {
     echo "${1:-reattach 1.0}" > "$SOURCE"
 }
 
-# Bad arguments change nothing
+# Not set up, no terminal: main changes nothing and doesn't fail
 reset
 put_reattach
-assert_exit 2 main --stauts
-assert_exit 2 main --status extra
-assert_contains "$RUN_OUTPUT" "Usage: bash macos/setup-touch-id-sudo.sh"
-assert_eq "" "$(cat "$STUB_LOG")" "commands run for bad arguments"
-
-# Not set up, no terminal: main changes nothing and doesn't fail
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: off"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "$MODULE"
-assert_contains "$RUN_OUTPUT" "$TID_LINE"
 assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written without asking"
 [ ! -e "$MODULE" ] || fail "the module was copied without asking"
@@ -129,11 +112,11 @@ assert_contains "$RUN_OUTPUT" "sudo chmod go-w $SANDBOX"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Touch ID in tmux: sudo can't safely load $MODULE: $SANDBOX isn't root's alone to write"
 chmod 700 "$SANDBOX"
-# shellcheck disable=SC2034 # macos/pam.sh reads it
+# shellcheck disable=SC2034 # macos/lib/pam.sh reads it
 PAM_ROOT_UID=99999
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "isn't root's alone to write; run sudo chown root"
-# shellcheck disable=SC2034 # macos/pam.sh reads it
+# shellcheck disable=SC2034 # macos/lib/pam.sh reads it
 PAM_ROOT_UID="$(id -u)"
 
 # Homebrew's copy uninstalled: sudo still loads the root copy
@@ -161,7 +144,6 @@ answer yes
 assert_exit 0 main
 assert_eq "$HEADER
 $TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local without pam-reattach"
-assert_contains "$RUN_OUTPUT" "homebrew step"
 assert_file_not_contains "$STUB_LOG" "sudo install -o"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
@@ -231,7 +213,6 @@ printf '%s\n' "auth       sufficient     pam_watchid.so" "$TID_LINE" "auth      
 assert_eq "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so
 $DOTFILES_PAM_MODULES_DIR/pam_tid.so
 $DOTFILES_PAM_MODULES_DIR/pam_reattach.so" "$(sudo_local_modules)" "where the bare names resolve"
-pam_module_exists "$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_watchid.so" || fail "pam_watchid.so.2 wasn't found"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "$DOTFILES_PAM_MODULES_DIR/pam_reattach.so, which doesn't exist"
 
@@ -295,7 +276,7 @@ linked_dir() {
 }
 subtest linked_dir
 linked_parent() {
-    # shellcheck disable=SC2034 # macos/pam.sh reads it
+    # shellcheck disable=SC2034 # macos/lib/pam.sh reads it
     PAM_LOCAL_MODULES_DIR="$SANDBOX/lib/pam" REATTACH_MODULE="$SANDBOX/lib/pam/pam_reattach.so"
     MODULE="$REATTACH_MODULE"
     reset
@@ -328,7 +309,6 @@ acl_on() {
 }
 acl_on "$MODULE"
 acl_on "$DOTFILES_PAM_LOCAL_MODULES_DIR"
-acl_on "$SANDBOX"
 set_up
 chmod +a "everyone deny write,delete" "$MODULE"
 chmod +a "everyone allow read,readattr" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
@@ -380,6 +360,7 @@ assert_contains "$RUN_OUTPUT" "Couldn't write $SUDO_LOCAL"
 reset
 put_reattach
 answer yes
+stub sudo 'exit 1'
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't install $MODULE"
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy failed"

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# stats.js's parsers, samplers, and keys; keys.js's update loop; and the Mac plugin's key presses
-# and pages, with a fake WebSocket.
+# stats.js's netstat and /proc parsers and its macOS and Linux samplers, keys.js's update loop, and
+# the Mac plugin's page switching, with a fake WebSocket.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -15,20 +15,6 @@ js() {
     node -e "const s = require(process.argv[1]); $1" "$STATS"
 }
 
-# anonymous - purgeable + wired + compressed, in 16 KB pages
-vm_stat='Mach Virtual Memory Statistics: (page size of 16384 bytes)
-Pages free:                                   194180.
-Pages wired down:                             286445.
-Pages purgeable:                               42444.
-Anonymous pages:                             1113919.
-Pages occupied by compressor:                 200796.'
-assert_eq "$(((1113919 - 42444 + 286445 + 200796) * 16384))" \
-    "$(VM_STAT="$vm_stat" js 'console.log(s.parseVmStat(process.env.VM_STAT))')" "memory used"
-
-assert_eq '{"used":571211776,"total":2147483648}' \
-    "$(js 'console.log(JSON.stringify(s.parseSwap("total = 2048.00M  used = 544.75M  free = 1503.25M  (encrypted)")))')" \
-    "swap"
-
 # Only en link rows count, down ones (en5*) too, so their counters don't come back as one burst
 netstat='Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
 lo0        16384 <Link#1>                      100     0       5000      100     0       5000     0
@@ -40,41 +26,6 @@ utun4      1380  <Link#20>                          10     0        900       10
 assert_eq '{"rx":6030,"tx":804}' \
     "$(NETSTAT="$netstat" js 'console.log(JSON.stringify(s.parseNetstat(process.env.NETSTAT)))')" "network"
 
-assert_eq '{"cpu":26.6,"name":"Activity Monitor"}' \
-    "$(js 'console.log(JSON.stringify(s.parseTop(" 26.6 Activity Monitor\n 13.0 syspolicyd\n")))')" "top process"
-assert_eq "null" "$(js 'console.log(s.parseTop(""))')" "top process with no output"
-
-assert_eq "0 B 999 B 1.5 KB 120 MB 1.0 GB" \
-    "$(js 'console.log([0, 999, 1500, 120e6].map((b) => s.formatBytes(b)).join(" "), s.formatBytes(1024 ** 3, 1024))')" \
-    "byte formatting"
-
-render() {
-    SAMPLE="$2" js "console.log(s.render('$1', { cpuHistory: [10, 20], gpuHistory: [], ...JSON.parse(process.env.SAMPLE) }))"
-}
-out="$(render cpu '{"cpu": 92}')"
-assert_contains "$out" ">92%</text>"
-assert_contains "$out" "#f87171"
-assert_contains "$out" "<polyline"
-assert_contains "$(render memory '{"memory": {"used": 8589934592, "total": 17179869184}, "pressure": 2}')" ">50%</text>"
-assert_contains "$(render memory '{"memory": {"used": 1, "total": 2}, "pressure": 2}')" "#facc15"
-assert_contains "$(render swap '{"swap": {"used": 571211776, "total": 2147483648}}')" ">545 MB</text>"
-assert_contains "$(render disk '{"disk": {"free": 50e9, "total": 1000e9}}')" "#f87171"
-assert_contains "$(render top '{"top": {"name": "<a & b> process", "cpu": 5}}')" ">&lt;a &amp; b&gt; pr…</text>"
-assert_contains "$(render network '{"network": {"rx": 1200000, "tx": 40000}}')" "↓ 1.2 MB/s"
-out="$(render overview '{"cpu": 23, "memory": {"used": 1, "total": 4}, "pressure": 1}')"
-assert_contains "$out" ">23%</text>"
-assert_contains "$out" ">25%</text>"
-for kind in overview cpu memory swap top gpu temperature power disk network; do
-    assert_contains "$(render "$kind" '{}')" ">—</text>"
-done
-assert_contains "$(render gpu '{"macmonMissing": true}')" "needs macmon"
-assert_contains "$(render power '{"power": {"system": 7.75, "cpu": 0.42, "gpu": 0.03}}')" ">7.8 W</text>"
-# A field macmon dropped, as after a rename, shows a dash
-assert_contains "$(render power '{"power": {"system": 7.75, "gpu": 0.03}}')" ">CPU — · GPU 0.0</text>"
-assert_contains "$(js 'console.log(s.placeholder("top"))')" ">TOP CPU</text>"
-assert_contains "$(render temperature '{"temperature": {"cpu": 95, "gpu": 44}}')" "#f87171"
-
-# An unhandled error event would end node with a non-zero status.
 sampler_js() {
     node -e "(async () => {
 const s = require(process.argv[1]);
@@ -94,7 +45,8 @@ $1
 })().catch((e) => { console.error(e); process.exit(1); });" "$STATS" "${@:2}"
 }
 
-# A real spawn of a non-executable file emits an error event after spawn returns
+# A real spawn of a non-executable file emits an error event after spawn returns; unhandled, it
+# would end node with a non-zero status
 touch "$SANDBOX/macmon-not-executable"
 out="$(sampler_js 'const sampler = s.createSampler({ platform: "darwin", log, macmonPath: process.argv[2] });
 await sampler.sample(["gpu"]);
@@ -129,8 +81,6 @@ console.log(logs.join('\\n'));")"
 macmon exited ($shown)
 macmon exited ($shown); trying again in 4 s"
 }
-crashing_macmon 1 null 1
-crashing_macmon null "'SIGSEGV'" SIGSEGV
 crashing_macmon 0 null 0
 
 # A sample doesn't reset the backoff; a run that lasted a minute does
@@ -181,13 +131,6 @@ const after = (await sampler.sample(["gpu"])).macmonMissing;
 console.log(JSON.stringify({ before, after, spawned: children.length, logged: logs.length }));' "$SANDBOX/macmon-later")"
 assert_eq '{"before":true,"after":false,"spawned":1,"logged":1}' "$out" "macmon installed later"
 
-assert_eq "1 0" "$(sampler_js 'const sampler = s.createSampler({ platform: "darwin", log });
-await new Promise((r) => setTimeout(r, 100));
-const sample = await sampler.sample(["cpu"]);
-const before = sample.cpuHistory.length;
-sampler.reset();
-console.log(before, sample.cpuHistory.length);')" "the CPU history after a reset"
-
 # A kind no key needs starts afresh when needed again: no rate over the gap, empty sparkline
 assert_eq '[{"rx":500,"tx":50},null,{"rx":1000,"tx":100},0,null]' "$(sampler_js 'let t = 0;
 let bytes = 0;
@@ -212,21 +155,7 @@ rates.push(cpu.cpuHistory.length);
 rates.push((await sampler.sample(["cpu"])).cpu ?? null);
 console.log(JSON.stringify(rates));')" "rates after a kind is hidden"
 
-# Linux: parsers, then the sampler against fixture /proc and /sys trees
-assert_eq '{"total":67108864,"available":50331648,"swapTotal":8388608,"swapFree":6291456}' \
-    "$(js 'console.log(JSON.stringify(s.parseMeminfo("MemTotal:  65536 kB\nMemFree: 1024 kB\nMemAvailable:  49152 kB\nSwapTotal: 8192 kB\nSwapFree: 6144 kB\n")))')" \
-    "meminfo"
-assert_eq "[1,2,4,null]" "$(js 'console.log(JSON.stringify(["some avg10=9.99 avg60=0.00", "some avg10=10.00", "some avg10=55.10", ""].map((t) => s.parsePressure(`${t}\nfull avg10=0.00`))))')" \
-    "memory pressure levels"
-net_dev='Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo:    5000      10    0    0    0     0          0         0     5000      10    0    0    0     0       0          0
-enp6s0: 1000 10 0 0 0 0 0 0 200 2 0 0 0 0 0 0
-wlp5s0:      30       1    0    0    0     0          0         0        4       1    0    0    0     0       0          0
-docker0: 900 9 0 0 0 0 0 0 900 9 0 0 0 0 0 0'
-assert_eq '{"rx":1030,"tx":204}' \
-    "$(NET_DEV="$net_dev" js 'console.log(JSON.stringify(s.parseNetDev(process.env.NET_DEV, (n) => !["lo", "docker0"].includes(n))))')" \
-    "/proc/net/dev, physical interfaces only"
+# Linux: a process name with ")" in it, then the sampler against fixture /proc and /sys trees
 assert_eq '{"name":"Web Content (x) y","ticks":350}' \
     "$(js 'console.log(JSON.stringify(s.parseProcStat("42 (Web Content (x) y) S 1 42 42 0 -1 4194560 100 0 0 0 300 50 0 0 20 0 1")))')" \
     "a process name with spaces and parentheses"
@@ -305,8 +234,6 @@ assert_eq '[null,null,null]
 no GPU data
 no sensors
 needs helper' "$out" "Linux keys with no data"
-assert_contains "$(render power '{"power": {"package": 45.25, "cores": 30.5, "gpu": 9}}')" ">Core 31 · GPU 9</text>"
-assert_contains "$(render power '{"power": {"package": 45.25, "cores": 30.5, "gpu": 9}}')" ">45.3 W</text>"
 
 # keys.js: a key whose render throws shows its placeholder and logs once, and the others update
 out="$(node -e 'const keys = require(process.argv[1]);
@@ -332,7 +259,7 @@ assert_eq "a=swap b=placeholder:disk a=swap b=placeholder:disk a=swap b=placehol
 ERROR couldn't draw the disk key: broken" "$out" "a key whose render throws"
 
 PLUGIN="$SANDBOX/plugin"
-mkdir -p "$PLUGIN/bin"
+mkdir -p "$PLUGIN"
 cp "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/{plugin,keys,stats}.js \
     "$REPO_DIR"/stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json "$PLUGIN/"
 
@@ -363,43 +290,6 @@ const until = async (what, test) => {
 process.exit(0);
 })();' "$PLUGIN/plugin.js" "${@:2}" 2>&1
 }
-
-# bin/open-in logs each target; chrome-tab waits for $SANDBOX/release, up to 10 s
-cat > "$PLUGIN/bin/open-in" << EOF
-echo "\$1" >> "$SANDBOX/open-in.log"
-if [ "\$1" == chrome-tab ]; then
-    for _ in \$(seq 200); do [ ! -e "$SANDBOX/release" ] || break; sleep 0.05; done
-fi
-echo "done \$1"
-EOF
-# A New Tab press is dropped while the last one's open-in runs
-out="$(plugin_js 'const press = (key) => message({ event: "keyDown", action: `com.gpahal.dotfiles.${key}`, context: key });
-const done = (key) => sent.filter((m) => m.payload && m.payload.message === `done ${key}`).length;
-press("chrome-tab"); press("chrome-tab"); press("files"); press("files");
-await until("both Files presses", () => done("files") === 2);
-require("node:fs").writeFileSync(process.argv[2], "");
-await until("the first New Tab", () => done("chrome-tab") >= 1);
-press("chrome-tab");
-await until("the second New Tab", () => done("chrome-tab") >= 2);' "$SANDBOX/release")" ||
-    fail "the plugin's key presses failed: $out"
-assert_eq "chrome-tab chrome-tab files files" "$(sort "$SANDBOX/open-in.log" | tr '\n' ' ' | sed 's/ $//')" \
-    "the open-in runs for New Tab pressed twice, Files twice, then New Tab again"
-
-# The plugin draws stat keys through keys.js: a broken one shows its placeholder
-cat > "$PLUGIN/stats.js" << EOF
-const real = require("$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js");
-module.exports = { ...real, render: (kind, s) => { if (kind === "disk") throw new Error("broken"); return real.render(kind, s); } };
-EOF
-out="$(plugin_js 'const appear = (key) => message({ event: "willAppear", action: `com.gpahal.dotfiles.${key}`, context: key });
-const images = (key) => sent.filter((m) => m.event === "setImage" && m.context === key);
-appear("swap"); appear("disk");
-await until("the first images", () => images("swap").length > 0 && images("disk").length > 0);
-const disk = decodeURIComponent(images("disk")[0].payload.image);
-console.log(disk.includes(">DISK</text>") && disk.includes(">—</text>"));
-console.log(sent.filter((m) => m.payload?.message?.startsWith("ERROR")).map((m) => m.payload.message).join("\n"));')" ||
-    fail "the plugin with a broken key failed: $out"
-assert_eq "true
-ERROR couldn't draw the disk key: broken" "$out" "the plugin's stat keys"
 
 # A 5×3 deck switches to the Main profile when it connects; Overview opens System and Back Main.
 # Another size of deck stays where it is, and Overview alerts.

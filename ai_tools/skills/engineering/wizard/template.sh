@@ -71,14 +71,15 @@ warn() { printf '  %s⚠ %s%s\n' "$YELLOW" "$1" "$RESET"; }
 
 # open_url URL opens it in the human's browser, cross-platform incl. WSL.
 open_url() {
-  local url="$1"
+  local url="$1" opener
   printf '  %s↗ opening%s %s\n' "$GREEN" "$RESET" "$url"
-  { if   command -v wslview     >/dev/null 2>&1; then wslview "$url"
-    elif command -v explorer.exe >/dev/null 2>&1; then explorer.exe "$url"
-    elif command -v xdg-open    >/dev/null 2>&1; then xdg-open "$url"
-    elif command -v open        >/dev/null 2>&1; then open "$url"
-    else warn "couldn't open a browser; visit it manually: $url"; fi
-  } >/dev/null 2>&1 || warn "couldn't open a browser, so visit it manually: $url"
+  for opener in wslview explorer.exe xdg-open open; do
+    if command -v "$opener" >/dev/null 2>&1; then
+      "$opener" "$url" >/dev/null 2>&1 || warn "couldn't open a browser, so visit it manually: $url"
+      return 0
+    fi
+  done
+  warn "couldn't open a browser; visit it manually: $url"
 }
 
 # pause "msg" waits for the human to confirm they've done the manual part.

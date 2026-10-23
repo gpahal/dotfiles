@@ -1,4 +1,5 @@
 # Casks live in homebrew/install.sh, so `brew bundle cleanup` with this file would remove them all.
+# zsh comes from the system, so the login shell survives a broken Homebrew.
 
 brew "git"  # Git, newer than the system's
 brew "vim"  # Vim, with the config the vim step copies
@@ -55,7 +56,7 @@ brew "bun"  # JavaScript runtime and packages
 brew "zsh-syntax-highlighting"  # Highlights commands as you type
 brew "zsh-autosuggestions"  # Suggests commands from history as you type
 
-# No Linux build. zsh comes from the system so the login shell survives a broken Homebrew.
+# No Linux build
 if OS.mac?
   brew "terminal-notifier"  # macOS notifications from scripts
   brew "pam-reattach"  # The PAM module Touch ID for sudo needs inside tmux (macos/setup-touch-id-sudo.sh)

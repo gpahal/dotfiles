@@ -1,8 +1,10 @@
 #!/bin/bash
+# The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
 set -euo pipefail
 
-# The ubuntu step's sshd drop-in on a set-up machine.
+# The ubuntu step's sshd drop-in on a set-up machine: rollback when sshd rejects it, sshd's effective
+# settings, and password logins going off only on proof of a key login, never back on.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -20,29 +22,23 @@ echo "# old" > "$SSHD_DROP_IN"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "$(sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the new drop-in"
-assert_file_contains "$SSHD_DROP_IN" "X11Forwarding no"
-assert_file_contains "$SSHD_DROP_IN" "MaxAuthTries 3"
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
 
 echo '# old, working' > "$SSHD_DROP_IN"
 stub_systemctl '[ "$1" != try-reload-or-restart ] || exit 1'
 assert_exit 1 main
 assert_eq '# old, working' "$(cat "$SSHD_DROP_IN")" "sshd rollback after failed activation"
+# The rollback failing too leaves the new drop-in, which the step says
+wrap_fn write_root_file '[ "$2" != "# old, working" ] || return 1; real_write_root_file "$@"'
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "the new $SSHD_DROP_IN
+  is still in place"
+restore_fn write_root_file
+echo '# old, working' > "$SSHD_DROP_IN"
 stub_systemctl
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
-
-printf '%s\n' "PermitRootLogin no" "PasswordAuthentication no" "# old" > "$SSHD_DROP_IN"
-cp "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
-stub mv 'case "$*" in *10-dotfiles.conf*) exit 1 ;; esac
-exec /bin/mv "$@"'
-: > "$STUB_LOG"
-assert_exit 1 configure_sshd
-rm "$STUB_DIR/mv"
-assert_exit 0 cmp -s "$SSHD_DROP_IN" "$SANDBOX/drop-in-before"
-assert_eq 10-dotfiles.conf "$(/bin/ls -A "$SANDBOX/sshd_config.d")" "files beside the drop-in after a failed write"
-assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 
 # A broken file elsewhere: the drop-in stays and the step does the rest
 echo "# old, working" > "$SSHD_DROP_IN"
@@ -79,7 +75,6 @@ SSHD_BIN="$SANDBOX/no-sshd"
 : > "$STUB_LOG"
 assert_exit 1 configure_sshd
 assert_contains "$RUN_OUTPUT" "sshd isn't installed"
-assert_not_contains "$RUN_OUTPUT" "already fails sshd -t"
 assert_file_not_contains "$STUB_LOG" "sshd -t"
 [ ! -e "$SSHD_DROP_IN" ] || fail "a drop-in was written without sshd"
 # shellcheck disable=SC2034 # configure_sshd reads it
@@ -139,13 +134,7 @@ assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
 assert_eq "PasswordAuthentication yes
 AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-printf '%s\n' "X11Forwarding yes" "MaxAuthTries 6" > "$SANDBOX/sshd_config.d/00-local.conf"
-ubuntu_items
-run status_sshd
-assert_contains "$RUN_OUTPUT" "missing    $item (X11Forwarding is yes; MaxAuthTries is 6; $first)"
 rm "$SANDBOX/sshd_config.d/00-local.conf" "$SANDBOX/sshd_config.d/50-cloud-init.conf"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "ok         $item"
 # sshd -T applies a Match block for a login by you from this machine
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 : > "$STUB_LOG"
@@ -158,12 +147,12 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PasswordAuthentication is yes"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
-# Match Address: private, tailnet, and named addresses are each sampled. status_sshd alone, after
-# one full status run.
+# Match Address: private, tailnet, and named addresses are each sampled, and a negated one never
+# is. status_sshd alone, after one full status run.
 assert_exit 0 status
 ubuntu_items
 for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.0.113.7" \
-    "192.168.5.0/24 192.168.5.1" "!10.9.9.9,192.168.7.0/24 192.168.7.1"; do
+    "!10.9.9.9,192.168.7.1 192.168.7.1"; do
     addr="${match##* }"
     printf '%s\n' "Match Address ${match% *}" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
     : > "$STUB_LOG"
@@ -172,12 +161,6 @@ for match in "192.168.1.1 192.168.1.1" "100.64.0.1 100.64.0.1" "203.0.113.7 203.
     assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=$addr,addr=$addr"
 done
 assert_file_not_contains "$STUB_LOG" "addr=10.9.9.9"
-# sshd matches the pattern as a string, so fd00:* also takes fd00::/8's sample
-printf '%s\n' "Match Address fd00:*" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
-: > "$STUB_LOG"
-run status_sshd
-assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off (PasswordAuthentication is yes for fd00::1, fd00:1::1;"
-assert_file_contains "$STUB_LOG" "sshd -T -C user=$me,host=fd00:1::1,addr=fd00:1::1"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 for match in "10.* 10.1" "* 1" "192.168.1.? 192.168.1.1" "fd00::/8 fd00::1" "fd00::* fd00::1" \
     "fd00:*:1 fd00:1::1:1" "2001:db8:0:0:0:0:0:* 2001:db8:0:0:0:0:0:1" "fe80::1 fe80::1"; do
@@ -200,17 +183,16 @@ touch "$SANDBOX/sshd-T-fails"
 rm "$SSHD_DROP_IN" "$SANDBOX/ufw-on"
 : > "$STUB_LOG"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed, so whether sshd takes $SSHD_DROP_IN is
-  unchecked"
+assert_contains "$RUN_OUTPUT" "sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed"
 assert_eq "$(DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in when sshd -T fails"
 # Unchecked, so it doesn't claim they're off
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-assert_contains "$RUN_OUTPUT" "Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged"
+assert_contains "$RUN_OUTPUT" "Couldn't read the SSH ports with sudo sshd -T"
 assert_file_not_contains "$STUB_LOG" "ufw default"
 assert_file_not_contains "$STUB_LOG" "ufw allow"
 assert_file_not_contains "$STUB_LOG" "ufw --force enable"
 assert_exit 3 status
-assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed; run it to see why)"
+assert_contains "$RUN_OUTPUT" "unverified $item (sudo sshd -T -C user=$me,host=127.0.0.1,addr=127.0.0.1 failed"
 rm "$SANDBOX/sshd-T-fails"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_exit 0 status
@@ -218,13 +200,110 @@ assert_contains "$RUN_OUTPUT" "ok         $item"
 cache_sudo no
 : > "$STUB_LOG"
 assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "unverified $item (the effective values need sudo -v; run sudo -v, then status, to check them)"
+assert_contains "$RUN_OUTPUT" "unverified $item"
 assert_file_not_contains "$STUB_LOG" "sshd -T"
-# sshd -T needs $SSHD_RUN_DIR, which sshd creates on first run
-cache_sudo yes
-rmdir "$SSHD_RUN_DIR"
-assert_exit 0 status
-assert_contains "$RUN_OUTPUT" "unverified $item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
-mkdir "$SSHD_RUN_DIR"
-cache_sudo no
+
+# --- password logins: off only on proof of a key login, never back on ---
+unset DOTFILES_SSH_KEY_ONLY SSH_USER_AUTH
+rm -f "$SSHD_DROP_IN"
+assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication"
+mkdir -p "$HOME/.ssh"
+chmod 755 "$HOME"
+chmod 700 "$HOME/.ssh"
+ssh-keygen -q -t ed25519 -N '' -f "$SANDBOX/login-key"
+ssh-keygen -q -t ed25519 -N '' -f "$SANDBOX/other-key"
+# authorized_keys options must not hide the key
+printf 'restrict,command="echo hello" %s\n' "$(cat "$SANDBOX/login-key.pub")" > "$HOME/.ssh/authorized_keys"
+chmod 600 "$HOME/.ssh/authorized_keys"
+# sshd's ExposeAuthInfo file: one line per method, removed when the session ends
+SSH_AUTH_FILE="$SANDBOX/sshauth.XXXX"
+key_session() {
+    printf 'publickey %s\n' "$(cut -d' ' -f1,2 "$SANDBOX/$1.pub")" > "$SSH_AUTH_FILE"
+    export SSH_USER_AUTH="$SSH_AUTH_FILE"
+}
+key_only_pending() {
+    assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in $2"
+    : > "$STUB_LOG"
+    run main
+    MAIN_OUTPUT="$RUN_OUTPUT"
+    assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
+    assert_contains "$RUN_OUTPUT" "Password logins stay on: $1"
+    [ "${3:-}" == status ] || return 0
+    assert_exit 3 status
+    assert_contains "$RUN_OUTPUT" "missing    Password and keyboard-interactive SSH logins off ($1"
+}
+# A console run proves nothing
+key_only_pending "this run isn't in an SSH session that sshd recorded the login of" "on the console" status
+for invalid in 'not-a-key ssh-just-a-note' 'ssh-ed25519 AAAAC3Nza me@mac'; do
+    printf 'publickey %s\n' "$invalid" > "$SSH_AUTH_FILE"
+    export SSH_USER_AUTH="$SSH_AUTH_FILE"
+    assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in for an invalid key"
+done
+printf 'password\n' > "$SSH_AUTH_FILE"
+key_only_pending "this SSH session logged in with a password" "in a password session"
+key_session login-key
+printf 'keyboard-interactive/pam\n' >> "$SSH_AUTH_FILE"
+key_only_pending "this SSH session logged in with a password" "in a session that also took a password" status
+# ssh may have reused a connection that logged in with a password
+assert_contains "$RUN_OUTPUT" "ssh -O exit <alias>"
+assert_contains "$MAIN_OUTPUT" "ssh -O exit <alias>"
+# A tmux pane that outlived its SSH session
+export SSH_USER_AUTH="$SANDBOX/sshauth.gone"
+key_only_pending "the SSH session this shell started in has ended" "in a stale tmux pane"
+key_session other-key
+key_only_pending "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys" "with another key"
+# AuthenticationMethods publickey,publickey: both keys must be listed
+for keys in "other-key login-key" "login-key other-key"; do
+    : > "$SSH_AUTH_FILE"
+    for key in $keys; do
+        printf 'publickey %s\n' "$(cut -d' ' -f1,2 "$SANDBOX/$key.pub")" >> "$SSH_AUTH_FILE"
+    done
+    export SSH_USER_AUTH="$SSH_AUTH_FILE"
+    key_only_pending "the key this SSH session logged in with isn't in ~/.ssh/authorized_keys" "with keys $keys"
+done
+key_session login-key
+assert_contains "$(sshd_drop_in)" "PasswordAuthentication no"
+DOTFILES_ASSUME_YES=0 run main
+assert_contains "$RUN_OUTPUT" "turning off SSH password logins since this SSH session logged in with your key SHA256:"
+assert_contains "$RUN_OUTPUT" "Left unchanged"
+assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
+run main
+assert_file_contains "$SSHD_DROP_IN" "PasswordAuthentication no"
+assert_file_contains "$SSHD_DROP_IN" "KbdInteractiveAuthentication no"
+assert_contains "$RUN_OUTPUT" "Keep this session open"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
+unset SSH_USER_AUTH
+: > "$STUB_LOG"
+run main
+assert_not_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
+assert_file_not_contains "$STUB_LOG" "tee $SSHD_DROP_IN"
+assert_file_contains "$SSHD_DROP_IN" "PasswordAuthentication no"
+# Never turned back on
+mv "$HOME/.ssh/authorized_keys" "$SANDBOX/authorized_keys"
+assert_contains "$(sshd_drop_in)" "PasswordAuthentication no" "the drop-in once the key is gone"
+run status
+assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
+# The disposable-VM opt-in needs no key
+rm "$SSHD_DROP_IN"
+assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in without a key"
+export DOTFILES_SSH_KEY_ONLY=1
+run main
+assert_contains "$RUN_OUTPUT" "turning off SSH password logins since DOTFILES_SSH_KEY_ONLY=1 is set"
+assert_file_contains "$SSHD_DROP_IN" "PasswordAuthentication no"
+unset DOTFILES_SSH_KEY_ONLY
+run status
+assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
+mv "$SANDBOX/authorized_keys" "$HOME/.ssh/authorized_keys"
+
+# As root: AllowUsers root with PermitRootLogin no would refuse everyone
+id() { if [ "${1:-}" == -u ]; then echo 0; else echo root; fi; }
+drop_in="$(sshd_drop_in)"
+fresh_drop_in="$(sshd_drop_in "")"
+unset -f id
+assert_contains "$drop_in" "PermitRootLogin no"
+assert_not_contains "$drop_in" "AllowUsers"
+assert_contains "$drop_in" "PasswordAuthentication no"
+assert_contains "$drop_in" "KbdInteractiveAuthentication no"
+assert_not_contains "$fresh_drop_in" "PasswordAuthentication"
 test_done

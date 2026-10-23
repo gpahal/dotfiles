@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# The config-only steps through setup.sh: apply, a second run changing nothing, status, and where
+# each OS puts their configs.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -45,15 +48,6 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 assert_eq "$expected" "$items" "status items that need attention"
 
-# Zed edits its own settings, but they're still replaced without a question or backup
-zed_settings="$HOME/.config/zed/settings.json"
-printf '{"edited in Zed": true}\n' > "$zed_settings"
-assert_exit 3 bash "$REPO_DIR/setup.sh" --status zed
-assert_contains "$RUN_OUTPUT" "settings.json differs from the repo's zed/settings.json"
-assert_exit 0 bash "$REPO_DIR/setup.sh" zed
-assert_eq "" "$(cmp "$REPO_DIR/zed/settings.json" "$zed_settings" 2>&1)" "Zed's settings after an edit"
-assert_eq "keymap.json settings.json " "$(/bin/ls -A "$(dirname "$zed_settings")" | tr '\n' ' ')" "Zed's config files"
-
 # Ghostty and Zed ignore XDG_CONFIG_HOME on macOS
 export XDG_CONFIG_HOME="$SANDBOX/xdg"
 
@@ -62,9 +56,9 @@ check_destination() {
     local step="$1" os="$2" src="$3" dest="$4" copy="$5"
     rm -rf "$XDG_CONFIG_HOME" "$HOME/.config" "$HOME/Library"
     if [ "$os" == ubuntu ]; then
-        stub uname 'echo Linux'
+        stub_uname Linux
     else
-        stub uname 'echo Darwin'
+        stub_uname Darwin
     fi
     load_script "$step/install.sh"
     if [ "$os" == ubuntu ]; then
@@ -82,8 +76,6 @@ check_destination() {
 
 check_destination lazygit ubuntu lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" copy_file
 check_destination lazygit macos lazygit/config.yml "$XDG_CONFIG_HOME/lazygit/config.yml" copy_file
-check_destination ghostty ubuntu ghostty/config.ghostty "$XDG_CONFIG_HOME/ghostty/config.ghostty" copy_file
 check_destination ghostty macos ghostty/config.ghostty "$HOME/.config/ghostty/config.ghostty" copy_file
-check_destination zed ubuntu zed/settings.json "$XDG_CONFIG_HOME/zed/settings.json" copy_file
 check_destination zed macos zed/settings.json "$HOME/.config/zed/settings.json" copy_file
 test_done

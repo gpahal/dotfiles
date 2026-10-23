@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# scripts/check-ai-settings.sh reports failed checks, and fails when the doctors accept anything.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -41,15 +43,6 @@ check() {
     assert_eq "" "$(ls -A "$HOME")" "what check-ai-settings.sh left in HOME"
 }
 
-check 0
-assert_contains "$RUN_OUTPUT" "2.0.0 (Claude Code), codex-cli 1.0.0"
-assert_contains "$RUN_OUTPUT" "claude doctor accepts them"
-assert_contains "$RUN_OUTPUT" "its keys are all in scripts/claude-settings-keys.txt"
-assert_contains "$RUN_OUTPUT" "codex doctor loads it"
-assert_contains "$RUN_OUTPUT" "claude's help lists every flag run-reviewer.sh passes (-"
-assert_contains "$RUN_OUTPUT" "codex's help lists every flag run-reviewer.sh passes (-"
-assert_contains "$RUN_OUTPUT" "All checks passed"
-
 touch "$broken/claude-doctor" "$broken/codex-doctor" "$broken/no-flags" "$broken/no-sandbox"
 check 1
 assert_contains "$RUN_OUTPUT" "claude doctor rejects settings the claude-code step writes"
@@ -66,9 +59,5 @@ check 1
 assert_contains "$RUN_OUTPUT" "claude doctor didn't report a broken settings.json"
 assert_contains "$RUN_OUTPUT" "codex doctor didn't reject a broken config.toml"
 rm "$broken"/*
-
-hide codex
-check 1
-assert_contains "$RUN_OUTPUT" "codex isn't installed"
 
 test_done

@@ -30,17 +30,16 @@ installed() {
 }
 pinned="$(grep -v '^#' "$DOTFILES_TMUX_PLUGINS_LOCK" | sed 's|^[^ ]*/||' | sort)"
 
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tpm at"
-assert_eq "$pinned" "$(installed)" "the plugins' checkouts"
-run status
-assert_eq 0 "$RUN_STATUS" "status once installed"
-short="$(awk '$1 == "tmux-plugins/tmux-yank" { print substr($2, 1, 7) }' "$DOTFILES_TMUX_PLUGINS_LOCK")"
-assert_contains "$RUN_OUTPUT" "ok         tmux plugin tmux-plugins/tmux-yank at $short"
+# upgrade's tmux plugins stage
+upgrade_stage() {
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    env PATH="$STUB_DIR:/usr/bin:/bin" "$BASH" -c 'source "$1/scripts/upgrade.sh"; _step_fn tmux sync_tmux_plugins' \
+        bash "$REPO_DIR"
+}
 
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "tmux plugins already at their pinned commits"
-assert_not_contains "$RUN_OUTPUT" "Installed"
+assert_eq "$pinned" "$(installed)" "the plugins' checkouts"
+short="$(awk '$1 == "tmux-plugins/tmux-yank" { print substr($2, 1, 7) }' "$DOTFILES_TMUX_PLUGINS_LOCK")"
 
 # A plugin at another commit, as a bumped pin leaves it
 git -C "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" rev-parse HEAD > "$SANDBOX/head"
@@ -54,8 +53,13 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed tmux plugin tmux-plugins/tmux-yank at $short"
 assert_eq "$pinned" "$(installed)" "the checkouts after a re-run"
 
-# Offline, a checkout that has its pin returns to it without a fetch
+# upgrade too moves a plugin to its pin, never to HEAD
 yank="$HOME/.tmux/plugins/tmux-yank"
+git -C "$yank" checkout -q --detach "$(cat "$SANDBOX/head")"
+assert_exit 0 upgrade_stage
+assert_eq "$pinned" "$(installed)" "the checkouts after upgrade"
+
+# Offline, a checkout that has its pin returns to it without a fetch
 git -C "$yank" checkout -q --detach "$(cat "$SANDBOX/head")"
 mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" "$SANDBOX/yank"
 assert_exit 0 main
@@ -87,4 +91,5 @@ mv "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" "$SANDBOX/yank"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't install tmux plugin tmux-plugins/tmux-yank"
 assert_eq "$(grep -v tmux-yank <<< "$pinned")" "$(installed | grep -v tmux-yank)" "the checkouts with tmux-yank unreachable"
+assert_exit 1 upgrade_stage
 test_done

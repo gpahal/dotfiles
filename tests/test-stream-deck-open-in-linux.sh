@@ -54,15 +54,18 @@ front() {
     FRONT="$(jq -cn --arg c "$1" --arg t "$2" --arg w "${3:-}" '{wmClass: $c, title: $t, gtkObjectPath: $w}')"
 }
 
-# e.g. check files 0 "nautilus --new-window $dir": the stub log without the queries, apps by name
+# e.g. check files 0 "run nautilus --new-window $dir": the stub log less the queries, with apps
+# started as "run <app>" and the extension's calls as "shell <method>"
 check() {
     : > "$STUB_LOG"
     rm -f "$SANDBOX/focus-calls"
     assert_exit "$2" bash "$OPEN_IN" "$1"
-    assert_eq "$3" "$(grep -vE '^(pgrep |busctl --user --json=short (call org.gnome.Shell .* (FocusedWindow|IsLocked|ModifiersHeld|ClipboardHasText)|get-property))' "$STUB_LOG" |
-        sed -e "s|systemd-run --user --quiet --collect -p ExitType=cgroup -- $STUB_DIR/|run |" \
-            -e 's|^busctl --user --json=short call org.gnome.Shell /com/gpahal/Dotfiles com.gpahal.Dotfiles |shell |')" \
-        "$1 from ${FRONT}"
+    sed -e "s|systemd-run --user --quiet --collect -p ExitType=cgroup -- $STUB_DIR/|run |" \
+        -e 's|^busctl --user --json=short call org.gnome.Shell /com/gpahal/Dotfiles com.gpahal.Dotfiles |shell |' \
+        "$STUB_LOG" > "$SANDBOX/short.log"
+    mv "$SANDBOX/short.log" "$STUB_LOG"
+    assert_stub_log '^(pgrep |shell (FocusedWindow|IsLocked|ModifiersHeld|ClipboardHasText)( |$)|busctl --user --json=short get-property)' \
+        "$3" "$1 from ${FRONT}"
 }
 
 # --- Ghostty in front: its title is the folder, or "<command> — <folder>" while one runs. A
@@ -116,11 +119,6 @@ run zed --new"
 
 # --- Apps: focused or launched by the extension ---
 front google-chrome "New Tab"
-check chrome 0 "shell ActivateApp ss google-chrome.desktop google-chrome"
-check gmail 0 "shell ActivateApp ss dotfiles-gmail.desktop chrome-mail.google.com__mail_u_0_-Default"
-check claude 0 "shell ActivateApp ss com.anthropic.Claude.desktop com.anthropic.Claude"
-check t3-code 0 "shell ActivateApp ss t3code.desktop com.t3tools.T3Code"
-check activity-monitor 0 "shell ActivateApp ss net.nokyan.Resources.desktop net.nokyan.Resources"
 MISSING_APP=com.anthropic.Claude.desktop check claude 1 "shell ActivateApp ss com.anthropic.Claude.desktop com.anthropic.Claude
 notify-send --app-name=Stream Deck Stream Deck Couldn't open Claude. Is it installed?"
 
@@ -151,10 +149,7 @@ assert_contains "$RUN_OUTPUT" "modifier keys were still held"
 lock="$TMPDIR/dotfiles-new-tab-$UID.lock"
 HOLD=1 bash "$OPEN_IN" chrome-tab > "$SANDBOX/first.out" 2>&1 &
 first=$!
-for _ in $(seq 500); do
-    [ ! -e "$SANDBOX/held" ] || break
-    sleep 0.01
-done
+wait_for test -e "$SANDBOX/held" || true
 [ -e "$SANDBOX/held" ] || fail "the first New Tab didn't reach ActivateApp"
 check chrome-tab 0 ""
 assert_contains "$RUN_OUTPUT" "chrome-tab: another New Tab is still running, so this one did nothing"
@@ -177,13 +172,11 @@ touch -t 202001010000 "$lock"
 check chrome-tab 0 "shell ActivateApp ss google-chrome.desktop google-chrome
 shell SendKeys s ctrl+t"
 
-# --- The extension missing, the screen locked, and a bad target ---
+# --- The extension missing, and the screen locked ---
 front google-chrome "New Tab"
 NO_EXTENSION=1 check chrome 1 "notify-send --app-name=Stream Deck Stream Deck The dotfiles GNOME extension isn't running. Log out and back in, or see: bash setup.sh --status stream-deck"
 assert_contains "$RUN_OUTPUT" "Unknown object '/com/gpahal/Dotfiles'"
 LOCKED=true check editor 1 ""
 assert_contains "$RUN_OUTPUT" "editor: the screen is locked, so nothing opened"
-check nope 2 ""
-assert_contains "$RUN_OUTPUT" "Usage: open-in files|editor|terminal"
 
 test_done

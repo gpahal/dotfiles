@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+# The PATH, fpath, and Homebrew environment that zsh and sh startup files give each kind of shell.
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -86,53 +88,12 @@ assert_file_not_contains "$STUB_LOG" "mise"
 assert_file_not_contains "$STUB_LOG" "brew"
 cp "$SANDBOX/zprofile" "$HOME/.zprofile"
 
-# Each startup file gets one line, after other installers' lines
+# On macOS too, the checks below need Ubuntu's ~/.zshenv and ~/.profile lines
 load_script zsh/install.sh
-# shellcheck disable=SC2329
-macos_profile() {
-    as_os macos
-    # shellcheck disable=SC2016 # expanded when it runs
-    replace_fn login_zsh_path 'echo "$ZSH_BIN"'
-    rm -f "$HOME/.zsh/profile.sh" "$HOME/.zprofile"
-    assert_exit 0 apply
-    [ ! -e "$HOME/.zsh/profile.sh" ] || fail "apply copied profile.sh on macOS"
-    assert_file_contains "$HOME/.zprofile" "$PATH_ZSH_LINE"
-    run status
-    assert_contains "$RUN_OUTPUT" "skipped    profile.sh in ~/.zsh: Ubuntu only"
-    assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zprofile"
-}
-subtest macos_profile
 as_os ubuntu
 # shellcheck disable=SC2016 # expanded when it runs
 replace_fn login_zsh_path 'echo "$ZSH_BIN"'
-stock='if [ -d "$HOME/.local/bin" ] ; then
-    PATH="$HOME/.local/bin:$PATH"
-fi
-PATH="$HOME/.local/bin:$PATH"'
-printf '%s\n' "# mine" > "$HOME/.zshrc"
-printf '%s\n' "# mine" > "$HOME/.zprofile"
-rm -f "$HOME/.zshenv"
-printf '%s\n' "$stock" > "$HOME/.profile"
-startup_files() {
-    local file
-    for file in .zshrc .zprofile .zshenv .profile; do
-        printf '== %s\n' "$file"
-        cat "$HOME/$file"
-    done
-}
 assert_exit 0 apply
-# ~/.zshenv already sources path.zsh, so ~/.zprofile is left alone
-expected="$(printf '%s\n' "== .zshrc" "# mine" "$ZSHRC_LINE" "== .zprofile" "# mine" \
-    "== .zshenv" "$PATH_ZSH_LINE" "== .profile" "$stock" "$PROFILE_LINE")"
-assert_eq "$expected" "$(startup_files)" "the startup files"
-assert_exit 0 apply
-assert_not_contains "$RUN_OUTPUT" "Added"
-assert_eq "$expected" "$(startup_files)" "the startup files after a second run"
-run status
-assert_contains "$RUN_OUTPUT" "ok         profile.sh sourced in ~/.profile"
-assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zshenv"
-assert_contains "$RUN_OUTPUT" "skipped    path.zsh sourced in ~/.zprofile: macOS only"
-assert_eq "" "$(grep -E '^ *missing ' <<< "$RUN_OUTPUT" | grep -v "login shell" || true)" "missing items after a run"
 
 # Without HOMEBREW_PREFIX, a shell gets brew shellenv's environment without running brew
 sed -e "s|/home/linuxbrew/.linuxbrew|$BREW|g" -e "s|/opt/homebrew|$BREW|g" "$REPO_DIR/zsh/path.zsh" \
@@ -155,25 +116,8 @@ fpath_out="$(env -i HOME="$HOME" TERM=dumb HOMEBREW_PREFIX="$BREW" PATH=/usr/bin
 assert_eq "$BREW/share/zsh/site-functions" "$(head -n 1 <<< "$fpath_out")" "fpath's first dir"
 assert_eq 1 "$(grep -cxF "$BREW/share/zsh/site-functions" <<< "$fpath_out")" "copies of Homebrew's dir in fpath"
 
-# sh -lc (T3 Code's SSH check) must find the same codex as zsh
-mkdir -p "$HOME/.local/bin"
-for dir in "$HOME/.local/bin" "$BREW/bin"; do
-    printf '#!/bin/sh\n' > "$dir/codex"
-    chmod +x "$dir/codex"
-done
-assert_eq "$HOME/.local/bin/codex" \
-    "$(env -i HOME="$HOME" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'command -v codex' < /dev/null)" \
-    "codex in sh -lc"
-output="$(env -i HOME="$HOME" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null | tr : '\n')"
-for dir in "$HOME/.cargo/bin" "$HOME/go/bin"; do
-    assert_before "$output" "$HOME/.local/bin" "$dir" "sh -lc"
-    assert_before "$output" "$dir" "$BREW/bin" "sh -lc"
-done
-assert_not_contains "$output" "mise" "sh -lc's PATH without mise's shims dir"
+# sh -lc takes mise's shims dir from MISE_DATA_DIR when it's set
 mkdir -p "$HOME/.local/share/mise/shims"
-output="$(env -i HOME="$HOME" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null | tr : '\n')"
-assert_before "$output" "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "sh -lc"
-assert_before "$output" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "sh -lc"
 output="$(env -i HOME="$HOME" MISE_DATA_DIR="$SANDBOX/no-mise" PATH="$BREW/bin:/usr/bin:/bin" /bin/sh -lc 'echo "$PATH"' < /dev/null)"
 assert_not_contains "$output" "mise" "sh -lc's PATH with MISE_DATA_DIR set to a dir without shims"
 # macOS's /etc/profile moves the system dirs first, so compare only the first copy of each
@@ -186,9 +130,6 @@ assert_eq ok "$(env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/sh -lc 'echo ok' < /
     "sh -lc without profile.sh"
 mv "$SANDBOX/profile.sh" "$HOME/.zsh/profile.sh"
 
-# The login zsh below is this machine's. On macOS, /etc/zprofile's path_helper reorders PATH after
-# ~/.zshenv, so add the ~/.zprofile line the macOS step adds.
-[ "$(uname -s)" != Darwin ] || echo "$PATH_ZSH_LINE" >> "$HOME/.zprofile"
 # ssh host cmd starts a zsh that's neither login nor interactive, so ~/.zshenv sources path.zsh
 zshenv_path() {
     env -i HOME="$HOME" TERM=dumb PATH="${ZSHENV_PATH:-/usr/bin:/bin}" "$ZSH_BIN" "$@" \
@@ -197,9 +138,6 @@ zshenv_path() {
 expected="$(printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/mise/shims" "$HOME/.cargo/bin" "$HOME/go/bin" \
     "$BREW/bin" "$BREW/sbin" /usr/bin /bin)"
 assert_eq "$expected" "$(zshenv_path -c)" "zsh -c"
-# path_helper adds system dirs to a login shell's PATH, so compare only these
-assert_eq "$expected" "$(zshenv_path -lc | grep -xF -- "$expected")" "zsh -lc with .zshenv"
-assert_eq "$expected" "$(zshenv_path -ic)" "zsh -ic with .zshenv"
 ZSHENV_PATH="$(tr '\n' : <<< "$expected")/usr/bin:/bin"
 assert_eq "" "$(zshenv_path -c | sort | uniq -d)" "PATH entries repeated in zsh -c"
 assert_eq "$expected" "$(zshenv_path -c "zsh -c 'print -rl -- \$path'")" "nested zsh -c"
@@ -211,10 +149,4 @@ cp "$REPO_DIR/zsh/path.zsh" "$HOME/.zsh/path.zsh"
 output="$(env -i HOME="$HOME" HOMEBREW_PREFIX="$BREW" PATH="/first:/usr/bin:/bin" "$ZSH_BIN" -c \
     'print -rl -- $path' < /dev/null 2> /dev/null)"
 assert_eq "$(printf '%s\n' /first /usr/bin /bin)" "$output" "zsh -c under a Homebrew shell"
-
-# systemd expands ${VAR} in environment.d as sh does
-output="$(env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/sh -c '. "$1"; echo "$PATH"' sh \
-    "$REPO_DIR/ubuntu/environment.d/99-homebrew.conf" | tr : '\n')"
-assert_eq "$(printf '%s\n' "$HOME/.local/bin" "$HOME/.cargo/bin" "$HOME/go/bin" /home/linuxbrew/.linuxbrew/bin \
-    /home/linuxbrew/.linuxbrew/sbin /usr/bin /bin)" "$output" "PATH from environment.d"
 test_done

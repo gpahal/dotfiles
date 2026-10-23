@@ -40,6 +40,10 @@ apply() {
         echo "Touch ID in tmux: $blocker." >&2
         return 1
     fi
+    if blocker="$(sudo_local_blocker)"; then
+        echo "Touch ID for sudo: $blocker." >&2
+        return 1
+    fi
 
     echo "Touch ID for sudo ($SUDO_LOCAL):"
     if [ ! -f "$REATTACH_MODULE" ] && ! reattach_source_installed; then
@@ -48,7 +52,8 @@ apply() {
     fi
     desired="$(desired_sudo_local)"
     reattach_copy_needed && copy=true
-    [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ] || write=true
+    [ -f "$SUDO_LOCAL" ] && [ "$desired" == "$(cat "$SUDO_LOCAL")" ] && [ -z "$(sudo_local_unsafe)" ] ||
+        write=true
     if ! "$copy" && ! "$write"; then
         echo "  Touch ID for sudo is already on."
         return 0

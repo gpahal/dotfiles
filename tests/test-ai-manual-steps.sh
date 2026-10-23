@@ -52,9 +52,11 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Open "
 
 apps com.mitchellh.ghostty $ok com.anthropic.claudefordesktop $((ALLOWED | TEMPORARY)) com.t3tools.t3code $ok
+# DOTFILES_ASSUME_YES counts only on a test machine
+stub systemd-detect-virt
 DOTFILES_ASSUME_YES=1 assert_exit 0 main
 assert_exit 0 main
-assert_eq "" "$(grep -v '^plutil' "$STUB_LOG" || true)" "commands run without a yes"
+assert_eq "" "$(grep -v -e '^plutil' -e '^systemd-detect-virt' "$STUB_LOG" || true)" "commands run without a yes"
 
 answer yes
 run open_manual_steps <<< $'\n\n'

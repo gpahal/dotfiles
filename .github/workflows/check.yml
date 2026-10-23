@@ -71,12 +71,11 @@ jobs:
             while IFS= read -r file; do
               case "$file" in
                 .github/* | lib/*) brew=true ai=true ;;
-                homebrew/* | scripts/check-brew-packages.sh | scripts/lib/brew.sh | tests/test-check-brew-packages.sh) brew=true ;;
+                homebrew/* | scripts/check-brew-packages.sh | scripts/lib/brew.sh) brew=true ;;
                 ai_tools/claude-code/* | ai_tools/codex/* | ai_tools/t3-code/* | ai_tools/lib/* | \
                   ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh | \
                   scripts/check-ai-settings.sh | scripts/check-claude-keys.sh | scripts/check-t3-settings.sh | \
-                  scripts/claude-settings-keys.txt | scripts/lib/ai-settings.sh | tests/test-check-ai-settings.sh | \
-                  tests/test-check-t3-settings.sh) ai=true ;;
+                  scripts/claude-settings-keys.txt | scripts/lib/ai-settings.sh) ai=true ;;
               esac
             done < "$RUNNER_TEMP/changed-files"
           fi

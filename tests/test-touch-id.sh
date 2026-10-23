@@ -248,6 +248,36 @@ assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 chmod -N "$MODULE" "$DIR"
 
+# Where sudo reads sudo_local, which main can't fix, and so refuses with no sudo: <case>
+for unsafe in pam-dir-writable sudo-local-link; do
+    set_up
+    case "$unsafe" in
+        pam-dir-writable)
+            chmod 775 "$DOTFILES_PAM_DIR"
+            message="$DOTFILES_PAM_DIR isn't root's alone to write; run sudo chown root $DOTFILES_PAM_DIR && sudo chmod go-w $DOTFILES_PAM_DIR"
+            ;;
+        sudo-local-link)
+            mv "$SUDO_LOCAL" "$SANDBOX/real-sudo-local"
+            ln -s "$SANDBOX/real-sudo-local" "$SUDO_LOCAL"
+            message="$SUDO_LOCAL is a symlink; remove it with sudo rm $SUDO_LOCAL"
+            ;;
+    esac
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $message"
+    assert_exit 1 main
+    assert_contains "$RUN_OUTPUT" "Touch ID for sudo: $message."
+    assert_file_not_contains "$STUB_LOG" "sudo"
+done
+
+# A sudo_local others can write is reported, and main rewrites it as a fresh read-only file
+set_up
+chmod 666 "$SUDO_LOCAL"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $SUDO_LOCAL isn't root's alone to write"
+assert_exit 0 main
+assert_eq "-r--r--r--" "$(/bin/ls -l "$SUDO_LOCAL" | cut -c 1-10)" "sudo_local's mode after the rewrite"
+assert_exit 0 main --status
+
 # A dangling module link isn't loaded, so it doesn't block Touch ID alone
 set_up
 rm -rf "$SANDBOX/brew" "$MODULE"

@@ -59,6 +59,23 @@ pam_entry_unsafe() {
     fi
 }
 
+# Prints a problem with where sudo reads sudo_local that just touch-id can't fix, and succeeds;
+# fails when there's none. A link is refused, since writing it would write its target.
+sudo_local_blocker() {
+    local reason
+    reason="$(pam_entry_unsafe "$PAM_DIR")"
+    if [ -z "$reason" ] && [ -L "$SUDO_LOCAL" ]; then
+        reason="$(pam_entry_unsafe "$SUDO_LOCAL")"
+    fi
+    [ -n "$reason" ] && echo "$reason"
+}
+
+# Prints why non-root can change sudo_local, or nothing. just touch-id's rewrite fixes it, since it
+# installs a fresh root-owned file.
+sudo_local_unsafe() {
+    [ -L "$SUDO_LOCAL" ] || pam_entry_unsafe "$SUDO_LOCAL"
+}
+
 reattach_in_use() {
     [ -f "$REATTACH_MODULE" ] || reattach_source_installed
 }
@@ -150,15 +167,23 @@ sudo_local_rescue() {
 
 # status_touch_id <state for off: missing|skipped>
 status_touch_id() {
-    local off="$1" module blocker rescue
+    local off="$1" module blocker unsafe rescue
     if [ -e "$SUDO_LOCAL" ] && [ ! -r "$SUDO_LOCAL" ]; then
         status_item unverified "Touch ID for sudo: $SUDO_LOCAL isn't readable; check it with sudo cat $SUDO_LOCAL"
         return 0
     fi
+    if blocker="$(sudo_local_blocker)"; then
+        status_item missing "Touch ID for sudo: $blocker"
+    fi
+    unsafe="$(sudo_local_unsafe)"
     if ! has_tid; then
         status_item "$off" "Touch ID for sudo: off, an option that just touch-id turns on"
     elif [ "$(cat "$SUDO_LOCAL")" == "$(desired_sudo_local)" ]; then
-        status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
+        if [ -n "$unsafe" ]; then
+            status_item missing "Touch ID for sudo: $unsafe, or re-run just touch-id, which rewrites it"
+        else
+            status_item ok "Touch ID for sudo, in $SUDO_LOCAL"
+        fi
         if blocker="$(reattach_blocker)"; then
             status_item missing "Touch ID in tmux: $blocker"
         elif ! reattach_in_use; then

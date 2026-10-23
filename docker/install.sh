@@ -78,7 +78,7 @@ install_docker() {
 
 # Reads the group database, not this process's groups, so it's true before a new login
 in_docker_group() {
-    case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
+    case " $(id -nG "$CURRENT_USER") " in *" docker "*) ;; *) return 1 ;; esac
 }
 
 starts_at_boot() {
@@ -140,7 +140,7 @@ docker_status_run() {
     DOCKER_STATUS=0
     if ! in_docker_group; then
         if ! sudo_ready; then
-            status_needs_root "$label:" "$(id -un) isn't in the docker group"
+            status_needs_root "$label:" "$CURRENT_USER isn't in the docker group"
             return 1
         fi
         docker=(sudo -n docker)
@@ -150,7 +150,7 @@ docker_status_run() {
     case "$DOCKER_OUT" in
         # Joined the group after this session started
         *"permission denied"*)
-            status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
+            status_item unverified "$label: $CURRENT_USER can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
             ;;
         *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
             status_item info "$label: the daemon isn't running"
@@ -247,9 +247,9 @@ status() {
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(apt_release_url "$DOCKER_REPO")"
     # Optional: apply asks once and a no lasts
     if in_docker_group; then
-        status_item ok "$(id -un) in the docker group"
+        status_item ok "$CURRENT_USER in the docker group"
     else
-        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
+        status_item info "$CURRENT_USER not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $CURRENT_USER adds you, and is root-equivalent"
     fi
     items_status socket_ready starts_at_boot
     if daemon_config_unreadable && ! sudo_ready; then
@@ -359,11 +359,11 @@ add_to_docker_group() {
     echo "  The docker group lets docker run without sudo, for you and T3 Code's agents. It's"
     echo "  root-equivalent: anything running as you, agents included, can get root with"
     echo "  docker run -v /:/host. Without it, run sudo docker."
-    if ! confirm "  Add $(id -un) to the docker group, with sudo?"; then
-        echo "  Left $(id -un) out of the docker group."
+    if ! confirm "  Add $CURRENT_USER to the docker group, with sudo?"; then
+        echo "  Left $CURRENT_USER out of the docker group."
         return 0
     fi
-    sudo usermod -aG docker "$(id -un)" || return 1
+    sudo usermod -aG docker "$CURRENT_USER" || return 1
     echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
     echo "  service and its agents) and a running tmux server keep their old groups until you"
     echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."

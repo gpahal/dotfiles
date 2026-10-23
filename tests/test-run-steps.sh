@@ -76,9 +76,11 @@ assert_contains "$RUN_OUTPUT" "The caught-INT step was interrupted; stopping."
 assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 caught-INT" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIGINT"
-rm -f "$SANDBOX/ran"
+# Reports run at once, so later ones have started; they print nothing after the interrupted one
 assert_exit 130 run_steps --status caught-INT last
-assert_eq "caught-INT --status" "$(cat "$SANDBOX/ran")" "reports run up to one during which the runner got SIGINT"
+assert_contains "$RUN_OUTPUT" "The caught-INT step was interrupted; stopping."
+assert_not_contains "$RUN_OUTPUT" "last ran"
+assert_not_contains "$RUN_OUTPUT" "Failed steps"
 
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps "" sigpipe last
@@ -90,8 +92,8 @@ assert_not_contains "$RUN_OUTPUT" "interrupted"
 rm -f "$SANDBOX/ran"
 assert_exit 3 run_steps --status first attention
 assert_contains "$RUN_OUTPUT" "Needs attention: attention. Run: bash $0 attention"
-assert_eq "first --status
-attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
+assert_eq "attention --status
+first --status" "$(sort "$SANDBOX/ran")" "steps run with --status"
 assert_exit 3 run_steps --status unknown
 assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
 assert_exit 1 run_steps --status cut-short
@@ -102,6 +104,43 @@ assert_exit 1 run_steps --status attention broken
 assert_contains "$RUN_OUTPUT" "Needs attention: attention."
 assert_contains "$RUN_OUTPUT" "Failed steps: broken"
 assert_contains "$RUN_OUTPUT" "re-run them with: bash $0 --status broken"
+
+# Reports run at once: slow ends only after fast has, yet prints first. stdout is the serial
+# run's, and each report's stderr follows it.
+fake_step slow '[ "${1:-}" != --status ] || {
+i=0
+until [ -e "$SANDBOX/fast-done" ]; do
+    [ "$i" -lt 100 ] || { echo "fast never finished" >&2; exit 1; }
+    sleep 0.1
+    i=$((i + 1))
+done
+echo "slow warning" >&2
+echo "  ok         slow"
+}'
+fake_step fast '[ "${1:-}" != --status ] || { echo "  missing    fast"; echo "fast warning" >&2; touch "$SANDBOX/fast-done"; exit 3; }'
+status=0
+out="$(run_steps --status slow fast 2> "$SANDBOX/status.err")" || status=$?
+assert_eq 3 "$status" "the exit of parallel reports"
+assert_eq "slow:
+  ok         slow
+fast:
+  missing    fast
+
+Needs attention: fast. Run: bash $0 fast" "$out" "parallel reports' stdout"
+assert_eq "slow warning
+fast warning" "$(cat "$SANDBOX/status.err")" "parallel reports' stderr"
+assert_eq "" "$(ls -A "$TMPDIR")" "temp files left after reports"
+
+# An interrupt stops the reports and what they started, and prints none after the current one
+fake_step hang '[ "${1:-}" != --status ] || { sleep 30 & echo "$!" > "$SANDBOX/hang-child"; wait; }'
+fake_step stopper '[ "${1:-}" != --status ] || { until [ -s "$SANDBOX/hang-child" ]; do sleep 0.1; done; kill -INT "$PPID"; }'
+fake_step after '[ "${1:-}" != --status ] || echo "  ok         after"'
+assert_exit 130 run_steps --status hang stopper after
+assert_contains "$RUN_OUTPUT" "The hang step was interrupted; stopping."
+assert_not_contains "$RUN_OUTPUT" "after"
+assert_not_contains "$RUN_OUTPUT" "Failed steps"
+wait_for process_exited "$(cat "$SANDBOX/hang-child")" || fail "a report's child outlived the interrupt"
+assert_eq "" "$(ls -A "$TMPDIR")" "temp files left after interrupted reports"
 
 # STEP_NEEDS: a failed step skips the steps that need it, directly or not, but not their reports
 fake_step homebrew 'exit 1'
@@ -121,7 +160,7 @@ assert_eq "runtimes" "$(cat "$SANDBOX/ran")" "steps run without homebrew in the 
 rm -f "$SANDBOX/ran"
 assert_exit 1 run_steps --status homebrew runtimes
 assert_eq "homebrew --status
-runtimes --status" "$(cat "$SANDBOX/ran")" "reports run after homebrew's failed"
+runtimes --status" "$(sort "$SANDBOX/ran")" "reports run after homebrew's failed"
 
 as_os macos
 
@@ -144,20 +183,14 @@ assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On
 # but carries on after one that exited 130, as `just status` relies on
 runner_dir="$SANDBOX/runner"
 mkdir -p "$runner_dir/slow"
-printf '%s\n' '#!/bin/bash' "touch \"$SANDBOX/slow-started\"" 'sleep 30' > "$runner_dir/slow/install.sh"
+printf '%s\n' '#!/bin/bash' 'sleep 30 &' "echo \"\$!\" > \"$SANDBOX/slow-child\"" \
+    "touch \"$SANDBOX/slow-started\"" 'wait' > "$runner_dir/slow/install.sh"
 printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.sh\"" \
     "source \"$REPO_DIR/lib/runner.sh\"" 'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' \
     "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' > "$runner_dir/setup.sh"
 printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
 stub_uname Darwin
-# kill -0 still finds a zombie, so check ps
-exited() {
-    case "$(ps -o stat= -p "$1" 2> /dev/null)" in
-        '' | Z*) return 0 ;;
-    esac
-    return 1
-}
 status=0
 caller=""
 # A failed assertion or timeout mustn't leave the caller's group running
@@ -169,7 +202,7 @@ caller=$!
 set +m
 if wait_for test -e "$SANDBOX/slow-started"; then
     kill -INT -- "-$caller"
-    wait_for exited "$caller" || kill -KILL -- "-$caller"
+    wait_for process_exited "$caller" || kill -KILL -- "-$caller"
 else
     fail "the runner's step didn't start"
     kill -KILL -- "-$caller"
@@ -178,4 +211,5 @@ wait "$caller" || status=$?
 assert_eq 130 "$status" "the caller's status after Ctrl-C"
 assert_file_contains "$SANDBOX/caller.out" "The slow step was interrupted; stopping."
 assert_file_not_contains "$SANDBOX/caller.out" continued
+wait_for process_exited "$(cat "$SANDBOX/slow-child")" || fail "the step's child outlived Ctrl-C"
 test_done

@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# lib/common.sh's confirm, memo, regex_escape, version_at_least, run_bounded, and quitting a running app
-# to merge its settings, lib/gnome.sh's skip_without_desktop, and stub_sudo_exec's refusals.
+# lib/common.sh's confirm, memo, file_is, parent_dir, regex_escape, version_at_least, run_bounded,
+# and quitting a running app to merge its settings, lib/gnome.sh's skip_without_desktop, and
+# stub_sudo_exec's refusals.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -71,6 +72,27 @@ else
 fi
 run bash -c 'set -o pipefail; . "$0/lib/common.sh"; confirm "Proceed?" | cat' "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "confirm's status with stdin from /dev/null and stdout piped"
+
+# --- file_is: compares as $(cat) would, dropping trailing newlines ---
+f="$SANDBOX/file-is"
+for content in "" "a" "a"$'\n' "a"$'\n\n\n' $'\n\n' " a b "$'\n' $'a\n\nb\n' "a\\"; do
+    printf '%s' "$content" > "$f"
+    for want in "" "a" " a b " $'a\n\nb' $'a\n' "a\\"; do
+        expected=1
+        [ "$(cat "$f")" != "$want" ] || expected=0
+        assert_exit "$expected" file_is "$f" "$want"
+    done
+done
+rm "$f"
+assert_exit 0 file_is "$f" ""
+assert_exit 1 file_is "$f" "a"
+assert_eq "" "$RUN_OUTPUT" "file_is's output for a missing file"
+
+# --- parent_dir: dirname's answer, a path with no slash included ---
+for path in /a/b/c /a "a b/c" a; do
+    parent_dir dir "$path"
+    assert_eq "$(dirname "$path")" "$dir" "parent_dir of $path"
+done
 
 # --- regex_escape ---
 for s in 'Logi Options+' '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code' 'a.b*c?d[e]f{1}|g^h$i\j'; do

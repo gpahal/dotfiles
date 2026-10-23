@@ -74,9 +74,9 @@ login_zsh_path() {
 # Not $SHELL: it's stale after chsh and unset under cron or docker exec
 current_login_shell() {
     if is_macos; then
-        dscl . -read "/Users/$(id -un)" UserShell | awk '{print $2}'
+        dscl . -read "/Users/$CURRENT_USER" UserShell | awk '{print $2}'
     else
-        getent passwd "$(id -un)" | cut -d: -f7
+        getent passwd "$CURRENT_USER" | cut -d: -f7
     fi
 }
 
@@ -120,7 +120,7 @@ set_login_shell() {
     fi
     # Root's chsh doesn't ask for a password
     if sudo_cached; then
-        sudo -n chsh -s "$zsh_path" "$(id -un)" && return 0
+        sudo -n chsh -s "$zsh_path" "$CURRENT_USER" && return 0
     elif chsh -s "$zsh_path"; then
         return 0
     fi

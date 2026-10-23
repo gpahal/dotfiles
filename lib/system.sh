@@ -7,10 +7,11 @@
 # install that writes the file, so a failed chgrp can't leave it root:root. A new directory gets
 # 755 regardless of umask so hook users such as nut can read it.
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:+=$3}" opts=() status=0
+    local src="$1" dest="$2" mode="${3:+=$3}" opts=() status=0 dir
     [ -z "${4:-}" ] || opts+=(-g "$4")
     [ -z "${5:-}" ] || opts+=(-o "$5")
-    sudo test -d "$(dirname "$dest")" || sudo install -d -m 0755 "$(dirname "$dest")" || return 1
+    parent_dir dir "$dest"
+    sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
     replace_file --sudo "$src" "$dest" "${mode:-644}" ${opts[@]+"${opts[@]}"} || status=$?
     case "$status" in
         0) return 0 ;;
@@ -83,7 +84,7 @@ LINGER_DIR=/var/lib/systemd/linger
 
 # systemd starts your user services at boot, without a login
 lingering() {
-    [ -e "$LINGER_DIR/$(id -un)" ]
+    [ -e "$LINGER_DIR/$CURRENT_USER" ]
 }
 
 # 000 when the host can't be reached

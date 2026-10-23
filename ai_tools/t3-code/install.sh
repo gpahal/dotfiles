@@ -725,7 +725,7 @@ t3_code_process_groups() {
 # The service keeps the user manager's groups from before the docker step added you
 warn_t3_code_service_docker_group() {
     local gid pid groups
-    [[ " $(id -nG "$(id -un)" 2>/dev/null) " == *" docker "* ]] || return 0
+    [[ " $(id -nG "$CURRENT_USER" 2>/dev/null) " == *" docker "* ]] || return 0
     gid="$(getent group docker 2>/dev/null | cut -d: -f3)"
     [ -n "$gid" ] && pid="$(t3_code_main_pid)" || return 0
     groups="$(t3_code_process_groups "$pid")" || return 0
@@ -735,10 +735,68 @@ warn_t3_code_service_docker_group() {
     echo "  \`sudo systemctl restart user@$(id -u)\`, which stops the service and tmux."
 }
 
+# Status starts its slow t3 calls first, so they run while it checks the rest, each into files in
+# T3_CODE_CALLS. t3_code_collect waits for one, outside $( ), which can't wait for this shell's
+# jobs; t3_code_call then prints its output and returns its status. Apply's calls run as made.
+T3_CODE_CALLS=""
+
+# t3_code_start <name> <t3 arg...>: without a temp dir, the call runs when it's made
+t3_code_start() {
+    local name="$1"
+    shift
+    if [ -z "$T3_CODE_CALLS" ]; then
+        T3_CODE_CALLS="$(mktemp -d)" || {
+            T3_CODE_CALLS=""
+            return 0
+        }
+        # A background job ignores SIGINT. No EXIT trap: it would replace a test's.
+        trap 't3_code_stop_calls; exit 130' INT
+        trap 't3_code_stop_calls; exit 143' TERM
+        trap 't3_code_stop_calls; exit 129' HUP
+    fi
+    "$HOME/.local/bin/t3" "$@" > "$T3_CODE_CALLS/$name.out" 2> "$T3_CODE_CALLS/$name.err" < /dev/null &
+    echo "$!" > "$T3_CODE_CALLS/$name.pid"
+}
+
+t3_code_collect() {
+    local dir="$T3_CODE_CALLS" pid status=0
+    [ -n "$dir" ] && [ -e "$dir/$1.pid" ] || return 0
+    read -r pid < "$dir/$1.pid"
+    wait "$pid" || status=$?
+    rm "$dir/$1.pid"
+    echo "$status" > "$dir/$1.status"
+}
+
+# t3_code_call <name> <t3 arg...>
+t3_code_call() {
+    local name="$1" dir="$T3_CODE_CALLS" status
+    shift
+    if [ -n "$dir" ] && [ -e "$dir/$name.status" ]; then
+        cat "$dir/$name.out"
+        cat "$dir/$name.err" >&2
+        read -r status < "$dir/$name.status"
+        return "$status"
+    fi
+    "$HOME/.local/bin/t3" "$@"
+}
+
+t3_code_stop_calls() {
+    local file pid
+    [ -n "$T3_CODE_CALLS" ] || return 0
+    for file in "$T3_CODE_CALLS"/*.pid; do
+        [ -e "$file" ] || continue
+        read -r pid < "$file"
+        kill "$pid" 2> /dev/null || true
+    done
+    rm -rf "$T3_CODE_CALLS"
+    T3_CODE_CALLS=""
+    trap - INT TERM HUP
+}
+
 # Without sudo, `t3 browser setup` changes nothing. Returns 0 ready, 1 needs root, 2 failed.
 t3_code_browser_ready() {
     local report
-    report="$("$HOME/.local/bin/t3" browser setup 2>&1)" || return 2
+    report="$(t3_code_call browser browser setup 2>&1)" || return 2
     [[ "$report" != *"needs root"* ]]
 }
 
@@ -795,7 +853,7 @@ t3_code_status_listeners() {
 # The phone app needs this for push notifications. The server links only when it starts.
 t3_code_status_connect() {
     local name="T3 Connect linked and publishing agent activity" state
-    state="$("$HOME/.local/bin/t3" connect status --json 2>/dev/null |
+    state="$(t3_code_call connect connect status --json 2>/dev/null |
         jq -r 'if .linked == true and .publishAgentActivity == true then "ok"
             elif .linked == true then "publish"
             elif .desired == true and .authenticated == true then "restart"
@@ -839,6 +897,12 @@ status() {
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
         return 0
     fi
+    local have_cli=false ready=0
+    [ -x "$HOME/.local/bin/t3" ] && have_cli=true
+    if "$have_cli"; then
+        status_for_alerts || t3_code_start browser browser setup
+        ! "$jq" || t3_code_start connect connect status --json
+    fi
     if ! skip_without_desktop --status "T3 Code desktop app"; then
         t3_code_ubuntu_items
         items_status "apt_installed t3code"
@@ -852,8 +916,6 @@ status() {
             fi
         fi
     fi
-    local have_cli=false ready=0
-    [ -x "$HOME/.local/bin/t3" ] && have_cli=true
     status_check "t3 CLI in ~/.local/bin" "$have_cli"
     status_check "Telemetry off, port $T3_CODE_PORT, and host $T3_CODE_HOST in the service drop-in" \
         t3_code_drop_in_current
@@ -871,6 +933,7 @@ status() {
     if "$have_cli" && status_for_alerts; then
         status_item unverified "T3 Code's browser sandbox: skipped by --for-alerts, since it runs t3 browser setup"
     elif "$have_cli"; then
+        t3_code_collect browser
         t3_code_browser_ready || ready=$?
         case "$ready" in
             0) status_item ok "T3 Code's browser can run in Chrome's sandbox" ;;
@@ -880,6 +943,7 @@ status() {
     fi
     if "$have_cli"; then
         if "$jq"; then
+            t3_code_collect connect
             t3_code_status_connect
         else
             status_item unknown "T3 Connect: $(missing_cmd_hint jq)"
@@ -887,6 +951,7 @@ status() {
     else
         status_item unknown "T3 Connect: needs the t3 CLI"
     fi
+    t3_code_stop_calls
 }
 
 apply() {

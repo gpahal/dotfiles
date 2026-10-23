@@ -9,9 +9,17 @@ default:
 check:
     #!/bin/bash
     set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'kill $(jobs -p) 2> /dev/null || true; rm -rf "$tmp"' EXIT
+    # The docs, skills, and keys checks run while shellcheck does, and print after it
+    bash scripts/check-docs.sh > "$tmp/docs" 2>&1 &
+    docs=$!
+    bash scripts/check-skills.sh > "$tmp/skills" 2>&1 &
+    skills=$!
+    bash scripts/check-claude-keys.sh > /dev/null 2> "$tmp/keys" &
+    keys=$!
     # Scripts by name, or by a bash shebang. git still lists a deleted but unstaged file, so skip it.
-    files="$(mktemp)"
-    trap 'rm -f "$files"' EXIT
+    files="$tmp/files"
     git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
         [ -f "$f" ] || continue
         case "$f" in
@@ -20,14 +28,24 @@ check:
         esac
         printf '%s\0' "$f"
     done > "$files"
-    xargs -0 -n 8 -P "$(getconf _NPROCESSORS_ONLN)" shellcheck < "$files"
+    # One job per physical core: more is slower
+    if [ "$(uname -s)" == Darwin ]; then
+        cores="$(sysctl -n hw.physicalcpu 2> /dev/null || true)"
+    else
+        cores="$( (lscpu -p=socket,core | grep -v '^#' | sort -u | wc -l | tr -d ' ') 2> /dev/null || true)"
+    fi
+    case "$cores" in '' | 0 | *[!0-9]*) cores="$(getconf _NPROCESSORS_ONLN)" ;; esac
+    xargs -0 -n 8 -P "$cores" shellcheck < "$files"
     bad="$(xargs -0 grep -nE '\b(mapfile|readarray|coproc)\b|\b(declare|local|typeset) +-[a-zA-Z]*[Ang]|\[\[ -v |(\btest|\[) +-v |\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^|,)|\$\{[A-Za-z_][A-Za-z0-9_]*\[-[0-9]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?@[QEPAaUuLK]\}|&>>|;;&|(^|[^;]);&([[:space:]]|$)|\|&|\bwait +-n\b|\bEPOCH(SECONDS|REALTIME)\b|\$\{?BASHPID\b|\bprintf .*%\([^)]*\)T|(^|[^$])\{[A-Za-z_][A-Za-z0-9_]*\}[<>]|\bshopt .*\b(globstar|lastpipe)\b' /dev/null < "$files")" || true
     [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
     [ "$(uname -s)" != Darwin ] || xargs -0 -n 1 /bin/bash -n < "$files"
     for f in zsh/*.zsh; do zsh -n "$f"; done
-    bash scripts/check-docs.sh
-    bash scripts/check-skills.sh
-    bash scripts/check-claude-keys.sh > /dev/null
+    failed=0
+    for check in docs skills keys; do
+        wait "${!check}" || failed=1
+        cat "$tmp/$check" >&2
+    done
+    exit "$failed"
 
 # Run all tests, or the named ones, under /bin/bash (3.2 on macOS)
 [positional-arguments]
@@ -62,7 +80,26 @@ setup-ai *steps:
 
 # Report setup status; exits 1 on failure, 3 on attention
 status:
-    @a=0; bash setup.sh --status || a=$?; echo; b=0; bash ai_tools/setup.sh --status || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
+    #!/bin/bash
+    set -uo pipefail
+    # The AI report runs beside setup's, into files, and prints after it
+    dir="$(mktemp -d)" || exit 1
+    bash ai_tools/setup.sh --status > "$dir/out" 2> "$dir/err" &
+    ai=$!
+    # A background job ignores SIGINT, so stop it, then die of the signal as a runner does
+    stop() { kill "$ai" 2> /dev/null; wait "$ai"; rm -rf "$dir"; trap - "$1"; kill -s "$1" $$; }
+    trap 'stop INT' INT
+    trap 'stop TERM' TERM
+    trap 'stop HUP' HUP
+    a=0; bash setup.sh --status || a=$?
+    b=0; wait "$ai" || b=$?
+    trap - INT TERM HUP
+    echo
+    cat "$dir/out"
+    cat "$dir/err" >&2
+    rm -rf "$dir"
+    for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done
+    [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
 
 # Sign git commits and tags with an SSH key
 git-signing:

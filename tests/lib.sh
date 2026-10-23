@@ -12,7 +12,8 @@
 # stub_dpkg_arch, stub_apt_packages, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
 # stub_gsettings, stub_gnome_session, stub_systemctl_units, sandbox_paths, fake_step,
 # fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit,
-# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, and wait_for.
+# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, wait_for, and
+# process_exited.
 # tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox, and
 # tests/ubuntu-step-fixture.sh, which sources it, stubs an Ubuntu machine for that step.
 # shellcheck shell=bash
@@ -874,6 +875,14 @@ wait_for() {
         sleep 0.1
         i=$((i + 1))
     done
+}
+
+# Succeeds once the process has exited. kill -0 still finds a zombie, so check ps.
+process_exited() {
+    case "$(ps -o stat= -p "$1" 2> /dev/null)" in
+        '' | Z*) return 0 ;;
+    esac
+    return 1
 }
 
 # Leaves $RUN_OUTPUT for further checks

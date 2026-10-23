@@ -61,6 +61,21 @@ rm "$SANDBOX/gsettings/no-schema"
 # --- lib/gnome.sh ---
 # shellcheck source=../lib/gnome.sh
 source "$REPO_DIR/lib/gnome.sh"
+# One spelling per accelerator: modifier aliases in any case and order, and a letter in either case
+while IFS='|' read -r accel want; do
+    assert_eq "$want" "$(gnome_accelerator "$accel")" "the spelling of $accel"
+done << 'EOF'
+<Ctrl><Super>t|<control><super>t
+<Super><Control>T|<control><super>t
+<Mod1><SHIFT>a|<alt><shift>a
+<Primary><primary>x|<control>x
+<Hyper><Mod4>F1|<hyper><mod4>F1
+<Shft>space|<shift>space
+<Release><ALT>Q|<alt><release>q
+<Meta><Ctl><Super><Shift><Hyper><Alt>1|<alt><control><hyper><meta><shift><super>1
+A|a
+z|z
+EOF
 # Another custom shortcut on the same keys clashes however its binding is spelled
 user_shortcut
 gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "'<Ctrl><Super>t'"

@@ -122,10 +122,46 @@ reraise_interrupt() {
     exit "$1"
 }
 
+# _stop_steps <pid...>: background steps ignore SIGINT, so TERM each and everything it started,
+# while the runner's traps keep bash from reporting the deaths
+_stop_steps() {
+    local tree
+    tree="$(ps -A -o pid= -o ppid= | awk -v roots="$*" '
+        BEGIN { n = split(roots, r, " "); for (i = 1; i <= n; i++) in_tree[r[i]] = 1 }
+        { parent[$1] = $2 }
+        END {
+            do {
+                grew = 0
+                for (p in parent) if (!(p in in_tree) && (parent[p] in in_tree)) { in_tree[p] = 1; grew = 1 }
+            } while (grew)
+            for (p in in_tree) print p
+        }')" || true
+    # shellcheck disable=SC2086 # a list of pids
+    kill -TERM $tree 2> /dev/null || true
+    wait "$@" 2> /dev/null || true
+}
+
+# _relay_status <step> <pid> <out> <err>: waits for the step, prints its report, and sets
+# run_steps' status. Exit 3 with no item needing attention means set -e cut the report short.
+_relay_status() {
+    local relay=0
+    wait "$2" || status=$?
+    # A trapped signal ends wait early, with the step still running
+    [ -z "$interrupted" ] || return 0
+    _status_relay "$1:" < "$3" || relay=$?
+    cat "$4" >&2
+    if [ "$status" -eq 3 ] && [ "$relay" -ne 0 ]; then
+        status=1
+    fi
+}
+
 # run_steps <''|--status> [step...]: a failed step doesn't stop the rest. --status returns 3 when
-# an item needs attention, 1 when a step failed.
+# an item needs attention, 1 when a step failed. Reports run at once, each printing in step order
+# once it and those before it have ended; setup runs one step at a time, as it may ask questions
+# and STEP_NEEDS skips steps after a failed one.
 run_steps() {
-    local mode="$1" step script status codes blocker interrupted="" failed=() attention=()
+    local mode="$1" step script status blocker interrupted="" failed=() attention=() dir="" i=0 \
+        pids=()
     shift
     require_supported_os || return 1
     # step_script takes either OS's steps, so the error lists both
@@ -142,34 +178,40 @@ run_steps() {
     trap 'interrupted=130' INT
     trap 'interrupted=143' TERM
     trap 'interrupted=129' HUP
+    if [ -n "$mode" ]; then
+        dir="$(mktemp -d)" || {
+            trap - INT TERM HUP
+            return 1
+        }
+        for step in "$@"; do
+            "$BASH" "$(step_script "$step")" --status < /dev/null > "$dir/$i.out" 2> "$dir/$i.err" &
+            pids+=("$!")
+            i=$((i + 1))
+        done
+        i=0
+    fi
     for step in "$@"; do
-        script="$(step_script "$step")"
         status=0
-        # A step for the other OS runs, and its main prints the skip
-        if [ -z "$mode" ] && blocker="$(_failed_need "$script" ${failed[@]+"${failed[@]}"})"; then
-            echo "$step: skipped, $blocker failed" >&2
-            failed+=("$step")
-            continue
-        fi
         if [ -n "$mode" ]; then
-            # The header prints only before a first line. -e is off in the group, so read
-            # PIPESTATUS.
-            {
-                "$BASH" "$script" --status | _status_relay "$step:"
-                codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
-            } || true
-            status="${codes% *}"
-            # Exit 3 with no item needing attention means set -e cut the report short
-            if [ "$status" -eq 3 ] && [ "${codes#* }" -ne 0 ]; then
-                status=1
-            fi
+            [ -n "$interrupted" ] || _relay_status "$step" "${pids[$i]}" "$dir/$i.out" "$dir/$i.err"
+            i=$((i + 1))
         else
+            script="$(step_script "$step")"
+            # A step for the other OS runs, and its main prints the skip
+            if blocker="$(_failed_need "$script" ${failed[@]+"${failed[@]}"})"; then
+                echo "$step: skipped, $blocker failed" >&2
+                failed+=("$step")
+                continue
+            fi
             "$BASH" "$script" || status=$?
         fi
         [ -z "$interrupted" ] || status="$interrupted"
         if interrupted_status "$status"; then
+            # From the current step on
+            [ -z "$mode" ] || _stop_steps "${pids[@]:$((i - 1))}"
             echo "  The $step step was interrupted; stopping." >&2
             trap - INT TERM HUP
+            [ -z "$dir" ] || rm -rf "$dir"
             return "$status"
         elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then
             attention+=("$step")
@@ -179,6 +221,7 @@ run_steps() {
         fi
     done
     trap - INT TERM HUP
+    [ -z "$dir" ] || rm -rf "$dir"
     if [ ${#attention[@]} -gt 0 ]; then
         echo ""
         echo "$STATUS_SUMMARY_ATTENTION: ${attention[*]}. Run: bash $0 ${attention[*]}"

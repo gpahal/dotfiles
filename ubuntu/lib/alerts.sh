@@ -73,7 +73,7 @@ ntfy_url_group() {
 ntfy_url_file_problem() {
     local meta want topic
     meta="$(owner_group_mode "$NTFY_URL_FILE" 2>/dev/null)" || meta=""
-    want="$(id -un) $(ntfy_url_group) 640"
+    want="$CURRENT_USER $(ntfy_url_group) 640"
     if [ "$meta" != "$want" ]; then
         echo "it's ${meta:-unreadable} (owner, group, mode), not $want"
     elif ! topic="$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)"; then

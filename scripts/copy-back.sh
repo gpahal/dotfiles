@@ -31,16 +31,19 @@ done
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# <repo file> <tab> <destination> for every step's *_files functions
-common_fns="$(compgen -A function)"
+# <repo file> <tab> <destination> for every step's *_files functions, but not the lib's
+# compgen fails when nothing matches
+common_fns=$'\n'"$(compgen -A function -X '!*_files' || true)"$'\n'
 for install in "$DOTFILES_DIR"/*/install.sh "$DOTFILES_DIR"/ai_tools/*/install.sh; do
     (
         # shellcheck disable=SC2329 # the *_files functions call it
         record() { printf '%s\t%s\n' "$1" "$2" >> "$tmp/copies"; }
         # shellcheck disable=SC1090 # every step
         source "$install" > /dev/null
-        for fn in $(compgen -A function | grep '_files$'); do
-            ! printf '%s\n' "$common_fns" | grep -qxF "$fn" || continue
+        for fn in $(compgen -A function -X '!*_files' || true); do
+            case "$common_fns" in
+                *$'\n'"$fn"$'\n'*) continue ;;
+            esac
             "$fn" record > /dev/null || true
         done
     ) < /dev/null

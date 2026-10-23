@@ -5,6 +5,8 @@
 # id says you're me, in the docker group while $SANDBOX/in-group exists
 stub_docker_group() {
     stub id 'case "$1" in -un) echo me ;; -nG) [ -e "$SANDBOX/in-group" ] && echo "me docker" || echo me ;; esac'
+    # shellcheck disable=SC2034 # the docker step reads it
+    CURRENT_USER=me
 }
 
 # Docker installed and set up as the step leaves it, with you in the docker group. Needs

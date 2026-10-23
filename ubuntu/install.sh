@@ -218,7 +218,7 @@ ubuntu_items() {
     fi
     # A fresh install needs a login first
     if command -v tailscale &>/dev/null && ! tailscale_configured && ! tailscale_needs_login; then
-        item --sudo "" "Turn on Tailscale's auto-update and make $(id -un) its operator" false set_up_tailscale
+        item --sudo "" "Turn on Tailscale's auto-update and make $CURRENT_USER its operator" false set_up_tailscale
     fi
     if [ "$ufw" -eq 1 ] && ufw_enabled && ! ufw_stopped -n; then
         text="add the missing ufw rules"
@@ -320,7 +320,7 @@ turn_on_wake_on_lan() {
 }
 
 enable_linger() {
-    sudo loginctl enable-linger "$(id -un)"
+    sudo loginctl enable-linger "$CURRENT_USER"
 }
 
 # Root-only state is checked with sudo -n when credentials are cached, else left unverified
@@ -358,7 +358,7 @@ status() {
         status_item ok "Tailscale"
         ! apt_installed tailscale ||
             status_apt_source Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" ubuntu "$(apt_release_url "$TAILSCALE_REPO")"
-        status_check "Tailscale auto-updates, with $(id -un) as its operator" tailscale_configured
+        status_check "Tailscale auto-updates, with $CURRENT_USER as its operator" tailscale_configured
         if tailscale_running; then
             status_item ok "Tailscale connected"
         else

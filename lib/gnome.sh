@@ -119,23 +119,48 @@ gnome_keybinding_is() {
 }
 
 # An accelerator spelled one way, as GTK reads it: modifier aliases (<Ctrl> and <Primary> are
-# <Control>, <Mod1> is <Alt>) in any case and order, and a letter key in either case
+# <Control>, <Mod1> is <Alt>) in any case and order, and a letter key in either case. The usual
+# modifiers are matched without a fork; others, such as <Mod4>, take tr and sort.
 gnome_accelerator() {
-    local accel="$1" re='^<([^>]*)>(.*)$' mod mods=""
+    local accel="$1" re='^<([^>]*)>(.*)$' mod mods="" other=false sorted="" upper=ABCDEFGHIJKLMNOPQRSTUVWXYZ \
+        lower=abcdefghijklmnopqrstuvwxyz
     while [[ "$accel" =~ $re ]]; do
-        mod="$(tr '[:upper:]' '[:lower:]' <<< "${BASH_REMATCH[1]}")"
+        mod="${BASH_REMATCH[1]}"
         accel="${BASH_REMATCH[2]}"
         case "$mod" in
-            ctrl | ctl | control | primary) mod=control ;;
-            mod1) mod=alt ;;
-            shft) mod="shift" ;;
+            [Cc][Tt][Rr][Ll] | [Cc][Tt][Ll] | [Cc][Oo][Nn][Tt][Rr][Oo][Ll] | \
+                [Pp][Rr][Ii][Mm][Aa][Rr][Yy]) mod=control ;;
+            [Mm][Oo][Dd]1 | [Aa][Ll][Tt]) mod=alt ;;
+            [Ss][Hh][Ff][Tt] | [Ss][Hh][Ii][Ff][Tt]) mod="shift" ;;
+            [Ss][Uu][Pp][Ee][Rr]) mod=super ;;
+            [Hh][Yy][Pp][Ee][Rr]) mod=hyper ;;
+            [Mm][Ee][Tt][Aa]) mod=meta ;;
+            *)
+                mod="$(tr '[:upper:]' '[:lower:]' <<< "$mod")"
+                other=true
+                ;;
         esac
         mods="$mods<$mod>"$'\n'
     done
-    case "$accel" in
-        [A-Z]) accel="$(tr '[:upper:]' '[:lower:]' <<< "$accel")" ;;
-    esac
-    printf '%s%s\n' "$(printf '%s' "$mods" | sort -u | tr -d '\n')" "$accel"
+    if [ "${#accel}" -eq 1 ]; then
+        case "$upper" in
+            *"$accel"*)
+                mod="${upper%%"$accel"*}"
+                accel="${lower:${#mod}:1}"
+                ;;
+        esac
+    fi
+    if "$other"; then
+        sorted="$(printf '%s' "$mods" | sort -u | tr -d '\n')"
+    else
+        # sort's order
+        for mod in alt control hyper meta shift super; do
+            case "$mods" in
+                *"<$mod>"*) sorted="$sorted<$mod>" ;;
+            esac
+        done
+    fi
+    printf '%s%s\n' "$sorted" "$accel"
 }
 
 # Each custom shortcut's path and binding as gnome_accelerator spells it, a tab between. Filled on

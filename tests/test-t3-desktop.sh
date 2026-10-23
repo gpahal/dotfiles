@@ -37,7 +37,7 @@ assert_file_not_contains "$STUB_LOG" "launchctl load"
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
 assert_eq claude-opus-5-5 "$(jq -r .defaultModelSelection.model "$T3_CODE_SETTINGS")" "the default model"
 assert_eq steer "$(jq -r .followUpBehavior "$T3_CODE_CLIENT_SETTINGS")" "the follow-up behavior"
-stub brew
+stub brew '[ "$*" != "list --cask -1" ] || echo t3-code'
 run status
 assert_contains "$RUN_OUTPUT" "ok         $AGENT_ITEM"
 assert_contains "$RUN_OUTPUT" "ok         $ENV_ITEM"
@@ -57,6 +57,7 @@ as_os macos
 
 # An app renamed by an update before the cask caught up counts as installed; Nightly doesn't
 stub brew 'case "$1" in
+    list) echo t3-code ;;
     info) printf "{\"casks\":[{\"artifacts\":[{\"app\":[\"%s\"],\"target\":\"%s\"}]}]}\n" "${APP##*/}" "'"$APP"'" ;;
 esac'
 mv "$APP" "$SANDBOX/Applications/T3 Code.app"

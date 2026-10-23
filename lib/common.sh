@@ -22,6 +22,10 @@ case "$(uname -s)" in
     *) _DOTFILES_OS=other ;;
 esac
 
+# Worked out once for the steps that name you. A test that stubs id -un sets it too.
+# shellcheck disable=SC2034 # steps read it
+CURRENT_USER="$(id -un)"
+
 is_macos() {
     [ "$_DOTFILES_OS" == macos ]
 }
@@ -106,8 +110,15 @@ apt_install_fresh() {
     apt_get install -y "$@"
 }
 
+# Compares as $(cat) would, without the fork: a missing file reads as empty, and trailing newlines
+# don't count
 file_is() {
-    [ "$(cat "$1" 2>/dev/null)" == "$2" ]
+    local content=""
+    { IFS= read -r -d '' content < "$1"; } 2>/dev/null || true
+    while [ "${content%$'\n'}" != "$content" ]; do
+        content="${content%$'\n'}"
+    done
+    [ "$content" == "$2" ]
 }
 
 # left_unchanged <indent> <what to run> <what that does>: after a declined confirm, which says no
@@ -396,14 +407,23 @@ report_failed() {
     return 1
 }
 
+# parent_dir <var> <path>: sets <var> to the path's directory, as dirname would without its fork,
+# for a path with no trailing slash
+parent_dir() {
+    local _parent="${2%/*}"
+    [ "$_parent" != "$2" ] || _parent=.
+    printf -v "$1" '%s' "${_parent:-/}"
+}
+
 # Replaces a differing file without asking or backing up. Sets COPIED=true when it copies.
 copy_file() {
-    local src="$1" dest="$2"
+    local src="$1" dest="$2" dir
     if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
         echo "  $dest is already up to date"
         return 0
     fi
-    mkdir -p "$(dirname "$dest")" || return 1
+    parent_dir dir "$dest"
+    mkdir -p "$dir" || return 1
     if [ -x "$src" ]; then
         replace_file "$src" "$dest" 755 x
     else
@@ -454,11 +474,12 @@ has_line() {
 }
 
 append_line() {
-    local line="$1" file="$2"
+    local line="$1" file="$2" dir
     if has_line "$line" "$file"; then
         return 0
     fi
-    mkdir -p "$(dirname "$file")" || return 1
+    parent_dir dir "$file"
+    mkdir -p "$dir" || return 1
     end_with_newline "$file" || return 1
     printf '%s\n' "$line" >> "$file"
 }
@@ -598,7 +619,7 @@ file_mode() {
 # symlink, which stat reads as 777 and mv would replace.
 # shellcheck disable=SC2086 # $as is empty or sudo
 replace_file() {
-    local as="" src dest mode exec="" tmp target
+    local as="" src dest mode exec="" tmp target dir
     [ "$1" != --sudo ] || { as=sudo; shift; }
     src="$1" dest="$2" mode="$3"
     shift 3
@@ -622,7 +643,8 @@ replace_file() {
         fi
     fi
     mode="${mode#=}"
-    tmp="$($as mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
+    parent_dir dir "$dest"
+    tmp="$($as mktemp "$dir/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
     if $as install -m "$mode" ${1+"$@"} "$src" "$tmp" && $as mv -f "$tmp" "$dest"; then
         return 0
     fi
@@ -657,13 +679,13 @@ file_contents() {
 # offering a backup. Both get the file's path, and print their own errors. Check first that the
 # file needs a change, as the transform's output can differ from the file in form alone.
 merge_file() {
-    local file="$1" transform="$2" input tmp status=1
+    local file="$1" transform="$2" input tmp status=1 dir
     input="$("${3:-file_contents}" "$file")" || return 1
     tmp="$(mktemp)" || return 1
     if printf '%s\n' "$input" | "$transform" "$file" > "$tmp"; then
         if cmp -s "$tmp" "$file"; then
             status=0
-        elif maybe_backup "$file" && mkdir -p "$(dirname "$file")"; then
+        elif parent_dir dir "$file" && maybe_backup "$file" && mkdir -p "$dir"; then
             write_back "$tmp" "$file"
             return
         fi

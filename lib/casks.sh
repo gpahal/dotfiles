@@ -75,6 +75,16 @@ recorded_cask_app() {
     esac
 }
 
+# brew list --cask <cask> loads Ruby and posts analytics, and the plain list doesn't
+_cask_listed() {
+    local list
+    list="$(brew list --cask -1 2>/dev/null)" || return 1
+    case $'\n'"$list"$'\n' in
+        *$'\n'"$1"$'\n'*) return 0 ;;
+    esac
+    return 1
+}
+
 # cask_state [options] <cask> [app] [listing]: prints "<state>\t<app path>", state being brew,
 # gone (listed but app deleted, macOS only), renamed (listed, with the app --renamed found), other
 # (app present, not listed), or missing. [app] is the fallback path; [listing] is
@@ -91,7 +101,7 @@ cask_state() {
             awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
             listed=true
         fi
-    elif brew list --cask "$cask" &>/dev/null; then
+    elif _cask_listed "$cask"; then
         listed=true
         if is_macos; then
             app="$(cask_app_path "$cask")"

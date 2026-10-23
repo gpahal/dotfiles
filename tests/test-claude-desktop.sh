@@ -78,7 +78,7 @@ assert_contains "$RUN_OUTPUT" "missing    ~/Library/LaunchAgents/dotfiles.claude
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "brew install --cask claude"
 
-stub brew '[ "$*" == "list --cask claude" ]'
+stub brew '[ "$*" == "list --cask -1" ] && echo claude'
 stub pgrep 'exit 1'
 mkdir -p "$APP" "$(dirname "$CONFIG")"
 echo '{"mcpServers": {"x": {"command": "y"}}, "preferences": {"sidebarMode": "chat", "menuBarEnabled": true, "quickEntryShortcut": {"enabled": true}}}' > "$CONFIG"

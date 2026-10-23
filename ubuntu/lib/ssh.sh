@@ -105,7 +105,7 @@ sshd_drop_in() {
     echo "X11Forwarding no"
     echo "MaxAuthTries 3"
     [ "$(id -u)" != 0 ] || root=true
-    "$root" || echo "AllowUsers $(id -un)"
+    "$root" || echo "AllowUsers $CURRENT_USER"
     if key_only_in "$current" || { ! "$root" && key_only_reason > /dev/null; }; then
         echo "PasswordAuthentication no"
         echo "KbdInteractiveAuthentication no"

@@ -4,6 +4,7 @@
 # The t3-code step on Ubuntu: the t3 CLI, the server settings, and the t3code.service user service
 # with its drop-in, which other servers on its data, the desktop app, and its listeners hold back.
 
+REAL_SLEEP="$(command -v sleep)"
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -447,6 +448,49 @@ assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by 
 rm "$STATE/user-t3code.service.active"
 DOTFILES_STATUS_FOR_ALERTS=1 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service running"
+
+# Status runs t3 browser setup and t3 connect status while it checks the rest, and reads them as
+# it would run inline: the browser's report with its stderr, and connect's JSON without
+T3_STUB="$(cat "$HOME/.local/bin/t3")"
+reset
+installed_unit
+running_service
+stub_at "$HOME/.local/bin/t3" 'case "$*" in
+    "browser setup") echo "Chrome sandbox: needs root" >&2 ;;
+    "connect status --json") echo "a warning" >&2; echo '\''{"linked": true, "publishAgentActivity": true}'\'' ;;
+esac'
+temp_before="$(ls -A "$TMPDIR")"
+run status
+assert_contains "$RUN_OUTPUT" "missing    T3 Code's browser can run in Chrome's sandbox: run sudo ~/.local/bin/t3 browser setup"
+assert_contains "$RUN_OUTPUT" "ok         T3 Connect linked and publishing agent activity"
+assert_file_contains "$STUB_LOG" "t3 connect status --json"
+stub_at "$HOME/.local/bin/t3" '[ "$*" != "browser setup" ] || exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "unknown    T3 Code's browser sandbox: t3 browser setup failed"
+assert_contains "$RUN_OUTPUT" "unknown    T3 Connect: t3 connect status didn't say"
+assert_eq "$temp_before" "$(ls -A "$TMPDIR")" "temp files left by status's t3 calls"
+
+# Stopping status stops its t3 calls and removes their files
+stub sleep "exec $(printf '%q' "$REAL_SLEEP") \"\$@\""
+stub_at "$HOME/.local/bin/t3" '[ "$*" != "browser setup" ] || { echo "$$" > "$SANDBOX/t3-pid"; exec '"$(printf '%q' "$REAL_SLEEP")"' 30; }'
+(status > /dev/null 2>&1) &
+status_pid=$!
+# ps is stubbed, but once status has gone, init reaps the call, so kill -0 stops finding it
+call_gone() {
+    ! kill -0 "$1" 2> /dev/null
+}
+if wait_for test -s "$SANDBOX/t3-pid"; then
+    kill -TERM "$status_pid"
+    wait "$status_pid" || true
+    wait_for call_gone "$(cat "$SANDBOX/t3-pid")" || fail "t3 browser setup outlived status"
+else
+    fail "status didn't start t3 browser setup"
+    wait "$status_pid" || true
+fi
+assert_eq "$temp_before" "$(ls -A "$TMPDIR")" "temp files left by an interrupted status"
+kill "$(cat "$SANDBOX/t3-pid")" 2> /dev/null || true
+stub sleep
+printf '%s\n' "$T3_STUB" > "$HOME/.local/bin/t3"
 
 # Only declining the sudo for libatomic1 doesn't fail the step.
 reset

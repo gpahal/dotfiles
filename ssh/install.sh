@@ -116,7 +116,7 @@ status_host_star() {
 
 # launchctl loads into the real session whatever HOME is, so a temp HOME mustn't load it
 home_is_real() {
-    [ "$HOME" == "$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')" ]
+    [ "$HOME" == "$(dscl . -read "/Users/$CURRENT_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')" ]
 }
 
 ssh_add_agent_loaded() {

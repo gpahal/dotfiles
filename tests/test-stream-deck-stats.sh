@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # stats.js's netstat and /proc parsers and its macOS and Linux samplers, and keys.js's update loop.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v node &> /dev/null || skip "node isn't installed"
 STATS="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/stats.js"
 

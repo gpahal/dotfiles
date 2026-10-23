@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The stream-deck step on macOS: the plugin and the profiles Stream Deck installs from it in a fake
 # ProfilesV3, with stubs for pkill, pgrep, and open. Then the profile archives, which
@@ -8,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 load_script stream-deck/install.sh
 as_os macos
@@ -33,7 +31,6 @@ assert_contains "$RUN_OUTPUT" "missing    Stream Deck's Main profile: Stream Dec
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck's System profile: press the key that opens it"
 assert_not_contains "$RUN_OUTPUT" "differs"
 
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
@@ -42,7 +39,6 @@ echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "plugin.js differs from the repo's"
 stub pkill 'exit 1'
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Stream Deck isn't running; it loads the plugin and its profiles when it starts."
 assert_eq "pkill -x Stream Deck" "$(cat "$STUB_LOG")" "commands run with Stream Deck not running"
@@ -53,8 +49,6 @@ echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 stub pkill
 stub sleep
 stub open '[ -f "$SANDBOX/opened-once" ] && exit 0; touch "$SANDBOX/opened-once"; exit 1'
-export SANDBOX
-: > "$STUB_LOG"
 assert_exit 0 main --no-backup
 assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin and its profiles."
 assert_eq 2 "$(grep -c '^open ' "$STUB_LOG")" "tries to reopen Stream Deck"
@@ -157,7 +151,6 @@ assert_not_contains "$RUN_OUTPUT" "Backup"
 assert_not_contains "$RUN_OUTPUT" "Outside"
 
 # Other profiles for the deck go while Stream Deck is quit; the rest stay
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Deleted C3.sdProfile from Stream Deck's profiles: extra Stream Deck profile Default Profile (3 keys)"
 assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin and its profiles."
@@ -169,7 +162,6 @@ for kept in A1.sdProfile B2.sdProfile D4.sdProfile Backup E5.sdProfile Link.sdPr
     [ -e "$profiles/$kept" ] || fail "$kept was deleted"
 done
 [ -f "$SANDBOX/outside.sdProfile/manifest.json" ] || fail "a profile outside ProfilesV3 was deleted"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "" "$(cat "$STUB_LOG")" "commands run with the profiles in place"
 assert_exit 0 main --status
@@ -189,7 +181,6 @@ rm -r "$profiles/A1.sdProfile"
 fake_profile "$profiles/C3.sdProfile" 20GBA9901 "Default Profile" 0,2
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    extra Stream Deck profile Default Profile (1 key): deleted once the Main profile is installed"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "" "$(cat "$STUB_LOG")" "commands run with the Main profile missing"
 [ -e "$profiles/C3.sdProfile" ] || fail "the default profile was deleted before the Main profile was installed"
@@ -201,7 +192,6 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    2 copies of Stream Deck's Main profile: the next run reinstalls it"
 rm -r "$profiles/A2.sdProfile"
 echo "stale" >> "$PLUGIN_DIR/profiles/Main.streamDeckProfile"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Deleted A1.sdProfile from Stream Deck's profiles: the plugin's Main profile changed"
 assert_not_contains "$RUN_OUTPUT" "C3.sdProfile"

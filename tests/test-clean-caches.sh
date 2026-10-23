@@ -1,12 +1,9 @@
 #!/bin/bash
-set -euo pipefail
 
 # scripts/clean-caches.sh: lists caches with sizes, clears them only once confirmed, and reports failures.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-
-setup_sandbox
 
 CACHES="$SANDBOX/caches"
 # Each tool reports its cache in the sandbox and empties it when cleared

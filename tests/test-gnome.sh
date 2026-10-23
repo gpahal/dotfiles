@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The gnome step: GNOME settings that match the macos step, and gnome-sushi. stub_gsettings starts
 # from Ubuntu's defaults. Also lib/gnome.sh's shortcut clashes and extension states.
@@ -8,8 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-export SANDBOX
 stub_gsettings
 default() { printf '%s\n' "$3" > "$SANDBOX/gsettings/$1.$2"; }
 default org.gnome.desktop.peripherals.keyboard delay "uint32 500"
@@ -34,7 +31,6 @@ assert_contains "$RUN_OUTPUT" "ok         Keys repeat every 30 ms"
 
 # Declining sudo still sets the GNOME settings, which need none
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "uint32 225" "$(gsettings get org.gnome.desktop.peripherals.keyboard delay)" "the key repeat delay"
 assert_eq "true" "$(gsettings get org.gtk.Settings.FileChooser show-hidden)" "hidden files in GTK 3 file choosers"
@@ -48,11 +44,9 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 
 # Accepting installs gnome-sushi; then a re-run changes nothing
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "install -y gnome-sushi"
 assert_exit 0 main --status
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 assert_file_not_contains "$STUB_LOG" "sudo"
@@ -130,9 +124,10 @@ assert_contains "$RUN_OUTPUT" "gsettings isn't installed"
 
 # Ubuntu Server: no GNOME, nothing to do
 hide gnome-shell
-: > "$STUB_LOG"
 assert_exit 0 main
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main --status
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_contains "$RUN_OUTPUT" "skipped    GNOME settings: no GNOME desktop"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the step ran without GNOME"
+assert_eq "" "$(cat "$SANDBOX/both.log")" "commands the step ran without GNOME"
 test_done

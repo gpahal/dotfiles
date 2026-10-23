@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The vim step's vendored vim-plug and plugin pins, and a vimrc that starts without vim-plug.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 PLUG="$HOME/.vim/autoload/plug.vim"
 
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"

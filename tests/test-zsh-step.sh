@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The zsh step: one source line per startup file, the login shell offer, and a file it can't copy.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 stub_login_shell_zsh
 load_script zsh/install.sh
 replace_fn current_login_shell 'echo /bin/zsh'
@@ -54,7 +52,6 @@ stub_sudo_cacheable
 stub chsh
 replace_fn current_login_shell 'echo /bin/bash'
 replace_fn login_zsh_path 'echo "$SANDBOX/bin/zsh"'
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Login shell left as /bin/bash"
 assert_file_not_contains "$STUB_LOG" "chsh"

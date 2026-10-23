@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The monitor-input step, just monitor-input on both OSes, the switcher the Ubuntu service runs,
 # and the hammerspoon step's m1ddc check. Fake sysfs trees stand in for USB devices and outputs.
@@ -8,8 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-export SANDBOX
 USB="$SANDBOX/usb"
 DRM="$SANDBOX/drm"
 
@@ -75,7 +72,6 @@ the_step() {
     answer yes
     assert_exit 0 main
 
-    : > "$STUB_LOG"
     assert_exit 0 main
     assert_contains "$RUN_OUTPUT" "already installed"
     assert_file_not_contains "$STUB_LOG" "sudo"
@@ -116,7 +112,6 @@ setup_on_ubuntu() {
     assert_contains "$RUN_OUTPUT" "DP-1 isn't a connected output with DDC"
     [ ! -e "$MONITOR_INPUT_CONF" ] || fail "a rejected run saved the settings"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19F5:2620 0x11 27
     assert_contains "$RUN_OUTPUT" "Saved. With 19f5:2620 here the monitor shows input 17 on HDMI-A-1; without it, input 27."
     assert_eq "# From just monitor-input. dotfiles-monitor-input reads it.
@@ -127,7 +122,6 @@ connector=HDMI-A-1" "$(cat "$MONITOR_INPUT_CONF")" "the settings"
     assert_file_contains "$MONITOR_INPUT_RULE" 'ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="19f5/2620/*", RUN+="/usr/bin/systemctl --no-block restart dotfiles-monitor-input.service"'
     assert_file_contains "$STUB_LOG" "udevadm control --reload"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19f5:2620 17 27 HDMI-A-1
     assert_contains "$RUN_OUTPUT" "Already set."
     assert_file_not_contains "$STUB_LOG" "sudo"
@@ -185,7 +179,6 @@ EOF'
     assert_contains "$RUN_OUTPUT" "m1ddc finds no external display"
     rm "$SANDBOX/no-display"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19f5:2620 0x1b
     assert_not_contains "$RUN_OUTPUT" "isn't attached now"
     assert_eq "# From just monitor-input. Hammerspoon reloads when this changes.
@@ -241,7 +234,6 @@ subtest input_codes
 
 # The switcher takes its paths from the environment, which the service doesn't set.
 switcher() {
-    : > "$STUB_LOG"
     assert_exit "$1" env MONITOR_INPUT_CONF="$SANDBOX/switcher.conf" USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" \
         MONITOR_INPUT_SETTLE=0 MONITOR_INPUT_VERIFY_DELAY=0 "$BASH" "$REPO_DIR/monitor-input/dotfiles-monitor-input"
 }

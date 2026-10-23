@@ -1,13 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The runners, through runner_main, take -h/--help, --status, --for-alerts, --backup, and --no-backup
 # anywhere among the step names, and fail with a usage line on an unknown flag or step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-
-setup_sandbox
 
 setup_sh="$REPO_DIR/setup.sh"
 
@@ -59,8 +56,10 @@ assert_eq "" "$(find "$HOME" -mindepth 1)" "files git/install.sh status wrote"
 # The runners use their own bash, not the first on PATH, such as Homebrew's
 stub bash 'exit 99'
 assert_exit 0 "$BASH" "$setup_sh" vim
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 3 "$BASH" "$setup_sh" --status zed
-assert_file_not_contains "$STUB_LOG" "bash "
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_file_not_contains "$SANDBOX/both.log" "bash "
 rm -f "$STUB_DIR/bash"
 
 # cd prints the path when CDPATH matches, which would double a sourced path

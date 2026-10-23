@@ -1,6 +1,6 @@
-# Helpers for tests of the ubuntu step and its hooks. Call ubuntu_sandbox_paths after setup_sandbox
-# and after each load_script ubuntu/install.sh, which resets the paths. It fails the test when a
-# step constant still names a system path.
+# Helpers for tests of the ubuntu step and its hooks. Call ubuntu_sandbox_paths after each
+# load_script ubuntu/install.sh, which resets the paths. It fails the test when a step constant
+# still names a system path.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # the step reads them
 
@@ -107,5 +107,5 @@ ntfy_hook_copy() {
 # "curl config: <line>", and fails while $SANDBOX/curl-fails exists.
 stub_ntfy_curl() {
     stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
-[ ! -e "'"$SANDBOX"'/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
+[ ! -e "$SANDBOX/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
 }

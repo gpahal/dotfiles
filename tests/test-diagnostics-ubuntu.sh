@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the steps call the replaced functions
-set -euo pipefail
 
 # Status's free space check on either OS, and the ubuntu step's read-only SMART and firmware checks.
 
@@ -11,7 +10,6 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=diagnostics-fixture.sh
 source "$TESTS_DIR/diagnostics-fixture.sh"
 
-setup_sandbox
 load_script lib/common.sh
 stub dpkg-query 'exit 1'
 stub_dpkg_arch
@@ -64,11 +62,11 @@ ubuntu_sandbox_paths
 as_os ubuntu
 replace_fn in_vm false
 stub_sudo_exec '[ "$1" == -n ] || { echo "sudo asked for a password" >&2; exit 1; }
-[ -e "'"$SANDBOX"'/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }'
+[ -e "$SANDBOX/sudo-cached" ] || { echo "sudo: a password is required" >&2; exit 1; }'
 touch "$SANDBOX/sudo-cached"
 # HEADER's serial number mustn't reach the report
 mkdir -p "$SANDBOX/smart"
-stub smartctl 'dir="'"$SANDBOX"'"
+stub smartctl 'dir="$SANDBOX"
 if [ "$1" == --scan ]; then
     [ ! -e "$dir/scan-fails" ] || exit 2
     while read -r dev type; do echo "$dev -d $type # $dev, $type device"; done < "$dir/disks"
@@ -158,15 +156,13 @@ read_only
 
 # --- the ubuntu step: firmware ---
 # fwupdmgr would start a stopped fwupd over D-Bus
-stub systemctl '[ "$*" != "is-active --quiet fwupd.service" ] || [ ! -e "'"$SANDBOX"'/fwupd-inactive" ]'
+stub systemctl '[ "$*" != "is-active --quiet fwupd.service" ] || [ ! -e "$SANDBOX/fwupd-inactive" ]'
 stub fwupdmgr
 touch "$SANDBOX/fwupd-inactive"
-: > "$STUB_LOG"
 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "info       Firmware updates: fwupd isn't running, and status doesn't start it"
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"
 rm "$SANDBOX/fwupd-inactive"
-: > "$STUB_LOG"
 DOTFILES_STATUS_FOR_ALERTS=1 assert_exit 0 diag status_firmware
 assert_contains "$RUN_OUTPUT" "unverified Firmware updates: skipped by --for-alerts"
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"

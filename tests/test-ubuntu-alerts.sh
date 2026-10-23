@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The ntfy alerts: smartd's hook, just alerts (ubuntu/setup-alerts.sh), and the ubuntu step's hook
 # installs, with the topic kept out of curl's arguments and logs. The hook runs as root and reads
@@ -10,9 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
-setup_sandbox
-# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
-stub systemd-detect-virt
 URL_FILE="$SANDBOX/ntfy-url"
 HOOK="$SANDBOX/smartd-notify.sh"
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$HOOK"
@@ -21,7 +17,6 @@ stub_ntfy_curl
 stub logger
 
 run_hook() {
-    : > "$STUB_LOG"
     assert_exit 0 env SMARTD_SUBJECT="SMART error (FailedHealthCheck) detected on host: box" \
         SMARTD_MESSAGE="Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW!" \
         SMARTD_DEVICE=/dev/sda SMARTD_FAILTYPE=FailedHealthCheck "$BASH" "$HOOK"
@@ -55,7 +50,6 @@ assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/a\"b\\c"'
 echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
 
 # A message starting with @ must go as text, not a file for curl to read
-: > "$STUB_LOG"
 assert_exit 0 env SMARTD_MESSAGE=@/etc/passwd "$BASH" "$HOOK"
 assert_file_contains "$STUB_LOG" "--data-raw @/etc/passwd -K -"
 
@@ -96,7 +90,6 @@ assert_exit 2 main <<< "http://ntfy.sh/$TOPIC"
 assert_not_contains "$RUN_OUTPUT" "$TOPIC"
 [ ! -e "$NTFY_URL_FILE" ] || fail "an invalid value was saved"
 
-: > "$STUB_LOG"
 assert_exit 0 main <<< "$TOPIC"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
@@ -104,7 +97,7 @@ assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 # Only you, nut (the file's group), and root read the URL file
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main <<< "  $TOPIC "
 assert_contains "$RUN_OUTPUT" "ntfy URL for the disk, UPS, health, and boot alerts ($NTFY_URL_FILE):"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
@@ -114,7 +107,6 @@ assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the 
 assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =https --max-time 10"
 assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
 
-: > "$STUB_LOG"
 assert_exit 0 main <<< "$URL"
 assert_contains "$RUN_OUTPUT" "Already set"
 assert_not_contains "$RUN_OUTPUT" "$TOPIC"
@@ -145,22 +137,18 @@ assert_contains "$RUN_OUTPUT" "isn't installed"
 mkdir -p "$(dirname "$SMARTD_HOOK")"
 cp "$HOOK" "$SMARTD_HOOK"
 chmod 755 "$SMARTD_HOOK"
-: > "$STUB_LOG"
 assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo env SMARTD_SUBJECT=Test: SMART warning on"
 assert_file_contains "$STUB_LOG" "curl -q -fsS"
 
-stub id '[ "$*" != nut ] || [ -e "'"$SANDBOX"'/nut-user" ]'
+stub id '[ "$*" != nut ] || [ -e "$SANDBOX/nut-user" ]'
 assert_exit 0 main --test
 assert_contains "$RUN_OUTPUT" "The UPS notifier isn't installed (no UPS set up yet); skipping its test."
-mkdir -p "$(dirname "$UPS_NOTIFY")"
-printf '%s\n' '#!/bin/bash' 'echo "ups-notify $NOTIFYTYPE $UPSNAME $1" >> "$STUB_LOG"' > "$UPS_NOTIFY"
-chmod 755 "$UPS_NOTIFY"
+stub_at "$UPS_NOTIFY" 'echo "ups-notify $NOTIFYTYPE $UPSNAME $1" >> "$STUB_LOG"'
 assert_exit 0 main --test
 assert_contains "$RUN_OUTPUT" "skipping its test"
 touch "$SANDBOX/nut-user"
 stub sudo '[ "$1 $2" == "-u nut" ] && shift 2; exec "$@"'
-: > "$STUB_LOG"
 assert_exit 0 main --test
 assert_file_contains "$STUB_LOG" "sudo -u nut env NOTIFYTYPE=TEST UPSNAME=test $UPS_NOTIFY Test: a UPS event from $(hostname). The UPS is fine."
 assert_file_contains "$STUB_LOG" "ups-notify TEST test Test: a UPS event from $(hostname). The UPS is fine."

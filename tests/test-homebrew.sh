@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The homebrew step: installing Homebrew, the Brewfile, casks, App Store apps, and apt packages,
 # and its status.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 # cask_state reads brew's JSON with jq
 command -v jq &> /dev/null || skip "jq isn't installed"
 
@@ -54,7 +52,7 @@ CASK_PKG_APPS=()
 replace_fn cask_app_path
 FONTS="$HOME/.local/share/fonts"
 
-stub brew 'S="'"$SANDBOX"'"
+stub brew 'S="$SANDBOX"
 app_json() { printf "{\"token\": \"%s\", \"artifacts\": [{\"app\": [\"x.app\"], \"target\": \"%s\"}]}" "$1" "$S/apps/$1.app"; }
 case "$1 $2" in
     "bundle check")
@@ -83,7 +81,7 @@ case "$1 $2" in
         [ "$3" != font-monaspace ] || { mkdir -p "$fonts"; touch "$fonts/Monaspace.otf"; }
         ;;
 esac'
-stub mas 'S="'"$SANDBOX"'"
+stub mas 'S="$SANDBOX"
 case "$1" in
     list) while read -r id; do printf " %s  App  (1.0)\n" "$id"; done < "$S/mas-installed" ;;
     install | get)
@@ -150,13 +148,11 @@ assert_eq "mas install $AMPHETAMINE
 mas install $DATO
 mas install $WINDOWS_APP
 mas get $WINDOWS_APP" "$(installs | grep '^mas')" "App Store installs when signed in"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "" "$(installs)" "installs on a re-run"
 assert_eq 1 "$(grep -c '^mas list' "$STUB_LOG")" "mas list calls on a re-run"
 grep -vxF "$DATO" "$SANDBOX/mas-installed" > "$SANDBOX/mas-left" && mv "$SANDBOX/mas-left" "$SANDBOX/mas-installed"
 : > "$SANDBOX/mas-owned"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "optional: Dato"
 assert_not_contains "$RUN_OUTPUT" "Sign in to the App Store"
@@ -197,12 +193,10 @@ assert_eq "${#CASKS[@]}" "$(installs | grep -c 'install --cask')" "casks tried"
 assert_eq "$((${#CASKS[@]} - 1))" "$(wc -l < "$SANDBOX/casks" | tr -d ' ')" "casks installed"
 
 : > "$SANDBOX/cask-status"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "brew install --cask zed" "$(installs)" "installs on a re-run"
 
 rm -rf "$SANDBOX/apps/vicinae.app"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "brew reinstall --cask vicinae" "$(installs)" "installs with vicinae's app deleted"
 [ -d "$SANDBOX/apps/vicinae.app" ] || fail "vicinae's app wasn't reinstalled"
@@ -245,18 +239,16 @@ as_os macos
 CASKS=(tailscale-app logi-options+)
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=("tailscale-app=$SANDBOX/apps/tailscale-app.app" "logi-options+=$SANDBOX/apps/logi-options+.app")
-stub brew 'S="'"$SANDBOX"'"
+stub brew 'S="$SANDBOX"
 case "$1 $2" in
     "list --cask") exit 0 ;;
     "info --json=v2") echo '\''{"casks":[{"token":"tailscale-app","artifacts":[{"pkg":["t.pkg"]}]},{"token":"logi-options+","artifacts":[{"pkg":["l.pkg"]}]}]}'\'' ;;
     "reinstall --cask") mkdir -p "$S/apps/$3.app" ;;
 esac'
 rm -rf "$SANDBOX/apps"
-: > "$STUB_LOG"
 assert_exit 0 install_casks
 assert_file_contains "$STUB_LOG" 'brew reinstall --cask tailscale-app'
 assert_file_contains "$STUB_LOG" 'brew reinstall --cask logi-options+'
-: > "$STUB_LOG"
 assert_exit 0 install_casks
 assert_file_not_contains "$STUB_LOG" 'reinstall'
 rm -rf "$SANDBOX/apps/tailscale-app.app"
@@ -269,7 +261,6 @@ CASKS=(outside)
 CASK_PKG_APPS=("outside=$SANDBOX/apps/outside.app")
 mkdir -p "$SANDBOX/apps/outside.app"
 stub brew '[ "$1 $2" != "info --json=v2" ] || echo '\''{"casks": []}'\''; [ "$1 $2" != "list --cask" ]'
-: > "$STUB_LOG"
 assert_exit 0 install_casks
 assert_file_not_contains "$STUB_LOG" "outside"
 
@@ -320,7 +311,7 @@ mkdir -p "$SANDBOX/Zed.app" "$SANDBOX/Ghostty.app"
 # shellcheck disable=SC2034 # cask_state reads it
 CASK_PKG_APPS=()
 replace_fn cask_app_path '[ "$1" != zed ] || echo "$SANDBOX/Zed.app"'
-stub brew 'S="'"$SANDBOX"'"
+stub brew 'S="$SANDBOX"
 [ "$*" != "list --cask -1" ] || { printf "ghostty\nfont-monaspace\nvicinae\n"; exit; }
 [ "$*" != --caskroom ] || { echo "$S/caskroom"; exit; }
 [ "$*" == "info --json=v2 --installed --cask" ] || exit 1
@@ -334,7 +325,6 @@ JSON'
 
 as_os macos
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
-: > "$STUB_LOG"
 run status
 # --for-alerts skips the slow bundle check
 assert_file_not_contains "$STUB_LOG" "brew bundle"

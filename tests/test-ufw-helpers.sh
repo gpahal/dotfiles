@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The ubuntu step's ufw helpers: the SSH ports, which addresses count as outside, and when ufw counts
 # as on. test-ufw-recheck.sh covers the step around them.
@@ -9,7 +8,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
-setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 

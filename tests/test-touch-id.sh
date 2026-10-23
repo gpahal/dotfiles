@@ -1,29 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 # os: macos
 
 # macos/setup-touch-id-sudo.sh: sudo_local and the root-owned pam-reattach copy sudo loads.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-
-setup_sandbox
-
-# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
-# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
-# mean owned by you. Call it after load_script.
-pam_sandbox() {
-    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
-    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
-    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
-        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
-    # OpenPAM finds macOS's .so.2 modules by bare name
-    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
-    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
-    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
-        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
-        TID_LINE="auth       sufficient     pam_tid.so"
-}
 
 export HOMEBREW_PREFIX="$SANDBOX/brew"
 load_script macos/setup-touch-id-sudo.sh
@@ -39,14 +20,7 @@ SOURCE="$SANDBOX/brew/lib/pam/pam_reattach.so"
 MODULE="$DOTFILES_PAM_LOCAL_MODULES_DIR/pam_reattach.so"
 REATTACH_LINE="auth       optional       $MODULE ignore_ssh"
 
-stub_sudo_exec 'args=()
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        -o | -g) shift 2 ;;
-        *) args+=("$1"); shift ;;
-    esac
-done
-set -- "${args[@]}"' # drops install's -o and -g, which need root
+stub_sudo_exec
 
 reset() {
     rm -rf "$SANDBOX/brew"
@@ -65,11 +39,13 @@ reset
 put_reattach
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: off"
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_contains "$RUN_OUTPUT" "Left unchanged. Run this step from a terminal to apply them."
 [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written without asking"
 [ ! -e "$MODULE" ] || fail "the module was copied without asking"
-assert_file_not_contains "$STUB_LOG" "sudo"
+assert_file_not_contains "$SANDBOX/both.log" "sudo"
 
 answer yes
 assert_exit 0 main
@@ -87,7 +63,6 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
 
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already on"
 assert_file_not_contains "$STUB_LOG" "sudo"
@@ -97,7 +72,6 @@ chmod 644 "$SOURCE"
 put_reattach "reattach 1.1"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $MODULE, which sudo loads, is older than Homebrew's pam-reattach; re-run just touch-id"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "reattach 1.1" "$(cat "$MODULE")" "the copy after the upgrade"
 assert_file_not_contains "$STUB_LOG" "$SUDO_LOCAL"
@@ -110,7 +84,6 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Touch ID for sudo, in $SUDO_LOCAL"
 assert_not_contains "$RUN_OUTPUT" "missing"
 assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already on"
 assert_file_not_contains "$STUB_LOG" "sudo"
@@ -233,9 +206,11 @@ for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew 
     esac
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $message"
+    cp "$STUB_LOG" "$SANDBOX/both.log"
     assert_exit 1 main
+    cat "$STUB_LOG" >> "$SANDBOX/both.log"
     assert_contains "$RUN_OUTPUT" "Touch ID in tmux: $message"
-    assert_file_not_contains "$STUB_LOG" "sudo"
+    assert_file_not_contains "$SANDBOX/both.log" "sudo"
     [ "$unsafe" != module-2-link ] || [ -L "$MODULE.2" ] || fail "the linked pam_reattach.so.2 was removed"
 done
 assert_eq "old reattach" "$(cat "$MODULE.2")" "pam_reattach.so.2"
@@ -264,9 +239,11 @@ for unsafe in pam-dir-writable sudo-local-link; do
     esac
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Touch ID for sudo: $message"
+    cp "$STUB_LOG" "$SANDBOX/both.log"
     assert_exit 1 main
+    cat "$STUB_LOG" >> "$SANDBOX/both.log"
     assert_contains "$RUN_OUTPUT" "Touch ID for sudo: $message."
-    assert_file_not_contains "$STUB_LOG" "sudo"
+    assert_file_not_contains "$SANDBOX/both.log" "sudo"
 done
 
 # A sudo_local others can write is reported, and main rewrites it as a fresh read-only file

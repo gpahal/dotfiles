@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # zsh/main.zsh in a login terminal: no zsh errors, extendedglob off, and _cached_init's cache.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 in_terminal_available || skip "script isn't installed"
 # CLAUDECODE turns off the terminal-only options and reminders

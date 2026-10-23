@@ -24,7 +24,7 @@ _docker_system_paths_left() {
 
 # id says you're me, in the docker group while $SANDBOX/in-group exists
 stub_docker_group() {
-    stub id 'case "$1" in -un) echo me ;; -nG) [ -e "'"$SANDBOX"'/in-group" ] && echo "me docker" || echo me ;; esac'
+    stub id 'case "$1" in -un) echo me ;; -nG) [ -e "$SANDBOX/in-group" ] && echo "me docker" || echo me ;; esac'
 }
 
 # dpkg-query reports the packages listed in $SANDBOX/installed
@@ -32,7 +32,7 @@ stub_docker_packages() {
     : > "$SANDBOX/installed"
     stub dpkg-query 'for p in "$@"; do
     case "$p" in -*) continue ;; esac
-    grep -qxF "$p" "'"$SANDBOX"'/installed" && echo "install ok installed" || echo "unknown ok not-installed"
+    grep -qxF "$p" "$SANDBOX/installed" && echo "install ok installed" || echo "unknown ok not-installed"
 done'
 }
 

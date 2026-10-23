@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # tmux.conf loads without errors, and reloading it doesn't grow its arrays.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v tmux &>/dev/null || skip "tmux isn't installed"
 
 TMUX_BIN="$(command -v tmux)"

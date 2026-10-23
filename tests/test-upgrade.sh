@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # scripts/upgrade.sh: a failed stage doesn't stop later ones; an interrupted one stops upgrade.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 JQ="$(command -v jq)"
 
@@ -27,7 +25,7 @@ installed_json $(grep -vx rectangle <<< "$HOMEBREW_CASKS") > "$SANDBOX/installed
 
 # Like Homebrew, `brew outdated` exits 1 when it lists a cask it was given
 stub brew 'case "$*" in
-    "info --json=v2 --installed --cask") cat "'"$SANDBOX"'/installed.json" ;;
+    "info --json=v2 --installed --cask") cat "$SANDBOX/installed.json" ;;
     upgrade) [ -z "${HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS:-}" ] || echo "(not auto_updates casks)" >> "$STUB_LOG" ;;
     "list --cask -1") printf "zed\nclaude\n" ;;
     "outdated --cask --greedy --quiet "*) printf "%s\n" "${@:5}"; exit 1 ;;
@@ -38,12 +36,11 @@ esac'
 stub pgrep '[[ "$*" == *Claude* ]]'
 stub sudo
 ln -s "$JQ" "$STUB_DIR/jq"
-for cmd in mas vim uv rustup t3 fc-cache; do
+for cmd in mas vim uv t3 fc-cache; do
     stub "$cmd"
 done
 # rustup's installer puts it in ~/.cargo/bin, off PATH
-mkdir -p "$HOME/.cargo/bin"
-mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
+stub_at "$HOME/.cargo/bin/rustup"
 # mise must run from ~, away from a project's mise.toml; hook-env puts the "new Node" first on PATH
 stub mise '[ "$PWD" == "$HOME" ] || echo "mise ran in $PWD" >> "$STUB_LOG"
 [ "$*" != "hook-env --force -s bash" ] || echo "export PATH='"$SANDBOX/new-node"':\$PATH"'
@@ -51,7 +48,8 @@ stub npm
 mkdir -p "$SANDBOX/new-node"
 printf '%s\n' '#!/bin/bash' 'echo "new-node npm $*" >> "$STUB_LOG"' > "$SANDBOX/new-node/npm"
 chmod +x "$SANDBOX/new-node/npm"
-stub claude '[ "$*" != "plugin list --json" ] || echo "[
+# Claude Code's native install
+stub_at "$HOME/.local/share/claude/versions/2.0.0" '[ "$*" != "plugin list --json" ] || echo "[
     {\"id\": \"a@m\", \"scope\": \"user\"},
     {\"id\": \"b@m\", \"scope\": \"project\"},
     {\"id\": \"c@m\", \"scope\": \"local\"},
@@ -92,8 +90,7 @@ esac'
 }
 
 # macOS, with Claude Code's native install
-mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
-mv "$STUB_DIR/claude" "$HOME/.local/share/claude/versions/2.0.0"
+mkdir -p "$HOME/.local/bin"
 ln -s "$HOME/.local/share/claude/versions/2.0.0" "$HOME/.local/bin/claude"
 ln -s "$STUB_DIR/t3" "$HOME/.local/bin/t3"
 upgrade_on Darwin
@@ -162,12 +159,12 @@ git_commit "$market" --allow-empty -m one
 old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
 echo 1.0.0 > "$SANDBOX/plugin-version"
 stub claude 'case "$*" in
-    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"'"$SANDBOX"'\"}]" ;;
+    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"$SANDBOX\"}]" ;;
     "plugin marketplace update") git -C "'"$market"'" commit -q --allow-empty -m two ;;
     "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"project\", \"version\": \"0.9.0\"},
-        {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "'"$SANDBOX"'/plugin-version")\"},
+        {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "$SANDBOX/plugin-version")\"},
         {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
-    "plugin update a@m "*) echo 1.1.0 > "'"$SANDBOX"'/plugin-version" ;;
+    "plugin update a@m "*) echo 1.1.0 > "$SANDBOX/plugin-version" ;;
 esac'
 assert_exit 0 upgrade_run upgrade_ai_tools
 assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
@@ -234,8 +231,8 @@ mkdir -p "$SANDBOX/caskroom/t3-code/.metadata" "$SANDBOX/Applications/T3 Code (B
 receipt() {
     printf '{"uninstall_artifacts": %s}\n' "$1" > "$SANDBOX/caskroom/t3-code/.metadata/INSTALL_RECEIPT.json"
 }
-t3_cask='"info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"'"$SANDBOX"'/Applications/T3 Code (Beta).app\"}]}]}" ;;
-    --caskroom) echo "'"$SANDBOX"'/caskroom" ;;'
+t3_cask='"info --json=v2 --cask t3-code") echo "{\"casks\": [{\"artifacts\": [{\"app\": [\"T3 Code (Beta).app\"], \"target\": \"$SANDBOX/Applications/T3 Code (Beta).app\"}]}]}" ;;
+    --caskroom) echo "$SANDBOX/caskroom" ;;'
 stub_brew_casks t3-code "$t3_cask"
 stub pgrep
 receipt '[{"app": ["T3 Code (Alpha).app"]}, {"zap": [{"trash": ["~/.t3/userdata"]}]}]'

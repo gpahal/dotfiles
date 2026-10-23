@@ -1,14 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # Ubuntu signs with a passphrase-less key, since T3 Code's agents have no ssh-agent or terminal
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
-stub systemd-detect-virt
 stub scutil 'echo Test-Mac'
 load_script git/setup-signing.sh
 as_os ubuntu
@@ -22,7 +18,7 @@ signingkey() {
 assert_exit 1 main
 [ ! -e "$SIGNING" ] || fail "the key was generated without asking"
 
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 main
 # --insecure-storage keeps the refreshed token in hosts.yml, out of the keyring
 assert_contains "$RUN_OUTPUT" "gh auth refresh -h github.com -s admin:ssh_signing_key --insecure-storage"
@@ -41,14 +37,13 @@ snapshot "$ALLOWED"
 assert_exit 0 main
 assert_unchanged "$HOME/.gitconfig" "on a re-run"
 assert_unchanged "$ALLOWED" "on a re-run"
-unset DOTFILES_ASSUME_YES
+answer no
 
 # macOS signs with ~/.ssh/id_ed25519 and prints the ssh-add that stores its passphrase in the keychain
 as_os macos
 stub ssh-add 'exit 1'
 LOGIN="$HOME/.ssh/id_ed25519"
 ssh-keygen -q -t ed25519 -N secret -f "$LOGIN"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "run once: ssh-add --apple-use-keychain $LOGIN"
 assert_contains "$RUN_OUTPUT" "gh auth refresh -h github.com -s admin:ssh_signing_key"
@@ -56,7 +51,7 @@ assert_not_contains "$RUN_OUTPUT" "--insecure-storage"
 assert_file_not_contains "$STUB_LOG" "ssh-add --apple-use-keychain"
 assert_eq "$LOGIN.pub" "$(signingkey)" "user.signingkey on macOS"
 
-export DOTFILES_ASSUME_YES=1
+answer yes
 git config --file "$HOME/.gitconfig" --unset commit.gpgsign
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "ssh-add --apple-use-keychain $LOGIN"
@@ -65,7 +60,6 @@ assert_eq true "$(git config --file "$HOME/.gitconfig" --get tag.gpgsign)" "tag.
 
 # The agent holding the key doesn't mean the keychain has its passphrase
 stub ssh-add '[ "$1" != -l ] || echo "256 $(ssh-keygen -lf "'"$LOGIN.pub"'" | cut -d" " -f2) x (ED25519)"'
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "ssh-add --apple-use-keychain $LOGIN"
 assert_file_not_contains "$STUB_LOG" "ssh-add --apple-use-keychain"
@@ -78,7 +72,7 @@ ssh-keygen -q -t ed25519 -N secret -f "$SIGNING"
 snapshot "$SIGNING"
 git config --file "$HOME/.gitconfig" user.signingkey "$SIGNING.pub"
 snapshot "$HOME/.gitconfig"
-DOTFILES_ASSUME_YES=1 assert_exit 1 main
+assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "$SIGNING has a passphrase"
 assert_unchanged "$SIGNING" "with a passphrase"
 assert_unchanged "$HOME/.gitconfig" "with an encrypted signing key"
@@ -88,7 +82,7 @@ rm -f "$HOME/.gitconfig" "$SIGNING" "$SIGNING.pub" "$ALLOWED"
 mkdir -p "$HOME/.config/git"
 printf '[user]\n    email = repo@example.com\n[include]\n    path = ~/.gitconfig.local\n' > "$HOME/.config/git/config"
 git config --file "$HOME/.gitconfig.local" user.email local@example.com
-DOTFILES_ASSUME_YES=1 assert_exit 0 main
+assert_exit 0 main
 assert_file_contains "$ALLOWED" "local@example.com namespaces=\"git\""
 assert_not_contains "$(cat "$ALLOWED")" "repo@example.com"
 rm -f "$HOME/.gitconfig.local" "$HOME/.config/git/config"
@@ -103,13 +97,12 @@ for os in ubuntu macos; do
     else
         as_os macos
     fi
-    DOTFILES_ASSUME_YES=1 assert_exit 1 main
+    assert_exit 1 main
 done
 rm -rf "$HOME/.ssh"
 : > "$HOME/.ssh"
 stub ssh-keygen 'touch "$6" "$6.pub"'
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 1 main
+assert_exit 1 main
 assert_file_not_contains "$STUB_LOG" "ssh-keygen"
 rm "$HOME/.ssh"
 test_done

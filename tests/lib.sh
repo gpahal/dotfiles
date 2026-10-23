@@ -1,13 +1,22 @@
-# Test helpers. A test sources this, calls setup_sandbox, runs steps or load_script, checks with
-# assert_*, and ends with test_done. Stub every SENTINELS command it reaches; hide makes one missing.
-# Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer yes|no.
-# tests/run.sh covers skips, timeouts, and the serial and os marks.
-# Reuse before writing your own: stub_sudo_exec, stub_sudo_cacheable, stub_uname, stub_dpkg_arch,
-# stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch, stub_gsettings,
-# stub_gnome_session, fake_step, user_shortcut, git_commit, in_terminal, jq_edit,
-# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, and wait_for.
+# Test helpers. Sourcing this runs set -euo pipefail and setup_sandbox, which makes $SANDBOX
+# (exported, for stubs to read) and points HOME and the stubs into it; source any fixture after it.
+# A test then runs steps or load_script, checks with assert_*, and ends with test_done. Stub every
+# SENTINELS command it reaches; hide makes one missing. A test with its own EXIT trap ends it with
+# _sandbox_exit, as setup_sandbox's comment shows.
+# run and assert_exit empty $STUB_LOG first, so the log holds one run's commands; to check two
+# runs', save the log between them.
+# Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer
+# yes|no|stdin.
+# tests/run.sh covers skips, timeouts, the os mark, timing, and sharding.
+# Reuse before writing your own: stub_at, stub_sudo_exec, stub_sudo_cacheable, stub_uname,
+# stub_dpkg_arch, stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
+# stub_gsettings, stub_gnome_session, fake_step, fake_github_remotes, pam_sandbox, user_shortcut,
+# git_commit, in_terminal, jq_edit, assert_sudo_noninteractive, snapshot and assert_unchanged,
+# as_unwritable, and wait_for.
 # tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox.
 # shellcheck shell=bash
+
+set -euo pipefail
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
@@ -18,12 +27,15 @@ TEST_DONE=false
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Sets the EXIT trap. A test that sets its own ends it with _sandbox_exit, keeping $?:
+# Sourcing this file runs it. It sets the EXIT trap; a test that sets its own ends it with
+# _sandbox_exit, keeping $?:
 # trap 'status=$?; set +e; <cleanup>; (exit "$status"); _sandbox_exit' EXIT
 setup_sandbox() {
     local var
     # /tmp keeps tmux's socket path under macOS's limit; -P makes printed paths match $HOME
     SANDBOX="$(cd -P "$(mktemp -d "${TEST_SANDBOX_PARENT:-/tmp}/dotfiles-test.XXXXXX")" && pwd)"
+    # Stubs read it at run time
+    export SANDBOX
     trap _sandbox_exit EXIT
     # GIT_* from a hook or worktree would point git at the real repo or add config
     for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_|GIT_)' || true); do
@@ -126,13 +138,20 @@ _stubs_first() {
 
 # The stub logs "<cmd> <args>" to $STUB_LOG, then runs the body with the args as "$@"
 stub() {
-    local name="$1" body="${2:-}"
-    printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
-    chmod +x "$STUB_DIR/$name"
+    stub_at "$STUB_DIR/$1" "${2:-}"
 }
 
-# Stub sudo to run its command as you. It refuses paths outside the sandbox and /dev, and repo
-# files the command would change. The optional body runs first and may rewrite "$@" with set --.
+# stub_at <path> [body]: a stub at any path, such as an app's own copy of a command, logged as the
+# name it runs by
+stub_at() {
+    [ -d "${1%/*}" ] || mkdir -p "${1%/*}"
+    printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "${2:-}" > "$1"
+    chmod +x "$1"
+}
+
+# Stub sudo to run its command as you, dropping install's -o and -g, which need root. It refuses
+# paths outside the sandbox and /dev, and repo files the command would change. The optional body
+# runs first and may rewrite "$@" with set --.
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
@@ -155,6 +174,16 @@ case "$cmd" in
     *) reads=all-but-last ;;
 esac
 case " $* " in *" -d "*) [ "$cmd" != install ] || reads=none ;; esac
+if [ "$cmd" == install ]; then
+    args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o | -g) shift 2 ;;
+            *) args+=("$1"); shift ;;
+        esac
+    done
+    set -- "${args[@]}"
+fi
 i=0
 for arg in "$@"; do
     i=$((i + 1))
@@ -181,10 +210,26 @@ exec env "$@"'
 # body runs next, with -n shifted off.
 stub_sudo_cacheable() {
     stub_sudo_exec 'if [ "${1:-}" == -n ]; then
-    [ -e "'"$SANDBOX"'/sudo-cached" ] || exit 1
+    [ -e "$SANDBOX/sudo-cached" ] || exit 1
     shift
 fi
 '"${1:-}"
+}
+
+# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
+# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
+# mean owned by you. Call it after load_script.
+pam_sandbox() {
+    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
+    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
+        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    # OpenPAM finds macOS's .so.2 modules by bare name
+    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
+    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
+        TID_LINE="auth       sufficient     pam_tid.so"
 }
 
 cache_sudo() {
@@ -326,11 +371,13 @@ as_os() {
     esac
 }
 
+# answer stdin: confirm reads its answer, y or anything else, from stdin
 answer() {
     case "$1" in
         yes) replace_fn confirm 'echo "$1"' ;;
         no) replace_fn confirm 'echo "$1"; return 1' ;;
-        *) fail "answer: '$1' isn't yes or no" ;;
+        stdin) replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]' ;;
+        *) fail "answer: '$1' isn't yes, no, or stdin" ;;
     esac
 }
 
@@ -399,6 +446,11 @@ user_shortcut() {
     gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$dir/custom0/']"
     gsettings set "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$dir/custom0/" \
         binding "'<Super>Return'"
+}
+
+# fake_github_remotes <dir>: git fetches https://github.com/<owner>/<repo> from <dir>/<owner>/<repo>
+fake_github_remotes() {
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$1/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
 }
 
 git_commit() {
@@ -481,7 +533,7 @@ printf 'sub:-\\nfpr:::::::::%s:\\n' $2"
 # to $1, by default 200
 stub_http_status() {
     echo "${1:-200}" > "$SANDBOX/http-status"
-    stub curl 'cat "'"$SANDBOX"'/http-status"'
+    stub curl 'cat "$SANDBOX/http-status"'
 }
 
 # Replace fetch: it logs "fetch <url>", fails while $SANDBOX/fetch-fails exists, and else writes
@@ -521,9 +573,11 @@ load_script() {
     _stubs_first
 }
 
-# Run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always succeeds
+# Empty $STUB_LOG, then run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always
+# succeeds. To check the log of two runs, save it before the second.
 run() {
     local errexit=false
+    : > "$STUB_LOG"
     case "$-" in *e*) errexit=true ;; esac
     set +e
     RUN_OUTPUT="$(
@@ -654,3 +708,5 @@ assert_exit() {
     _show "$RUN_OUTPUT"
     return 0
 }
+
+setup_sandbox

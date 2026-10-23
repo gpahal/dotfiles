@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # A step missing a prerequisite fails before it changes anything, and status reports the check
 # unknown. chrome without curl is in test-chrome.sh.
@@ -8,8 +7,6 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
-
-setup_sandbox
 
 # Subshell, so the rest of the test still has the command
 without() {
@@ -111,7 +108,6 @@ for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq c
     step="${check#* }"
     rm -rf "$HOME"
     mkdir -p "$HOME"
-    : > "$STUB_LOG"
     assert_exit 1 without "$cmd" "$step"
     assert_contains "$RUN_OUTPUT" "$cmd"
     check_untouched "$step without $cmd"

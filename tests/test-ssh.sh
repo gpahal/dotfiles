@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The ssh step: keychain key loading on macOS (Host * block and LaunchAgent), parsed as ssh does.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script ssh/install.sh
 as_os macos
 stub launchctl '[ "$1" != print ] || exit 113'
@@ -72,7 +70,6 @@ assert_unchanged "$SSH_CONFIG" "with the settings above every Host line"
 
 # A sandbox HOME isn't the real one, so the agent isn't loaded
 AGENT="$HOME/Library/LaunchAgents/dotfiles.ssh-add.plist"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
 assert_exit 3 main --status
@@ -83,8 +80,8 @@ stub launchctl 'case "$1" in print) exit 113 ;; bootstrap) exit 5 ;; esac'
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "launchctl bootstrap gui/$(id -u) $AGENT"
 stub launchctl 'case "$1" in
-    print) [ -e "'"$SANDBOX"'/loaded" ] ;;
-    bootstrap) touch "'"$SANDBOX"'/loaded" ;;
+    print) [ -e "$SANDBOX/loaded" ] ;;
+    bootstrap) touch "$SANDBOX/loaded" ;;
 esac'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Loaded the dotfiles.ssh-add LaunchAgent"
@@ -97,7 +94,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Added a Host * block"
 assert_eq 1 "$(host_star_count)" "Host * blocks after a Match line with *"
 
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already loaded"
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
@@ -111,7 +107,6 @@ assert_exit 1 copy_failure
 
 as_os ubuntu
 rm -rf "$HOME/.ssh" "$HOME/Library"
-: > "$STUB_LOG"
 assert_exit 0 main
 [ ! -e "$SSH_CONFIG" ] || fail "Ubuntu got $SSH_CONFIG: $(cat "$SSH_CONFIG")"
 [ ! -e "$AGENT" ] || fail "Ubuntu got the LaunchAgent"

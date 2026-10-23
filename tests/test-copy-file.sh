@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # copy_file, status_file, and backup_file: replacing installed configs, their modes, and backup names.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 
 src="$SANDBOX/repo/config.yml"
@@ -15,11 +13,6 @@ dest="$HOME/Library/Application Support/tool/config.yml"
 mkdir -p "$SANDBOX/repo"
 
 # read -p prints no question without a terminal, so confirm echoes it
-fake_terminal() {
-    replace_fn is_interactive true
-    replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]'
-}
-
 printf 'hello\n' > "$src"
 assert_exit 0 copy_file "$src" "$dest"
 assert_eq "hello" "$(cat "$dest")" "installed file"
@@ -28,7 +21,7 @@ assert_exit 0 copy_file "$src" "$dest"
 assert_eq "$inode" "$(/bin/ls -i "$dest" | awk '{print $1}')" "inode after a second copy"
 
 # A repo update or hand edit is replaced without a question or backup, even with --backup
-fake_terminal
+answer stdin
 for change in repo edit; do
     if [ "$change" == repo ]; then
         printf 'hello2\n' > "$src"

@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The ubuntu step's ufw firewall: sudo-free checks, its rules, and SSH sessions that keep it off.
 
@@ -10,7 +9,6 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 ubuntu_step_set_up
 unset DOTFILES_ASSUME_YES
@@ -26,8 +24,8 @@ touch "$SANDBOX/linger"
 # --- SSH sessions, from ss and logind, not SSH_CONNECTION ---
 # ip route get: a gateway for outside, tailscale0 for the tailnet, wg0 (a VPN) for link-local
 stub ss 'port="${4##*:}"
-[ ! -e "'"$SANDBOX"'/ss-fails" ] || exit 1
-cat "'"$SANDBOX"'/ss-${port% )}" 2> /dev/null || true'
+[ ! -e "$SANDBOX/ss-fails" ] || exit 1
+cat "$SANDBOX/ss-${port% )}" 2> /dev/null || true'
 stub ip 'case "$1 $2" in
     "route get") case "$3" in
         203.* | 198.* | 2001:db8:9*) echo "$3 via 192.168.1.1 dev eth0 src 192.168.1.5" ;;
@@ -39,10 +37,10 @@ esac'
 # One logind session per address in $SANDBOX/logins
 stub loginctl 'case "$1" in
     list-sessions)
-        [ ! -e "'"$SANDBOX"'/logind-fails" ] || exit 1
-        awk "{ print NR, 1000, \"me\", \"-\", 100 + NR, \"user\", \"pts/\" NR, \"no\", \"-\" }" "'"$SANDBOX"'/logins" 2> /dev/null || true ;;
-    show-session) sed -n "$2p" "'"$SANDBOX"'/logins" ;;
-    *) touch "'"$SANDBOX"'/linger" ;;
+        [ ! -e "$SANDBOX/logind-fails" ] || exit 1
+        awk "{ print NR, 1000, \"me\", \"-\", 100 + NR, \"user\", \"pts/\" NR, \"no\", \"-\" }" "$SANDBOX/logins" 2> /dev/null || true ;;
+    show-session) sed -n "$2p" "$SANDBOX/logins" ;;
+    *) touch "$SANDBOX/linger" ;;
 esac'
 rules_present() {
     ufw_status_listing > "$SANDBOX/ufw-status"
@@ -54,7 +52,6 @@ rules_missing() {
 # Nothing else pending, credentials not cached: no prompt, only a hint
 rules_present
 cache_sudo no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_not_contains "$RUN_OUTPUT" "Left unchanged"
@@ -71,7 +68,6 @@ stub dpkg-query 'echo "install ok installed"'
 # Credentials cached: rules checked up front
 cache_sudo yes
 rules_present
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_not_contains "$RUN_OUTPUT" "sudo -v"
@@ -82,7 +78,6 @@ cache_sudo no
 export DOTFILES_ASSUME_YES=1
 rm -f "$SANDBOX/linger"
 rules_present
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "loginctl enable-linger"
 assert_file_contains "$STUB_LOG" "sudo ufw status"
@@ -90,7 +85,6 @@ assert_file_not_contains "$STUB_LOG" "ufw --force enable"
 
 rm -f "$SANDBOX/linger"
 rules_missing
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 
@@ -98,7 +92,6 @@ assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 
 cache_sudo yes
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-status"
-: > "$STUB_LOG"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
@@ -110,7 +103,6 @@ for state in on off; do
     "ufw_$state"
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6"
-    : > "$STUB_LOG"
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "ufw doesn't filter IPv6"
     if grep '^sudo ufw' "$STUB_LOG" | grep -qv '^sudo ufw status'; then
@@ -129,7 +121,6 @@ assert_exit 0 ufw_missing_rules -n
 assert_contains "$RUN_OUTPUT" "22/tcp on docker0 DENY Anywhere"
 assert_contains "$RUN_OUTPUT" "22/tcp (v6) on br-+ DENY Anywhere (v6)"
 assert_not_contains "$RUN_OUTPUT" "ALLOW"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on docker0 to any port 22 proto tcp"
 assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
@@ -142,7 +133,6 @@ assert_exit 0 ufw_configured -n
 rules_present
 grep -v "41641/udp" "$SANDBOX/ufw-status" > "$SANDBOX/ufw-status.new"
 mv "$SANDBOX/ufw-status.new" "$SANDBOX/ufw-status"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
 assert_eq "$(ufw_status_listing)" "$(cat "$SANDBOX/ufw-status")" "the rules after adding the missing one"
@@ -159,7 +149,6 @@ no_sessions() { rm -f "$SANDBOX"/ss-[0-9]* "$SANDBOX/logins"; }
 # configure_ufw alone, since main's other changes don't depend on it
 firewall_run() {
     ufw_off
-    : > "$STUB_LOG"
     run configure_ufw
 }
 firewall_unchanged() {
@@ -232,7 +221,6 @@ ufw_on
 sessions 22 192.168.1.5:22 203.0.113.9:51000
 logins 203.0.113.9
 rules_missing
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
@@ -246,7 +234,6 @@ no_sessions
 touch "$SANDBOX/ss-fails"
 rm -f "$SANDBOX/linger"
 ufw_off
-: > "$STUB_LOG"
 run main
 assert_eq 1 "$RUN_STATUS" "the step without the connections"
 assert_contains "$RUN_OUTPUT" "Couldn't list the established SSH connections"

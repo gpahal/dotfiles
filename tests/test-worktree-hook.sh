@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # Claude Code's worktree hook, run against local repos: WorktreeCreate's base, fetch, and copies,
 # and what WorktreeRemove and SessionEnd remove or keep. test-claude-settings.sh covers its
@@ -8,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 unset CLAUDE_PROJECT_DIR GIT_SSH_COMMAND GIT_SSH
 export PATH="$REPO_DIR/git/bin:$PATH"
 hook="$REPO_DIR/ai_tools/claude-code/worktree-hook.sh"
@@ -52,13 +50,12 @@ mkdir -p "$repo/build"
 echo out > "$repo/build/out"
 
 real_git="$(command -v git)"
-mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/git" << EOF
-#!/bin/bash
+stub_at "$HOME/.local/bin/git" "$(
+    cat << EOF
 case " \$* " in *" fetch "*) printf '%s\\n' "git \$* | \${GIT_SSH_COMMAND:-}" >> "$SANDBOX/fetch.log" ;; esac
 exec "$real_git" "\$@"
 EOF
-chmod +x "$HOME/.local/bin/git"
+)"
 : > "$SANDBOX/fetch.log"
 
 mkdir -p "$HOME/.claude"
@@ -106,12 +103,8 @@ for wt in recent unrelated offline retry; do
 done
 
 # The sandbox allows only local repos, so allow ssh; the stub stands in for ssh
-cat > "$SANDBOX/logssh" << EOF
-#!/bin/bash
-printf '%s\n' "\$*" >> "$SANDBOX/ssh.log"
-exit 1
-EOF
-chmod +x "$SANDBOX/logssh"
+stub_at "$SANDBOX/logssh" 'printf "%s\n" "$*" >> "$SANDBOX/ssh.log"
+exit 1'
 git -C "$repo" config core.sshCommand "$SANDBOX/logssh"
 git -C "$repo" remote set-url origin example.invalid:origin.git
 touch -t 202001010000 "$stamp"
@@ -134,8 +127,8 @@ remove "$dir/ssh-wrapper"
 git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
 
 cp "$HOME/.local/bin/git" "$SANDBOX/git-before-stall"
-cat > "$HOME/.local/bin/git" <<EOF
-#!/bin/bash
+stub_at "$HOME/.local/bin/git" "$(
+    cat << EOF
 case " \$* " in
     *" fetch "*)
         (trap '' TERM; exec sleep 40) &
@@ -145,7 +138,7 @@ case " \$* " in
 esac
 exec "$real_git" "\$@"
 EOF
-chmod +x "$HOME/.local/bin/git"
+)"
 rm -f "$stamp"
 started=$SECONDS
 WORKTREE_HOOK_FETCH_DEADLINE=1 create stalled "$repo"
@@ -341,15 +334,10 @@ mv "$repo/env-a" "$repo/.env"
 
 # The hook hard-codes Homebrew's dirs, so a copy points them into the sandbox
 session_git() {
-    local name
-    mkdir -p "$SANDBOX/brew/bin" "$SANDBOX/session-bin"
-    for name in brew session; do
-        printf '%s\n' '#!/bin/bash' "echo $name >> \"$SANDBOX/git.log\"" "exec \"$real_git\" \"\$@\"" \
-            > "$SANDBOX/$name-bin-git"
-    done
-    mv "$SANDBOX/brew-bin-git" "$SANDBOX/brew/bin/git"
-    mv "$SANDBOX/session-bin-git" "$SANDBOX/session-bin/git"
-    chmod +x "$SANDBOX/brew/bin/git" "$SANDBOX/session-bin/git"
+    stub_at "$SANDBOX/brew/bin/git" 'echo brew >> "$SANDBOX/git.log"
+exec '"$(printf '%q' "$real_git")"' "$@"'
+    stub_at "$SANDBOX/session-bin/git" 'echo session >> "$SANDBOX/git.log"
+exec '"$(printf '%q' "$real_git")"' "$@"'
     sed -e "s|/opt/homebrew/bin|$SANDBOX/brew/bin|" -e "s|/home/linuxbrew/.linuxbrew/bin|$SANDBOX/brew/bin|" \
         "$REPO_DIR/ai_tools/claude-code/worktree-hook.sh" > "$SANDBOX/hook.sh"
     hook="$SANDBOX/hook.sh"

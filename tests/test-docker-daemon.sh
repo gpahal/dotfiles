@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the functions this test replaces
-set -euo pipefail
 
 # The docker step's daemon.json merge: your settings kept, and the old file back when Docker
 # rejects the new one.
@@ -10,7 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=docker-fixture.sh
 source "$TESTS_DIR/docker-fixture.sh"
 
-setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
 as_os ubuntu
@@ -51,7 +49,6 @@ assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "file
 printf '{"log-driver":"json-file","unknown-option":true}\n' > "$DOCKER_DAEMON_CONFIG"
 snapshot "$DOCKER_DAEMON_CONFIG"
 stub dockerd 'exit 1'
-: > "$STUB_LOG"
 assert_exit 1 configure_daemon
 assert_unchanged "$DOCKER_DAEMON_CONFIG" "after a failed validation"
 assert_file_not_contains "$STUB_LOG" 'try-restart'
@@ -71,7 +68,6 @@ assert_contains "$RUN_OUTPUT" '{"log-driver":"json-file"}'
 restore_fn write_root_file
 printf '{"log-driver":"json-file"}\n' > "$DOCKER_DAEMON_CONFIG"
 stub systemctl
-: > "$STUB_LOG"
 assert_exit 0 configure_daemon
 assert_file_contains "$STUB_LOG" 'systemctl try-restart docker.service'
 assert_eq daemon.json "$(/bin/ls -A "$(dirname "$DOCKER_DAEMON_CONFIG")")" "files beside daemon.json after a retry"
@@ -89,7 +85,6 @@ assert_exit 0 configure_daemon
 assert_eq "$(sorted /dev/stdin <<< "{$SETTINGS}")" "$(sorted)" "daemon.json from an empty file"
 
 echo '{"dns": [' > "$DOCKER_DAEMON_CONFIG"
-: > "$STUB_LOG"
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_eq '{"dns": [' "$(cat "$DOCKER_DAEMON_CONFIG")" "invalid daemon.json"
@@ -97,7 +92,6 @@ assert_file_not_contains "$STUB_LOG" "systemctl"
 { echo '{"debug": true}'; echo "{$SETTINGS}"; } > "$DOCKER_DAEMON_CONFIG"
 snapshot "$DOCKER_DAEMON_CONFIG"
 assert_exit 1 daemon_configured
-: > "$STUB_LOG"
 assert_exit 1 configure_daemon
 assert_contains "$RUN_OUTPUT" "isn't one valid JSON object"
 assert_unchanged "$DOCKER_DAEMON_CONFIG" "with two JSON values"

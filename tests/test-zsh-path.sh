@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The PATH, fpath, and Homebrew environment that the zsh startup files give each kind of zsh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 ZSH_BIN="$(command -v zsh)" || skip "zsh isn't installed"
 stub brew 'exit 1'
 stub_login_shell_zsh
@@ -67,8 +65,8 @@ assert_exit 0 apply
 # Without HOMEBREW_PREFIX, a shell gets brew shellenv's environment without running brew
 sed -e "s|/home/linuxbrew/.linuxbrew|$BREW|g" -e "s|/opt/homebrew|$BREW|g" "$REPO_DIR/zsh/path.zsh" \
     > "$HOME/.zsh/path.zsh"
-printf '#!/bin/sh\ntouch "%s"\n' "$SANDBOX/brew-ran" > "$BREW/bin/brew"
-chmod +x "$BREW/bin/brew"
+# The shells below run without $SANDBOX
+stub_at "$BREW/bin/brew" "touch $(printf '%q' "$SANDBOX/brew-ran")"
 if [[ "$OSTYPE" == darwin* ]]; then repository="$BREW"; else repository="$BREW/Homebrew"; fi
 for flags in -ic -lc -c; do
     assert_eq "$BREW $BREW/Cellar $repository $BREW/share/zsh/site-functions $BREW/share/info:" \

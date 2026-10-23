@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # lib/common.sh's confirm, regex_escape, version_at_least, run_bounded, and quitting a running app
 # to merge its settings, and stub_sudo_exec's refusals.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 
 # --- confirm and DOTFILES_ASSUME_YES ---
@@ -67,8 +65,8 @@ app_json() {
     merge() {
         merge_app_json "Some App" "already set" "set" "$settings" '.repo = 2'
     }
-    stub pgrep '[ -e "'"$SANDBOX"'/app-running" ]'
-    stub osascript '[ -e "'"$SANDBOX"'/stays-running" ] || rm -f "'"$SANDBOX"'/app-running"'
+    stub pgrep '[ -e "$SANDBOX/app-running" ]'
+    stub osascript '[ -e "$SANDBOX/stays-running" ] || rm -f "$SANDBOX/app-running"'
     stub sleep
     touch "$SANDBOX/app-running"
     as_os macos

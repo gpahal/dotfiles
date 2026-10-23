@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The ubuntu step's full status, with sudo's credentials cached or not, never prompts or changes
 # anything, and checks a file only root can read once they're cached.
@@ -11,7 +10,6 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 ubuntu_step_set_up
 unset DOTFILES_ASSUME_YES
@@ -20,7 +18,7 @@ unset DOTFILES_ASSUME_YES
 # so `cat <file>` of an unreadable file prints <file>.root.
 stub_sudo_cacheable 'case "$1 ${2:-}" in
     "true "* | "cat "* | "test "* | "sh -c" | *"/sshd -T" | "ufw status") ;;
-    *) echo "$*" >> "'"$SANDBOX"'/mutations"; exit 1 ;;
+    *) echo "$*" >> "$SANDBOX/mutations"; exit 1 ;;
 esac
 [ "$1" != cat ] || [ -r "$2" ] || exec cat "$2.root"'
 no_prompting_sudo() {

@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 
 fake_step first 'echo "first ran"'

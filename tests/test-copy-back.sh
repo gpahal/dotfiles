@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2088 # ~ in the output it checks
-set -euo pipefail
 
 # scripts/copy-back.sh: copying edited configs back into the repo. It writes into the repo it's in,
 # so it runs on a copy committed to a new git repo.
@@ -8,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 
 repo="$SANDBOX/repo"

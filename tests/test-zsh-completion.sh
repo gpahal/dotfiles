@@ -1,10 +1,8 @@
 #!/bin/bash
-set -euo pipefail
 
 # compinit with an insecure fpath dir skips it, and keeps g's git completion with any dump state.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 # compaudit trusts dirs your own group can write, as Ubuntu's umask 002 makes them
 stub getent "$(printf 'echo %q' "$(id -gn):x:$(id -g):")"

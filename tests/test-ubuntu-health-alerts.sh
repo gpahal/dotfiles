@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a runner that
 # couldn't run or a missing repo, the boot notice, and the ubuntu step's report of a failed last run.
@@ -9,7 +8,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
-setup_sandbox
 export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
 
 # Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>
@@ -57,13 +55,11 @@ claude-code:
 EOF
 
 echo 3 > "$SANDBOX/exit/setup"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_not_contains "$STUB_LOG" "curl"
 assert_file_not_contains "$STUB_LOG" "setup"
 
 echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "setup --status --for-alerts"
 assert_file_contains "$STUB_LOG" "ai_tools --status --for-alerts"
@@ -85,14 +81,12 @@ first_state="$(cat "$STATE")"
 age_state 86400
 sed -i.orig 's/8\.3 GiB/8.1 GiB/' "$SANDBOX/out/setup"
 rm "$SANDBOX/out/setup.orig"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "Unchanged since the last push on "
 assert_contains "$RUN_OUTPUT" "; not pushing again until "
 assert_file_not_contains "$STUB_LOG" "curl"
 
 age_state 604800
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 read -r time hash < "$STATE"
@@ -102,7 +96,6 @@ assert_eq "$first_hash" "$hash" "the hash after the weekly push"
 echo 0 > "$SANDBOX/exit/setup"
 echo 1 > "$SANDBOX/exit/ai_tools"
 printf '%s\n' "=== AI tools status ===" "codex:" "  missing    Codex" "" "Failed steps: t3-code" > "$SANDBOX/out/ai_tools"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "Failed steps: t3-code"
 assert_file_contains "$STUB_LOG" "codex: Codex"
@@ -110,13 +103,11 @@ assert_file_not_contains "$STUB_LOG" "Tailscale"
 
 # After a push, one all-clear, then nothing
 echo 0 > "$SANDBOX/exit/ai_tools"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: All clear on $(hostname)"
 assert_file_contains "$STUB_LOG" "-H Tags: white_check_mark"
 assert_file_contains "$STUB_LOG" "--data-raw Nothing needs attention any more."
 assert_contains "$(cat "$STATE")" " clear"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "Nothing needs attention."
 assert_file_not_contains "$STUB_LOG" "curl"
@@ -128,7 +119,6 @@ echo "$first_state" > "$STATE"
 cp "$SANDBOX/out/setup" "$SANDBOX/out/setup.report"
 printf '%s\n' "lib/common.sh: line 12: syntax error near unexpected token \`<<<'" "" > "$SANDBOX/out/setup"
 echo 2 > "$SANDBOX/exit/setup"
-: > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "setup.sh --status --for-alerts exited 2"
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
@@ -136,7 +126,6 @@ assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2"
 assert_file_contains "$STUB_LOG" "setup.sh's last output: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"
 # The last line stays out of the hash, since it may change each run, e.g. a temp file name
 printf '%s\n' "mktemp: /tmp/tmp.Xyz: something else" > "$SANDBOX/out/setup"
-: > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "Unchanged since the last push"
 assert_file_not_contains "$STUB_LOG" "curl"
@@ -144,7 +133,6 @@ assert_file_not_contains "$STUB_LOG" "curl"
 echo "$first_state" > "$STATE"
 : > "$SANDBOX/out/setup"
 echo 137 > "$SANDBOX/exit/setup"
-: > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 137"
 assert_file_not_contains "$STUB_LOG" "last output"
@@ -153,7 +141,6 @@ mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
 # No repo where the alert runs status
 mv "$REPO" "$SANDBOX/repo.away"
-: > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO"
@@ -169,7 +156,6 @@ assert_contains "$RUN_OUTPUT" "Couldn't push"
 assert_not_contains "$RUN_OUTPUT" "secret-topic"
 assert_eq "$recent" "$(cat "$STATE")" "the state after a failed push"
 rm "$SANDBOX/curl-fails"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_not_contains "$(cat "$STATE")" " 12345"
@@ -187,39 +173,32 @@ chmod 644 "$DOTFILES_NTFY_URL_FILE"
 
 # boot retries while the network comes up
 echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 assert_file_contains "$STUB_LOG" "--data-raw $(hostname) started at "
 assert_file_not_contains "$STUB_LOG" "sleep"
 # Once per boot, even if the user manager restarts it
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_contains "$RUN_OUTPUT" "Already pushed the boot notice for this boot."
 assert_file_not_contains "$STUB_LOG" "curl"
 # A new boot, or an unreadable boot ID, pushes again
 echo boot-2 > "$DOTFILES_BOOT_ID_FILE"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 rm "$DOTFILES_BOOT_ID_FILE"
 for _ in 1 2; do
-    : > "$STUB_LOG"
     assert_exit 0 "$BASH" "$ALERT" boot
     assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 done
 echo boot-3 > "$DOTFILES_BOOT_ID_FILE"
 touch "$SANDBOX/curl-fails"
-: > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" boot
 assert_contains "$RUN_OUTPUT" "Couldn't push the boot notice to ntfy"
 rm "$SANDBOX/curl-fails"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 
 rm "$DOTFILES_NTFY_URL_FILE"
-: > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_not_contains "$STUB_LOG" "curl"
 
@@ -234,7 +213,7 @@ assert_exit 1 copies_ok health_unit_files
 ubuntu_sandbox_paths
 HEALTH_UNIT_DIR="$SANDBOX/units"
 mkdir -p "$HEALTH_UNIT_DIR" "$SANDBOX/result"
-stub systemctl '[ "$*" != "--user show -p Result --value ${!#}" ] || cat "'"$SANDBOX"'/result/${!#}" 2> /dev/null || true'
+stub systemctl '[ "$*" != "--user show -p Result --value ${!#}" ] || cat "$SANDBOX/result/${!#}" 2> /dev/null || true'
 last_runs() {
     status_last_run "Daily health alert's last run" dotfiles-health.service
     status_last_run "Boot notice's last run" dotfiles-boot-notice.service

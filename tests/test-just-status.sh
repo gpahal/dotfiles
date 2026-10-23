@@ -1,14 +1,11 @@
 #!/bin/bash
-set -euo pipefail
 
 # The justfile: status runs both runners and combines their codes, and no recipe runs its arguments.
 
+just="$(command -v just || true)"
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-
-just="$(command -v just || true)"
 [ -n "$just" ] || skip "just isn't installed"
-setup_sandbox
 
 repo="$SANDBOX/repo"
 mkdir -p "$repo/ai_tools"

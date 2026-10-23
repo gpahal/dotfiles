@@ -4,7 +4,7 @@
 # Commands a test must stub; running one unstubbed fails the test, even under `|| true`. List any
 # that changes the machine, uses the network, or prints machine-specific output, and any whose
 # presence a step checks, so the check finds the stub on every machine. A test needing a real one
-# saves its path before setup_sandbox.
+# saves its path before sourcing tests/lib.sh.
 SENTINELS="brew apt apt-get add-apt-repository snap systemctl launchctl defaults softwareupdate mas
 osascript curl wget npx npm gh tailscale ufw docker loginctl chsh killall pkill open xdg-open
 locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex t3 uv bun pnpm ss

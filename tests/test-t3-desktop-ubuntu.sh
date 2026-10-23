@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The t3-code step's desktop app on Ubuntu: its own server off and its app settings set before it's
 # installed, telemetry off through environment.d, and the latest release's .deb checked against
@@ -9,14 +8,12 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 command -v sha256sum &> /dev/null || skip "sha256sum isn't installed"
 load_script ai_tools/t3-code/install.sh
 as_os ubuntu
 replace_fn has_gnome_desktop 'true'
 replace_fn running_inside 'false'
-export SANDBOX
 SETTINGS="$HOME/.t3/userdata/desktop-settings.json"
 
 printf 'a fake deb' > "$SANDBOX/t3.deb"
@@ -48,15 +45,16 @@ stub ss 'exit 1'
 stub_sudo_exec
 
 assert_exit 3 main --status
+cp "$STUB_LOG" "$SANDBOX/both.log"
 
 answer no
 assert_exit 0 setup_t3_code_desktop_ubuntu
-assert_file_not_contains "$STUB_LOG" "apt-get"
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_file_not_contains "$SANDBOX/both.log" "apt-get"
 assert_eq "false" "$(jq -r .localEnvironmentEnabled "$SETTINGS")" "the desktop app's own server, before the install"
 assert_eq "steer" "$(jq -r .followUpBehavior "$HOME/.t3/userdata/client-settings.json")" "the desktop app's follow-up behavior"
 
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_file_contains "$STUB_LOG" "install -y"
 [ -e "$SANDBOX/installed" ] || fail "the .deb wasn't installed"
@@ -65,7 +63,6 @@ assert_contains "$RUN_OUTPUT" "ok         T3 Code desktop app"
 assert_contains "$RUN_OUTPUT" "ok         Desktop app's own server off"
 
 # Installed: it updates itself, so nothing is fetched again
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_file_not_contains "$STUB_LOG" "curl"
 
@@ -88,7 +85,6 @@ assert_contains "$RUN_OUTPUT" "no riscv64 .deb"
 
 # Ubuntu Server has no desktop to run it
 replace_fn has_gnome_desktop 'false'
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_eq "" "$(cat "$STUB_LOG")" "commands run without a desktop"
 

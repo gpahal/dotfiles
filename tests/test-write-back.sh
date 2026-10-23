@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement,
 # json_merge's backups and bad input, and root files' modes and groups.
@@ -7,16 +6,10 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 load_script lib/system.sh
 
 # read -p prints no question without a terminal, so confirm echoes it
-fake_terminal() {
-    replace_fn is_interactive true
-    replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]'
-}
-
 file="$HOME/settings.json"
 printf 'old\n' > "$file"
 chmod 640 "$file"
@@ -141,7 +134,7 @@ if command -v jq &>/dev/null; then
     assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup"
 
     # A failing or multi-value filter makes no backup, since jq runs before maybe_backup
-    fake_terminal
+    answer stdin
     settings="$HOME/badfilter/settings.json"
     mkdir -p "$HOME/badfilter"
     printf '{"mine": 1}\n' > "$settings"
@@ -185,15 +178,7 @@ for line in '-e x' '--' 'plain'; do
 done
 assert_eq "$(printf '%s\n' '-e x' '--' plain)" "$(cat "$lines")" "file after appending each line twice"
 
-# install runs for real, minus -g, since the sandbox's user can't give a file root's groups
-stub_sudo_exec 'if [ "${1:-}" == install ]; then
-    shift
-    args=()
-    while [ $# -gt 0 ]; do
-        case "$1" in -g) shift 2 ;; *) args+=("$1"); shift ;; esac
-    done
-    set -- install "${args[@]}"
-fi'
+stub_sudo_exec
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"
@@ -228,7 +213,6 @@ assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files after a failed write_roo
 
 # The group is set in the install that writes the file, so a failed chgrp can't leave it root:root
 dest="$SANDBOX/etc/nut/upsd.users"
-: > "$STUB_LOG"
 assert_exit 0 write_root_file "$dest" "secret" 0640 nut
 assert_eq secret "$(cat "$dest")" "file write_root_file wrote"
 assert_eq 640 "$(file_mode "$dest")" "mode write_root_file set"

@@ -1,11 +1,9 @@
 #!/bin/bash
-set -euo pipefail
 
 # The wizard template's .env reader and writer.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 
 # The library is everything above the STAGES marker
 sed '/^# STAGES:/,$d' "$REPO_DIR/ai_tools/skills/engineering/wizard/template.sh" > "$SANDBOX/wizard-lib.sh"

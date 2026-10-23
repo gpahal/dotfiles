@@ -1,13 +1,11 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # The ghostty step: config reload, Application Support overrides, and Ubuntu's snap and terminfo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 terminfo="$SANDBOX/snap-terminfo"
 export DOTFILES_GHOSTTY_TERMINFO="$terminfo"
 load_script ghostty/install.sh
@@ -19,7 +17,6 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Reloaded Ghostty config."
 assert_eq "pkill -USR2 -x ghostty" "$(cat "$STUB_LOG")" "commands run for a new config"
 
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Reload"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged config"
@@ -68,7 +65,6 @@ assert_contains "$RUN_OUTPUT" "Install Ghostty from its snap"
 [ ! -e "$HOME/.terminfo" ] || fail "terminfo copied with the snap declined"
 
 stub snap
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed the xterm-ghostty terminfo in ~/.terminfo."
 assert_eq "" "$(cmp "$terminfo" "$HOME/.terminfo/x/xterm-ghostty" 2>&1)" "terminfo copied"

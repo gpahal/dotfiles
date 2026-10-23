@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # T3 Code's macOS setup: the telemetry LaunchAgent, written but not loaded, launchd's telemetry
 # variable, the settings, and the cask, including an app an update renamed.
@@ -8,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script ai_tools/t3-code/install.sh
 
@@ -18,8 +16,8 @@ mkdir -p "$APP"
 replace_fn t3_code_app_path 'echo "$APP"'
 stub_launchd() {
     stub launchctl 'case "$1" in
-    setenv) echo "$3" > "'"$SANDBOX"'/launchd-env" ;;
-    getenv) cat "'"$SANDBOX"'/launchd-env" 2>/dev/null || true ;;
+    setenv) echo "$3" > "$SANDBOX/launchd-env" ;;
+    getenv) cat "$SANDBOX/launchd-env" 2>/dev/null || true ;;
 esac'
 }
 stub_launchd
@@ -66,7 +64,6 @@ mkdir -p "$SANDBOX/Applications/T3 Code (Nightly).app"
 assert_eq "$SANDBOX/Applications/T3 Code.app" "$(t3_code_app_path)" "the renamed app's path"
 run status
 assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), as T3 Code.app"
-: > "$STUB_LOG"
 run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, as T3 Code.app."
 assert_file_not_contains "$STUB_LOG" "brew reinstall"
@@ -77,7 +74,6 @@ stub brew 'case "$1" in
 esac'
 run status
 assert_contains "$RUN_OUTPUT" "ok         t3-code (cask), installed outside Homebrew"
-: > "$STUB_LOG"
 run main
 assert_contains "$RUN_OUTPUT" "t3-code already installed, but not by Homebrew"
 assert_file_not_contains "$STUB_LOG" "brew install"

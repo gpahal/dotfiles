@@ -1,13 +1,11 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The item helpers: status, pending lists, and apply with sudo items, --no-sudo, and failed fixes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 
 fixes="$SANDBOX/fixes"

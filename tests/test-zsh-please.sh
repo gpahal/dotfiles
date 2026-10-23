@@ -1,10 +1,8 @@
 #!/bin/bash
-set -euo pipefail
 
 # please runs the line typed before it as root. Each case feeds an interactive zsh on stdin.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 
 stub sudo
@@ -24,23 +22,19 @@ assert_exit 0 interactive 'echo first' please
 assert_eq "sudo zsh -c echo first" "$(cat "$STUB_LOG")" "what please runs"
 
 # fc -n would print the newline as \n, which zsh -c reads as n
-: > "$STUB_LOG"
 assert_exit 0 interactive '{ echo one' 'echo two }' please
 assert_eq "$(printf '%s\n' 'sudo zsh -c { echo one' 'echo two }')" "$(cat "$STUB_LOG")" "a multi-line command"
 
 # hist_ignore_space keeps the line out of history, but it's still the line typed before please
-: > "$STUB_LOG"
 assert_exit 0 interactive 'echo kept' ' echo spaced' please
 assert_eq "sudo zsh -c  echo spaced" "$(cat "$STUB_LOG")" "a line with a leading space"
 
 # please, run again or with spaces, still runs the line before it
-: > "$STUB_LOG"
 assert_exit 0 interactive 'echo twice' please please ' please' 'please ' 'echo again; please'
 assert_eq "$(printf 'sudo zsh -c echo twice\n%.0s' 1 2 3 4 5)" "$(cat "$STUB_LOG")" "please again and with spaces"
 
 # A line zsh doesn't run is still the line typed before please
 for line in 'echo oops )' '# a note'; do
-    : > "$STUB_LOG"
     assert_exit 0 interactive 'echo older' "$line" please
     assert_eq "sudo zsh -c $line" "$(cat "$STUB_LOG")" "please after '$line'"
 done

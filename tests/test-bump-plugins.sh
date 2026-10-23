@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # scripts/bump-plugins.sh, run on a copy of the repo's files with local repos for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 
 COPY="$SANDBOX/repo"
@@ -22,7 +20,7 @@ PLUG_VERSION="$COPY/vim/plug.vim.version"
 
 # A git url rewrite makes each repo under $REMOTES https://github.com/<repo>
 REMOTES="$SANDBOX/remotes"
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$REMOTES/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
+fake_github_remotes "$REMOTES"
 # Each commit names its repo, so no two repos share a sha
 commit() {
     echo "$1 $2" > "$REMOTES/$1/README"
@@ -67,7 +65,7 @@ case "$url" in
     *) exit 22 ;;
 esac
 tag="${url#https://raw.githubusercontent.com/junegunn/vim-plug/}"
-cp "'"$SANDBOX"'/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
+cp "$SANDBOX/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
 # Newer than the repo's, so the tag never matches a real one
 IFS=. read -r plug_major plug_minor _ < "$PLUG_VERSION"
 NEXT="$plug_major.$((plug_minor + 1)).0"

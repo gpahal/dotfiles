@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # Status lines: how each state renders and parses, which states need attention, and the lines
 # health-alert.sh pushes.
@@ -10,7 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
-setup_sandbox
 load_script lib/common.sh
 install_health_alert "$SANDBOX/health-alert"
 # shellcheck source=../ubuntu/health-alert.sh

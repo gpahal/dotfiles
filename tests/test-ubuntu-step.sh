@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # The ubuntu step from a fresh machine: declined, applied, and re-run, plus its held-back package,
 # ntfy URL, and health alert checks.
@@ -12,12 +11,10 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 assert_exit 3 main --status
 
 # Declined: nothing that needs sudo changes
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 [ ! -e "$SLEEP_CONF" ] || fail "sleep.conf.d was written without a yes"
@@ -33,7 +30,6 @@ assert_file_contains "$STUB_LOG" "systemctl --user enable dotfiles-boot-notice.s
 
 # With no SSH key login to go by, the VM opt-in turns password logins off
 export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
@@ -50,7 +46,6 @@ assert_not_contains "$RUN_OUTPUT" "missing"
 printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
     "The following packages have been kept back:" "  nut-client nut-server" "  ubuntu-drivers-common" \
     "0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded." > "$SANDBOX/apt-upgrade"
-: > "$STUB_LOG"
 run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client, nut-server, ubuntu-drivers-common;"
 assert_file_contains "$STUB_LOG" "-o APT::Get::Upgrade-Allow-New=true"
@@ -72,13 +67,11 @@ echo disabled > "$SANDBOX/units/ssh.socket"
 echo enabled > "$SANDBOX/units/ssh.service"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "enable --now ssh.socket"
 rm "$SANDBOX/units/"*
 
 # Re-run: only sudo -n, to read the ufw rules
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_sudo_noninteractive "the re-run"
@@ -129,7 +122,6 @@ assert_exit 1 main
 rm "$SANDBOX/reload-fails"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"

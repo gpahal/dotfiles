@@ -1,7 +1,6 @@
 #!/bin/bash
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The ubuntu step's sshd drop-in on a set-up machine: rollback when sshd rejects it, sshd's effective
 # settings, and password logins going off only on proof of a key login, never back on.
@@ -13,13 +12,11 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 ubuntu_step_set_up
 
 # --- the sshd drop-in ---
 echo "# old" > "$SSHD_DROP_IN"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "$(sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the new drop-in"
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
@@ -36,7 +33,6 @@ assert_contains "$RUN_OUTPUT" "the new $SSHD_DROP_IN
 restore_fn write_root_file
 echo '# old, working' > "$SSHD_DROP_IN"
 stub_systemctl
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.service"
 
@@ -44,7 +40,6 @@ assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.servi
 echo "# old, working" > "$SSHD_DROP_IN"
 echo "Bogus yes" > "$SANDBOX/sshd_config.d/50-other.conf"
 rm "$SLEEP_CONF"
-: > "$STUB_LOG"
 assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in beside a broken file"
 assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/50-other.conf"
@@ -53,7 +48,6 @@ assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 rm "$SANDBOX/sshd_config.d/50-other.conf"
 
 replace_fn sshd_drop_in 'echo "Bogus new"'
-: > "$STUB_LOG"
 assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in after sshd rejected the new one"
 assert_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
@@ -72,7 +66,6 @@ assert_exit 1 main
 # No sshd, as when openssh-server failed to install
 unset -f sshd_drop_in
 SSHD_BIN="$SANDBOX/no-sshd"
-: > "$STUB_LOG"
 assert_exit 1 configure_sshd
 assert_contains "$RUN_OUTPUT" "sshd isn't installed"
 assert_file_not_contains "$STUB_LOG" "sshd -t"
@@ -85,7 +78,6 @@ unset -f sshd_drop_in
 ubuntu_step_load
 stub systemctl 'case "$1" in is-enabled) echo enabled ;; mask) exit 1 ;; esac'
 rm -f "$SANDBOX/ufw-on" "$SSHD_DROP_IN"
-: > "$STUB_LOG"
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "sudo systemctl mask"
 assert_eq "$(sshd_drop_in)" "$(cat "$SSHD_DROP_IN")" "the drop-in after a failed mask"
@@ -101,7 +93,6 @@ unset SSH_USER_AUTH
 me="$(id -un)"
 DOTFILES_SSH_KEY_ONLY=1 sshd_drop_in > "$SSHD_DROP_IN"
 item="sshd's effective settings match $SSHD_DROP_IN"
-: > "$STUB_LOG"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
@@ -123,7 +114,6 @@ assert_contains "$RUN_OUTPUT" "missing    $item (PasswordAuthentication is yes; 
 rm "$STUB_DIR/id"
 mv "$SANDBOX/drop-in-as-you" "$SSHD_DROP_IN"
 rm "$SSHD_DROP_IN"
-: > "$STUB_LOG"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:
     AllowUsers is someone $me
@@ -164,7 +154,6 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 cache_sudo no
-: > "$STUB_LOG"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified $item"
 assert_file_not_contains "$STUB_LOG" "sshd -T"
@@ -189,7 +178,6 @@ key_session() {
 }
 key_only_pending() {
     assert_not_contains "$(sshd_drop_in)" "PasswordAuthentication" "the drop-in $2"
-    : > "$STUB_LOG"
     run main
     MAIN_OUTPUT="$RUN_OUTPUT"
     assert_file_not_contains "$SSHD_DROP_IN" "PasswordAuthentication"
@@ -240,7 +228,6 @@ assert_contains "$RUN_OUTPUT" "Keep this session open"
 run status
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
 unset SSH_USER_AUTH
-: > "$STUB_LOG"
 run main
 assert_not_contains "$RUN_OUTPUT" "$SSHD_DROP_IN"
 assert_file_not_contains "$STUB_LOG" "tee $SSHD_DROP_IN"

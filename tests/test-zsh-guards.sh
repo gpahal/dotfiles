@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # Shells a tool reads (T3 Code's PATH probe, Claude Code's snapshot) get no reminders or options.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 # compaudit, from the system zshrc's compinit, trusts dirs your own group can write, as Ubuntu's
 # umask 002 makes them

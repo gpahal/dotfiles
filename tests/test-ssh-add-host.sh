@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # ssh/add-host.sh: one Host block per alias, above any catch-all so its settings don't win.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v ssh &>/dev/null || skip "ssh isn't installed"
 add_host() {
     bash "$REPO_DIR/ssh/add-host.sh" "$@"

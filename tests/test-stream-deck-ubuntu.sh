@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The stream-deck step on Ubuntu: the daemon's files and packages, its user service, the GNOME
 # extension, the Gmail app window, Resources, and the root power helper. Stubs stand in for pnpm,
@@ -9,10 +8,8 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
-export SANDBOX
 
 # SESSION and SHELL_STATE are set per run
 stub_gnome_session "$STATE"
@@ -55,7 +52,6 @@ assert_contains "$RUN_OUTPUT" "info       Stream Deck not attached here"
 
 # Declining sudo still sets up the rest; with no desktop session the daemon waits for login
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Turned on the GNOME extension dotfiles@gpahal.com. It loads at your next login."
 assert_contains "$RUN_OUTPUT" "No desktop session, so the daemon starts at your next login."
@@ -68,7 +64,6 @@ assert_contains "$RUN_OUTPUT" "unverified Stream Deck daemon running: no desktop
 
 # Accepting sudo installs Resources and the power helper, and starts it
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Install $SANDBOX/libexec/dotfiles-power, which shares the CPU's power for the Power key"
 assert_file_contains "$STUB_LOG" "install -y resources"
@@ -77,10 +72,8 @@ assert_file_not_contains "$STUB_LOG" "pnpm"
 
 # In the desktop session: it starts the daemon, then a second run changes nothing
 export SESSION=1 SHELL_STATE=1
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Started the Stream Deck daemon."
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "The Stream Deck daemon is already running."
 assert_not_contains "$RUN_OUTPUT" "Copied"
@@ -94,14 +87,12 @@ assert_contains "$RUN_OUTPUT" "ok         Power helper running"
 
 # A changed daemon file or lockfile restarts the daemon; a changed extension asks for a login
 echo "// an edit" >> "$deck_dir/daemon.js"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 echo stale > "$deck_dir/node_modules/.dotfiles-lock"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon's dependencies"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "pnpm install"
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
@@ -118,7 +109,6 @@ assert_not_contains "$RUN_OUTPUT" "Restarted"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon restarted on its new files: re-run the stream-deck step"
 rm "$STATE/reload-fails"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
 assert_file_contains "$STUB_LOG" "systemctl --user restart dotfiles-stream-deck.service"

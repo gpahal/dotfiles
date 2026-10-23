@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # unattended-upgrades in the ubuntu step: a later file turning it off, merging 20auto-upgrades while
 # keeping your keys, and a 20auto-upgrades only root can read.
@@ -12,7 +11,6 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 ubuntu_step_set_up
 
@@ -30,7 +28,6 @@ APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::Enable "1";' "$(cat "$AUTO_UPGRADES_CONF")" "20auto-upgrades after the merge"
-: > "$STUB_LOG"
 run main
 assert_file_not_contains "$STUB_LOG" "tee $AUTO_UPGRADES_CONF"
 
@@ -72,9 +69,9 @@ APT::Periodic::Unattended-Upgrade "0";')" \
     "a statement over two lines"
 
 # Only root can read 20auto-upgrades, so apt-config skips it. The sudo stub makes it readable while it runs.
-stub sudo '[ "${1:-}" != -n ] || { [ -e "'"$SANDBOX"'/cached" ] || exit 1; shift; }
+stub sudo '[ "${1:-}" != -n ] || { [ -e "$SANDBOX/cached" ] || exit 1; shift; }
 f="'"$AUTO_UPGRADES_CONF"'"
-[ ! -e "'"$SANDBOX"'/sudo-cat-fails" ] || [ "$*" != "cat $f" ] || exit 1
+[ ! -e "$SANDBOX/sudo-cat-fails" ] || [ "$*" != "cat $f" ] || exit 1
 hidden=false
 if [ -e "$f" ] && [ ! -r "$f" ]; then chmod u+r "$f"; hidden=true; fi
 status=0
@@ -86,7 +83,6 @@ chmod 200 "$AUTO_UPGRADES_CONF"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF"
 # A re-run with nothing else to change doesn't ask for sudo only to read it
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_contains "$RUN_OUTPUT" "Only root can read $AUTO_UPGRADES_CONF; run sudo -v"

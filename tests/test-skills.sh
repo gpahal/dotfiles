@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The skills step: it copies the repo's skills to ~/.agents/skills, links them from
 # ~/.claude/skills, and removes what it didn't install, but never through shared or linked dirs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 
 AGENTS_DIR="$HOME/.agents/skills"
 CLAUDE_DIR="$HOME/.claude/skills"

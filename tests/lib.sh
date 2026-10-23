@@ -4,10 +4,9 @@
 # tests/run.sh covers skips, timeouts, and the serial and os marks.
 # Reuse before writing your own: stub_sudo_exec, stub_sudo_cacheable, stub_uname, stub_dpkg_arch,
 # stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch, stub_gsettings,
-# stub_gnome_session, fake_step, fake_tmux_plugins, pam_sandbox, user_shortcut, git_commit,
-# in_terminal, jq_edit, require_mikefarah_yq, assert_sudo_noninteractive, snapshot and
-# assert_unchanged, as_unwritable, and wait_for. tests/ubuntu-sandbox.sh points the ubuntu step's
-# system paths into the sandbox.
+# stub_gnome_session, fake_step, user_shortcut, git_commit, in_terminal, jq_edit,
+# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, and wait_for.
+# tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox.
 # shellcheck shell=bash
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +18,8 @@ TEST_DONE=false
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Sets the EXIT trap; a test adds to it with on_exit rather than setting its own.
+# Sets the EXIT trap. A test that sets its own ends it with _sandbox_exit, keeping $?:
+# trap 'status=$?; set +e; <cleanup>; (exit "$status"); _sandbox_exit' EXIT
 setup_sandbox() {
     local var
     # /tmp keeps tmux's socket path under macOS's limit; -P makes printed paths match $HOME
@@ -32,7 +32,7 @@ setup_sandbox() {
     unset CDPATH BASH_ENV TMUX TMUX_PANE ZDOTDIR CODEX_HOME CLAUDE_CONFIG_DIR SSH_AUTH_SOCK \
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
         MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
-    # A test that clones rewrites the url to a local repo, as fake_tmux_plugins does
+    # A test that clones rewrites the url to a local repo, as test-tmux-plugins.sh does
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     # The sandbox has no git identity
     export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t \
@@ -67,11 +67,7 @@ for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857
 }
 
 _sandbox_exit() {
-    local status=$? hook
-    # Subshell, so a failing hook can't stop the cleanup
-    for hook in ${_ON_EXIT[@]+"${_ON_EXIT[@]}"}; do
-        (eval "$hook") || true
-    done
+    local status=$?
     # Catches sentinels run under `|| true`
     if [ -s "$SANDBOX/unstubbed.log" ]; then
         echo "Commands ran that the test didn't stub:" >&2
@@ -98,12 +94,6 @@ _sandbox_exit() {
         status=77
     fi
     exit "$status"
-}
-
-# Eval a command at exit, for what the test starts in another process group, which signals miss
-_ON_EXIT=()
-on_exit() {
-    _ON_EXIT+=("$1")
 }
 
 # Waits for the panes to exit: a pane's zsh writing ~/.zsh_history would race the sandbox removal
@@ -349,48 +339,18 @@ test_done() {
     TEST_DONE=true
 }
 
-# A gsettings keeping each key in $SANDBOX/gsettings/<schema>.<key>, printing values as gsettings
-# does: a list, bool, uint32, or quoted string as set, a number set on a uint32 key as a uint32, and
-# other strings in single quotes, or double quotes when they hold a single one. set takes a string
-# quoted that way too, and, like gsettings, fails on a quoted string followed by more. Unset keys
-# print GNOME's defaults for the lists the steps edit, else ''. A schema listed in
+# A gsettings keeping each key in $SANDBOX/gsettings/<schema>.<key>, in the GVariant text it was
+# set to, which is what the steps pass; an unset key prints @as []. A schema listed in
 # $SANDBOX/gsettings/no-schema is missing, as the dock's is on GNOME without Ubuntu's.
 stub_gsettings() {
-    local body
     mkdir -p "$SANDBOX/gsettings"
-    # Not a heredoc in $( ): bash 3.2 would end it at a case pattern's )
-    IFS= read -r -d '' body << 'EOF' || true
+    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")"'
 file="$dir/${2//\//_}.$3"
 ! grep -qxF "$2" "$dir/no-schema" 2> /dev/null || { echo "No such schema “$2”" >&2; exit 1; }
 case "$1" in
-    get)
-        if [ -e "$file" ]; then cat "$file"
-        else case "$3" in
-            enabled-extensions | custom-keybindings) echo "@as []" ;;
-            switch-input-source) echo "['<Super>space', 'XF86Keyboard']" ;;
-            *) echo "''" ;;
-        esac; fi ;;
-    set)
-        case "$(cat "$file" 2> /dev/null)" in uint32\ *) set -- "$1" "$2" "$3" "uint32 ${4#uint32 }" ;; esac
-        case "$4" in
-            "["* | "@as"* | true | false | "uint32 "*) printf "%s\n" "$4" > "$file" ;;
-            \'* | \"*)
-                # Without its escapes, a quoted string has its quote only at the end
-                quote="${4:0:1}" rest="${4:1}"
-                rest="${rest//\\\\/}"
-                rest="${rest//\\$quote/}"
-                if [ "${rest%%"$quote"*}$quote" != "$rest" ]; then
-                    echo "expected end of input:" >&2
-                    exit 1
-                fi
-                printf "%s\n" "$4" > "$file" ;;
-            *"'"*) printf '"%s"\n' "$4" > "$file" ;;
-            *) printf "'%s'\n" "$4" > "$file" ;;
-        esac ;;
-esac
-EOF
-    stub gsettings "$(printf 'dir=%q' "$SANDBOX/gsettings")
-$body"
+    get) cat "$file" 2> /dev/null || echo "@as []" ;;
+    set) printf "%s\n" "$4" > "$file" ;;
+esac'
 }
 
 # A GNOME session keeping its state in dir $1: stub_gsettings, GNOME Shell 50.1, busctl answering
@@ -438,7 +398,7 @@ user_shortcut() {
     local dir=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
     gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$dir/custom0/']"
     gsettings set "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$dir/custom0/" \
-        binding "<Super>Return"
+        binding "'<Super>Return'"
 }
 
 git_commit() {
@@ -532,73 +492,11 @@ stub_fetch() {
 echo '"$(printf '%q' "${1:-key}")"' > "$2"'
 }
 
-# Skip the rest of the test unless yq is mikefarah's, which the codex step needs
-require_mikefarah_yq() {
-    yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
-}
-
 # Usage: jq_edit <file> <jq args>...: edits the file in place, as you would by hand
 jq_edit() {
     local file="$1"
     shift
     jq "$@" "$file" > "$SANDBOX/jq_edit.json" && cp "$SANDBOX/jq_edit.json" "$file"
-}
-
-# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
-# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
-# mean owned by you. Call it after load_script.
-pam_sandbox() {
-    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
-    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
-    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
-        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
-    # OpenPAM finds macOS's .so.2 modules by bare name
-    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
-    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
-    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
-        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
-        TID_LINE="auth       sufficient     pam_tid.so"
-}
-
-# A defaults keeping each key in $SANDBOX/defaults/<domain>.<key>, by the domain's last path part,
-# with a -bool read back as 1 or 0. A write to a domain listed in $SANDBOX/defaults-fail fails. The
-# optional body runs first.
-stub_defaults() {
-    mkdir -p "$SANDBOX/defaults"
-    stub defaults "${1:-}
-$(printf 'sandbox=%q' "$SANDBOX")"'
-file="$sandbox/defaults/${2##*/}.$3"
-case "$1" in
-    read) cat "$file" 2> /dev/null ;;
-    write)
-        ! grep -qxF "$2" "$sandbox/defaults-fail" 2> /dev/null || exit 1
-        value="$5"
-        [ "$4" != -bool ] || { [ "$5" == true ] && value=1 || value=0; }
-        printf "%s\n" "$value" > "$file"
-        ;;
-    *) exit 1 ;;
-esac'
-}
-
-# Local repos stand in for GitHub; each plugin is pinned to its first commit, not HEAD
-fake_tmux_plugins() {
-    local repo sha remote n
-    FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
-    export DOTFILES_TMUX_PLUGINS_LOCK="$SANDBOX/plugins.lock"
-    echo "# Test pins" > "$DOTFILES_TMUX_PLUGINS_LOCK"
-    while read -r repo _; do
-        remote="$FAKE_PLUGIN_REMOTES/$repo"
-        git init -q "$remote"
-        for n in 1 2; do
-            echo "$repo $n" > "$remote/README"
-            git -C "$remote" add README
-            git_commit "$remote" -m "$n"
-            [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
-        done
-        echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
-    done < <(awk '!/^#/ && NF' "$REPO_DIR/tmux/plugins.lock")
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
-    export GIT_CONFIG_VALUE_0=https://github.com/
 }
 
 # Check syntax first: a sourced syntax error would end the test with status 0 under bash 3.2
@@ -755,18 +653,4 @@ assert_exit() {
     fail "'$*' exited $RUN_STATUS, not $expected. Its output:"
     _show "$RUN_OUTPUT"
     return 0
-}
-
-# Usage: assert_stub_log <exclude-regex> <expected> [what]: $STUB_LOG, less the lines matching the
-# extended regex, is the expected text
-assert_stub_log() {
-    assert_eq "$2" "$(grep -vE "$1" "$STUB_LOG" || true)" "${3:-the stub log}"
-}
-
-# A t3 CLI in ~/.local/bin, where the t3 installer puts it, logging as a stub does, then running
-# the optional body
-fake_t3() {
-    mkdir -p "$HOME/.local/bin"
-    printf '%s\n' '#!/bin/bash' 'printf "%s\n" "t3 $*" >> "$STUB_LOG"' "${1:-}" > "$HOME/.local/bin/t3"
-    chmod +x "$HOME/.local/bin/t3"
 }

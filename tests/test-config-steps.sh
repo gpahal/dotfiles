@@ -25,6 +25,26 @@ stub launchctl '[ "$1" == print ]'
 # tests/test-tmux-boot.sh covers enabling continuum's unit
 stub systemctl '[ "$*" == "--user is-enabled --quiet tmux.service" ]'
 
+# Local repos stand in for GitHub; each plugin is pinned to its first commit, not HEAD
+fake_tmux_plugins() {
+    local repo sha remote n
+    FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
+    export DOTFILES_TMUX_PLUGINS_LOCK="$SANDBOX/plugins.lock"
+    echo "# Test pins" > "$DOTFILES_TMUX_PLUGINS_LOCK"
+    while read -r repo _; do
+        remote="$FAKE_PLUGIN_REMOTES/$repo"
+        git init -q "$remote"
+        for n in 1 2; do
+            echo "$repo $n" > "$remote/README"
+            git -C "$remote" add README
+            git_commit "$remote" -m "$n"
+            [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
+        done
+        echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
+    done < <(awk '!/^#/ && NF' "$REPO_DIR/tmux/plugins.lock")
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
+    export GIT_CONFIG_VALUE_0=https://github.com/
+}
 fake_tmux_plugins
 
 assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"

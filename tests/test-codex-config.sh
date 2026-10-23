@@ -15,7 +15,7 @@ stub bwrap
 stub codex 'echo "Logged in using ChatGPT" >&2'
 as_os macos
 
-require_mikefarah_yq
+yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 
 mkdir -p "$HOME/.codex"
 

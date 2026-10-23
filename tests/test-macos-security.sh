@@ -28,6 +28,26 @@ case "$1 $2" in
     "--set HostName") echo "$3" > "$state/hostname" ;;
     *) exit 1 ;;
 esac'
+# A defaults keeping each key in $SANDBOX/defaults/<domain>.<key>, by the domain's last path part,
+# with a -bool read back as 1 or 0. A write to a domain listed in $SANDBOX/defaults-fail fails. The
+# optional body runs first.
+stub_defaults() {
+    mkdir -p "$SANDBOX/defaults"
+    stub defaults "${1:-}
+$(printf 'sandbox=%q' "$SANDBOX")"'
+file="$sandbox/defaults/${2##*/}.$3"
+case "$1" in
+    read) cat "$file" 2> /dev/null ;;
+    write)
+        ! grep -qxF "$2" "$sandbox/defaults-fail" 2> /dev/null || exit 1
+        value="$5"
+        [ "$4" != -bool ] || { [ "$5" == true ] && value=1 || value=0; }
+        printf "%s\n" "$value" > "$file"
+        ;;
+    *) exit 1 ;;
+esac'
+}
+
 # defaults prints AppleSymbolicHotKeys as an old-style plist, with 64 on until it's written off
 DEFAULTS_DIR="$SANDBOX/defaults"
 HOTKEYS="$DEFAULTS_DIR/com.apple.symbolichotkeys.AppleSymbolicHotKeys"

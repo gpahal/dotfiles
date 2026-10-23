@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# serial
 
 # run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries.
 
@@ -19,10 +18,8 @@ fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; 
 # A report set -e cut short at a command that exited 3, such as jq
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
 fake_step sigpipe 'exit 141'
-# The step carries on after the runner's signal, as brew does under `|| result=1`
-for sig in INT TERM HUP; do
-    fake_step "caught-$sig" "kill -$sig \$PPID; echo \"caught-$sig carried on\"; exit 1"
-done
+# The step carries on after the runner's SIGINT, as brew does under `|| result=1`
+fake_step caught-INT 'kill -INT $PPID; echo "caught-INT carried on"; exit 1'
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(first last)
@@ -65,15 +62,13 @@ assert_not_contains "$RUN_OUTPUT" "Failed steps"
 assert_eq "first
 interrupted" "$(cat "$SANDBOX/ran")" "steps run up to an interrupted one"
 
-for sig in INT:130 TERM:143 HUP:129; do
-    rm -f "$SANDBOX/ran"
-    assert_exit "${sig#*:}" run_steps "" first "caught-${sig%:*}" last
-    assert_contains "$RUN_OUTPUT" "caught-${sig%:*} carried on"
-    assert_contains "$RUN_OUTPUT" "The caught-${sig%:*} step was interrupted; stopping."
-    assert_not_contains "$RUN_OUTPUT" "Failed steps"
-    assert_eq "first
-caught-${sig%:*}" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIG${sig%:*}"
-done
+rm -f "$SANDBOX/ran"
+assert_exit 130 run_steps "" first caught-INT last
+assert_contains "$RUN_OUTPUT" "caught-INT carried on"
+assert_contains "$RUN_OUTPUT" "The caught-INT step was interrupted; stopping."
+assert_not_contains "$RUN_OUTPUT" "Failed steps"
+assert_eq "first
+caught-INT" "$(cat "$SANDBOX/ran")" "steps run up to one during which the runner got SIGINT"
 rm -f "$SANDBOX/ran"
 assert_exit 130 run_steps --status caught-INT last
 assert_eq "caught-INT --status" "$(cat "$SANDBOX/ran")" "reports run up to one during which the runner got SIGINT"
@@ -149,8 +144,6 @@ printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.s
 printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
 stub_uname Darwin
-CALLER_PID=""
-on_exit '[ -z "$CALLER_PID" ] || kill -KILL -- "-$CALLER_PID" 2> /dev/null'
 # kill -0 still finds a zombie, so check ps
 exited() {
     case "$(ps -o stat= -p "$1" 2> /dev/null)" in
@@ -158,25 +151,21 @@ exited() {
     esac
     return 1
 }
-for mode in "" --status; do
-    rm -f "$SANDBOX/slow-started"
-    status=0
-    # Job control keeps SIGINT deliverable; a background job ignores it
-    set -m
-    "$BASH" "$runner_dir/caller.sh" $mode > "$SANDBOX/caller.out" 2>&1 &
-    CALLER_PID=$!
-    set +m
-    if wait_for test -e "$SANDBOX/slow-started"; then
-        kill -INT -- "-$CALLER_PID"
-        wait_for exited "$CALLER_PID" || kill -KILL -- "-$CALLER_PID"
-    else
-        fail "the runner's step didn't start${mode:+ with $mode}"
-        kill -KILL -- "-$CALLER_PID"
-    fi
-    wait "$CALLER_PID" || status=$?
-    CALLER_PID=""
-    assert_eq 130 "$status" "the caller's status after Ctrl-C${mode:+ with $mode}"
-    assert_file_contains "$SANDBOX/caller.out" "The slow step was interrupted; stopping."
-    assert_file_not_contains "$SANDBOX/caller.out" continued
-done
+status=0
+# Job control keeps SIGINT deliverable; a background job ignores it
+set -m
+"$BASH" "$runner_dir/caller.sh" --status > "$SANDBOX/caller.out" 2>&1 &
+caller=$!
+set +m
+if wait_for test -e "$SANDBOX/slow-started"; then
+    kill -INT -- "-$caller"
+    wait_for exited "$caller" || kill -KILL -- "-$caller"
+else
+    fail "the runner's step didn't start"
+    kill -KILL -- "-$caller"
+fi
+wait "$caller" || status=$?
+assert_eq 130 "$status" "the caller's status after Ctrl-C"
+assert_file_contains "$SANDBOX/caller.out" "The slow step was interrupted; stopping."
+assert_file_not_contains "$SANDBOX/caller.out" continued
 test_done

@@ -82,6 +82,14 @@ stub ss '
 state="$(dirname "$STUB_LOG")/state"
 [ ! -f "$state/active" ] || echo "LISTEN 0      511        127.0.0.1:3773      0.0.0.0:*"
 [ ! -f "$state/listeners" ] || cat "$state/listeners"'
+# A t3 CLI in ~/.local/bin, where the t3 installer puts it, logging as a stub does, then running
+# the optional body
+fake_t3() {
+    mkdir -p "$HOME/.local/bin"
+    printf '%s\n' '#!/bin/bash' 'printf "%s\n" "t3 $*" >> "$STUB_LOG"' "${1:-}" > "$HOME/.local/bin/t3"
+    chmod +x "$HOME/.local/bin/t3"
+}
+
 fake_t3 'if [ "$*" == "service install" ]; then
     state="$(dirname "$STUB_LOG")/state"
     mkdir -p "$HOME/.config/systemd/user"

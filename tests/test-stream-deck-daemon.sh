@@ -1,6 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-# serial
 
 # The Ubuntu Stream Deck daemon, with a fake deck, sampler, and open-in, the plugin's layout.json,
 # and the fonts it hands resvg.
@@ -142,11 +141,11 @@ true 1
 2 Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: write failed|Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: unplugged" \
     "$out" "a deck that goes away and comes back"
 
-# A deck of another size is logged once and left alone; stop leaves the deck on its logo
+# A deck of another size is left alone; stop leaves the deck on its logo
 out="$(daemon_js "const xl = deck(8, 4);
 decks = [xl];
 await d.start();
-await new Promise((r) => setTimeout(r, 100));
+await until('the size message', () => logs.length > 0);
 console.log(d.state().connected, opened.length, xl.log.join(), logs.join('|'));
 decks = [xl, deck()];
 await until('the 15-key deck', () => d.state().connected);

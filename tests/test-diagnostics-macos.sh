@@ -10,6 +10,23 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/diagnostics-fixture.sh"
 
 setup_sandbox
+
+# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
+# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
+# mean owned by you. Call it after load_script.
+pam_sandbox() {
+    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
+    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
+        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    # OpenPAM finds macOS's .so.2 modules by bare name
+    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
+    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
+        TID_LINE="auth       sufficient     pam_tid.so"
+}
+
 stub scutil 'echo Garvits-MacBook-Pro'
 
 load_script macos/install.sh

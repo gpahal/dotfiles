@@ -65,7 +65,7 @@ assert_not_contains "$RUN_OUTPUT" "Turned on push notifications"
 
 # These need mikefarah's yq, and a brew, since the step fails early without one
 stub brew 'exit 1'
-require_mikefarah_yq
+yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
 codex_failure() {
     load_script ai_tools/codex/install.sh
     as_os "$TEST_OS"

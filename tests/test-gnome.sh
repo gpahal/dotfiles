@@ -69,7 +69,7 @@ rm "$SANDBOX/gsettings/no-schema"
 source "$REPO_DIR/lib/gnome.sh"
 # Another custom shortcut on the same keys clashes however its binding is spelled
 user_shortcut
-gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "<Ctrl><Super>t"
+gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "'<Ctrl><Super>t'"
 own="$GNOME_KEYBINDING_DIR/dotfiles/"
 for binding in "<Ctrl><Super>t" "<Super><Control>T" "<super><primary>t"; do
     assert_eq "$GNOME_KEYBINDING_DIR/custom0/" "$(gnome_keybinding_clash "$binding" "$own")" "the clash with $binding"
@@ -113,7 +113,7 @@ else
 fi
 
 # A failed set fails the step, and it carries on with the rest
-gsettings set org.gnome.desktop.peripherals.keyboard delay 500
+gsettings set org.gnome.desktop.peripherals.keyboard delay "uint32 500"
 gsettings set org.gnome.nautilus.preferences default-folder-viewer "'icon-view'"
 stub gsettings 'file="$SANDBOX/gsettings/$2.$3"
 case "$1" in

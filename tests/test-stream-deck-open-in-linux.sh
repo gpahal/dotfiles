@@ -55,8 +55,8 @@ check() {
         -e 's|^busctl --user --json=short call org.gnome.Shell /com/gpahal/Dotfiles com.gpahal.Dotfiles |shell |' \
         "$STUB_LOG" > "$SANDBOX/short.log"
     mv "$SANDBOX/short.log" "$STUB_LOG"
-    assert_stub_log '^(pgrep |shell (FocusedWindow|IsLocked|ModifiersHeld|ClipboardHasText)( |$)|busctl --user --json=short get-property)' \
-        "$3" "$1 from ${FRONT}"
+    assert_eq "$3" "$(grep -vE '^(pgrep |shell (FocusedWindow|IsLocked|ModifiersHeld|ClipboardHasText)( |$)|busctl --user --json=short get-property)' \
+        "$STUB_LOG" || true)" "$1 from ${FRONT}"
 }
 
 # <window class>|<title>|<Nautilus window>|<target>|<app id>|<what starts>. Ghostty's title is the

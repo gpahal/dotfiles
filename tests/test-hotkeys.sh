@@ -52,8 +52,8 @@ assert_contains "$RUN_OUTPUT" "The shortcuts are already set."
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 
 # Your own shortcut on the same keys keeps them, and the step says so
-gsettings set "$MEDIA.custom-keybinding:$DIR/dotfiles-editor/" binding "<Control><Alt><Super>x"
-gsettings set "$MEDIA.custom-keybinding:$DIR/custom0/" binding "<Control><Alt><Super>e"
+gsettings set "$MEDIA.custom-keybinding:$DIR/dotfiles-editor/" binding "'<Control><Alt><Super>x'"
+gsettings set "$MEDIA.custom-keybinding:$DIR/custom0/" binding "'<Control><Alt><Super>e'"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Your shortcut at $DIR/custom0/ has Ctrl+Alt+Super+E, so Editor doesn't get it."
 assert_eq "'<Control><Alt><Super>e'" "$(gsettings get "$MEDIA.custom-keybinding:$DIR/custom0/" binding)" "your shortcut"

@@ -43,7 +43,7 @@ export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" ANSWER="" ERROR=""
 check() {
     : > "$STUB_LOG"
     FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1"
-    assert_stub_log '^(lsappinfo|osascript|mdls|pbpaste) ' "$4" "$1 from $2"
+    assert_eq "$4" "$(grep -vE '^(lsappinfo|osascript|mdls|pbpaste) ' "$STUB_LOG" || true)" "$1 from $2"
 }
 
 # While another New Tab runs, from Hammerspoon or Stream Deck, this one does nothing

@@ -24,7 +24,6 @@ concurrency:
 # and brew's can lag the minimum. A version bump needs new hashes.
 env:
   SHELLCHECK_VERSION: v0.11.0
-  SHELLCHECK_SHA256_DARWIN_AARCH64: 56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79
   SHELLCHECK_SHA256_LINUX_X86_64: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
   YQ_VERSION: v4.54.1
   YQ_SHA256_DARWIN_ARM64: fee511a181bd8b3e6b7da98842b41973bfac8cd3bcd341ed29a584620b5b2844
@@ -81,48 +80,25 @@ jobs:
           fi
           printf 'brew=%s\nai=%s\n' "$brew" "$ai" >> "$GITHUB_OUTPUT"
 
-  check:
+  # shellcheck is pinned and gives the same result on either OS, so it runs only here.
+  lint:
     needs: gate
     if: github.event_name != 'schedule' && needs.gate.outputs.tested != 'true'
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [xcode-27, ubuntu-26.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install tools (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install just jq tmux mise git fd lua
-          f="$RUNNER_TEMP/shellcheck.tar.xz"
-          curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.darwin.aarch64.tar.xz"
-          echo "$SHELLCHECK_SHA256_DARWIN_AARCH64  $f" | shasum -a 256 -c -
-          sudo tar -xJ -f "$f" -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-
-      - name: Install tools (Ubuntu)
-        if: runner.os == 'Linux'
-        # sshd -T needs /run/sshd, which ssh.socket creates only on the first connection.
-        env:
-          MISE_VERSION: v2026.10.5
-          MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
+      - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4 openssh-server
-          sudo install -d -m 0755 /run/sshd
-          sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
+          sudo apt-get install -y just jq zsh
           f="$RUNNER_TEMP/shellcheck.tar.xz"
           curl -fsSL -o "$f" "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
           echo "$SHELLCHECK_SHA256_LINUX_X86_64  $f" | sha256sum -c -
           sudo tar -xJ -f "$f" -C /usr/local/bin --strip-components 1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
-          f="$RUNNER_TEMP/mise"
-          curl -fsSL -o "$f" "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
-          echo "$MISE_SHA256_LINUX_X64  $f" | sha256sum -c -
-          sudo install -m 755 "$f" /usr/local/bin/mise
 
       - &install-yq
         name: Install pinned yq
@@ -139,6 +115,61 @@ jobs:
           echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ci-bin/yq" --version
 
+      - name: Check the shellcheck version
+        run: |
+          shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
+
+      - &check-not-root
+        name: Check the job isn't root
+        run: test "$(id -u)" -ne 0
+
+      # Runs parse too, which on Linux checks only the zsh files
+      - run: just check
+
+  # macOS splits its tests across two jobs, and one of them checks the scripts parse under bash 3.2.
+  test:
+    needs: gate
+    if: github.event_name != 'schedule' && needs.gate.outputs.tested != 'true'
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-26.04, shard: 1/1 }
+          - { os: xcode-27, shard: 1/2, parse: true }
+          - { os: xcode-27, shard: 2/2 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+          HOMEBREW_NO_ENV_HINTS: 1
+        run: brew install just jq tmux mise git fd lua
+
+      - name: Install tools (Ubuntu)
+        if: runner.os == 'Linux'
+        # sshd -T needs /run/sshd, which ssh.socket creates only on the first connection.
+        env:
+          MISE_VERSION: v2026.10.5
+          MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4 openssh-server
+          sudo install -d -m 0755 /run/sshd
+          sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
+          f="$RUNNER_TEMP/mise"
+          curl -fsSL -o "$f" "https://github.com/jdx/mise/releases/download/$MISE_VERSION/mise-$MISE_VERSION-linux-x64"
+          echo "$MISE_SHA256_LINUX_X64  $f" | sha256sum -c -
+          sudo install -m 755 "$f" /usr/local/bin/mise
+
+      - *install-yq
+
       # The runner has classic sudo, unlike a 26.04 install's sudo-rs.
       - name: Show the sudo and coreutils versions (Ubuntu)
         if: runner.os == 'Linux'
@@ -146,17 +177,34 @@ jobs:
           sudo --version | sed -n 1p
           stat --version | sed -n 1p
 
-      - name: Check the shellcheck version
-        run: |
-          shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
+      - *check-not-root
 
-      - name: Check the job isn't root
-        run: test "$(id -u)" -ne 0
+      - if: matrix.parse
+        run: just parse
 
-      - run: just check
       - run: just test
         env:
           TEST_FAIL_ON_SKIP: 1
+          TEST_SHARD: ${{ matrix.shard }}
+
+  # The one required check: lint and test pass, or the gate or a schedule run skipped them.
+  checks:
+    needs: [gate, lint, test]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Check the gate, lint, and test results
+        env:
+          GATE: ${{ needs.gate.result }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "gate: $GATE, lint: $LINT, test: $TEST"
+          [ "$GATE" == success ]
+          for result in "$LINT" "$TEST"; do
+            case "$result" in success | skipped) ;; *) exit 1 ;; esac
+          done
 
   brew-packages:
     needs: [gate, changes]

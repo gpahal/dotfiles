@@ -6,7 +6,10 @@ default:
     @just --list
 
 # Lint scripts, check bash 3.2 compatibility, docs, skills, and Claude settings keys
-check:
+check: lint parse
+
+# Run shellcheck, the bash 4 feature check, and the docs, skills, and Claude settings keys checks
+lint:
     #!/bin/bash
     set -euo pipefail
     tmp="$(mktemp -d)"
@@ -18,16 +21,8 @@ check:
     skills=$!
     bash scripts/check-claude-keys.sh > /dev/null 2> "$tmp/keys" &
     keys=$!
-    # Scripts by name, or by a bash shebang. git still lists a deleted but unstaged file, so skip it.
     files="$tmp/files"
-    git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
-        [ -f "$f" ] || continue
-        case "$f" in
-            *.sh | */bin/*) ;;
-            *) head -n 1 "$f" | grep -qE '^#!(/usr)?/bin/(env +)?bash\b' || continue ;;
-        esac
-        printf '%s\0' "$f"
-    done > "$files"
+    bash scripts/list-scripts.sh > "$files"
     # One job per physical core: more is slower
     if [ "$(uname -s)" == Darwin ]; then
         cores="$(sysctl -n hw.physicalcpu 2> /dev/null || true)"
@@ -38,14 +33,21 @@ check:
     xargs -0 -n 8 -P "$cores" shellcheck < "$files"
     bad="$(xargs -0 grep -nE '\b(mapfile|readarray|coproc)\b|\b(declare|local|typeset) +-[a-zA-Z]*[Ang]|\[\[ -v |(\btest|\[) +-v |\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^|,)|\$\{[A-Za-z_][A-Za-z0-9_]*\[-[0-9]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?@[QEPAaUuLK]\}|&>>|;;&|(^|[^;]);&([[:space:]]|$)|\|&|\bwait +-n\b|\bEPOCH(SECONDS|REALTIME)\b|\$\{?BASHPID\b|\bprintf .*%\([^)]*\)T|(^|[^$])\{[A-Za-z_][A-Za-z0-9_]*\}[<>]|\bshopt .*\b(globstar|lastpipe)\b' /dev/null < "$files")" || true
     [ -z "$bad" ] || { printf '%s\n' "$bad" "These need bash 4; the scripts target /bin/bash 3.2." >&2; exit 1; }
-    [ "$(uname -s)" != Darwin ] || xargs -0 -n 1 /bin/bash -n < "$files"
-    for f in zsh/*.zsh; do zsh -n "$f"; done
     failed=0
     for check in docs skills keys; do
         wait "${!check}" || failed=1
         cat "$tmp/$check" >&2
     done
     exit "$failed"
+
+# Check the zsh files' syntax, and on macOS the scripts' syntax under /bin/bash 3.2
+parse:
+    #!/bin/bash
+    set -euo pipefail
+    if [ "$(uname -s)" == Darwin ]; then
+        bash scripts/list-scripts.sh | xargs -0 -n 1 /bin/bash -n
+    fi
+    for f in zsh/*.zsh; do zsh -n "$f"; done
 
 # Run all tests, or the named ones, under /bin/bash (3.2 on macOS)
 [positional-arguments]

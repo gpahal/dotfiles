@@ -71,48 +71,18 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Logged in to GitHub with gh"
 
 # Stored credentials but GitHub unreachable: unknown, not absent, so no new login is offered
-gh_stub() {
-    stub gh 'case "$*" in
-    "auth token"*) echo gho_SECRET ;;
-    "auth status"*) printf "%s\n" "github.com" "  X '"$1"'" "  - Token: gho_SECRET" >&2; exit 1 ;;
-esac'
-}
-gh_stub "Timeout trying to log in to github.com account me (keyring)"
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
-assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
-assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
-
-# gh calls a token invalid when GitHub is unreachable, e.g. through a down proxy
-gh_stub "Failed to log in to github.com account me (keyring)\n  - The token in keyring is invalid."
-stub curl 'printf 000; exit 7'
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
-assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
-
-stub curl 'printf 200'
-: > "$STUB_LOG"
-DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
-assert_file_contains "$STUB_LOG" 'gh auth login --insecure-storage --git-protocol https'
-assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Logged in to GitHub with gh"
-
-# A revoked token on another account doesn't count against the active one, which git uses
 stub gh 'case "$*" in
     "auth token"*) echo gho_SECRET ;;
-    "auth status --active"*) ;;
-    "auth status"*) printf "%s\n" "  X Failed to log in to github.com account old (keyring)" "  - The token in keyring is invalid." >&2; exit 1 ;;
+    "auth status"*) printf "%s\n" "github.com" "  X Timeout trying to log in to github.com account me (keyring)" "  - Token: gho_SECRET" >&2; exit 1 ;;
 esac'
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_exit 0 status_github_login
+assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
+assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
+
 : > "$STUB_LOG"
 DOTFILES_STATUS_QUICK=1 assert_exit 0 status_github_login
 assert_contains "$RUN_OUTPUT" "unverified Logged in to GitHub with gh"

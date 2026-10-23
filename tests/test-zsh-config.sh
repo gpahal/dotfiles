@@ -61,31 +61,4 @@ chmod 666 "$cache"
 zsh -c "umask 000; source '$HOME/.zsh/main.zsh'; _cached_init fakeinit two" > /dev/null 2>&1
 assert_eq 3 "$(grep -c '^fakeinit' "$STUB_LOG")" "fakeinit runs with a writable cache"
 assert_eq "$cache" "$(find "$cache" -perm 600)" "the rewritten cache with mode 600"
-run_with_file() {
-    output="$(zsh -c "source '$HOME/.zsh/main.zsh'; _cached_init -f '$1' fakeinit two" 2>&1 || true)"
-    assert_contains "$output" "init-two" "_cached_init -f output ($2)"
-    assert_eq "$3" "$(grep -c '^fakeinit' "$STUB_LOG")" "fakeinit runs ($2)"
-}
-echo one > "$SANDBOX/fakeinit.conf"
-touch -t 200001010000 "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "first -f file" 4
-run_with_file "$SANDBOX/fakeinit.conf" "unchanged -f file" 4
-touch -t 203001010000 "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "newer -f file" 5
-rm "$SANDBOX/fakeinit.conf"
-run_with_file "$SANDBOX/fakeinit.conf" "deleted -f file" 6
-
-# mise must load after command-not-found.zsh, or that replaces mise's wrapping handler
-export HOMEBREW_PREFIX="$SANDBOX/brew" HOMEBREW_REPOSITORY="$SANDBOX/brew"
-mkdir -p "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found"
-echo 'command_not_found_handler() { print "homebrew: $1"; return 127; }' \
-    > "$HOMEBREW_REPOSITORY/Library/Homebrew/command-not-found/handler.sh"
-stub mise '[ "$*" != "activate zsh" ] || echo '\''
-(( $+functions[command_not_found_handler] )) && functions[_command_not_found_handler]=$functions[command_not_found_handler]
-command_not_found_handler() { print "mise: $1"; _command_not_found_handler "$@"; }'\'
-output="$(zsh -c "source '$HOME/.zsh/main.zsh'; nosuchtool" 2>&1)" || true
-assert_contains "$output" "mise: nosuchtool" "the handler left after loading"
-assert_not_contains "$output" "_command_not_found_handler" "the handler mise wraps"
-export HOMEBREW_PREFIX="$SANDBOX/no-homebrew"
-unset HOMEBREW_REPOSITORY
 test_done

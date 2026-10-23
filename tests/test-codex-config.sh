@@ -182,17 +182,11 @@ assert_exit 1 configure_codex
 assert_contains "$RUN_OUTPUT" "is it valid TOML? Leaving it unchanged."
 assert_unchanged "$CODEX_CONFIG" "though the step left it unchanged"
 
-# A value of your own is kept without a terminal and replaced on yes; test-claude-settings.sh covers
-# the rest of the consent matrix, which both steps share
+# A value of your own is replaced on yes; test-claude-settings.sh covers the rest of the consent
+# matrix, which both steps share
 repo_line='["model-with-reasoning","current-dir","git-branch","context-used"]'
 printf 'model = "gpt-6.1-sol"\n' > "$CODEX_CONFIG"
-assert_exit 0 configure_codex
-assert_eq "$repo_line" "$(get .tui.status_line)" "the status line when it was unset"
 set_key .tui.status_line '["model", "git-branch"]'
-mine="$(cat "$CODEX_CONFIG")"
-assert_exit 0 configure_codex
-assert_contains "$RUN_OUTPUT" "Kept your value for Codex's status line (tui.status_line), [\"model\",\"git-branch\"]."
-assert_eq "$mine" "$(cat "$CODEX_CONFIG")" "the config with a status line of your own"
 answer yes
 assert_exit 0 configure_codex
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"

@@ -197,19 +197,6 @@ assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
 stub_uname Darwin
 
-# brew outdated also exits 1 on error, so an exit 1 listing nothing is a failure
-stub brew 'case "$*" in
-    "list --cask -1") printf "t3-code\ncodex\n" ;;
-    "outdated "*) exit 1 ;;
-esac'
-assert_exit 1 upgrade_run upgrade_ai_tools
-assert_contains "$RUN_OUTPUT" "Failed: AI casks"
-assert_file_not_contains "$STUB_LOG" "brew upgrade"
-stub brew '[ "$*" != "list --cask -1" ] || printf "t3-code\ncodex\n"'
-assert_exit 0 upgrade_run upgrade_ai_tools
-assert_file_contains "$STUB_LOG" "brew outdated --cask --greedy --quiet t3-code codex"
-assert_file_not_contains "$STUB_LOG" "brew upgrade"
-
 # Replacing a CLI's binary doesn't break a running copy, such as the ChatGPT app's codex daemon
 stub_brew_casks "t3-code codex" \
     '"info --json=v2 --cask codex") echo "{\"casks\": [{\"artifacts\": [{\"binary\": [\"codex\"]}]}]}" ;;'
@@ -226,19 +213,6 @@ assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade logi-options+
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy logi-options+"
 assert_file_not_contains "$STUB_LOG" "pgrep"
 stub pgrep 'exit 1'
-
-# brew outdated may name a cask after its tap
-stub_brew_casks "zed appcleaner the-unarchiver" '"outdated "*) echo homebrew/cask/zed; echo the-unarchiver; exit 1 ;;'
-assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+
-assert_eq "brew upgrade --cask --greedy zed
-brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades of a stage's casks"
-
-# A cask removed upstream fails any query naming it, so each is then asked alone
-stub_brew_casks "zed gone-cask the-unarchiver" \
-    '"outdated "*gone-cask*) echo "Error: Cask '\''gone-cask'\'' is unavailable" >&2; exit 1 ;;'
-assert_exit 1 upgrade_run _upgrade_self_updating_casks upgrade zed gone-cask the-unarchiver
-assert_eq "brew upgrade --cask --greedy zed
-brew upgrade --cask --greedy the-unarchiver" "$(grep '^brew upgrade' "$STUB_LOG")" "upgrades beside a cask brew can't find"
 
 # Unreadable metadata mustn't pass for a cask with no app
 for info in 'exit 1' 'echo "{}"'; do

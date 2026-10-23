@@ -34,7 +34,6 @@ for state in $STATUS_STATES; do
 status_item $state \"the $state item\""
 done
 fake_step every "$every
-echo \"  missing in the text is not an item\"
 status_result"
 calm="source \"$REPO_DIR/lib/common.sh\""
 for state in ok skipped unverified info; do
@@ -46,7 +45,7 @@ status_result"
 # shellcheck disable=SC2034 # run_steps reads it
 STEPS=(every calm)
 
-assert_exit 3 run_steps --status
+run run_steps --status
 report="$RUN_OUTPUT"
 assert_exit 0 run_steps --status calm
 

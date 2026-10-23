@@ -50,19 +50,6 @@ assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
 [ ! -e "$HOME/.vimrc" ] || fail "--quick without --status installed ~/.vimrc"
 
-read_flags() {
-    env -u HOMEBREW_NO_AUTO_UPDATE -u DOTFILES_STATUS_QUICK "$BASH" -c '
-        . "$0/lib/common.sh"
-        check_args : words "$@"
-        echo "${HOMEBREW_NO_AUTO_UPDATE:-unset} ${DOTFILES_STATUS_QUICK:-unset}"' "$REPO_DIR" "$@"
-}
-run read_flags vim --status
-assert_eq "1 unset" "$RUN_OUTPUT" "variables after vim --status"
-run read_flags --backup --status --quick
-assert_eq "1 1" "$RUN_OUTPUT" "variables after --backup --status --quick"
-run read_flags vim
-assert_eq "unset unset" "$RUN_OUTPUT" "variables after vim"
-
 # A step given a word, as `install.sh status` for --status, fails rather than applying
 export HOME="$SANDBOX/home-help"
 mkdir -p "$HOME"

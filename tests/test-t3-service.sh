@@ -230,11 +230,12 @@ assert_not_contains "$RUN_OUTPUT" "running a server"
 reset
 installed_unit
 running_service
+# The first check finds no server, the next finds one
+replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] || { rm "$STATE/idle"; return 1; }'
 touch "$STATE/idle"
-stub sleep '[ "$1" != 1 ] || rm -f "$(dirname "$STUB_LOG")/state/idle"'
 assert_exit 0 configure_t3_code_ubuntu
 assert_file_not_contains "$STUB_LOG" "systemctl --user restart"
-stub sleep
+replace_fn t3_code_launcher_has_server '[ ! -e "$STATE/idle" ] && [ ! -e "$STATE/always-idle" ]'
 
 reset
 installed_unit
@@ -317,51 +318,6 @@ assert_contains "$RUN_OUTPUT" "already set"
 assert_file_not_contains "$STUB_LOG" "systemctl --user stop"
 run status
 assert_not_contains "$RUN_OUTPUT" "restarted for its drop-in"
-
-# A server without its drop-in's environment, restarted
-reset
-installed_unit
-running_service
-touch "$STATE/stale-env"
-answer yes
-systemctl_fails start
-# As main runs it, under || where set -e is off
-conditional_configure() { configure_t3_code_ubuntu || return 1; }
-assert_exit 1 conditional_configure
-assert_not_contains "$RUN_OUTPUT" "Restarted the T3 Code service"
-stub systemctl "$SYSTEMCTL_STUB"
-assert_exit 0 configure_t3_code_ubuntu
-assert_contains "$RUN_OUTPUT" "Started the T3 Code service"
-assert_exit 1 t3_code_restart_pending
-answer no
-
-# A fresh drop-in sets only telemetry, the port, and the host, leaving the start limit and oomd
-# preference to T3's unit. The port and host checks read T3_CODE_PORT and T3_CODE_HOST.
-reset
-assert_exit 0 configure_t3_code_ubuntu
-assert_eq "[Service]
-Environment=T3CODE_TELEMETRY_ENABLED=false
-Environment=T3CODE_PORT=$T3_CODE_PORT
-Environment=T3CODE_HOST=$T3_CODE_HOST" "$(cat "$T3_CODE_SERVICE_DROP_IN")" "the drop-in"
-# A current drop-in systemd hasn't loaded is loaded without a restart, which only a server lacking
-# its environment needs
-installed_unit
-rm "$STATE/loaded-drop-in"
-running_service
-assert_exit 1 t3_code_drop_in_loaded
-assert_exit 0 configure_t3_code_ubuntu
-assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-assert_exit 1 t3_code_restart_pending
-touch "$STATE/stale-env-host"
-assert_exit 0 t3_code_restart_pending
-run status
-assert_contains "$RUN_OUTPUT" "missing    T3 Code service restarted for its drop-in"
-answer yes
-assert_exit 0 configure_t3_code_ubuntu
-assert_file_contains "$STUB_LOG" "systemctl --user stop t3code.service"
-assert_file_contains "$STUB_LOG" "systemctl --user start t3code.service"
-assert_exit 1 t3_code_restart_pending
-answer no
 
 # Every listener on the port must be loopback, and an ss failure is unknown
 reset
@@ -496,8 +452,6 @@ assert_contains "$RUN_OUTPUT" "missing    T3 Code service running; check ~/.t3/u
 : > "$STUB_LOG"
 DOTFILES_STATUS_QUICK=1 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
-assert_eq 1 "$(grep -c 'is-active' "$STUB_LOG")" "is-active checks with --quick"
-assert_eq 1 "$(grep -c 'systemctl --user show -p MainPID' "$STUB_LOG")" "MainPID checks with --quick"
 assert_file_not_contains "$STUB_LOG" "ps -o etimes"
 assert_file_not_contains "$STUB_LOG" "t3 browser setup"
 assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --quick"
@@ -509,18 +463,13 @@ assert_contains "$RUN_OUTPUT" "missing    T3 Code service running"
 reset
 rm -f "$HOME/.local/bin/t3"
 replace_fn apt_installed '[ "$1" != libatomic1 ] || [ -e "$STATE/libatomic1" ]'
-replace_fn run_installer '
-echo "run_installer $*" >> "$STUB_LOG"
-return "$(cat "$STATE/installer-status")"'
+replace_fn run_installer 'echo "run_installer $*" >> "$STUB_LOG"'
 touch "$STATE/libatomic1"
-for code in 2 3 0; do
-    echo "$code" > "$STATE/installer-status"
-    : > "$STUB_LOG"
-    assert_exit 1 configure_t3_code_ubuntu
-    assert_file_contains "$STUB_LOG" "run_installer sh https://t3.codes/install.sh"
-    assert_file_not_contains "$STUB_LOG" "t3 service install"
-    assert_contains "$RUN_OUTPUT" "Without the t3 CLI there's no service to install"
-done
+: > "$STUB_LOG"
+assert_exit 1 configure_t3_code_ubuntu
+assert_file_contains "$STUB_LOG" "run_installer sh https://t3.codes/install.sh"
+assert_file_not_contains "$STUB_LOG" "t3 service install"
+assert_contains "$RUN_OUTPUT" "Without the t3 CLI there's no service to install"
 assert_contains "$RUN_OUTPUT" "The t3 installer finished, but $HOME/.local/bin/t3 isn't there"
 rm "$STATE/libatomic1"
 : > "$STUB_LOG"

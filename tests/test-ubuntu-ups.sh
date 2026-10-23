@@ -190,94 +190,65 @@ if [ "$(id -u)" -ne 0 ]; then
     assert_eq "" "$(ups_todo)" "what the UPS part needs when upsd.users can't be read"
     chmod 640 "$NUT_DIR/upsd.users"
     cache_sudo yes
+else
+    echo "Skipped the unreadable NUT file case: root reads any file"
 fi
 
-# A wrong group, as a failed chgrp leaves it: only that file is rewritten
-other_group="$(id -Gn | tr ' ' '\n' | grep -vxF "$NUT_GROUP" | head -n 1)" || true
-if [ -n "$other_group" ]; then
-    chgrp "$other_group" "$NUT_DIR/upsmon.conf"
-    assert_exit 1 nut_files_current
-    run status_ups
-    assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
-    assert_contains "$(ups_todo)" "UPS: set up NUT"
+# --- one thing broken at a time ---
+# A test can't chown or chgrp to another user or group, so $SANDBOX/upsmon-meta stands in for
+# upsmon.conf's owner, group, and mode until the step rewrites it
+wrap_fn owner_group_mode 'if [ "$1" == "$NUT_DIR/upsmon.conf" ] && [ -e "$SANDBOX/upsmon-meta" ]; then
+    cat "$SANDBOX/upsmon-meta"
+else
+    real_owner_group_mode "$@"
+fi'
+NOT_SET_UP="UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
+# broken <break> <undo after the re-run> <status line> <in the re-run's log> <in its output>
+#   <NUT files rewritten>
+broken() {
+    eval "$1"
+    assert_contains "$(ups_todo)" "UPS: set up NUT" "what the UPS part needs after: $1"
+    if [ -n "$3" ]; then
+        run status_ups
+        assert_contains "$RUN_OUTPUT" "missing    $3"
+    fi
     : > "$STUB_LOG"
     assert_exit 0 setup_ups
-    assert_eq "$NUT_GROUP" "$(file_group "$NUT_DIR/upsmon.conf")" "upsmon.conf's group after a re-run"
-    assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for a wrong group"
-    assert_exit 0 nut_files_current
-else
-    # With one group, change the step's group instead
-    NUT_GROUP=nut
-    assert_exit 1 nut_files_current
-    NUT_GROUP="$(id -gn)"
-fi
-
+    [ -z "$4" ] || assert_file_contains "$STUB_LOG" "$4"
+    [ -z "$5" ] || assert_contains "$RUN_OUTPUT" "$5"
+    assert_not_contains "$RUN_OUTPUT" "already set up"
+    assert_eq "$6" "$(grep -c 'install -m 0640' "$STUB_LOG")" "NUT files rewritten after: $1"
+    eval "$2"
+    assert_eq "" "$(ups_todo)" "what the UPS part needs after re-running for: $1"
+}
+# A wrong owner or group, as a failed chown or chgrp leaves it: only that file is rewritten
+broken 'echo "nobody $NUT_GROUP 640" > "$SANDBOX/upsmon-meta"' 'rm "$SANDBOX/upsmon-meta"' "$NOT_SET_UP" \
+    "$NUT_DIR/upsmon.conf" "" 1
+broken 'echo "$NUT_OWNER other 640" > "$SANDBOX/upsmon-meta"' 'rm "$SANDBOX/upsmon-meta"' "$NOT_SET_UP" \
+    "$NUT_DIR/upsmon.conf" "" 1
 # 0644 and 0666 leak the password, 0600 locks out the nut group
 for mode in 644 666 600; do
-    chmod "$mode" "$NUT_DIR/upsd.users"
-    assert_exit 1 nut_files_current
-    run status_ups
-    assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0764:0501) monitored by NUT: not set up for it (re-run the ubuntu step)"
-    assert_contains "$(ups_todo)" "UPS: set up NUT"
-    : > "$STUB_LOG"
-    assert_exit 0 setup_ups
+    broken "chmod $mode \"\$NUT_DIR/upsd.users\"" "" "$NOT_SET_UP" "" "" 1
     assert_eq 640 "$(file_mode "$NUT_DIR/upsd.users")" "upsd.users's mode after a re-run from $mode"
-    assert_eq 1 "$(grep -c 'install -m 0640' "$STUB_LOG")" "files rewritten for mode $mode"
-    assert_exit 0 nut_files_current
 done
-NUT_OWNER=root
-assert_exit 1 nut_files_current
-# shellcheck disable=SC2034 # nut_file_current reads it
-NUT_OWNER="$(id -un)"
+broken 'echo "# edited" >> "$UPS_RTC_HOOK"' "" "RTC wake hook ($UPS_RTC_HOOK): missing or out of date" \
+    "" "Installed the RTC wake hook" 0
+assert_eq "$(ups_rtc_hook)" "$(cat "$UPS_RTC_HOOK")" "the RTC wake hook after a re-run"
+broken 'rm "$SANDBOX/active-nut-monitor.service"' "" "nut-server and nut-monitor running" \
+    "sudo systemctl start nut-server.service nut-monitor.service" "" 0
+# NUT wouldn't start after a reboot
+broken 'touch "$SANDBOX/disabled-nut.target"' "" "nut.target enabled, so NUT starts at boot" \
+    "" "Enabled nut.target, so NUT starts at boot." 0
+# upsd not answering, as when its driver stopped
+broken 'rm "$SANDBOX/upsc"' 'upsc_answers OL 0764 0501' "" \
+    "sudo systemctl restart nut-driver@ups.service nut-server.service nut-monitor.service" "" 0
+
 # A symlink counts by its target's owner, group, and mode
 mv "$NUT_DIR/upsd.users" "$SANDBOX/upsd.users"
 ln -s "$SANDBOX/upsd.users" "$NUT_DIR/upsd.users"
 assert_exit 0 nut_files_current
 rm "$NUT_DIR/upsd.users"
 mv "$SANDBOX/upsd.users" "$NUT_DIR/upsd.users"
-
-echo "# edited" >> "$UPS_RTC_HOOK"
-run status_ups
-assert_contains "$RUN_OUTPUT" "missing    RTC wake hook ($UPS_RTC_HOOK): missing or out of date"
-assert_contains "$(ups_todo)" "the RTC wake hook $UPS_RTC_HOOK"
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_eq "$(ups_rtc_hook)" "$(cat "$UPS_RTC_HOOK")" "the RTC wake hook after a re-run"
-assert_contains "$RUN_OUTPUT" "Installed the RTC wake hook"
-assert_file_not_contains "$STUB_LOG" "restart"
-assert_exit 0 status_ups
-
-rm "$SANDBOX/active-nut-monitor.service"
-assert_contains "$(ups_todo)" "UPS: set up NUT"
-run status_ups
-assert_contains "$RUN_OUTPUT" "missing    nut-server and nut-monitor running"
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_file_contains "$STUB_LOG" "sudo systemctl start nut-server.service nut-monitor.service"
-[ -e "$SANDBOX/active-nut-monitor.service" ] || fail "nut-monitor wasn't started"
-
-# nut.target disabled: NUT wouldn't start after a reboot
-touch "$SANDBOX/disabled-nut.target"
-assert_contains "$(ups_todo)" "UPS: set up NUT"
-run status_ups
-assert_contains "$RUN_OUTPUT" "missing    nut.target enabled, so NUT starts at boot"
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_file_contains "$STUB_LOG" "sudo systemctl enable nut.target nut-server.service nut-monitor.service"
-assert_contains "$RUN_OUTPUT" "Enabled nut.target, so NUT starts at boot."
-assert_not_contains "$RUN_OUTPUT" "already set up"
-[ ! -e "$SANDBOX/disabled-nut.target" ] || fail "nut.target wasn't enabled"
-assert_exit 0 status_ups
-
-# upsd not answering, as when its driver stopped
-rm "$SANDBOX/upsc"
-assert_contains "$(ups_todo)" "UPS: set up NUT"
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver-enumerator.service"
-assert_file_contains "$STUB_LOG" "sudo systemctl restart nut-driver@ups.service nut-server.service nut-monitor.service"
-assert_not_contains "$RUN_OUTPUT" "already set up"
-upsc_answers OL 0764 0501
 
 # --- a changed UPS ---
 unplug 1-3

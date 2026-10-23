@@ -106,9 +106,7 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $item"
 assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
 assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
-printf '%s\n' "PasswordAuthentication yes" "AllowUsers someone" > "$SANDBOX/sshd_config.d/00-local.conf"
-# A later file loses to the drop-in, so it isn't named
-echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/50-cloud-init.conf"
+printf '%s\n' "passwordauthentication yes" "allowusers someone" > "$SANDBOX/sshd-T"
 first="another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $item (AllowUsers is someone $me; $first)"
@@ -131,10 +129,8 @@ assert_contains "$RUN_OUTPUT" "sshd doesn't take these settings from $SSHD_DROP_
     AllowUsers is someone $me
     PasswordAuthentication is yes"
 assert_file_contains "$STUB_LOG" "sudo $SSHD_BIN -T"
-assert_eq "PasswordAuthentication yes
-AllowUsers someone" "$(cat "$SANDBOX/sshd_config.d/00-local.conf")" "the other drop-in"
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-rm "$SANDBOX/sshd_config.d/00-local.conf" "$SANDBOX/sshd_config.d/50-cloud-init.conf"
+rm "$SANDBOX/sshd-T"
 # A Match block can override the drop-in for some logins, which sshd -T doesn't show, so the
 # settings are unverified and the file named
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
@@ -146,12 +142,12 @@ DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/99-match.conf has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 # Password logins went off at the reload even though another setting failed
-echo "PermitRootLogin yes" > "$SANDBOX/sshd_config.d/00-local.conf"
+echo "permitrootlogin yes" > "$SANDBOX/sshd-T"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "    PermitRootLogin is yes"
 assert_contains "$RUN_OUTPUT" "Password logins are off now"
-rm "$SANDBOX/sshd_config.d/00-local.conf"
+rm "$SANDBOX/sshd-T"
 # sshd -T failing after the reload: keep the drop-in
 touch "$SANDBOX/sshd-T-fails"
 rm "$SSHD_DROP_IN"

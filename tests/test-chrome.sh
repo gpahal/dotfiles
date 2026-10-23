@@ -31,16 +31,10 @@ GOOGLE_KEYRING="$SANDBOX/google-chrome.gpg"
 GOOGLE_SOURCES_CONTENT="${GOOGLE_SOURCES_CONTENT//\/usr\/share\/keyrings\/google-chrome.gpg/$GOOGLE_KEYRING}"
 # The key Google serves, with a subkey
 stub_gpg_fpr "$GOOGLE_KEY_FPR" 0F06FF86BEEAF4E71866EE5232EE5355A6BC6E42
-# Like Chrome's postinst and cron job: a missing defaults file gets repo_add_once="true", which
-# makes Chrome rewrite its apt source. Updates fail while $SANDBOX/update-fails exists.
-stub apt-get 'S="'"$SANDBOX"'" defaults="'"$CHROME_DEFAULTS"'"
-case " $* " in
-    *" update "*) [ ! -e "$S/update-fails" ] || { echo "E: The repository is not signed."; exit 100; } ;;
-    *" install -y google-chrome-stable ")
-        [ -e "$defaults" ] || echo "repo_add_once=\"true\"" > "$defaults"
-        ! grep -qx "repo_add_once=\"true\"" "$defaults" || echo "Google'"'"'s own source" > "'"$GOOGLE_SOURCES"'"
-        touch "$S/installed"
-        ;;
+# Updates fail while $SANDBOX/update-fails exists
+stub apt-get 'case " $* " in
+    *" update "*) [ ! -e "'"$SANDBOX"'/update-fails" ] || { echo "E: The repository is not signed."; exit 100; } ;;
+    *" install -y google-chrome-stable ") touch "'"$SANDBOX"'/installed" ;;
 esac'
 stub_http_status
 stub_fetch key

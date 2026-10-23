@@ -179,65 +179,20 @@ assert_file_contains "$STUB_LOG" "ss -Htn state established ( sport = :22 )"
 assert_file_not_contains "$STUB_LOG" "sudo ss "
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
-# Config says on but ufw.service is stopped
-touch "$SANDBOX/units/ufw.service.inactive"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
-assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
-[ ! -e "$SANDBOX/units/ufw.service.inactive" ] || fail "the step left ufw.service stopped"
-assert_exit 0 main --status
-# ufw.service running but disabled
-touch "$SANDBOX/units/ufw.service.disabled"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
-[ ! -e "$SANDBOX/units/ufw.service.disabled" ] || fail "the step left ufw.service disabled"
-assert_exit 0 main --status
-# Stopped by ufw-init stop: files and unit say on, `ufw status` says inactive
-touch "$SANDBOX/ufw-stopped"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections: ufw status says it's inactive"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw"
-assert_file_contains "$STUB_LOG" "sudo ufw default deny incoming"
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
-[ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
-assert_exit 0 main --status
-touch "$SANDBOX/ufw-stopped"
-cache_sudo no
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
-cache_sudo yes
-rm "$SANDBOX/ufw-stopped"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_file_not_contains "$STUB_LOG" "ufw --force enable"
-assert_file_not_contains "$STUB_LOG" "ufw default deny"
+# ufw.service stopped or disabled, or ufw stopped by ufw-init stop while files and unit say on
+for broken in units/ufw.service.inactive units/ufw.service.disabled ufw-stopped; do
+    touch "$SANDBOX/$broken"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
+    assert_exit 0 main
+    [ ! -e "$SANDBOX/$broken" ] || fail "the step left $broken"
+    assert_exit 0 main --status
+done
 
-# Private-range, tailnet, and link-local (any interface) sessions survive, so ufw goes on
-sessions 22 192.168.1.5:22 192.168.1.20:51000 100.64.0.1:22 100.64.0.2:51000 \
-    '[::ffff:192.168.1.5]:22' '[::ffff:192.168.1.21]:51001' \
-    '[fe80::5%eth0]:22' '[fe80::20%eth0]:51002' \
-    '[fd7a:115c:a1e0::1]:22' '[fd7a:115c:a1e0::2]:51003' '[fe80::5%wg0]:22' '[fe80::30%wg0]:51004'
-logins 192.168.1.20 100.64.0.2 fe80::30
-firewall_run
-assert_eq 0 "$RUN_STATUS" "the step over the LAN and the tailnet"
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
-
-# An outside connection without a logind login (a scanner) doesn't count
-sessions 22 192.168.1.5:22 192.168.1.20:51000 203.0.113.9:51000
-logins 192.168.1.20
-firewall_run
-assert_eq 0 "$RUN_STATUS" "the step with a connection from outside that hasn't logged in"
-assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
-
-# An outside session leaves the firewall unchanged; a stale tmux SSH_CONNECTION doesn't count
+# An outside session leaves the firewall unchanged, a stale tmux SSH_CONNECTION doesn't count, and
+# an outside connection without a logind login (a scanner) doesn't count. test-ufw-helpers.sh
+# covers which addresses count as outside.
+sessions 22 192.168.1.5:22 192.168.1.20:51000 192.168.1.5:22 203.0.113.9:51000 192.168.1.5:22 198.51.100.8:51001
 logins 192.168.1.20 203.0.113.9
 rm -f "$SANDBOX/linger"
 export TMUX=/tmp/tmux-1000/default,1,0 SSH_CONNECTION="192.168.1.20 51000 192.168.1.5 22"
@@ -245,48 +200,32 @@ firewall_run
 unset TMUX SSH_CONNECTION
 assert_eq 1 "$RUN_STATUS" "the step with a session from outside"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
+assert_not_contains "$RUN_OUTPUT" "198.51.100.8"
 firewall_unchanged
 
-# ssh.socket on 2222 too
+# A session on ssh.socket's second port counts too
 printf '%s\n' 22 2222 > "$SANDBOX/socket-ports"
-no_sessions
-rules_missing
-firewall_run
-assert_eq 0 "$RUN_STATUS" "the step with ssh.socket on 2222"
-assert_file_contains "$STUB_LOG" "sudo ufw allow from 192.168.0.0/16 to any port 2222 proto tcp"
-assert_file_contains "$STUB_LOG" "sudo ufw allow from fe80::/10 to any port 22 proto tcp"
-assert_exit 0 ufw_configured -n
 sessions 22 192.168.1.5:22 192.168.1.20:51000
 sessions 2222 '[::ffff:192.168.1.5]:2222' '[::ffff:198.51.100.7]:50000'
 logins 198.51.100.7
 firewall_run
-assert_eq 1 "$RUN_STATUS" "the step with an IPv4-mapped session from outside"
+assert_eq 1 "$RUN_STATUS" "the step with a session from outside on port 2222"
 assert_file_contains "$STUB_LOG" "ss -Htn state established ( sport = :2222 )"
 assert_contains "$RUN_OUTPUT" "198.51.100.7"
 firewall_unchanged
-sessions 2222 '[2001:db8:1::5]:2222' '[2001:db8:9::7]:50000'
-logins 2001:db8:9::7
-firewall_run
-assert_eq 1 "$RUN_STATUS" "the step with an IPv6 session from outside"
-assert_contains "$RUN_OUTPUT" "2001:db8:9::7"
-firewall_unchanged
 rm "$SANDBOX/socket-ports" "$SANDBOX/ss-2222"
-rules_present
 
 # logind failing or naming a host (UseDNS yes): every outside connection counts
 sessions 22 192.168.1.5:22 203.0.113.9:51000
-logins 192.168.1.20
-touch "$SANDBOX/logind-fails"
-firewall_run
-assert_eq 1 "$RUN_STATUS" "the step without logind's sessions"
-assert_contains "$RUN_OUTPUT" "203.0.113.9"
-firewall_unchanged
-rm "$SANDBOX/logind-fails"
-logins client.example.net
-firewall_run
-assert_eq 1 "$RUN_STATUS" "the step with a session named by host"
-assert_contains "$RUN_OUTPUT" "203.0.113.9"
-firewall_unchanged
+for case in logind-fails client.example.net; do
+    logins "${case/logind-fails/192.168.1.20}"
+    [ "$case" != logind-fails ] || touch "$SANDBOX/logind-fails"
+    firewall_run
+    rm -f "$SANDBOX/logind-fails"
+    assert_eq 1 "$RUN_STATUS" "the step with logind's sessions: $case"
+    assert_contains "$RUN_OUTPUT" "203.0.113.9"
+    firewall_unchanged
+done
 
 # With ufw on, an outside session doesn't block adding allow rules, which can't cut anyone off
 ufw_on

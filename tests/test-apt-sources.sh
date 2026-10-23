@@ -208,6 +208,8 @@ if [ ! -r "$file" ]; then
     assert_eq old-key "$(cat "$keyring")" "the key when the source can't be read"
     assert_eq "old source" "$(cat "$file")" "an unreadable source"
     assert_file_not_contains "$STUB_LOG" "apt-get"
+else
+    echo "Skipped the unreadable source case: root reads any file"
 fi
 chmod 644 "$file"
 

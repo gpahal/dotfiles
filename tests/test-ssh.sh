@@ -125,33 +125,24 @@ snapshot "$SSH_CONFIG"
 assert_exit 0 main
 assert_unchanged "$SSH_CONFIG" "on Ubuntu"
 assert_eq 600 "$(file_mode "$SSH_CONFIG")" "the config's mode"
-chmod 755 "$HOME/.ssh"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh (mode 700)"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Set ~/.ssh to mode 700"
+# Too open a mode is fixed; a symlink is judged by its target
+for case in "755 $HOME/.ssh 700" "644 $SSH_CONFIG 600"; do
+    read -r bad path mode <<< "$case"
+    label="Only you can read ~${path#"$HOME"} (mode $mode)"
+    chmod "$bad" "$path"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    $label"
+    assert_exit 0 main
+    assert_exit 0 main --status
+    mv "$path" "$SANDBOX/real"
+    ln -s "$SANDBOX/real" "$path"
+    assert_exit 0 main --status
+    assert_contains "$RUN_OUTPUT" "ok         $label"
+    rm "$path"
+    mv "$SANDBOX/real" "$path"
+done
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "/.ssh and its config are already private"
-assert_exit 0 main --status
-chmod 644 "$SSH_CONFIG"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Only you can read ~/.ssh/config (mode 600)"
-assert_exit 0 main
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
-# Symlinks are judged by their targets
-mv "$HOME/.ssh" "$SANDBOX/ssh-real"
-ln -s "$SANDBOX/ssh-real" "$HOME/.ssh"
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
-rm "$HOME/.ssh"
-mv "$SANDBOX/ssh-real" "$HOME/.ssh"
-mv "$SSH_CONFIG" "$SANDBOX/ssh-config"
-ln -s "$SANDBOX/ssh-config" "$SSH_CONFIG"
-assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh/config (mode 600)"
-rm "$SSH_CONFIG"
-mv "$SANDBOX/ssh-config" "$SSH_CONFIG"
 
 # An unwritable config fails; main runs it under ||, which turns set -e off inside it
 add_host_star_checked() {

@@ -136,10 +136,11 @@ rm "$SANDBOX/sshd-T"
 printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified $item ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
-assert_contains "$RUN_OUTPUT" "ok         Password and keyboard-interactive SSH logins off"
+assert_contains "$RUN_OUTPUT" "unverified Password and keyboard-interactive SSH logins off ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/99-match.conf has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
+assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd_config.d/99-match.conf"
 # Password logins went off at the reload even though another setting failed
 echo "permitrootlogin yes" > "$SANDBOX/sshd-T"

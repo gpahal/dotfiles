@@ -46,11 +46,6 @@ install_tailscale() {
     command -v tailscale &>/dev/null || apt_get install -y tailscale
 }
 
-# The first tailscale up resets these, so a fresh install waits for its login
-tailscale_set_up() {
-    ! command -v tailscale &>/dev/null || tailscale_configured || tailscale_needs_login
-}
-
 set_up_tailscale() {
     sudo tailscale set --auto-update --operator="$(id -un)"
 }

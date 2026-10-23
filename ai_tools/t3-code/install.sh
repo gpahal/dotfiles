@@ -677,8 +677,9 @@ update_t3_code_server() {
     json_applied "$T3_CODE_SETTINGS" "$(t3_code_server_filter)" && settings_set=true
     t3_code_drop_in_current || wrote=true
     # copy_file replaces it whole: a truncated drop-in without its host line would serve on every interface
+    # A current drop-in that won't load keeps only the loader's message
     if ! t3_code_service_files copy_file > /dev/null || ! t3_code_load_drop_in; then
-        echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
+        ! "$wrote" || echo "  Couldn't write and load $T3_CODE_SERVICE_DROP_IN" >&2
         return 2
     fi
     if "$settings_set" && ! t3_code_restart_pending; then

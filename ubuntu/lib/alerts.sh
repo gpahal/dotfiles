@@ -3,17 +3,20 @@
 
 # The units run a copy of the script, so they don't depend on what the repo has checked out
 health_alert_files() {
-    "$1" "$DOTFILES_DIR/ubuntu/health-alert.sh" "$HEALTH_ALERT_DIR/health-alert.sh"
-    "$1" "$DOTFILES_DIR/ubuntu/lib/ntfy.sh" "$HEALTH_ALERT_DIR/ntfy.sh"
-    "$1" "$DOTFILES_DIR/ubuntu/lib/paths.sh" "$HEALTH_ALERT_DIR/paths.sh"
-    "$1" "$DOTFILES_DIR/lib/status-format.sh" "$HEALTH_ALERT_DIR/status-format.sh"
+    local status=0
+    "$1" "$DOTFILES_DIR/ubuntu/health-alert.sh" "$HEALTH_ALERT_DIR/health-alert.sh" || status=1
+    "$1" "$DOTFILES_DIR/ubuntu/lib/ntfy.sh" "$HEALTH_ALERT_DIR/ntfy.sh" || status=1
+    "$1" "$DOTFILES_DIR/ubuntu/lib/paths.sh" "$HEALTH_ALERT_DIR/paths.sh" || status=1
+    "$1" "$DOTFILES_DIR/lib/status-format.sh" "$HEALTH_ALERT_DIR/status-format.sh" || status=1
+    return "$status"
 }
 
 health_unit_files() {
-    local unit
+    local unit status=0
     for unit in "${HEALTH_UNITS[@]}"; do
-        "$1" "$DOTFILES_DIR/ubuntu/systemd/$unit" "$HEALTH_UNIT_DIR/$unit"
+        "$1" "$DOTFILES_DIR/ubuntu/systemd/$unit" "$HEALTH_UNIT_DIR/$unit" || status=1
     done
+    return "$status"
 }
 
 # A failed daemon-reload leaves the old ExecStart running though the files match

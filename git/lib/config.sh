@@ -14,6 +14,10 @@ git_file() {
 
 # Not --global, which skips the XDG file once ~/.gitconfig exists. No git dir, so neither the
 # caller's repo config nor its gitdir/onbranch includes apply, and a broken checkout doesn't fail it.
+# Nor do settings from the environment, so it reads only the user's files.
 git_user_config() {
-    GIT_CONFIG_NOSYSTEM=1 GIT_COMMON_DIR=/dev/null git --git-dir=/dev/null config "$@"
+    (
+        unset GIT_CONFIG_GLOBAL GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+        GIT_CONFIG_NOSYSTEM=1 GIT_COMMON_DIR=/dev/null git --git-dir=/dev/null config "$@"
+    )
 }

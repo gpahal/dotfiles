@@ -188,7 +188,7 @@ done
 
 # What main can't fix, and so refuses with no sudo: <case>
 DIR="$DOTFILES_PAM_LOCAL_MODULES_DIR"
-for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew module-2; do
+for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew module-2-link module-2; do
     set_up
     path="$DIR" reason=""
     case "$unsafe" in
@@ -217,6 +217,10 @@ for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew 
             rm -rf "$SANDBOX/brew"
             chmod 664 "$MODULE"
             ;;
+        module-2-link)
+            # Refused even dangling
+            ln -s "$SANDBOX/nowhere" "$MODULE.2"
+            ;;
         module-2)
             # OpenPAM loads it instead of the copy; setup didn't install it, so it isn't deleted
             echo "old reattach" > "$MODULE.2"
@@ -225,15 +229,35 @@ for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew 
     message="sudo can't safely load $MODULE: $path $reason"
     case "$unsafe" in
         no-homebrew) message="$MODULE, which sudo loads, isn't root's alone to write; run brew install pam-reattach, then just touch-id" ;;
-        module-2) message="$MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $MODULE.2, then re-run just touch-id" ;;
+        module-2 | module-2-link) message="$MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $MODULE.2, then re-run just touch-id" ;;
     esac
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $message"
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "Touch ID in tmux: $message"
     assert_file_not_contains "$STUB_LOG" "sudo"
+    [ "$unsafe" != module-2-link ] || [ -L "$MODULE.2" ] || fail "the linked pam_reattach.so.2 was removed"
 done
 assert_eq "old reattach" "$(cat "$MODULE.2")" "pam_reattach.so.2"
+
+# An ACL entry that denies, or only lets others read, is harmless
+set_up
+chmod +a "everyone deny write,delete" "$MODULE"
+chmod +a "everyone allow read,readattr" "$DIR"
+assert_exit 0 main --status
+assert_not_contains "$RUN_OUTPUT" "missing"
+chmod -N "$MODULE" "$DIR"
+
+# A dangling module link isn't loaded, so it doesn't block Touch ID alone
+set_up
+rm -rf "$SANDBOX/brew" "$MODULE"
+ln -s "$SANDBOX/nowhere" "$MODULE"
+assert_exit 0 main
+assert_eq "$HEADER
+$TID_LINE" "$(cat "$SUDO_LOCAL")" "sudo_local beside a dangling link"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "skipped    Touch ID in tmux: pam-reattach isn't installed"
+assert_not_contains "$RUN_OUTPUT" "missing"
 
 # A copy that fails, or that others could swap after install, stops before sudo_local could name it
 copy_fails() {

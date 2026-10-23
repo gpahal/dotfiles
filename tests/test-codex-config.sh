@@ -189,6 +189,7 @@ printf 'model = "gpt-6.1-sol"\n' > "$CODEX_CONFIG"
 set_key .tui.status_line '["model", "git-branch"]'
 answer yes
 assert_exit 0 configure_codex
+assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model\",\"git-branch\"], not the repo's"
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"
 load_script ai_tools/codex/install.sh
 as_os macos

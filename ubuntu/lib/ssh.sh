@@ -139,7 +139,7 @@ sshd_configured() {
 }
 
 # Takes sudo's flags, for a file only root can read
-sshd_match_files() {
+sshd_configs_with_match() {
     local file config
     for file in "$SSHD_CONFIG" "$(dirname "$SSHD_DROP_IN")"/*.conf; do
         config="$(read_root_file "$file" "$@" 2>/dev/null < /dev/null)" || continue
@@ -154,7 +154,7 @@ sshd_settings_problems() {
     local drop_in="$1" config key want have problems=""
     shift
     SSHD_PROBLEMS=""
-    SSHD_MATCH_FILES="$(sshd_match_files "$@" | join_lines ', ')"
+    SSHD_MATCH_FILES="$(sshd_configs_with_match "$@" | join_lines ', ')"
     [ -d "$SSHD_RUN_DIR" ] || return 1
     config="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null < /dev/null)" || return 1
     while read -r key want; do
@@ -191,7 +191,7 @@ restore_sshd_drop_in() {
 # Checks the config before and after the swap, so a broken file elsewhere fails without touching
 # a working drop-in. Runs where set -e is off, so each command checks its own failure.
 configure_sshd() {
-    local output bad existed=false old="" new problems="" line checked=true
+    local output bad existed=false old="" new problems="" line checked=true SSHD_MATCH_FILES=""
     # sshd -t also fails without sshd, and that's no config error
     if [ ! -x "$SSHD_BIN" ]; then
         echo "  sshd isn't installed ($SSHD_BIN is missing), so $SSHD_DROP_IN was left as it is. Install openssh-server and re-run." >&2
@@ -240,7 +240,8 @@ configure_sshd() {
     fi
     sshd_settings_problems "$new" || checked=false
     problems="$SSHD_PROBLEMS"
-    if "$checked" && key_only_in "$new" && ! key_only_in "$old" && ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
+    if "$checked" && [ -z "$SSHD_MATCH_FILES" ] && key_only_in "$new" && ! key_only_in "$old" &&
+        ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         # Not ssh -O exit: this session may run through the shared connection
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
@@ -263,7 +264,7 @@ PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 # status declares the items first (ubuntu_items)
 status_sshd() {
     # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_CACHE_STATUS=""
+    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_CACHE_STATUS="" SSHD_MATCH_FILES=""
     current_sshd_drop_in > /dev/null || true
     openssh_installed && installed=true
     items_status openssh_installed
@@ -302,6 +303,8 @@ status_sshd() {
         status_item unverified "$item (only root can read $SSHD_DROP_IN; run sudo -v, then status, to check it)"
     elif [ -z "$todo" ] && grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         status_item missing "$item ($(grep -E "$PASSWORD_PROBLEMS" <<< "$problems" | join_lines '; '); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+    elif [ -z "$todo" ] && [ -n "$SSHD_MATCH_FILES" ]; then
+        status_item unverified "$item ($SSHD_MATCH_FILES has a Match block, which can override them for some logins; check it by hand)"
     elif [ -z "$todo" ]; then
         status_item ok "$item"
     else

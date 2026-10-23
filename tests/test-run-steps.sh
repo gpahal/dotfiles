@@ -152,6 +152,9 @@ exited() {
     return 1
 }
 status=0
+caller=""
+# A failed assertion or timeout mustn't leave the caller's group running
+trap 'status=$?; set +e; [ -z "$caller" ] || kill -KILL -- "-$caller" 2> /dev/null; (exit "$status"); _sandbox_exit' EXIT
 # Job control keeps SIGINT deliverable; a background job ignores it
 set -m
 "$BASH" "$runner_dir/caller.sh" --status > "$SANDBOX/caller.out" 2>&1 &

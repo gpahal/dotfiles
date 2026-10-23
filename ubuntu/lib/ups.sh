@@ -198,10 +198,6 @@ ups_state() {
     fi
 }
 
-ups_set_up() {
-    nut_installed && ups_ready "$UPS_PLUGGED"
-}
-
 # Prints the sudo change needed, or nothing. NUT is installed only when a UPS is plugged in.
 ups_todo() {
     local ids what

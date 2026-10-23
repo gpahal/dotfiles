@@ -24,14 +24,14 @@ export SLEEPS="$SANDBOX/sleeps"
 printf '%s\n' '#!/bin/bash' 'echo "$$" >> "$SLEEPS"' "exec $(printf '%q' "$REAL_SLEEP") \"\$@\"" > "$STUB_DIR/sleep"
 chmod +x "$STUB_DIR/sleep"
 
-# A zombie isn't running, though kill -0 finds it
+# A zombie isn't running, though kill -0 finds it, and a pid that isn't sleep's was reused
 running_sleeps() {
     local pid
     [ -e "$SLEEPS" ] || return 0
     while read -r pid; do
         case "$(ps -o stat= -p "$pid" 2> /dev/null)" in
             '' | Z*) ;;
-            *) echo "$pid" ;;
+            *) [ "$(basename "$(ps -o comm= -p "$pid" 2> /dev/null)")" != sleep ] || echo "$pid" ;;
         esac
     done < "$SLEEPS"
 }

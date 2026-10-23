@@ -150,7 +150,8 @@ function createSampler({
   let topPrev = null;
   let cpuPrev = cpuTimes();
   let netPrev = null;
-  // Found once after each reset(), since /sys's layout rarely changes while the keys show
+  // Found after each reset(), and again only when a found sensor stops reading, since /sys's layout
+  // rarely changes while the keys show
   let sensorPaths = null;
   const physicalNames = new Map();
   const cpuHistory = [];
@@ -301,18 +302,20 @@ function createSampler({
     };
   }
 
-  // The values of the sensors the keys name. A failed read finds the sensors again, once a
-  // sample, since a driver that reloads can move them.
+  // The values of the sensors the keys name. A failed read of a found sensor finds the sensors
+  // again, once a sample, since a driver that reloads can move them. paths survives a reset()
+  // during an await.
   async function readSensors(keys) {
-    let fresh = !sensorPaths;
-    if (fresh) sensorPaths = await findSensors();
+    let paths = sensorPaths;
+    let fresh = !paths;
+    if (fresh) paths = sensorPaths = await findSensors();
     const values = {};
     for (const key of keys) {
-      let value = sensorPaths[key] ? await readNumber(sensorPaths[key]) : null;
-      if (value == null && !fresh) {
-        sensorPaths = await findSensors();
+      let value = paths[key] ? await readNumber(paths[key]) : null;
+      if (value == null && !fresh && paths[key]) {
+        paths = sensorPaths = await findSensors();
         fresh = true;
-        value = sensorPaths[key] ? await readNumber(sensorPaths[key]) : null;
+        value = paths[key] ? await readNumber(paths[key]) : null;
       }
       values[key] = value;
     }

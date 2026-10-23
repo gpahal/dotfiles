@@ -216,7 +216,7 @@ configure_codex() {
 
     # Check the edit works before asking to quit ChatGPT, which can rewrite the config as it quits,
     # so the edit is made again after
-    if pgrep -x ChatGPT > /dev/null 2>&1; then
+    if pgrep -ax "$(regex_escape ChatGPT)" > /dev/null 2>&1; then
         edited="$(codex_config_edited)" || return 1
         rm -f "$edited"
     fi
@@ -355,6 +355,8 @@ status() {
     if tool_home_guard --status "Codex settings and instructions" Codex CODEX_HOME "$CODEX_DIR"; then
         if ! status_require_cmd yq "Settings in ~/.codex/config.toml"; then
             :
+        elif ! status_require_cmd jq "Settings in ~/.codex/config.toml"; then
+            :
         elif ! codex_yq_new_enough; then
             status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
         else
@@ -377,6 +379,7 @@ apply() {
     echo "Setting up Codex..."
     tool_home_guard Codex CODEX_HOME "$CODEX_DIR" || return 1
     require_cmd yq || return 1
+    require_cmd jq || return 1
     if ! codex_yq_new_enough; then
         echo "  $(codex_yq_too_old)" >&2
         return 1

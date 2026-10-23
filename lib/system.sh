@@ -151,11 +151,15 @@ apt_key_fingerprint() {
 
 # gpgv, which apt runs, reads a .gpg keyring only unarmored. A temp GNUPGHOME, as above.
 dearmor_key() {
-    local home status=0
+    local home out status=0
     home="$(mktemp -d)" || return 1
-    GNUPGHOME="$home" gpg --batch --dearmor < "$1" > "$1.bin" && [ -s "$1.bin" ] && mv -f "$1.bin" "$1" ||
+    if ! out="$(mktemp)"; then
+        rm -rf "$home"
+        return 1
+    fi
+    GNUPGHOME="$home" gpg --batch --dearmor < "$1" > "$out" && [ -s "$out" ] && mv -f "$out" "$1" ||
         status=1
-    rm -rf "$home" "$1.bin"
+    rm -rf "$home" "$out"
     return "$status"
 }
 

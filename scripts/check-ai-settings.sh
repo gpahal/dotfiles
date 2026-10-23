@@ -42,7 +42,7 @@ check_claude_code() {
     echo '{"tui": "not-a-mode"}' > "$CLAUDE_CODE_SETTINGS"
     [ -n "$(claude_invalid_settings)" ] ||
         fail "claude doctor didn't report a broken settings.json, so it can't check the step's"
-    write_claude_settings
+    write_claude_settings || { fail "couldn't write the claude-code step's settings"; return "$errors"; }
     invalid="$(claude_invalid_settings)"
     if [ -n "$invalid" ]; then
         printf '%s\n' "$invalid" >&2
@@ -68,8 +68,8 @@ check_codex() {
     [ -n "$check" ] && [ "$(jq -r .status <<< "$check")" != ok ] ||
         fail "codex doctor didn't reject a broken config.toml, so it can't check the step's"
     rm -f "$CODEX_CONFIG"
-    edited="$(codex_config_edited)"
-    mv "$edited" "$CODEX_CONFIG"
+    edited="$(codex_config_edited)" || { fail "couldn't build the codex step's config"; return "$errors"; }
+    mv "$edited" "$CODEX_CONFIG" || { fail "couldn't write the codex step's config"; return "$errors"; }
     if ! check="$(codex_config_check)"; then
         fail "codex doctor --json has no config.load check"
     elif [ "$(jq -r .status <<< "$check")" != ok ]; then

@@ -147,7 +147,8 @@ jobs:
           stat --version | sed -n 1p
 
       - name: Check the shellcheck version
-        run: shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
+        run: |
+          shellcheck --version | grep -x "version: ${SHELLCHECK_VERSION#v}"
 
       - name: Check the job isn't root
         run: test "$(id -u)" -ne 0

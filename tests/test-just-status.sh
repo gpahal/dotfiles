@@ -26,9 +26,12 @@ for codes in "0 0 0" "3 0 3" "0 1 1" "3 1 1"; do
 ai_tools/setup.sh --status" "$(cat "$RAN")" "runners run for codes $a and $b"
 done
 
-# Arguments must reach the recipes as text, never run as code
-assert_exit 2 "$just" --justfile "$repo/justfile" status '$(touch '"$SANDBOX"'/marker)'
+# Arguments must reach the recipes as text, never run as code. status takes none, so just
+# rejects one before running anything.
+rm -f "$RAN"
+assert_exit 1 "$just" --justfile "$repo/justfile" status '$(touch '"$SANDBOX"'/marker)'
 [ ! -e "$SANDBOX/marker" ] || fail "just status ran its argument"
+[ ! -e "$RAN" ] || fail "just status ran a runner when given an argument"
 mkdir -p "$repo/tests"
 for script in setup.sh ai_tools/setup.sh tests/run.sh; do
     printf '%s\n' 'printf "%s|" "$@" > "$RAN"' > "$repo/$script"

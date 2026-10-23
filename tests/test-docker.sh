@@ -233,8 +233,8 @@ assert_exit 0 diag status_docker_usage
 assert_file_not_contains "$STUB_LOG" "docker system"
 rm "$SANDBOX/docker-inactive"
 : > "$STUB_LOG"
-DOTFILES_STATUS_QUICK=1 assert_exit 0 diag status_docker_usage
-assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --quick"
+DOTFILES_STATUS_FOR_ALERTS=1 assert_exit 0 diag status_docker_usage
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --for-alerts"
 assert_file_not_contains "$STUB_LOG" "docker system"
 read_only
 # Ports on every address bypass ufw; 127.0.0.1, other given addresses, and unpublished ports are fine
@@ -286,8 +286,8 @@ read_only
 run status
 assert_contains "$RUN_OUTPUT" "Docker disk usage"
 assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address"
-DOTFILES_STATUS_QUICK=1 run status
-assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --quick"
+DOTFILES_STATUS_FOR_ALERTS=1 run status
+assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --for-alerts"
 read_only
 : > "$SANDBOX/installed"
 run status

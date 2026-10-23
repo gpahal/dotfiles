@@ -12,5 +12,5 @@ UBUNTU_STEPS=("${MACOS_STEPS[@]}")
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR/ai_tools"
 
-runner_main "AI tools" "--quick skips its slowest checks: on Ubuntu, whether the
-T3 Code service stays up, and T3 Code's browser setup." "$@"
+runner_main "AI tools" "on Ubuntu, checking that the T3 Code service stays up, and
+T3 Code's browser setup" "$@"

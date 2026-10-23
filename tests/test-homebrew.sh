@@ -313,7 +313,7 @@ assert_not_contains "$missing " " sh " "missing commands with one only in Homebr
 # --- status ---
 
 load_script homebrew/install.sh
-export DOTFILES_STATUS_QUICK=1
+export DOTFILES_STATUS_FOR_ALERTS=1
 replace_fn command_line_tools_installed 'return 0'
 # zed is installed outside Homebrew; vicinae's app was deleted
 mkdir -p "$SANDBOX/Zed.app" "$SANDBOX/Ghostty.app"
@@ -336,7 +336,7 @@ as_os macos
 stub mas '[ "$1" != list ] || printf " 937984704  Amphetamine  (5.3.2)\n"'
 : > "$STUB_LOG"
 run status
-# --quick skips the slow bundle check
+# --for-alerts skips the slow bundle check
 assert_file_not_contains "$STUB_LOG" "brew bundle"
 assert_contains "$RUN_OUTPUT" "unverified Brewfile brew formulae"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps"

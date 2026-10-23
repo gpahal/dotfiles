@@ -444,7 +444,7 @@ assert_file_not_contains "$STUB_LOG" "systemctl --user stop"
 answer no
 stub systemctl "$SYSTEMCTL_STUB"
 
-# A main process under 2 s old may be crash-looping. --quick skips that check and t3 browser setup,
+# A main process under 2 s old may be crash-looping. --for-alerts skips that check and t3 browser setup,
 # but still finds the service stopped. No drop-in, so only the service's own checks query systemd.
 reset
 mkdir -p "$(dirname "$T3_CODE_SERVICE_UNIT")"
@@ -458,13 +458,13 @@ touch "$STATE/young"
 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service running; check ~/.t3/userdata/logs/boot-service.log"
 : > "$STUB_LOG"
-DOTFILES_STATUS_QUICK=1 run status
+DOTFILES_STATUS_FOR_ALERTS=1 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code service running"
 assert_file_not_contains "$STUB_LOG" "ps -o etimes"
 assert_file_not_contains "$STUB_LOG" "t3 browser setup"
-assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --quick"
+assert_contains "$RUN_OUTPUT" "unverified T3 Code's browser sandbox: skipped by --for-alerts"
 rm "$STATE/active"
-DOTFILES_STATUS_QUICK=1 run status
+DOTFILES_STATUS_FOR_ALERTS=1 run status
 assert_contains "$RUN_OUTPUT" "missing    T3 Code service running"
 
 # Only declining the sudo for libatomic1 doesn't fail the step.

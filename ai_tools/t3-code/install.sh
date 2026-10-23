@@ -495,14 +495,14 @@ t3_code_main_pid() {
 }
 
 # Active with no server: in 0.1.1 a server that finds ~/.t3/userdata locked exits, and the
-# launcher idles until restarted. Checks 3 times a second apart (once under --quick), since a swap
+# launcher idles until restarted. Checks 3 times a second apart (once under --for-alerts), since a swap
 # (update) briefly has none too.
 t3_code_service_serving_nothing() {
     local pid check
     for check in 1 2 3; do
         pid="$(t3_code_main_pid)" || return 1
         ! t3_code_launcher_has_server "$pid" || return 1
-        if [ "$check" -lt 3 ] && ! status_quick; then
+        if [ "$check" -lt 3 ] && ! status_for_alerts; then
             sleep 1
         else
             return 0
@@ -820,11 +820,11 @@ setup_t3_code_browser() {
     echo "  The step doesn't run it: t3 is writable by you and updates itself, so check it's the one you installed."
 }
 
-# A crash-looping server shows active between restarts, so it must have run 2 s; --quick skips that
+# A crash-looping server shows active between restarts, so it must have run 2 s; --for-alerts skips that
 t3_code_service_running_now() {
     local pid age
     t3_code_service_active || return 1
-    ! status_quick || return 0
+    ! status_for_alerts || return 0
     pid="$(t3_code_main_pid)" || return 1
     age="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')" || return 1
     case "$age" in '' | *[!0-9]*) return 1 ;; esac
@@ -942,8 +942,8 @@ status() {
         status_item missing "T3 Code service restarted for its drop-in: systemctl --user restart t3code"
     fi
     t3_code_status_other_servers
-    if "$have_cli" && status_quick; then
-        status_item unverified "T3 Code's browser sandbox: skipped by --quick, since it runs t3 browser setup"
+    if "$have_cli" && status_for_alerts; then
+        status_item unverified "T3 Code's browser sandbox: skipped by --for-alerts, since it runs t3 browser setup"
     elif "$have_cli"; then
         t3_code_browser_ready || ready=$?
         case "$ready" in

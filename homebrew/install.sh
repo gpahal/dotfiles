@@ -245,8 +245,8 @@ status() {
     fi
     status_item ok "Homebrew"
     bundle="Brewfile brew formulae"
-    if status_quick; then
-        status_item unverified "$bundle (skipped by --quick; run status without it to check)"
+    if status_for_alerts; then
+        status_item unverified "$bundle (skipped by --for-alerts; run status without it to check)"
     else
         status_check "$bundle" bundle_installed
     fi

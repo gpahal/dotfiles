@@ -30,7 +30,7 @@ BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
     echo "Usage: bash health-alert.sh status | boot"
-    echo "status pushes what setup's --status --quick, run in $DOTFILES_REPO, reports needs"
+    echo "status pushes what setup's --status --for-alerts, run in $DOTFILES_REPO, reports needs"
     echo "attention to ntfy; boot pushes that this machine started. Both do nothing until just alerts"
     echo "saves a URL."
 }
@@ -106,13 +106,13 @@ status_alert() {
     fi
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
-        out="$("$BASH" "$DOTFILES_REPO/$runner" --status --quick < /dev/null 2>&1)" || status=$?
+        out="$("$BASH" "$DOTFILES_REPO/$runner" --status --for-alerts < /dev/null 2>&1)" || status=$?
         ! has_root_only_items <<< "$out" || root_only=true
         case "$status" in
             0) ;;
             1 | 3) message="$message$(attention_lines <<< "$out")"$'\n' ;;
             *)
-                echo "$runner --status --quick exited $status:" >&2
+                echo "$runner --status --for-alerts exited $status:" >&2
                 printf '%s\n' "$out" | tail -n 5 >&2
                 # The last line goes in details, not the hash, since it can change each run
                 message="${message}Health check couldn't run: $runner exited $status"$'\n'

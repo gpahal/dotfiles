@@ -84,7 +84,7 @@ assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
 
 : > "$STUB_LOG"
-DOTFILES_STATUS_QUICK=1 assert_exit 0 status_github_login
+DOTFILES_STATUS_FOR_ALERTS=1 assert_exit 0 status_github_login
 assert_contains "$RUN_OUTPUT" "unverified Logged in to GitHub with gh"
 assert_file_not_contains "$STUB_LOG" 'gh auth status'
 

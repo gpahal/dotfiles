@@ -60,9 +60,9 @@ setup *steps:
 setup-ai *steps:
     bash ai_tools/setup.sh "$@"
 
-# Report setup status (quick: skip slow checks); exits 1 on failure, 3 on attention
-status mode="":
-    @case {{quote(mode)}} in "") f="" ;; quick) f=--quick ;; *) echo "Usage: just status [quick]" >&2; exit 2 ;; esac; a=0; bash setup.sh --status $f || a=$?; echo; b=0; bash ai_tools/setup.sh --status $f || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
+# Report setup status; exits 1 on failure, 3 on attention
+status:
+    @a=0; bash setup.sh --status || a=$?; echo; b=0; bash ai_tools/setup.sh --status || b=$?; for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done; [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
 
 # Sign git commits and tags with an SSH key
 git-signing:

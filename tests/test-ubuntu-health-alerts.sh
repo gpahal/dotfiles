@@ -65,8 +65,8 @@ assert_file_not_contains "$STUB_LOG" "setup"
 echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
 : > "$STUB_LOG"
 assert_exit 0 "$BASH" "$ALERT" status
-assert_file_contains "$STUB_LOG" "setup --status --quick"
-assert_file_contains "$STUB_LOG" "ai_tools --status --quick"
+assert_file_contains "$STUB_LOG" "setup --status --for-alerts"
+assert_file_contains "$STUB_LOG" "ai_tools --status --for-alerts"
 assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "Needs attention: ubuntu. Run: bash setup.sh ubuntu"
@@ -130,7 +130,7 @@ printf '%s\n' "lib/common.sh: line 12: syntax error near unexpected token \`<<<'
 echo 2 > "$SANDBOX/exit/setup"
 : > "$STUB_LOG"
 assert_exit 1 "$BASH" "$ALERT" status
-assert_contains "$RUN_OUTPUT" "setup.sh --status --quick exited 2"
+assert_contains "$RUN_OUTPUT" "setup.sh --status --for-alerts exited 2"
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "Health check couldn't run: setup.sh exited 2"
 assert_file_contains "$STUB_LOG" "setup.sh's last output: lib/common.sh: line 12: syntax error near unexpected token \`<<<'"

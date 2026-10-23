@@ -166,8 +166,8 @@ docker_status_run() {
 # Only asks a running daemon: docker.socket would start a stopped one.
 status_docker_usage() {
     local label="Docker disk usage" out status=0 type count size reclaimable summary="" DOCKER_OUT DOCKER_STATUS
-    if status_quick; then
-        status_item unverified "$label: skipped by --quick"
+    if status_for_alerts; then
+        status_item unverified "$label: skipped by --for-alerts"
         return 0
     fi
     if ! docker_active; then

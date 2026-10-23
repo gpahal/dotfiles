@@ -114,7 +114,7 @@ assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
 assert_contains "$RUN_OUTPUT" "ok         Free space on /System/Volumes/Data"
 read_only
 printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"
-DOTFILES_STATUS_QUICK=1 run status
+DOTFILES_STATUS_FOR_ALERTS=1 run status
 assert_contains "$RUN_OUTPUT" "Touch ID for sudo, in $SUDO_LOCAL"
 read_only
 test_done

@@ -119,8 +119,8 @@ status_firmware() {
         status_item skipped "$label: fwupd isn't installed"
         return 0
     fi
-    if status_quick; then
-        status_item unverified "$label: skipped by --quick"
+    if status_for_alerts; then
+        status_item unverified "$label: skipped by --for-alerts"
         return 0
     fi
     if ! systemctl is-active --quiet fwupd.service 2>/dev/null; then

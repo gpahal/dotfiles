@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# The runners, through runner_main, take -h/--help, --status, --quick, --backup, and --no-backup
+# The runners, through runner_main, take -h/--help, --status, --for-alerts, --backup, and --no-backup
 # anywhere among the step names, and fail with a usage line on an unknown flag or step.
 
 # shellcheck source=lib.sh
@@ -12,7 +12,7 @@ setup_sandbox
 setup_sh="$REPO_DIR/setup.sh"
 
 first=""
-for args in "vim --status" "--backup --status vim --quick"; do
+for args in "vim --status" "--backup --status vim --for-alerts"; do
     # shellcheck disable=SC2086 # split into arguments
     assert_exit 3 "$BASH" "$setup_sh" $args
     assert_contains "$RUN_OUTPUT" "=== dotfiles status ===" "setup.sh $args"
@@ -44,11 +44,11 @@ for name in "git lazygit" "git/" "../setup"; do
     assert_not_contains "$RUN_OUTPUT" "git config" "setup.sh --status '$name'"
 done
 
-assert_exit 2 "$BASH" "$setup_sh" --quick --backup vim
-assert_contains "$RUN_OUTPUT" "--quick only works with --status"
+assert_exit 2 "$BASH" "$setup_sh" --for-alerts --backup vim
+assert_contains "$RUN_OUTPUT" "--for-alerts only works with --status"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-[ ! -e "$HOME/.vimrc" ] || fail "--quick without --status installed ~/.vimrc"
+[ ! -e "$HOME/.vimrc" ] || fail "--for-alerts without --status installed ~/.vimrc"
 
 # A step given a word, as `install.sh status` for --status, fails rather than applying
 export HOME="$SANDBOX/home-help"

@@ -170,7 +170,7 @@ has_arg() {
 
 status_requested() { has_arg --status "$@"; }
 
-status_quick() { [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; }
+status_for_alerts() { [ "${DOTFILES_STATUS_FOR_ALERTS:-}" == 1 ]; }
 
 # check_args <usage-fn> <words|no-words> [arg...]: exits 0 on --help and 2 on a bad argument.
 # Other words go in ARG_WORDS. Flag effects are exported so a runner's steps inherit them.
@@ -189,7 +189,7 @@ check_args() {
     for arg in "$@"; do
         case "$arg" in
             --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
-            --quick) export DOTFILES_STATUS_QUICK=1 ;;
+            --for-alerts) export DOTFILES_STATUS_FOR_ALERTS=1 ;;
             --backup) export DOTFILES_BACKUP=yes ;;
             --no-backup) export DOTFILES_BACKUP=no ;;
             -*)
@@ -207,8 +207,8 @@ check_args() {
                 ;;
         esac
     done
-    if ! status_requested "$@" && has_arg --quick "$@"; then
-        echo "--quick only works with --status" >&2
+    if ! status_requested "$@" && has_arg --for-alerts "$@"; then
+        echo "--for-alerts only works with --status" >&2
         "$usage_fn" >&2
         exit 2
     fi
@@ -216,7 +216,7 @@ check_args() {
 
 step_args() {
     local step_usage
-    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status [--quick]] [--backup | --no-backup]"
+    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 
@@ -1037,7 +1037,7 @@ step_script() {
 # Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Returns only after a setup run succeeds;
 # otherwise exits.
 runner_main() {
-    local name="$1" quick="$2" script status=0
+    local name="$1" for_alerts="$2" script status=0
     shift 2
     script="$(_repo_path "${BASH_SOURCE[1]}")"
     if is_macos; then
@@ -1063,13 +1063,15 @@ runner_main() {
 
 _runner_usage() {
     local step
-    echo "Usage: bash $script [--status [--quick]] [--backup | --no-backup] [step...]"
+    echo "Usage: bash $script [--status] [--backup | --no-backup] [step...]"
     echo "Steps, run in this order by default: ${STEPS[*]}"
     for step in "${STEPS[@]}"; do
         printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"
     done
     echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
-    echo "unknown items. $quick"
+    echo "unknown items."
+    echo "--for-alerts, with --status, is what the daily health alert runs: it skips"
+    echo "$for_alerts."
     echo "A config file that differs from the repo's is replaced. Settings merged into files other"
     echo "tools also edit ask whether to back up the file first. --backup or --no-backup answers"
     echo "every backup question yes or no."

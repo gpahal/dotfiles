@@ -167,8 +167,8 @@ assert_contains "$RUN_OUTPUT" "info       Firmware updates: fwupd isn't running,
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"
 rm "$SANDBOX/fwupd-inactive"
 : > "$STUB_LOG"
-DOTFILES_STATUS_QUICK=1 assert_exit 0 diag status_firmware
-assert_contains "$RUN_OUTPUT" "unverified Firmware updates: skipped by --quick"
+DOTFILES_STATUS_FOR_ALERTS=1 assert_exit 0 diag status_firmware
+assert_contains "$RUN_OUTPUT" "unverified Firmware updates: skipped by --for-alerts"
 assert_file_not_contains "$STUB_LOG" "fwupdmgr"
 firmware_without_fwupd() {
     hide fwupdmgr
@@ -190,12 +190,12 @@ ubuntu_report() {
     assert_contains "$RUN_OUTPUT" "Disk health (SMART)"
     assert_contains "$RUN_OUTPUT" "Firmware updates"
     read_only
-    # --quick still runs the firewall checks
+    # --for-alerts still runs the firewall checks
     replace_fn ufw_enabled true
     replace_fn apt_installed true
     SSHD_RUN_DIR="$SANDBOX/run-sshd"
     mkdir -p "$SSHD_RUN_DIR"
-    DOTFILES_STATUS_QUICK=1 run status
+    DOTFILES_STATUS_FOR_ALERTS=1 run status
     assert_contains "$RUN_OUTPUT" "Disk health (SMART)"
     assert_contains "$RUN_OUTPUT" "ufw rules allowing SSH"
     read_only

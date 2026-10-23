@@ -97,14 +97,6 @@ assert_not_contains "$RUN_OUTPUT" "pam-reattach isn't installed"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already on"
 assert_file_not_contains "$STUB_LOG" "sudo"
-# Without Homebrew's copy, an unsafe copy can't be fixed
-chmod 664 "$MODULE"
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "brew install pam-reattach"
-assert_file_not_contains "$STUB_LOG" "sudo"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "isn't root's alone to write; run brew install pam-reattach, then just touch-id"
-chmod 444 "$MODULE"
 
 # Without pam-reattach: pam_tid alone
 reset
@@ -179,7 +171,7 @@ done
 
 # What main can't fix, and so refuses with no sudo: <case>
 DIR="$DOTFILES_PAM_LOCAL_MODULES_DIR"
-for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl module-2; do
+for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl no-homebrew module-2; do
     set_up
     path="$DIR" reason=""
     case "$unsafe" in
@@ -203,14 +195,21 @@ for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl module-2; do
                 chmod +a "everyone allow write,append" "$path"
             reason="has an ACL entry that lets others write it; remove it with sudo chmod -N $path"
             ;;
+        no-homebrew)
+            # Without Homebrew's copy, an unsafe copy can't be fixed
+            rm -rf "$SANDBOX/brew"
+            chmod 664 "$MODULE"
+            ;;
         module-2)
             # OpenPAM loads it instead of the copy; setup didn't install it, so it isn't deleted
             echo "old reattach" > "$MODULE.2"
             ;;
     esac
     message="sudo can't safely load $MODULE: $path $reason"
-    [ "$unsafe" != module-2 ] ||
-        message="$MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $MODULE.2, then re-run just touch-id"
+    case "$unsafe" in
+        no-homebrew) message="$MODULE, which sudo loads, isn't root's alone to write; run brew install pam-reattach, then just touch-id" ;;
+        module-2) message="$MODULE.2 exists, and OpenPAM loads it instead of the copy; remove it with sudo rm $MODULE.2, then re-run just touch-id" ;;
+    esac
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Touch ID in tmux: $message"
     assert_exit 1 main
@@ -219,26 +218,29 @@ for unsafe in dir-writable dir-owner dir-symlink dir-acl module-acl module-2; do
 done
 assert_eq "old reattach" "$(cat "$MODULE.2")" "pam_reattach.so.2"
 
-# The copy is checked again after install, so sudo_local never names one others can swap
-unsafe_copy() {
+# A copy that fails, or that others could swap after install, stops before sudo_local could name it
+copy_fails() {
     reset
     put_reattach
     answer yes
-    replace_fn install_reattach_module 'mkdir -p "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    case "$1" in
+        unsafe)
+            replace_fn install_reattach_module 'mkdir -p "$DOTFILES_PAM_LOCAL_MODULES_DIR"
 cp "$SOURCE" "$MODULE"
 chmod 666 "$MODULE"'
+            message="sudo can't safely load $MODULE: $MODULE isn't root's alone to write"
+            ;;
+        failed)
+            stub sudo 'exit 1'
+            message="Couldn't install $MODULE"
+            ;;
+    esac
     assert_exit 1 main
-    assert_contains "$RUN_OUTPUT" "sudo can't safely load $MODULE: $MODULE isn't root's alone to write"
-    [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy was unsafe"
+    assert_contains "$RUN_OUTPUT" "$message"
+    [ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy $1"
 }
-subtest unsafe_copy
-
-# A failed copy stops before sudo_local could name a missing module
-reset
-put_reattach
-answer yes
-stub sudo 'exit 1'
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Couldn't install $MODULE"
-[ ! -e "$SUDO_LOCAL" ] || fail "sudo_local was written though the copy failed"
+# failed last: its sudo stub outlives the subtest
+for case_name in unsafe failed; do
+    subtest copy_fails "$case_name"
+done
 test_done

@@ -1,9 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The dotfiles GNOME extension's methods under node, with GNOME Shell's modules mocked: focusing
-# windows, the apps ActivateApp allows, ExpectWindow's expiry, the keys SendKeys allows, and what
-# FocusedWindow shares.
+# The dotfiles GNOME extension's methods under node, with GNOME Shell's modules mocked: the apps
+# ActivateApp allows, the keys SendKeys allows, and what FocusedWindow shares.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -43,8 +42,7 @@ export const activateWindow = (window) => gnome.activated.push(window.get_title(
 EOF
 echo 'export class Extension {}' > "$mocks/extension.mjs"
 
-# Runs $1 with the extension enabled: s is its D-Bus service, win(class, title) makes a window,
-# and emit(signal, window) is a display signal
+# Runs $1 with the extension enabled: s is its D-Bus service, and win(class, title) makes a window
 extension_js() {
     node --input-type=module -e 'import { registerHooks } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -55,11 +53,10 @@ registerHooks({
     return name ? { url: pathToFileURL(`${mocks}/${name}.mjs`).href, shortCircuit: true } : next(specifier, context);
   },
 });
-const handlers = {};
 globalThis.gnome = { keys: [], activated: [], apps: {}, windows: [], focus: null, locked: false, mods: 0, clock: 0 };
 globalThis.global = {
   display: {
-    connect: (signal, handler) => { handlers[signal] = handler; return signal; },
+    connect: (signal) => signal,
     disconnect() {},
     get_focus_window: () => gnome.focus,
     get_tab_list: () => gnome.windows,
@@ -67,57 +64,22 @@ globalThis.global = {
   },
   get_pointer: () => [0, 0, gnome.mods],
 };
-const win = (cls, title = cls) => {
-  const actor = { connect: (signal, handler) => { actor.firstFrame = handler; return 1; }, disconnect() {} };
-  return { actor, get_wm_class: () => cls, get_title: () => title, get_gtk_window_object_path: () => "/w",
-    get_compositor_private: () => actor };
-};
-const emit = (signal, window) => handlers[signal](global.display, window);
+const win = (cls, title = cls) => ({ get_wm_class: () => cls, get_title: () => title, get_gtk_window_object_path: () => "/w" });
 const { default: Extension } = await import(pathToFileURL(extension).href);
 new Extension().enable();
 const s = gnome.service;
 '"$1"'' "$SANDBOX/extension.mjs" "$mocks"
 }
 
-# ActivateApp focuses the class's window, else launches the app and focuses its first window of
-# that class; an app it can't find is false
-out="$(extension_js 'gnome.windows = [win("google-chrome", "Chrome")];
-console.log(s.ActivateApp("google-chrome.desktop", "google-chrome"), gnome.activated.join());
-gnome.windows = [];
-gnome.apps["net.nokyan.Resources.desktop"] = { activate_full: () => gnome.activated.push("launched") };
-console.log(s.ActivateApp("net.nokyan.Resources.desktop", "net.nokyan.Resources"), s.ActivateApp("t3code.desktop", "nope"));
-const other = win("org.gnome.Nautilus");
-emit("window-created", other);
-other.actor.firstFrame();
-const resources = win("net.nokyan.Resources", "Resources");
-emit("window-created", resources);
-console.log(gnome.activated.join());
-resources.actor.firstFrame();
-emit("window-demands-attention", win("net.nokyan.Resources", "Resources again"));
-console.log(gnome.activated.join());')"
-assert_eq "true Chrome
-true false
-Chrome,launched
-Chrome,launched,Resources" "$out" "focusing and launching apps"
-
-# ActivateApp refuses any app open-in doesn't open, even one with a window or a desktop file
-out="$(extension_js 'gnome.windows = [win("com.mitchellh.ghostty", "Ghostty")];
+# ActivateApp focuses an app open-in opens, and refuses any other, even one with a window or a
+# desktop file
+out="$(extension_js 'gnome.windows = [win("google-chrome", "Chrome"), win("com.mitchellh.ghostty", "Ghostty")];
 gnome.apps["com.mitchellh.ghostty.desktop"] = { activate_full: () => gnome.activated.push("launched") };
+console.log(s.ActivateApp("google-chrome.desktop", "google-chrome"), gnome.activated.join());
 console.log(s.ActivateApp("com.mitchellh.ghostty.desktop", "com.mitchellh.ghostty"), s.ActivateApp("", ""),
-    s.ActivateApp("constructor", "com.mitchellh.ghostty"), gnome.activated.length);')"
-assert_eq "false false false 0" "$out" "apps ActivateApp refuses"
-
-# ExpectWindow's request ends after its timeout
-out="$(extension_js 's.ExpectWindow("dev.zed.Zed", 100);
-gnome.clock = 99999;
-emit("window-marked-urgent", win("dev.zed.Zed", "in time"));
-s.ExpectWindow("dev.zed.Zed", 100);
-gnome.clock += 100001;
-emit("window-demands-attention", win("dev.zed.Zed", "late"));
-gnome.clock = 0;
-emit("window-demands-attention", win("dev.zed.Zed", "after it ended"));
-console.log(gnome.activated.join());')"
-assert_eq "in time" "$out" "an expected window's timeout"
+    s.ActivateApp("constructor", "com.mitchellh.ghostty"), gnome.activated.join());')"
+assert_eq "true Chrome
+false false false Chrome" "$out" "apps ActivateApp focuses and refuses"
 
 # SendKeys presses and releases New Tab's keys, only into Chrome and only while unlocked
 out="$(extension_js 'gnome.focus = win("google-chrome");

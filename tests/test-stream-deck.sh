@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# The stream-deck step on macOS: the plugin, its stale files, and the profiles Stream Deck installs
-# from it in a fake ProfilesV3, with stubs for pkill, pgrep, and open. Then the profile archives,
-# which build-profile.sh must rebuild byte for byte.
+# The stream-deck step on macOS: the plugin and the profiles Stream Deck installs from it in a fake
+# ProfilesV3, with stubs for pkill, pgrep, and open. Then the profile archives, which
+# build-profile.sh must rebuild byte for byte. test-stream-deck-ubuntu.sh covers stale files.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -37,26 +37,6 @@ assert_not_contains "$RUN_OUTPUT" "differs"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Restart"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged plugin"
-
-# Stale files go, and the folders they leave empty, but nothing outside the plugin
-# shellcheck disable=SC2088 # shown, not expanded
-shown_plugin="~/Library/Application Support/com.elgato.StreamDeck/Plugins/$PLUGIN"
-mkdir -p "$PLUGIN_DIR/old" "$PLUGIN_DIR/../other.sdPlugin"
-touch "$PLUGIN_DIR/bin/old-tool" "$PLUGIN_DIR/old/x.js" "$PLUGIN_DIR/plugin.js.bak" "$PLUGIN_DIR/../other.sdPlugin/x.js"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/bin/old-tool: the repo's plugin no longer has it; re-run the stream-deck step"
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/old/x.js"
-assert_contains "$RUN_OUTPUT" "missing    $shown_plugin/plugin.js.bak"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Removed bin/old-tool, which the repo's plugin no longer has"
-assert_contains "$RUN_OUTPUT" "Restarted Stream Deck to load the plugin and its profiles."
-[ ! -e "$PLUGIN_DIR/bin/old-tool" ] && [ ! -e "$PLUGIN_DIR/old" ] && [ ! -e "$PLUGIN_DIR/plugin.js.bak" ] ||
-    fail "the stale files weren't removed"
-[ -f "$PLUGIN_DIR/../other.sdPlugin/x.js" ] || fail "a file outside the plugin was removed"
-[ -f "$PLUGIN_DIR/bin/open-in" ] || fail "bin/open-in was removed"
-assert_exit 3 main --status
-assert_not_contains "$RUN_OUTPUT" "no longer has it"
 
 echo "// an edit" >> "$PLUGIN_DIR/plugin.js"
 assert_exit 3 main --status

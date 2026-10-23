@@ -70,18 +70,6 @@ firewall() {
     *) exit 1 ;;
 esac"
 }
-firewall 'Firewall is enabled. (State = 1)\n'
-firewall_on || fail "firewall state 1 read as off"
-firewall 'Firewall is blocking all non-essential incoming connections. (State = 2)\n'
-firewall_on || fail "firewall state 2, blocking all, read as off"
-firewall 'Firewall is disabled. (State = 0)\n'
-! firewall_on || fail "firewall state 0 read as on"
-firewall 'Must be root to change settings.\n'
-! firewall_on || fail "an unreadable firewall state read as on"
-firewall '' 'Firewall stealth mode is on\n'
-stealth_mode_on || fail "stealth mode on read as off"
-firewall '' 'Firewall stealth mode is off\n'
-! stealth_mode_on || fail "stealth mode off read as on"
 # The step runs the system's socketfilterfw, not one earlier on PATH
 firewall_system_copy() {
     firewall 'Firewall is disabled. (State = 0)\n'

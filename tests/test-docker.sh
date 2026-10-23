@@ -74,13 +74,13 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_not_contains "$RUN_OUTPUT" "Enable docker.socket"
 [ ! -e "$DOCKER_SOURCES" ] || fail "docker.sources was written without a yes"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_not_contains "$RUN_OUTPUT" "apt source"
 
 export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_file_contains "$DOCKER_SOURCES" "Signed-By: $DOCKER_KEYRING"
-assert_exit 0 status
+assert_exit 0 main --status
 
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -153,10 +153,10 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.service"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.socket"
 assert_file_not_contains "$STUB_LOG" "systemctl disable"
-assert_exit 0 status
+assert_exit 0 main --status
 rm "$SANDBOX/in-group"
 unset DOTFILES_ASSUME_YES
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "info       me not in the docker group, which is optional"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -173,13 +173,13 @@ assert_file_not_contains "$STUB_LOG" "usermod"
 # --- installed, with a source for an older release, as a release upgrade leaves it ---
 reset
 docker_set_up
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Docker's apt source ($DOCKER_SOURCES)"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 docker_sources | sed 's/^Suites: .*/Suites: stale-suite/' > "$DOCKER_SOURCES"
 snapshot "$DOCKER_SOURCES"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; re-run the docker step"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
@@ -189,7 +189,7 @@ export DOTFILES_ASSUME_YES=1
 assert_exit 0 main
 assert_eq "$(docker_sources)" "$(cat "$DOCKER_SOURCES")" "docker.sources after repairing it"
 assert_file_not_contains "$STUB_LOG" "install -y docker-ce"
-assert_exit 0 status
+assert_exit 0 main --status
 
 # No repo for this release yet: nothing can fix it, so the step doesn't fail
 reset
@@ -202,7 +202,7 @@ assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Rewrite Docker's apt source"
 assert_unchanged "$DOCKER_SOURCES" "before Docker published packages"
 assert_file_not_contains "$STUB_LOG" "apt-get"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Docker's apt source ($DOCKER_SOURCES): differs from what setup writes; Docker hasn't published packages for Ubuntu resolute yet"
 
 # --- status: read-only, sudo -n only when cached, and never starting a stopped daemon ---

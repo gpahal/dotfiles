@@ -83,7 +83,7 @@ env "$@" || status=$?
 exit "$status"'
 printf '%s\n' 'APT::Periodic::AutocleanInterval "7";' 'APT::Periodic::Unattended-Upgrade "0";' > "$AUTO_UPGRADES_CONF"
 chmod 200 "$AUTO_UPGRADES_CONF"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified unattended-upgrades runs daily (only root can read $AUTO_UPGRADES_CONF"
 # A re-run with nothing else to change doesn't ask for sudo only to read it
 : > "$STUB_LOG"
@@ -110,7 +110,7 @@ APT::Periodic::Enable "1";
 APT::Periodic::Update-Package-Lists "1";' "$(cat "$AUTO_UPGRADES_CONF")" "the unreadable 20auto-upgrades after the merge"
 chmod 200 "$AUTO_UPGRADES_CONF"
 touch "$SANDBOX/cached"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         unattended-upgrades runs daily"
 chmod 600 "$AUTO_UPGRADES_CONF"
 

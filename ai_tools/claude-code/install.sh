@@ -9,8 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
-# shellcheck source=../lib/user-instructions.sh
-source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -181,7 +179,7 @@ script_files() {
 }
 
 user_instructions_files() {
-    user_instructions_to "$CLAUDE_CODE_INSTRUCTIONS" "$@"
+    "$1" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$CLAUDE_CODE_INSTRUCTIONS"
 }
 
 install_scripts() {
@@ -206,8 +204,7 @@ status() {
     fi
     if ! tool_home_guard --status "Claude Code settings, status line, and instructions" \
         "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude"; then
-        status_result
-        return
+        return 0
     fi
     if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
         status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
@@ -219,7 +216,6 @@ status() {
     done <<< "$(claude_code_other_worktree_hooks)"
     script_files status_file
     user_instructions_files status_file
-    status_result
 }
 
 apply() {
@@ -236,7 +232,8 @@ apply() {
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false
     configure_claude_code "$register_hook" || status=1
-    install_user_instructions "$CLAUDE_CODE_INSTRUCTIONS" || status=1
+    echo "  User-level instructions:"
+    user_instructions_files copy_file || status=1
     if ! claude_code_have_git_wt; then
         echo "  $CLAUDE_CODE_NO_GIT_WT" >&2
         return 1

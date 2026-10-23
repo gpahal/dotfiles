@@ -48,7 +48,7 @@ SOFTWARE_UPDATE_PREFS="$STATE/com.apple.SoftwareUpdate"
 
 # Ghostty drops an OSC 7 report whose host has characters a URL can't hold
 echo "Unknown_d6:96:0e:05:c6:0a" > "$STATE/hostname"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Hostname set"
 assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"
@@ -59,7 +59,7 @@ answer no
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged."
 assert_file_not_contains "$STUB_LOG" "sudo"
-assert_exit 3 status
+assert_exit 3 main --status
 
 # One confirm covers all four sudo items
 answer yes
@@ -69,7 +69,7 @@ assert_exit 0 main
 assert_eq 1 "$(wc -l < "$SANDBOX/confirms" | tr -d ' ')" "confirms for four sudo items"
 restore_fn confirm
 assert_eq Garvits-MacBook-Pro "$(cat "$STATE/hostname")" "hostname"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Hostname set"
 assert_contains "$RUN_OUTPUT" "ok         Application firewall on"
 assert_contains "$RUN_OUTPUT" "ok         Firewall stealth mode on"
@@ -81,12 +81,12 @@ assert_file_not_contains "$STUB_LOG" "sudo"
 
 # Only one of the two App Store keys set still needs the fix
 rm "$SANDBOX/defaults/com.apple.SoftwareUpdate.AutomaticallyInstallAppUpdates"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
 
 # An unset hostname needs the fix too
 rm "$STATE/hostname"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Hostname set"
 
 rm -f "$STATE"/*

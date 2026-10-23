@@ -27,7 +27,6 @@ install_reattach_module() {
 
 status() {
     status_touch_id missing
-    status_result
 }
 
 apply() {

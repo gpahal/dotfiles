@@ -919,8 +919,7 @@ status() {
         t3_code_macos_items
         items_status t3_code_telemetry_off
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
-        status_result
-        return
+        return 0
     fi
     if ! has_gnome_desktop; then
         status_item skipped "T3 Code desktop app: no GNOME desktop"
@@ -972,7 +971,6 @@ status() {
     else
         status_item unknown "T3 Connect: needs the t3 CLI"
     fi
-    status_result
 }
 
 apply() {

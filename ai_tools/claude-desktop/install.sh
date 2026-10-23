@@ -125,8 +125,7 @@ claude_desktop_ubuntu_items() {
 status() {
     if is_ubuntu && ! has_gnome_desktop; then
         status_item skipped "Claude desktop app: no GNOME desktop"
-        status_result
-        return
+        return 0
     fi
     if is_macos; then
         status_cask claude /Applications/Claude.app
@@ -138,7 +137,6 @@ status() {
     if status_require_cmd jq "Claude desktop app settings"; then
         status_check "Claude desktop app settings" json_applied "$(claude_desktop_config)" "$(claude_desktop_settings)"
     fi
-    status_result
 }
 
 apply() {
@@ -148,17 +146,16 @@ apply() {
         return 0
     fi
     require_cmd jq || return 1
-    local result=0 pending=()
+    local result=0
     if is_macos; then
         require_cmd brew || return 1
         install_cask claude /Applications/Claude.app || result=1
     else
         claude_desktop_ubuntu_items
-        items_pending
-        if [ ${#pending[@]} -eq 0 ]; then
+        if items_ok; then
             echo "  claude-desktop is already installed from Anthropic's apt repo."
-        elif confirm_sudo_changes "${pending[@]}"; then
-            items_apply || result=1
+        else
+            items_apply_confirmed || result=1
         fi
     fi
     claude_desktop_files copy_file || result=1

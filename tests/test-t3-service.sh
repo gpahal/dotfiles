@@ -162,7 +162,7 @@ printf '%s\n' "302|t3|$HOME/.t3/runtime/versions/0.0.45/t3 serve --host 127.0.0.
 replace_fn t3_code_in_service_cgroup '[ "$1" == 305 ]'
 assert_eq "302 ssh
 304 manual" "$(t3_code_other_servers | cut -d' ' -f1-2)" "the other servers"
-run status
+run main --status
 assert_eq 3 "$RUN_STATUS" "status's exit with other servers"
 assert_contains "$RUN_OUTPUT" "skipped    T3 Code desktop app: no GNOME desktop"
 assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 302, a server the Mac started over SSH"
@@ -370,7 +370,7 @@ printf '%s\n' "LISTEN 0 511 [::1]:3773 [::]:*" "LISTEN 0 511 127.0.0.1%lo:3773 0
 run status
 assert_contains "$RUN_OUTPUT" "ok         Port 3773 open only on loopback"
 printf '%s\n' "LISTEN 0 511 0.0.0.0:3773 0.0.0.0:*" "LISTEN 0 511 [::]:3773 [::]:*" >> "$STATE/listeners"
-run status
+run main --status
 assert_eq 3 "$RUN_STATUS" "status's exit with the port open beyond loopback"
 assert_contains "$RUN_OUTPUT" "missing    Port 3773 open only on loopback: also on 0.0.0.0:3773, [::]:3773, which the tailnet can reach"
 assert_exit 1 configure_t3_code_ubuntu
@@ -402,7 +402,7 @@ desktop_app() {
     [ ! -e "$T3_CODE_SETTINGS" ] || fail "server settings were written while the desktop app ran"
     assert_file_not_contains "$STUB_LOG" "t3 service install"
     assert_file_not_contains "$STUB_LOG" "systemctl --user start"
-    run status
+    run main --status
     assert_eq 3 "$RUN_STATUS" "status while the server settings are pending"
     assert_contains "$RUN_OUTPUT" "missing    T3 Code server settings and service: pending while the desktop app runs with its own server on; quit T3 Code"
     rm -rf "$SANDBOX/procs" "$HOME/.t3/userdata" "$HOME/.config/environment.d"

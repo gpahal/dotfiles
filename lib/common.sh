@@ -287,7 +287,8 @@ if ! declare -F main > /dev/null; then
         esac
         if status_requested "$@"; then
             status
-            return $?
+            status_result
+            return
         fi
         apply
     }
@@ -300,7 +301,6 @@ copy_step() {
 
 copy_status() {
     "$1" status_file
-    status_result
 }
 
 _repo_path() {
@@ -594,10 +594,14 @@ tool_home_is() {
     [ "$home" == "$default" ]
 }
 
-# One value only: jq -e takes its status from the last of several. The newline ends any trailing
-# comment in the expression.
+# json_applied <file|-> <expr>: - reads stdin. One value only: jq -e takes its status from the last
+# of several. The newline ends any trailing comment in the expression.
 json_applied() {
-    [ -s "$1" ] && jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" "$1" &>/dev/null
+    if [ "$1" == - ]; then
+        jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" &>/dev/null
+    else
+        [ -s "$1" ] && jq -s -e "length == 1 and (.[0] | ($2"$'\n'") == .)" "$1" &>/dev/null
+    fi
 }
 
 # Probes stat's flavor rather than is_macos, which tests override
@@ -649,6 +653,17 @@ write_back() {
     rm -f "$new"
 }
 
+# write_content <dest> <text>: writes the text and a newline beside dest, then moves it into place
+write_content() {
+    local tmp
+    tmp="$(mktemp "$(dirname "$1")/.${1##*/}.XXXXXX")" || return 1
+    if ! printf '%s\n' "$2" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    write_back "$tmp" "$1"
+}
+
 # A file the expression doesn't change is left untouched
 json_merge() {
     local file="$1" filter="$2" tmp input="" values
@@ -686,46 +701,12 @@ json_merge() {
 
 STATUS_NEEDS_ATTENTION=false
 
-# The --status format, which run_steps and ubuntu/health-alert.sh parse through status_parse_line
-# and status_summary_line. Only missing and unknown need attention.
-STATUS_STATES="ok missing skipped unverified unknown info"
-STATUS_STATE_WIDTH=10
-STATUS_SUMMARY_ATTENTION="Needs attention"
-STATUS_SUMMARY_FAILED="Failed steps"
+# shellcheck source=status-format.sh
+source "$DOTFILES_DIR/lib/status-format.sh"
 
 status_item() {
     printf "  %-${STATUS_STATE_WIDTH}s %s\n" "$1" "$2"
     ! status_state_needs_attention "$1" || STATUS_NEEDS_ATTENTION=true
-}
-
-status_state_needs_attention() {
-    case "$1" in
-        missing | unknown) return 0 ;;
-    esac
-    return 1
-}
-
-# Sets STATUS_LINE_STATE and STATUS_LINE_TEXT; fails for lines that aren't items
-status_parse_line() {
-    local line="$1" state padded
-    state="${line:2:$STATUS_STATE_WIDTH}"
-    state="${state%% *}"
-    case " $STATUS_STATES " in
-        *" $state "*) ;;
-        *) return 1 ;;
-    esac
-    printf -v padded "  %-${STATUS_STATE_WIDTH}s " "$state"
-    [ "${line:0:${#padded}}" == "$padded" ] || return 1
-    STATUS_LINE_STATE="$state"
-    # shellcheck disable=SC2034 # callers read it
-    STATUS_LINE_TEXT="${line:${#padded}}"
-}
-
-status_summary_line() {
-    case "$1" in
-        "$STATUS_SUMMARY_ATTENTION: "* | "$STATUS_SUMMARY_FAILED: "*) return 0 ;;
-    esac
-    return 1
 }
 
 # Succeeds when an item needs attention. The exit code can't tell: set -e can cut a report short
@@ -749,13 +730,28 @@ sudo_cached() {
     sudo -n true 2> /dev/null
 }
 
-# SUDO_CACHED_CACHE (yes|no) keeps the answer fixed through one status run
-sudo_ready() {
-    if [ -n "${SUDO_CACHED_CACHE:-}" ]; then
-        [ "$SUDO_CACHED_CACHE" == yes ]
+# memo <var> <cmd...>: runs the command once, keeping its output in <var> and its status in
+# <var>_STATUS, then prints the output and returns the status on every call. It caches only when a
+# caller has declared <var>_STATUS="" (as a local, so the cache lasts one status or apply);
+# otherwise it just runs the command.
+memo() {
+    local _memo_status="$1_STATUS" _memo_out _memo_rc=0
+    if [ -z "${!_memo_status+x}" ]; then
+        "${@:2}"
         return
     fi
-    sudo_cached
+    if [ -z "${!_memo_status}" ]; then
+        _memo_out="$("${@:2}")" || _memo_rc=$?
+        printf -v "$1" '%s' "$_memo_out"
+        printf -v "$_memo_status" '%s' "$_memo_rc"
+    fi
+    printf '%s\n' "${!1}"
+    return "${!_memo_status}"
+}
+
+# Keeps the answer fixed through one status run whose caller declares SUDO_CACHED_CACHE_STATUS
+sudo_ready() {
+    memo SUDO_CACHED_CACHE sudo_cached > /dev/null
 }
 
 # yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
@@ -852,9 +848,11 @@ status_check() {
     fi
 }
 
-# item [--sudo] [--hint <text>] <status text> <pending text> <check-fn> <fix-fn>. Declare items in
-# one function starting with items_reset and call it from status and apply. The drivers take
-# check functions to filter by, or drive every item.
+# item [--sudo] [--hint <text>] <status text> <pending text> <check> <fix>. The check and the fix
+# are each a function, or a command and its arguments in one string split on spaces, such as
+# "apt_installed ddcutil". Declare items in one function starting with items_reset and call it
+# from status and apply. The drivers take checks, as given to item, to filter by, or drive every
+# item.
 ITEM_STATUS=()
 ITEM_PENDING=()
 ITEM_CHECK=()
@@ -885,7 +883,7 @@ item() {
         shift
     done
     if [ $# -ne 4 ]; then
-        echo "item: expected <status text> <pending text> <check-fn> <fix-fn>, got $# arguments" >&2
+        echo "item: expected <status text> <pending text> <check> <fix>, got $# arguments" >&2
         return 2
     fi
     ITEM_STATUS+=("$1")
@@ -901,7 +899,7 @@ items_status() {
     local i=0
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
         if _item_wanted "$i" "$@"; then
-            if "${ITEM_CHECK[i]}"; then
+            if _item_run "${ITEM_CHECK[i]}"; then
                 status_item ok "${ITEM_STATUS[i]}"
             else
                 status_item missing "${ITEM_STATUS[i]}${ITEM_HINT[i]:+; ${ITEM_HINT[i]}}"
@@ -915,7 +913,7 @@ items_status() {
 items_ok() {
     local i=0
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
+        if _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
             return 1
         fi
         i=$((i + 1))
@@ -927,7 +925,7 @@ items_ok() {
 items_pending() {
     local i=0
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if "${ITEM_SUDO[i]}" && _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
+        if "${ITEM_SUDO[i]}" && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
             pending+=("${ITEM_PENDING[i]}")
         fi
         i=$((i + 1))
@@ -942,18 +940,42 @@ items_apply() {
         shift
     fi
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if { "$sudo" || ! "${ITEM_SUDO[i]}"; } && _item_wanted "$i" "$@" && ! "${ITEM_CHECK[i]}"; then
-            "${ITEM_FIX[i]}" || result=1
+        if { "$sudo" || ! "${ITEM_SUDO[i]}"; } && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
+            _item_run "${ITEM_FIX[i]}" || result=1
         fi
         i=$((i + 1))
     done
     return "$result"
 }
 
+# items_apply_confirmed [check...]: asks once for the sudo items pending, then applies them all,
+# or after a no, only those that need no sudo. Returns items_apply's status.
+# shellcheck disable=SC2120 # with no check functions, it drives every item
+items_apply_confirmed() {
+    local pending=()
+    items_pending "$@"
+    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
+        items_apply "$@"
+    else
+        items_apply --no-sudo "$@"
+    fi
+}
+
 _item_wanted() {
     local check="${ITEM_CHECK[$1]}"
     shift
     [ $# -eq 0 ] || has_arg "$check" "$@"
+}
+
+_item_run() {
+    local cmd
+    case "$1" in
+        *' '*)
+            read -r -a cmd <<< "$1"
+            "${cmd[@]}"
+            ;;
+        *) "$1" ;;
+    esac
 }
 
 status_file() {
@@ -1106,10 +1128,8 @@ run_steps() {
                 codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
             } || true
             status="${codes% *}"
-            if [ "${codes#* }" -eq 0 ]; then
-                # A report that forgot status_result exits 0 with an item needing attention
-                [ "$status" -ne 0 ] || status=3
-            elif [ "$status" -eq 3 ]; then
+            # Exit 3 with no item needing attention means set -e cut the report short
+            if [ "$status" -eq 3 ] && [ "${codes#* }" -ne 0 ]; then
                 status=1
             fi
         else

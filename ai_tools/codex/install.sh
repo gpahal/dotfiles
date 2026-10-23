@@ -13,8 +13,6 @@ source "$DOTFILES_DIR/lib/casks.sh"
 source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
-# shellcheck source=../lib/user-instructions.sh
-source "$DOTFILES_DIR/ai_tools/lib/user-instructions.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -312,7 +310,7 @@ configure_codex_settings() {
 }
 
 user_instructions_files() {
-    user_instructions_to "$CODEX_INSTRUCTIONS" "$@"
+    "$1" "$DOTFILES_DIR/ai_tools/user-instructions.md" "$CODEX_INSTRUCTIONS"
 }
 
 install_codex_cli() {
@@ -454,7 +452,6 @@ status() {
     else
         status_item skipped "Codex's sandbox: macOS's built-in sandbox needs no setup"
     fi
-    status_result
 }
 
 apply() {
@@ -472,7 +469,8 @@ apply() {
     fi
     install_codex_cli || result=1
     configure_codex || result=1
-    install_user_instructions "$CODEX_INSTRUCTIONS" || result=1
+    echo "  User-level instructions:"
+    user_instructions_files copy_file || result=1
     if is_ubuntu; then
         codex_items
         items_apply codex_credentials_private || result=1

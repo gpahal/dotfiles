@@ -62,7 +62,7 @@ assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
 assert_sudo_noninteractive "the step"
 # Without openssh-server there are no SSH ports to check the rules against, so sudo can't help
 stub dpkg-query '[ "${!#}" != openssh-server ] && echo "install ok installed"'
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "openssh-server isn't installed"
 assert_not_contains "$RUN_OUTPUT" "sudo -v"
 assert_sudo_noninteractive
@@ -111,7 +111,7 @@ cache_sudo yes
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-status"
 : > "$STUB_LOG"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
@@ -121,7 +121,7 @@ rules_missing
 export DOTFILES_ASSUME_YES=1
 for state in on off; do
     "ufw_$state"
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    ufw filters IPv6"
     : > "$STUB_LOG"
     assert_exit 1 main
@@ -186,7 +186,7 @@ printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
     "OpenSSH                    ALLOW       Anywhere" \
     "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-status"
 assert_exit 0 ufw_configured -n
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere;"
 assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
@@ -229,26 +229,26 @@ assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
 # Config says on but ufw.service is stopped
 touch "$SANDBOX/units/ufw.service.inactive"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/units/ufw.service.inactive" ] || fail "the step left ufw.service stopped"
-assert_exit 0 status
+assert_exit 0 main --status
 # ufw.service running but disabled
 touch "$SANDBOX/units/ufw.service.disabled"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now -q ufw.service"
 [ ! -e "$SANDBOX/units/ufw.service.disabled" ] || fail "the step left ufw.service disabled"
-assert_exit 0 status
+assert_exit 0 main --status
 # Stopped by ufw-init stop: files and unit say on, `ufw status` says inactive
 touch "$SANDBOX/ufw-stopped"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections: ufw status says it's inactive"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -256,10 +256,10 @@ assert_contains "$RUN_OUTPUT" "Firewall: install and turn on ufw"
 assert_file_contains "$STUB_LOG" "sudo ufw default deny incoming"
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 [ ! -e "$SANDBOX/ufw-stopped" ] || fail "the step left ufw stopped"
-assert_exit 0 status
+assert_exit 0 main --status
 touch "$SANDBOX/ufw-stopped"
 cache_sudo no
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified ufw rules allowing SSH"
 cache_sudo yes
 rm "$SANDBOX/ufw-stopped"
@@ -366,6 +366,6 @@ rm "$SANDBOX/ss-fails"
 
 firewall_run
 assert_eq 0 "$RUN_STATUS" "the step once the connections can be listed"
-assert_exit 0 status
+assert_exit 0 main --status
 unset DOTFILES_ASSUME_YES
 test_done

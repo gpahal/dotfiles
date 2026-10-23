@@ -10,7 +10,7 @@ setup_sandbox
 
 repo="$SANDBOX/repo"
 mkdir -p "$repo/lib" "$repo/scripts/lib" "$repo/ai_tools"
-cp "$REPO_DIR/lib/common.sh" "$repo/lib/"
+cp "$REPO_DIR/lib/common.sh" "$REPO_DIR/lib/status-format.sh" "$repo/lib/"
 cp "$REPO_DIR/scripts/check-docs.sh" "$repo/scripts/"
 cp "$REPO_DIR"/scripts/lib/*.sh "$repo/scripts/lib/"
 

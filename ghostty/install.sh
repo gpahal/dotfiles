@@ -112,7 +112,6 @@ status() {
     fi
     ghostty_files status_file
     ghostty_overrides_status
-    status_result
 }
 
 apply() {

@@ -102,7 +102,6 @@ status() {
     tmux_items
     items_status
     is_ubuntu || status_item skipped "tmux starts at boot: Ubuntu only"
-    status_result
 }
 
 apply() {

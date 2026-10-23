@@ -50,7 +50,7 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Activity Monitor is running"
 [ ! -e "$SHOW_CATEGORY" ] || fail "ShowCategory was written while Activity Monitor ran"
 assert_file_not_contains "$STUB_LOG" "osascript"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    com.apple.ActivityMonitor ShowCategory = 100"
 
 rm "$SANDBOX/running"
@@ -58,7 +58,7 @@ assert_exit 0 main
 assert_eq 100 "$(cat "$SHOW_CATEGORY")" "ShowCategory"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
-assert_exit 0 status
+assert_exit 0 main --status
 
 touch "$SANDBOX/running"
 rm "$SHOW_CATEGORY"
@@ -74,12 +74,12 @@ load_script macos/install.sh
 as_os macos
 security_on
 
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Spotlight's Cmd+Space shortcut off, so Vicinae can take it"
 assert_exit 0 main
 assert_eq 0 "$(cat "$HOTKEYS.64")" "hotkey 64's enabled"
 assert_file_contains "$STUB_LOG" "activateSettings -u"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Spotlight's Cmd+Space shortcut off"
 
 : > "$STUB_LOG"
@@ -105,10 +105,10 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Full Disk Access"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "com.apple.TextEdit RichText"
-assert_exit 0 status
+assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "unverified com.apple.TextEdit RichText = 0"
 rm -rf "$HOME/Library/Containers/com.apple.TextEdit"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    com.apple.TextEdit RichText = 0"
 rm "$SANDBOX/defaults-fail"
 

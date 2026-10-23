@@ -221,5 +221,5 @@ ubuntu_step_setup() {
 ubuntu_step_set_up() {
     export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
     assert_exit 0 main
-    assert_exit 0 status
+    assert_exit 0 main --status
 }

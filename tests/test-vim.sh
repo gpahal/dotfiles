@@ -30,12 +30,12 @@ plugin_pins() {
     git -C "$plug" checkout -q --detach "$old"
     load_script vim/install.sh
     replace_fn vim_plugins "echo 'me/vim-plugin $new'; echo 'me/not-installed $new'"
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    vim plugins at their pinned commits (~/.vim/plugged)"
     assert_exit 0 apply
     assert_contains "$RUN_OUTPUT" "Moved vim plugin me/vim-plugin to ${new:0:7}"
     assert_eq "$new" "$(git -C "$plug" rev-parse HEAD)" "the plugin's commit after a re-run"
-    assert_exit 0 status
+    assert_exit 0 main --status
     assert_exit 0 apply
     assert_contains "$RUN_OUTPUT" "vim-plug and the vim plugins already at their pinned versions"
     rm -rf "$HOME/.vim/plugged"

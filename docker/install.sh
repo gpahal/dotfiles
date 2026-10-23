@@ -7,7 +7,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -116,18 +116,12 @@ docker_items() {
         docker_auto_updates_configured write_docker_auto_updates
 }
 
-daemon_settings_applied() {
-    local current
-    current="$(cat)"
-    [ -n "$current" ] && jq -s -e "length == 1 and (.[0] | ($DOCKER_DAEMON_SETTINGS) == .)" <<< "$current" &> /dev/null
-}
-
 daemon_config_unreadable() {
     [ -e "$DOCKER_DAEMON_CONFIG" ] && [ ! -r "$DOCKER_DAEMON_CONFIG" ]
 }
 
 daemon_configured() {
-    read_root_file "$DOCKER_DAEMON_CONFIG" -n | daemon_settings_applied
+    read_root_file "$DOCKER_DAEMON_CONFIG" -n | json_applied - "$DOCKER_DAEMON_SETTINGS"
 }
 
 daemon_restart_note() {
@@ -243,8 +237,9 @@ status_docker_ports() {
 
 # Never asks for sudo; uses sudo -n only when credentials are cached.
 status() {
-    local installed=false SUDO_CACHED_CACHE=no
-    ! sudo_cached || SUDO_CACHED_CACHE=yes
+    # shellcheck disable=SC2034 # memo reads the caches
+    local installed=false SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
+    sudo_ready || true
     docker_installed && installed=true
     docker_items
     items_status docker_installed
@@ -264,7 +259,6 @@ status() {
     items_status docker_auto_updates_configured
     ! "$installed" || status_docker_ports
     ! "$installed" || status_docker_usage
-    status_result
 }
 
 # Runs where set -e is off. Rolls back from memory if Docker won't restart, so no backup is left
@@ -288,7 +282,7 @@ configure_daemon() {
         echo "  $DOCKER_DAEMON_CONFIG isn't one valid JSON object; fix it and re-run." >&2
         return 1
     fi
-    if daemon_settings_applied <<< "$current"; then
+    if json_applied - "$DOCKER_DAEMON_SETTINGS" <<< "$current"; then
         rm -f "$tmp"
         echo "  $DOCKER_DAEMON_CONFIG already sets $DOCKER_DAEMON_KEYS."
         return 0

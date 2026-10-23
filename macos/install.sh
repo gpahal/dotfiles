@@ -281,19 +281,13 @@ status() {
     status_filevault
     items_status firewall_on stealth_mode_on app_store_auto_updates
     status_disk_space "$HOME"
-    status_result
 }
 
 apply() {
     echo "Setting macOS defaults..."
-    local status=0 pending=()
+    local status=0
     macos_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
-        items_apply || status=1
-    else
-        items_apply --no-sudo || status=1
-    fi
+    items_apply_confirmed || status=1
     each_default set_default
     symbolic_hotkeys disable_hotkey
 

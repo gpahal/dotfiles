@@ -18,8 +18,6 @@ fake_step attention '[ "${1:-}" != --status ] || { echo "  missing    something"
 fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; exit 3; }'
 # A report set -e cut short at a command that exited 3, such as jq
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
-# A report that forgot status_result
-fake_step quiet-missing '[ "${1:-}" != --status ] || echo "  missing    something"'
 fake_step sigpipe 'exit 141'
 # The step carries on after the runner's signal, as brew does under `|| result=1`
 for sig in INT TERM HUP; do
@@ -94,8 +92,6 @@ assert_eq "first --status
 attention --status" "$(cat "$SANDBOX/ran")" "steps run with --status"
 assert_exit 3 run_steps --status unknown
 assert_contains "$RUN_OUTPUT" "Needs attention: unknown."
-assert_exit 3 run_steps --status quiet-missing
-assert_contains "$RUN_OUTPUT" "Needs attention: quiet-missing."
 assert_exit 1 run_steps --status cut-short
 assert_contains "$RUN_OUTPUT" "The cut-short step failed."
 assert_contains "$RUN_OUTPUT" "Failed steps: cut-short"

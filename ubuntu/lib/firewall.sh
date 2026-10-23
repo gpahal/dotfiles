@@ -10,35 +10,14 @@ ufw_enabled() {
         systemctl is-active -q ufw.service 2>/dev/null
 }
 
-# Caches sudo ufw status and sshd -T for a status_ufw run, in variables the caller declares local.
-cache_ufw_status() {
-    local out status=0
-    out="$(sudo "$@" ufw status 2>/dev/null)" || status=$?
-    UFW_STATUS_CACHE="$out" UFW_STATUS_STATUS="$status"
-}
-
-# ufw_status <sudo flags>
+# ufw_status <sudo flags>. Cached through a status_ufw run, which declares UFW_STATUS_CACHE_STATUS.
 ufw_status() {
-    if [ -n "${UFW_STATUS_STATUS:-}" ]; then
-        printf '%s\n' "$UFW_STATUS_CACHE"
-        return "$UFW_STATUS_STATUS"
-    fi
-    sudo "$@" ufw status 2>/dev/null
+    memo UFW_STATUS_CACHE sudo "$@" ufw status 2>/dev/null
 }
 
-cache_sshd_dump() {
-    local out status=0
-    out="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null)" || status=$?
-    SSHD_DUMP_CACHE="$out" SSHD_DUMP_STATUS="$status"
-}
-
-# sshd_dump <sudo flags>: sshd's effective config
+# sshd_dump <sudo flags>: sshd's effective config. Cached as ufw_status is.
 sshd_dump() {
-    if [ -n "${SSHD_DUMP_STATUS:-}" ]; then
-        printf '%s\n' "$SSHD_DUMP_CACHE"
-        return "$SSHD_DUMP_STATUS"
-    fi
-    sudo "$@" "$SSHD_BIN" -T 2>/dev/null
+    memo SSHD_DUMP_CACHE sudo "$@" "$SSHD_BIN" -T 2>/dev/null
 }
 
 # ufw_stopped <sudo flags>: catches ufw-init stop, which ufw_enabled can't see
@@ -353,7 +332,8 @@ configure_ufw() {
 }
 
 status_ufw() {
-    local ufw=0 from rule where UFW_STATUS_CACHE="" UFW_STATUS_STATUS="" SSHD_DUMP_CACHE="" SSHD_DUMP_STATUS=""
+    # shellcheck disable=SC2034 # memo reads the caches
+    local ufw=0 from rule where UFW_STATUS_CACHE="" UFW_STATUS_CACHE_STATUS="" SSHD_DUMP_CACHE="" SSHD_DUMP_CACHE_STATUS=""
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denying it on Docker's bridges"
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
         status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
@@ -362,7 +342,7 @@ status_ufw() {
         status_item missing "ufw on, denying incoming connections except SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp"
         return 0
     fi
-    ! sudo_ready || cache_ufw_status -n
+    ! sudo_ready || ufw_status -n > /dev/null || true
     if sudo_ready && ufw_stopped -n; then
         status_item missing "ufw on, denying incoming connections: ufw status says it's inactive, so its rules aren't loaded (re-run the ubuntu step)"
         return 0
@@ -380,7 +360,7 @@ status_ufw() {
         status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
         return 0
     fi
-    cache_sshd_dump -n
+    sshd_dump -n > /dev/null || true
     ufw_configured -n || ufw=$?
     case "$ufw" in
         0) status_item ok "$rules" ;;

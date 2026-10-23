@@ -21,10 +21,10 @@ insteadof() {
 as_os macos
 assert_exit 0 main
 assert_eq "" "$(insteadof)" "insteadOf on macOS"
-assert_exit 0 status
+assert_exit 0 main --status
 
 as_os ubuntu
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS"
 
 git config --file "$HOME/.gitconfig" --add url.https://github.com/.insteadOf ssh://git@github.com/
@@ -33,7 +33,7 @@ assert_eq "ssh://git@github.com/
 git@github.com:" "$(insteadof)" "insteadOf after the first run"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url git@github.com:me/repo.git)" "rewritten scp-style URL"
 assert_eq "https://github.com/me/repo.git" "$(git ls-remote --get-url ssh://git@github.com/me/repo.git)" "rewritten ssh URL"
-assert_exit 0 status
+assert_exit 0 main --status
 
 snapshot "$HOME/.gitconfig"
 assert_exit 0 main
@@ -67,7 +67,7 @@ assert_file_not_contains "$STUB_LOG" 'gh auth login'
 replace_fn is_interactive 'return 0'
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_contains "$STUB_LOG" 'gh auth login --insecure-storage --git-protocol https'
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Logged in to GitHub with gh"
 
 # Stored credentials but GitHub unreachable: unknown, not absent, so no new login is offered
@@ -82,7 +82,7 @@ gh_stub "Timeout trying to log in to github.com account me (keyring)"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
 
@@ -92,7 +92,7 @@ stub curl 'printf 000; exit 7'
 : > "$STUB_LOG"
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_not_contains "$STUB_LOG" 'gh auth login'
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unknown    Logged in to GitHub with gh"
 
 stub curl 'printf 200'
@@ -100,7 +100,7 @@ stub curl 'printf 200'
 DOTFILES_ASSUME_YES=1 assert_exit 0 setup_github_auth
 assert_file_contains "$STUB_LOG" 'gh auth login --insecure-storage --git-protocol https'
 assert_not_contains "$RUN_OUTPUT" "gho_SECRET"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Logged in to GitHub with gh"
 
 # A revoked token on another account doesn't count against the active one, which git uses
@@ -124,7 +124,7 @@ rm -f "$HOME/.gitconfig"
 stub gh 'case "$*" in "auth token"* | "auth status"*) exit 1 ;; esac'
 assert_exit 0 main
 assert_eq "" "$(insteadof)" "insteadOf without gh's credential helper"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    GitHub SSH remotes go over HTTPS"
 # gh auth setup-git sets the helper in this run, so the rewrite follows
 stub gh 'case "$*" in
@@ -134,5 +134,5 @@ esac'
 assert_exit 0 main
 assert_eq "git@github.com:
 ssh://git@github.com/" "$(insteadof)" "insteadOf once gh auth setup-git set the helper"
-assert_exit 0 status
+assert_exit 0 main --status
 test_done

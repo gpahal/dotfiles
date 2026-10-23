@@ -36,11 +36,7 @@ authorized_key_fingerprints() {
 # ExposeAuthInfo's $SSH_USER_AUTH; every method must be an authorized publickey, since
 # AuthenticationMethods can require several.
 key_login() {
-    if [ -n "${KEY_LOGIN_STATUS:-}" ]; then
-        printf '%s\n' "$KEY_LOGIN_CACHE"
-        return "$KEY_LOGIN_STATUS"
-    fi
-    read_key_login
+    memo KEY_LOGIN_CACHE read_key_login
 }
 
 read_key_login() {
@@ -74,13 +70,9 @@ read_key_login() {
     echo "$found"
 }
 
-# SSHD_DROP_IN_STATUS, which status_sshd sets, keeps one read through a status run
+# Read once through a status_sshd run, which declares SSHD_DROP_IN_CACHE_STATUS
 current_sshd_drop_in() {
-    if [ -n "${SSHD_DROP_IN_STATUS:-}" ]; then
-        printf '%s\n' "$SSHD_DROP_IN_CACHE"
-        return "$SSHD_DROP_IN_STATUS"
-    fi
-    read_root_file "$SSHD_DROP_IN" -n
+    memo SSHD_DROP_IN_CACHE read_root_file "$SSHD_DROP_IN" -n
 }
 
 key_only_in() {
@@ -322,8 +314,9 @@ PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 
 # status declares the items first (ubuntu_items)
 status_sshd() {
-    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_STATUS=0
-    SSHD_DROP_IN_CACHE="$(read_root_file "$SSHD_DROP_IN" -n)" || SSHD_DROP_IN_STATUS=$?
+    # shellcheck disable=SC2034 # memo reads the caches
+    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_CACHE_STATUS=""
+    current_sshd_drop_in > /dev/null || true
     openssh_installed && installed=true
     items_status openssh_installed
     ! "$installed" || items_status sshd_enabled

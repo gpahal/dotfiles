@@ -179,7 +179,6 @@ status() {
         status_item skipped "A Host * block that loads keys from the keychain: macOS only, Ubuntu has no keychain"
         status_item skipped "The $SSH_ADD_LABEL LaunchAgent: macOS only, Ubuntu has no keychain"
     fi
-    status_result
 }
 
 apply() {

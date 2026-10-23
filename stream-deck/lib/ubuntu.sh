@@ -86,15 +86,6 @@ rapl_present() {
     [ -e "$RAPL_DIR/intel-rapl:0/energy_uj" ]
 }
 
-resources_installed() {
-    apt_installed resources
-}
-
-install_resources() {
-    apt_get_update || return 1
-    apt_get install -y resources
-}
-
 power_script_installed() {
     cmp -s "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" && [ -x "$POWER_SCRIPT" ]
 }
@@ -126,7 +117,7 @@ start_power_service() {
 stream_deck_ubuntu_items() {
     items_reset
     item --sudo "Resources, which the stat keys open" "Install Resources, the system monitor the stat keys open" \
-        resources_installed install_resources
+        "apt_installed resources" "apt_install_fresh resources"
     rapl_present || return 0
     item --sudo "Power helper's service ($POWER_UNIT)" "Install $POWER_UNIT" \
         power_unit_installed install_power_unit
@@ -182,7 +173,6 @@ status_ubuntu() {
     items_status
     rapl_present || status_item skipped "Power key: this CPU has no RAPL power counter"
     status_deck_access
-    status_result
 }
 
 # A running GNOME Shell keeps the extension it loaded at login
@@ -221,7 +211,7 @@ setup_deck_service() {
         return 0
     fi
     if ! file_is "$DECK_UNIT" "$(deck_unit)"; then
-        mkdir -p "$(dirname "$DECK_UNIT")" && mark_restart_pending && deck_unit > "$DECK_UNIT" || return 1
+        mkdir -p "$(dirname "$DECK_UNIT")" && mark_restart_pending && write_content "$DECK_UNIT" "$(deck_unit)" || return 1
         changed=true
     fi
     if "$changed"; then
@@ -256,7 +246,7 @@ copy_deck_file() {
 
 apply_ubuntu() {
     echo "Setting up the Stream Deck daemon..."
-    local status=0 pending=()
+    local status=0
     require_cmd pnpm || return 1
     require_cmd jq || return 1
     require_cmd gsettings || return 1
@@ -280,7 +270,7 @@ apply_ubuntu() {
         fi
     fi
     if ! file_is "$GMAIL_DESKTOP" "$(gmail_desktop)"; then
-        if mkdir -p "$(dirname "$GMAIL_DESKTOP")" && gmail_desktop > "$GMAIL_DESKTOP"; then
+        if mkdir -p "$(dirname "$GMAIL_DESKTOP")" && write_content "$GMAIL_DESKTOP" "$(gmail_desktop)"; then
             echo "  Wrote $GMAIL_DESKTOP"
         else
             status=1
@@ -290,10 +280,7 @@ apply_ubuntu() {
     setup_deck_service || status=1
 
     stream_deck_ubuntu_items
-    items_pending
-    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        items_apply || status=1
-    fi
+    items_apply_confirmed || status=1
     rapl_present || echo "  This CPU has no RAPL power counter, so the Power key stays empty."
     return "$status"
 }

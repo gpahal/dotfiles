@@ -93,7 +93,7 @@ touch "$GLOBALS_FILE"
 export MISE_NODE=22
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "mise use"
-assert_exit 0 status
+assert_exit 0 main --status
 # mise config get prints a table-form global as TOML lines
 MISE_NODE='version = "22"
 postinstall = "echo hi"' MISE_GO='postinstall = "echo hi"' run status
@@ -126,7 +126,7 @@ rm "$GLOBALS_FILE"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global go@latest"
 assert_file_not_contains "$STUB_LOG" "node@lts"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    mise's global go: not set; the repo's is latest"
 unset MISE_NODE
 
@@ -166,10 +166,10 @@ assert_file_not_contains "$STUB_LOG" "rustup-init"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 rm "$RUST_DEFAULT" "$RUST_HEALTHY"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" 'rustup default stable'
-assert_exit 0 status
+assert_exit 0 main --status
 echo custom > "$RUST_DEFAULT"
 : > "$STUB_LOG"
 assert_exit 0 main
@@ -187,7 +187,7 @@ MISE_LS_ERR="mise WARN  Failed to resolve tool version list for go: no versions 
 assert_exit 0 mise_tools_installed
 # mise install in $HOME installs every active config, ~/mise.toml and ~/.tool-versions included
 : > "$STUB_LOG"
-MISE_LS_OUT="python  3.13 (missing)  ~/mise.toml  3.13" assert_exit 3 status
+MISE_LS_OUT="python  3.13 (missing)  ~/mise.toml  3.13" assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The tools mise's configs in ~ list installed"
 assert_file_contains "$STUB_LOG" "mise ls --missing"
 assert_file_not_contains "$STUB_LOG" "mise ls --missing --global"

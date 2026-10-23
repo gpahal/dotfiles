@@ -8,7 +8,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/system.sh"
+source "$DOTFILES_DIR/lib/system.sh"
 UBUNTU_LIB_DIR="$DOTFILES_DIR/ubuntu/lib"
 # shellcheck source=lib/ssh.sh
 source "$UBUNTU_LIB_DIR/ssh.sh"
@@ -193,16 +193,12 @@ ubuntu_items() {
         "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
 }
 
-# Callers declare the *_CACHE vars local first; the checks run many times, some in subshells
+# Callers declare the *_CACHE and *_CACHE_STATUS vars local first; the checks run many times,
+# some in subshells
 cache_checks() {
-    local vm=no status=0 cached=no
-    ! in_vm || vm=yes
-    KEY_LOGIN_CACHE="$(key_login)" || status=$?
-    ! sudo_cached || cached=yes
-    # Set last, since the checks above read them once set
-    IN_VM_CACHE="$vm"
-    KEY_LOGIN_STATUS="$status"
-    SUDO_CACHED_CACHE="$cached"
+    in_vm || true
+    key_login > /dev/null || true
+    sudo_ready || true
 }
 
 configure_homebrew_env() {
@@ -261,7 +257,9 @@ enable_linger() {
 # Root-only state is checked with sudo -n when credentials are cached, else left unverified
 status() {
     local uuid name wired=false item packages overrides
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE=""
+    # shellcheck disable=SC2034 # memo reads the caches
+    local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
+        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
     cache_checks
     ubuntu_items
     items_status sleep_masked sleep_conf_written
@@ -332,14 +330,16 @@ status() {
         status_item info "Disk encrypted with a passphrase, so every boot waits for it at the console (bash setup.sh ubuntu says how to avoid it)"
     status_disk_space / "$HOME" /var
     status_firmware
-    status_result
 }
 
 apply() {
     echo "Setting up Ubuntu to run around the clock..."
     local pending=() wol_pending=()
     local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
-    local IN_VM_CACHE="" KEY_LOGIN_CACHE="" KEY_LOGIN_STATUS="" SUDO_CACHED_CACHE="" UPS_STATE="" UPS_PLUGGED=""
+    # shellcheck disable=SC2034 # memo reads the caches
+    local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
+        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
+    local UPS_STATE="" UPS_PLUGGED=""
     require_cmd jq || return 1
     # A release upgrade turns Tailscale's apt source off, and its updater reads only tailscale.list
     if command -v tailscale &>/dev/null && apt_installed tailscale; then

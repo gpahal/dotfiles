@@ -7,12 +7,13 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# shellcheck disable=SC2016 # lines written to files, expanded when zsh reads them
+# Lines written to files, expanded when zsh reads them. STARTUP_FILES names them.
+# shellcheck disable=SC2016,SC2034
 ZSHRC_LINE='source $HOME/.zsh/main.zsh'
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2034
 PATH_ZSH_LINE='source $HOME/.zsh/path.zsh'
 # A failed . is fatal in sh
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2034
 PROFILE_LINE='[ ! -r "$HOME/.zsh/profile.sh" ] || . "$HOME/.zsh/profile.sh"'
 
 zsh_files() {
@@ -29,36 +30,38 @@ zsh_files() {
     return "$status"
 }
 
-add_source_line() {
-    local file="$1" what="$2" line="$3" name
-    name='~'"${file#"$HOME"}"
-    append_line "$line" "$file" || return 1
-    echo "  Added the $what source line to $name"
+# <startup file in ~>|<what it sources>|<variable holding the line>|<OS, or both>. ~/.zprofile runs
+# after macOS's /etc/zprofile, whose path_helper reorders PATH; Ubuntu's ~/.zshenv covers it.
+STARTUP_FILES=(
+    ".zshrc|main.zsh|ZSHRC_LINE|both"
+    ".zprofile|path.zsh|PATH_ZSH_LINE|macos"
+    ".zshenv|path.zsh|PATH_ZSH_LINE|ubuntu"
+    ".profile|profile.sh|PROFILE_LINE|ubuntu"
+)
+
+# has_source_line <file in ~> <line variable>
+has_source_line() {
+    has_line "${!2}" "$HOME/$1"
 }
 
-zshrc_sources_main() { has_line "$ZSHRC_LINE" "$HOME/.zshrc"; }
-zprofile_sources_path() { has_line "$PATH_ZSH_LINE" "$HOME/.zprofile"; }
-zshenv_sources_path() { has_line "$PATH_ZSH_LINE" "$HOME/.zshenv"; }
-profile_sources_profile() { has_line "$PROFILE_LINE" "$HOME/.profile"; }
-source_main_in_zshrc() { add_source_line "$HOME/.zshrc" main.zsh "$ZSHRC_LINE"; }
-source_path_in_zprofile() { add_source_line "$HOME/.zprofile" path.zsh "$PATH_ZSH_LINE"; }
-source_path_in_zshenv() { add_source_line "$HOME/.zshenv" path.zsh "$PATH_ZSH_LINE"; }
-source_profile_in_profile() { add_source_line "$HOME/.profile" profile.sh "$PROFILE_LINE"; }
+# add_source_line <file in ~> <what it sources> <line variable>
+add_source_line() {
+    append_line "${!3}" "$HOME/$1" || return 1
+    echo "  Added the $2 source line to ~/$1"
+}
 
 zsh_items() {
+    local entry file what var os
     items_reset
-    item "main.zsh sourced in ~/.zshrc" "Add the main.zsh source line to ~/.zshrc" \
-        zshrc_sources_main source_main_in_zshrc
-    # After macOS's /etc/zprofile, whose path_helper reorders PATH. Ubuntu's ~/.zshenv covers it.
-    if is_macos; then
-        item "path.zsh sourced in ~/.zprofile" "Add the path.zsh source line to ~/.zprofile" \
-            zprofile_sources_path source_path_in_zprofile
-    fi
-    is_ubuntu || return 0
-    item "path.zsh sourced in ~/.zshenv" "Add the path.zsh source line to ~/.zshenv" \
-        zshenv_sources_path source_path_in_zshenv
-    item "profile.sh sourced in ~/.profile" "Add the profile.sh source line to ~/.profile" \
-        profile_sources_profile source_profile_in_profile
+    for entry in "${STARTUP_FILES[@]}"; do
+        IFS='|' read -r file what var os <<< "$entry"
+        case "$os" in
+            macos) is_macos || continue ;;
+            ubuntu) is_ubuntu || continue ;;
+        esac
+        item "$what sourced in ~/$file" "Add the $what source line to ~/$file" \
+            "has_source_line $file $var" "add_source_line $file $what $var"
+    done
 }
 
 # Not Homebrew's zsh, so the login shell doesn't depend on Homebrew
@@ -137,7 +140,6 @@ status() {
         status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"
     fi
     login_shell_status
-    status_result
 }
 
 apply() {

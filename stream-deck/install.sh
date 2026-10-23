@@ -177,7 +177,6 @@ status() {
     each_plugin_file status_file
     status_stale "$PLUGIN_DIR" "the repo's plugin no longer has it" plugin_file_list
     status_profiles
-    status_result
 }
 
 apply() {

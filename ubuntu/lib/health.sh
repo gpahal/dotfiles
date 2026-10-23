@@ -5,13 +5,9 @@ smartd_enabled() {
     apt_installed smartmontools && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
 }
 
-# smartd's unit has ConditionVirtualization=no. IN_VM_CACHE is set by cache_checks.
+# smartd's unit has ConditionVirtualization=no. Cached once cache_checks runs.
 in_vm() {
-    if [ -n "${IN_VM_CACHE:-}" ]; then
-        [ "$IN_VM_CACHE" == yes ]
-        return
-    fi
-    systemd-detect-virt -q 2>/dev/null
+    memo IN_VM_CACHE systemd-detect-virt -q &>/dev/null
 }
 
 smartd_active() {

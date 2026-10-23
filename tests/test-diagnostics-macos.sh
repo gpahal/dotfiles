@@ -101,7 +101,7 @@ rm "$SUDO_LOCAL"
 firewall 'Firewall is disabled. (State = 0)\n' 'Firewall stealth mode is off\n'
 stub defaults 'exit 1'
 df_lines "/dev/disk3s5 $((994 * GIB)) $((600 * GIB)) $((380 * GIB)) 62% /System/Volumes/Data"
-assert_exit 3 status
+assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "skipped    Touch ID for sudo"
 assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"

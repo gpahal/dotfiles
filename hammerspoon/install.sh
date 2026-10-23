@@ -39,7 +39,6 @@ status() {
     elif [ -e "$MONITOR_INPUT_MAC_CONF" ]; then
         status_item ok "Monitor input switching, with $(monitor_m1ddc)"
     fi
-    status_result
 }
 
 apply() {

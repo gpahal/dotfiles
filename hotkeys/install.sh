@@ -62,7 +62,7 @@ status() {
         status_item skipped "GNOME shortcuts: no GNOME desktop"
         return 0
     fi
-    status_require_cmd gsettings "GNOME shortcuts" || { status_result; return; }
+    status_require_cmd gsettings "GNOME shortcuts" || return 0
     if [ ! -x "$OPEN_IN" ]; then
         status_item missing "The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
     fi
@@ -74,7 +74,6 @@ status() {
             status_check "Ctrl+Alt+Super+$(key_label "$key") opens ${name//_/ }" hotkey_current "$key" "$target" "$name"
         fi
     done
-    status_result
 }
 
 apply() {

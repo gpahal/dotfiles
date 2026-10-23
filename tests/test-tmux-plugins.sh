@@ -46,7 +46,7 @@ git -C "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank" rev-parse HEAD > "$SANDBOX/
 git -C "$HOME/.tmux/plugins/tmux-yank" fetch -q "$FAKE_PLUGIN_REMOTES/tmux-plugins/tmux-yank"
 git -C "$HOME/.tmux/plugins/tmux-yank" checkout -q --detach FETCH_HEAD
 assert_eq "$(cat "$SANDBOX/head")" "$(git -C "$HOME/.tmux/plugins/tmux-yank" rev-parse HEAD)" "the moved checkout"
-run status
+run main --status
 assert_eq 3 "$RUN_STATUS" "status with a plugin at another commit"
 assert_contains "$RUN_OUTPUT" "missing    tmux plugin tmux-plugins/tmux-yank at $short"
 assert_exit 0 main

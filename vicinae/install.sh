@@ -202,19 +202,11 @@ status_settings() {
     [ -z "$overrides" ] || status_item info "$file overrides the repo's $VICINAE_IMPORT for: $overrides"
 }
 
-libopengl_installed() {
-    apt_installed "$VICINAE_APT_PACKAGE"
-}
-
-install_libopengl() {
-    apt_install_fresh "$VICINAE_APT_PACKAGE"
-}
-
 vicinae_items() {
     items_reset
     item --sudo "$VICINAE_APT_PACKAGE, which Vicinae needs to start" \
         "Install $VICINAE_APT_PACKAGE, the OpenGL library Vicinae needs to start" \
-        libopengl_installed install_libopengl
+        "apt_installed $VICINAE_APT_PACKAGE" "apt_install_fresh $VICINAE_APT_PACKAGE"
 }
 
 # The installer installs or updates to the latest release, and does nothing when it's current.
@@ -380,7 +372,6 @@ status() {
         status_ubuntu
     fi
     status_settings
-    status_result
 }
 
 apply_ubuntu() {
@@ -388,12 +379,9 @@ apply_ubuntu() {
     require_cmd jq || return 1
     require_cmd gsettings || return 1
     require_cmd gnome-extensions || return 1
-    local result=0 changed=false pending=()
+    local result=0 changed=false
     vicinae_items
-    items_pending
-    if [ ${#pending[@]} -gt 0 ] && confirm_sudo_changes "${pending[@]}"; then
-        items_apply || result=1
-    fi
+    items_apply_confirmed || result=1
     if ! vicinae_installed; then
         if run_vicinae_installer; then
             changed=true

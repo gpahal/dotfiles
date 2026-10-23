@@ -134,7 +134,7 @@ json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied
 # `claude auth status --json` exits 1 when signed out, which pipefail mustn't take for unknown
 load_script ai_tools/claude-code/install.sh
 stub claude 'echo "{\"loggedIn\": false}"; exit 1'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code: run claude auth login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 
@@ -193,7 +193,7 @@ assert_exit 1 main
 assert_eq "null" "$(jq -c '.hooks' "$settings")" "hooks registered without git wt"
 assert_eq "claude-opus-5-5" "$(jq -r '.model' "$settings")" "model set without git wt"
 [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || fail "the hook script wasn't copied without git wt"
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Worktree hook"
 assert_eq 3 "$RUN_STATUS" "status exit without git wt"
 test_done

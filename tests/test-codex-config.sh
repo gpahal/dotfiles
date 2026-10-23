@@ -225,7 +225,7 @@ as_os macos
 stub brew 'exit 1'
 replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
 stub codex 'echo "Not logged in" >&2; exit 1'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 
@@ -246,7 +246,7 @@ assert_eq 1 "$RUN_STATUS" "apply's exit with yq 4.54.0"
 assert_contains "$RUN_OUTPUT" "yq 4.54.0 isn't mikefarah's yq 4.54.1 or newer"
 assert_file_not_contains "$STUB_LOG" "brew"
 stub yq 'echo "yq 3.4.3"'
-run status
+run main --status
 assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
 assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
 rm -f "$STUB_DIR/yq"

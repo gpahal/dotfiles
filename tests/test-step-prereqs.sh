@@ -140,7 +140,7 @@ chrome_status_without_gpg() {
     stub dpkg-query 'echo "install ok installed"'
     stub snap 'exit 1'
     hide gpg
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "unknown    Google's apt key ($GOOGLE_KEYRING) is the one the step pins: gpg isn't installed"
     assert_not_contains "$RUN_OUTPUT" "command not found"
     assert_contains "$RUN_OUTPUT" "missing    Firefox removed, since Chrome replaces it"
@@ -150,7 +150,7 @@ codex_status_without_brew() {
     as_os ubuntu
     hide brew codex
     stub bwrap
-    assert_exit 3 status
+    assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "unknown    codex: brew isn't installed"
     assert_not_contains "$RUN_OUTPUT" "missing    codex (cask)"
 }

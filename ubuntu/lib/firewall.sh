@@ -15,11 +15,6 @@ ufw_status() {
     memo UFW_STATUS_CACHE sudo "$@" ufw status 2>/dev/null
 }
 
-# sshd_dump <sudo flags>: sshd's effective config. Cached as ufw_status is.
-sshd_dump() {
-    memo SSHD_DUMP_CACHE sudo "$@" "$SSHD_BIN" -T 2>/dev/null
-}
-
 # ufw_stopped <sudo flags>: catches ufw-init stop, which ufw_enabled can't see
 ufw_stopped() {
     local out
@@ -32,30 +27,18 @@ ufw_ipv6_on() {
     grep -qx 'IPV6=yes' "$UFW_DEFAULTS" 2>/dev/null
 }
 
-# Listen is e.g. "[::]:22 (Stream)"
-ssh_socket_ports() {
-    systemctl is-active -q ssh.socket 2>/dev/null || return 0
-    systemctl show ssh.socket -p Listen --value 2>/dev/null | sed -nE 's/^.*:([0-9]+) \(Stream\)$/\1/p'
-}
-
-# sshd_ports <sudo flags>. ssh.socket can listen on a port sshd's config doesn't name.
+# ssh.socket's ports, from Listen lines such as "[::]:22 (Stream)", or 22 when it lists none
 sshd_ports() {
-    local config
-    [ -d "$SSHD_RUN_DIR" ] || return 1
-    config="$(sshd_dump "$@")" || return 1
-    {
-        awk '
-            $1 == "port" { print $2 }
-            $1 == "listenaddress" { n = split($2, a, ":"); print a[n] }' <<< "$config"
-        ssh_socket_ports
-    } | sort -un
+    local ports
+    ports="$(systemctl show ssh.socket -p Listen --value 2>/dev/null |
+        sed -nE 's/^.*:([0-9]+) \(Stream\)$/\1/p' | sort -un)"
+    echo "${ports:-22}"
 }
 
-# As `ufw status` lists them, spaces squeezed. Takes sudo's flags.
+# As `ufw status` lists them, spaces squeezed
 ufw_wanted_rules() {
-    local ports port range bridge
-    ports="$(sshd_ports "$@")" && [ -n "$ports" ] || return 1
-    for port in $ports; do
+    local port range bridge
+    for port in $(sshd_ports); do
         for bridge in "${DOCKER_BRIDGES[@]}"; do
             echo "$port/tcp on $bridge DENY Anywhere"
             echo "$port/tcp (v6) on $bridge DENY Anywhere (v6)"
@@ -86,110 +69,11 @@ ufw_configured() {
 
 # Takes sudo's flags
 ufw_missing_rules() {
-    local rules wanted rule
-    rules="$(ufw_rules "$@")" && wanted="$(ufw_wanted_rules "$@")" || return 1
+    local rules rule
+    rules="$(ufw_rules "$@")" || return 1
     while IFS= read -r rule; do
-        [ -z "$rule" ] || ufw_rule_in_place "$rule" "$rules" || echo "$rule"
-    done <<< "$wanted"
-}
-
-# ufw_rule_in_place <rule> <rules>: a deny rule must also precede every allow it shadows, since
-# ufw takes the first match
-ufw_rule_in_place() {
-    local deny="$1" line v6=false bridge
-    grep -qxF -- "$deny" <<< "$2" || return 1
-    case "$deny" in *" DENY "*) ;; *) return 0 ;; esac
-    case "$deny" in *"(v6)"*) v6=true ;; esac
-    bridge="${deny#* on }"
-    bridge="${bridge%% *}"
-    while IFS= read -r line; do
-        [ "$line" != "$deny" ] || return 0
-        ufw_allow_rule "$line" && [ "$UFW_RULE_V6" == "$v6" ] || continue
-        # A rule on another interface, such as tailscale0, never sees the bridge's traffic
-        case "$UFW_RULE_IFACE" in
-            "" | "$bridge") ;;
-            br-*) [ "$bridge" == br-+ ] || continue ;;
-            *) continue ;;
-        esac
-        ! ufw_to_includes_port "$UFW_RULE_TO" "${deny%%/*}" || return 1
-    done <<< "$2"
-    return 1
-}
-
-# ufw_allow_rule <rule>: on an allow or limit rule, sets UFW_RULE_TO, UFW_RULE_SOURCE,
-# UFW_RULE_IFACE, and UFW_RULE_V6
-ufw_allow_rule() {
-    local rule="${1%% # *}" to v6
-    [[ "$rule" =~ ^(.+)\ (ALLOW|LIMIT)(\ IN)?\ ([^ ]+)( \(v6\))?$ ]] || return 1
-    to="${BASH_REMATCH[1]}" UFW_RULE_SOURCE="${BASH_REMATCH[4]}" v6="${BASH_REMATCH[5]}"
-    UFW_RULE_V6=false
-    case "$to $v6 $UFW_RULE_SOURCE" in *"(v6)"* | *:*) UFW_RULE_V6=true ;; esac
-    to="${to/ (v6)/}"
-    UFW_RULE_IFACE=""
-    case "$to" in *" on "*) UFW_RULE_IFACE="${to##* on }" ;; esac
-    UFW_RULE_TO="${to%% on *}"
-}
-
-# ufw_to_includes_port <to> <port>...: of the app profiles, only OpenSSH's port is known
-ufw_to_includes_port() {
-    local to="$1" spec port
-    shift
-    spec="${to##* }"
-    case "$spec" in
-        OpenSSH) spec=22/tcp ;;
-        Anywhere) return 0 ;;
-    esac
-    if ! [[ "$spec" =~ ^[0-9]+([:,][0-9]+)*(/(tcp|udp))?$ ]]; then
-        # An address alone covers every port; another app profile doesn't
-        [ "$spec" == "$to" ] && [[ "$spec" =~ [.:] ]]
-        return
-    fi
-    [ "${spec#*/}" != udp ] || return 1
-    for port in "$@"; do
-        ufw_ports_include "${spec%/*}" "$port" && return 0
-    done
-    return 1
-}
-
-# Prints "<source>\t<rule>" per line. Takes sudo's flags.
-ufw_broad_ssh_rules() {
-    local rules ports rule
-    rules="$(ufw_rules "$@")" && ports="$(sshd_ports "$@")" && [ -n "$ports" ] || return 1
-    while IFS= read -r rule; do
-        # shellcheck disable=SC2086 # one port per word
-        ! ufw_rule_broad_ssh "$rule" $ports || printf '%s\t%s\n' "$UFW_RULE_SOURCE" "$rule"
-    done <<< "$rules"
-}
-
-ufw_rule_broad_ssh() {
-    local rule="$1"
-    shift
-    ufw_allow_rule "$rule" || return 1
-    [ "$UFW_RULE_IFACE" != tailscale0 ] || return 1
-    ! private_source "$UFW_RULE_SOURCE" || return 1
-    ufw_to_includes_port "$UFW_RULE_TO" "$@"
-}
-
-# <list> is e.g. 22, 80,443, or 8000:8100
-ufw_ports_include() {
-    local item IFS=,
-    for item in $1; do
-        case "$item" in
-            *:*) [ "$2" -ge "${item%:*}" ] && [ "$2" -le "${item#*:}" ] && return 0 ;;
-            *) [ "$2" -eq "$item" ] && return 0 ;;
-        esac
-    done
-    return 1
-}
-
-private_source() {
-    local bits floor
-    case "$1" in
-        Anywhere) return 1 ;;
-        */*) bits="${1##*/}" ;;
-        *) bits=128 ;;
-    esac
-    [[ "$bits" =~ ^[0-9]+$ ]] && floor="$(private_prefix "${1%/*}")" && [ "$bits" -ge "$floor" ]
+        grep -qxF -- "$rule" <<< "$rules" || echo "$rule"
+    done < <(ufw_wanted_rules)
 }
 
 # Prints the prefix length of the $SSH_RANGES range holding the address
@@ -275,17 +159,14 @@ outside_ssh_peers() {
 
 # Runs where set -e is off, so each command checks its own failure
 configure_ufw() {
-    local ports port range bridge deny4 deny6 rules outside="" on=false
+    local ports port range bridge outside="" on=false
     # ufw rejects IPv6 rules under IPV6=no, leaving it half set up
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
         echo "  ufw doesn't filter IPv6, so the firewall is left unchanged: set IPV6=yes in $UFW_DEFAULTS," >&2
         echo "  run sudo ufw reload if ufw is on, then re-run the ubuntu step." >&2
         return 1
     fi
-    ports="$(sshd_ports)" && [ -n "$ports" ] || {
-        echo "  Couldn't read the SSH ports with sudo sshd -T, so the firewall is left unchanged." >&2
-        return 1
-    }
+    ports="$(sshd_ports)"
     if ufw_enabled && ! ufw_stopped; then
         on=true
     fi
@@ -306,17 +187,9 @@ configure_ufw() {
         apt_install_fresh ufw || return 1
     fi
     "$on" || sudo ufw default deny incoming > /dev/null || return 1
-    rules=""
-    ! "$on" || rules="$(ufw_rules)" || return 1
     for port in $ports; do
-        # ufw prepend skips a rule it has anywhere, so one out of place is deleted first
+        # Denies go first, since ufw takes the first match. prepend skips a rule ufw already has.
         for bridge in "${DOCKER_BRIDGES[@]}"; do
-            deny4="$port/tcp on $bridge DENY Anywhere"
-            deny6="$port/tcp (v6) on $bridge DENY Anywhere (v6)"
-            ! ufw_rule_in_place "$deny4" "$rules" || ! ufw_rule_in_place "$deny6" "$rules" || continue
-            if ! "$on" || grep -qxF -e "$deny4" -e "$deny6" <<< "$rules"; then
-                sudo ufw delete deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
-            fi
             sudo ufw prepend deny in on "$bridge" to any port "$port" proto tcp > /dev/null || return 1
         done
         for range in "${SSH_RANGES[@]}"; do
@@ -333,7 +206,7 @@ configure_ufw() {
 
 status_ufw() {
     # shellcheck disable=SC2034 # memo reads the caches
-    local ufw=0 from rule where UFW_STATUS_CACHE="" UFW_STATUS_CACHE_STATUS="" SSHD_DUMP_CACHE="" SSHD_DUMP_CACHE_STATUS=""
+    local ufw=0 UFW_STATUS_CACHE="" UFW_STATUS_CACHE_STATUS=""
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denying it on Docker's bridges"
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
         status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
@@ -349,31 +222,18 @@ status_ufw() {
     fi
     status_item ok "ufw on, denying incoming connections"
     ! ufw_ipv6_on || status_item ok "ufw filters IPv6"
-    if ! apt_installed openssh-server; then
+    if ! openssh_installed; then
         status_item missing "$rules: openssh-server isn't installed"
-        return 0
-    elif [ ! -d "$SSHD_RUN_DIR" ]; then
-        status_item unverified "$rules (sshd -T, which lists sshd's ports, needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         return 0
     fi
     if ! sudo_ready; then
         status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
         return 0
     fi
-    sshd_dump -n > /dev/null || true
     ufw_configured -n || ufw=$?
     case "$ufw" in
         0) status_item ok "$rules" ;;
         1) status_item missing "$rules (re-run the ubuntu step)" ;;
-        *)
-            status_item unknown "$rules: sudo ufw status or sudo sshd -T fails, so they can't be checked"
-            return 0
-            ;;
+        *) status_item unknown "$rules: sudo ufw status fails, so they can't be checked" ;;
     esac
-    while IFS=$'\t' read -r from rule; do
-        [ -n "$rule" ] || continue
-        where=anywhere
-        [ "$from" == Anywhere ] || where="$from, outside the private ranges"
-        status_item missing "ufw rule lets SSH in from $where: $rule; remove it with sudo ufw delete <number> (sudo ufw status numbered lists the numbers)"
-    done < <(ufw_broad_ssh_rules -n || true)
 }

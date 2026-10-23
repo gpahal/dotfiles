@@ -1,11 +1,9 @@
 # shellcheck shell=bash
 # ubuntu/install.sh sets the constants.
 
+# is-enabled prints a line per unit
 sleep_masked() {
-    local target
-    for target in "${SLEEP_TARGETS[@]}"; do
-        [ "$(systemctl is-enabled "$target" 2>/dev/null)" == "masked" ] || return 1
-    done
+    [ "$(systemctl is-enabled "${SLEEP_TARGETS[@]}" 2>/dev/null | grep -cx masked)" -eq ${#SLEEP_TARGETS[@]} ]
 }
 
 mask_sleep() {

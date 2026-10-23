@@ -1,8 +1,13 @@
 # shellcheck shell=bash
 # ubuntu/install.sh sets the constants.
 
+# Read once through a status run, which declares SMARTMONTOOLS_CACHE_STATUS
+smartmontools_installed() {
+    memo SMARTMONTOOLS_CACHE apt_installed smartmontools > /dev/null
+}
+
 smartd_enabled() {
-    apt_installed smartmontools && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
+    smartmontools_installed && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
 }
 
 # smartd's unit has ConditionVirtualization=no. Cached once cache_checks runs.
@@ -184,7 +189,7 @@ status_smartd_hook() {
         else
             status_item missing "$label"
         fi
-    elif apt_installed smartmontools && ! smartd_runs_hooks; then
+    elif smartmontools_installed && ! smartd_runs_hooks; then
         status_item missing "$label: $SMARTD_CONF has no uncommented line with -M exec /usr/share/smartmontools/smartd-runner, which runs the hook; put it back on the DEVICESCAN line"
     else
         status_item ok "$label"

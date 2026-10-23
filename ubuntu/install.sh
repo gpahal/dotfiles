@@ -85,6 +85,8 @@ NTFY_LIB_SRC="$DOTFILES_DIR/ubuntu/lib/ntfy.sh"
 NTFY_LIB=/usr/local/lib/dotfiles/ntfy.sh
 # Not XDG_CONFIG_HOME: the user manager doesn't see the shell's
 HEALTH_UNIT_DIR="$HOME/.config/systemd/user"
+# Not XDG_DATA_HOME either: the units run the script from %h/.local/share
+HEALTH_ALERT_DIR="$HOME/.local/share/dotfiles/health-alert"
 HEALTH_UNITS=(dotfiles-health.service dotfiles-health.timer dotfiles-boot-notice.service)
 FWUPD_METADATA_DIRS="/var/lib/fwupd/metadata /var/cache/fwupd/metadata"
 AUTO_UPGRADES_CONF=/etc/apt/apt.conf.d/20auto-upgrades
@@ -101,7 +103,6 @@ Dpkg::Options {
 };'
 # 172.16.0.0/12 is left out: Docker's address pools live there, so containers could try SSH logins
 SSH_RANGES=(10.0.0.0/8 192.168.0.0/16 fd00::/8 fe80::/10)
-TAILNET_RANGE=100.64.0.0/10
 # Denied SSH ahead of the allows: a network with an explicit subnet or IPv6 can use $SSH_RANGES.
 # Custom-named bridges and docker_gwbridge aren't covered.
 DOCKER_BRIDGES=(docker0 br-+)
@@ -157,28 +158,48 @@ install_ntfy_lib() {
     install_root_copy "$NTFY_LIB_SRC" "$NTFY_LIB" 0644
 }
 
+# Status reports the items by check, beside what it checks itself. With apply, this also declares
+# what only apply drives, in the order apply lists and fixes them; those checks read apply's
+# locals (ufw, tailscale_repo, auto_upgrades_unchecked, confirmed, and the pending list so far).
 ubuntu_items() {
+    local apply=false text why="" wol="" uuid name
+    [ "${1:-}" != apply ] || apply=true
     items_reset
     item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
     item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
         "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
+    if "$apply"; then
+        text="Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF"
+        ! sysctl_file_written || text="Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system"
+        item --sudo "" "$text" sysctl_written apply_sysctl
+    fi
     item --sudo "Linger, so user services start at boot" \
         "Start your user services at boot, without a login: loginctl enable-linger" lingering enable_linger
+    if "$apply"; then
+        text="Watch disk health: enable smartd, installing smartmontools without its recommends"
+        ! smartd_enabled || text="Watch disk health: start smartd, which is enabled but not running"
+        item --sudo "" "$text" smartd_ready install_smartd
+    fi
     item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
         smartd_hook_ready install_smartd_hook
+    if "$apply"; then
+        text="$(ups_todo)"
+        [ -z "$text" ] || item --sudo "" "$text" false setup_ups
+    fi
     item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
         locale_installed install_locale
+    item --sudo "qrencode, which just alerts shows the ntfy topic with" \
+        "Install qrencode, which just alerts uses to show the ntfy topic as QR codes" \
+        "apt_installed qrencode" "apt_install_fresh qrencode"
     item --sudo "unattended-upgrades runs daily" \
         "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
-        unattended_upgrades_running turn_on_unattended_upgrades
+        unattended_upgrades_checked turn_on_unattended_upgrades
     item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
         keep_conffiles_written write_keep_conffiles
     item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
         "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
-    item --sudo "qrencode, which just alerts shows the ntfy topic with" \
-        "Install qrencode, which just alerts uses to show the ntfy topic as QR codes" qrencode_installed install_qrencode
     # Skipped in a VM, which may need cloud-init at every boot for its network and users
     in_vm || item --sudo "cloud-init off, since it only sets up a fresh install ($CLOUD_INIT_DISABLED)" \
         "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off turn_off_cloud_init
@@ -188,9 +209,64 @@ ubuntu_items() {
         item --sudo "Wi-Fi power save off, so SSH over Wi-Fi doesn't lag ($WIFI_POWERSAVE_CONF)" \
             "Turn off Wi-Fi power save, which makes SSH over Wi-Fi lag: write $WIFI_POWERSAVE_CONF" \
             wifi_powersave_off turn_off_wifi_powersave
-    # Driven only once openssh-server is installed
     item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
-        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled enable_sshd
+        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled_once_installed enable_sshd
+    "$apply" || return 0
+    [ -z "$(key_only_todo 2>/dev/null)" ] || why="$(key_only_reason)" || why=""
+    item --sudo "" "Write $SSHD_DROP_IN${why:+, turning off SSH password logins since $why}: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')" \
+        sshd_configured configure_sshd
+    if "$tailscale_repo"; then
+        text="Install Tailscale from its apt repo: write $TAILSCALE_LIST and its key"
+        ! command -v tailscale &>/dev/null ||
+            text="Rewrite Tailscale's apt source for $(ubuntu_codename) ($tailscale_source), which Tailscale updates from: write $TAILSCALE_LIST and its key"
+        item --sudo "" "$text" false install_tailscale
+    fi
+    # A fresh install needs a login first
+    if command -v tailscale &>/dev/null && ! tailscale_configured && ! tailscale_needs_login; then
+        item --sudo "" "Turn on Tailscale's auto-update and make $(id -un) its operator" false set_up_tailscale
+    fi
+    if [ "$ufw" -eq 1 ] && ufw_enabled && ! ufw_stopped -n; then
+        text="add the missing ufw rules"
+    elif [ "$ufw" -eq 1 ]; then
+        text="install and turn on ufw"
+    else
+        text="check the ufw rules, and add any that are missing"
+    fi
+    [ "$ufw" -eq 0 ] ||
+        item --sudo "" "Firewall: $text, so ufw denies incoming connections but SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denies SSH on Docker's bridges" \
+            ufw_settled configure_ufw
+    # One item, listed a line per connection
+    while IFS=$'\t' read -r uuid name; do
+        wake_on_lan_on "$uuid" && continue
+        [ -z "$wol" ] || wol="$wol"$'\n'"    - "
+        wol="${wol}Wake-on-LAN: set 802-3-ethernet.wake-on-lan to magic on \"$name\""
+    done < <(wired_connections)
+    [ -z "$wol" ] || item --sudo "" "$wol" false turn_on_wake_on_lan
+    ! "$auto_upgrades_unchecked" ||
+        item --sudo "" "Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off" \
+            auto_upgrades_settled true
+}
+
+# When only root can read $AUTO_UPGRADES_CONF, it's checked only once other changes ask for sudo
+unattended_upgrades_checked() {
+    { "$auto_upgrades_unchecked" && ! "$confirmed"; } || unattended_upgrades_running
+}
+
+auto_upgrades_settled() {
+    "$confirmed" || [ ${#pending[@]} -eq 0 ]
+}
+
+# Rules unverified without cached sudo aren't worth asking for sudo just to read
+ufw_settled() {
+    if "$confirmed"; then
+        [ "$ufw" -eq 0 ] || ufw_configured
+    else
+        [ "$ufw" -eq 0 ] || { [ "$ufw" -eq 2 ] && [ ${#pending[@]} -eq 0 ]; }
+    fi
+}
+
+sshd_enabled_once_installed() {
+    ! openssh_installed || sshd_enabled
 }
 
 # Callers declare the *_CACHE and *_CACHE_STATUS vars local first; the checks run many times,
@@ -213,14 +289,6 @@ configure_homebrew_env() {
         echo "  Couldn't reach your systemd user manager. User services get Homebrew on PATH"
         echo "  after the next reboot or login."
     fi
-}
-
-qrencode_installed() {
-    apt_installed qrencode
-}
-
-install_qrencode() {
-    apt_install_fresh qrencode
 }
 
 # The homebrew step installs locales
@@ -246,6 +314,17 @@ wake_on_lan_on() {
     [[ "$(nmcli -g 802-3-ethernet.wake-on-lan connection show uuid "$1" 2>/dev/null)" == *magic* ]]
 }
 
+turn_on_wake_on_lan() {
+    local uuid name result=0
+    while IFS=$'\t' read -r uuid name; do
+        wake_on_lan_on "$uuid" ||
+            sudo nmcli connection modify uuid "$uuid" 802-3-ethernet.wake-on-lan magic < /dev/null || result=1
+    done < <(wired_connections)
+    echo "  Wake-on-LAN applies the next time the connection comes up. It also needs the BIOS settings"
+    echo "  in the README's Manual steps: Wake-on-LAN on, and ErP/EuP off."
+    return "$result"
+}
+
 lingering() {
     [ -e "$LINGER_DIR/$(id -un)" ]
 }
@@ -256,10 +335,12 @@ enable_linger() {
 
 # Root-only state is checked with sudo -n when credentials are cached, else left unverified
 status() {
-    local uuid name wired=false item packages overrides
+    local uuid name wired=false item packages overrides UPS_STATE="" UPS_PLUGGED=""
     # shellcheck disable=SC2034 # memo reads the caches
     local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
-        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
+        SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS="" OPENSSH_INSTALLED_CACHE="" \
+        OPENSSH_INSTALLED_CACHE_STATUS="" SMARTMONTOOLS_CACHE="" SMARTMONTOOLS_CACHE_STATUS="" \
+        TAILSCALE_PREFS_CACHE="" TAILSCALE_PREFS_CACHE_STATUS=""
     cache_checks
     ubuntu_items
     items_status sleep_masked sleep_conf_written
@@ -283,7 +364,7 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    items_status locale_installed qrencode_installed
+    items_status locale_installed "apt_installed qrencode"
     status_unattended_upgrades
     items_status keep_conffiles_written
     status_held_back
@@ -334,8 +415,8 @@ status() {
 
 apply() {
     echo "Setting up Ubuntu to run around the clock..."
-    local pending=() wol_pending=()
-    local ufw=0 result=0 uuid name wired=false tailscale_source="" tailscale_repo=false ufw_todo=""
+    local pending=() ufw=0 result=0 confirmed=false auto_upgrades_unchecked=false stay_on=""
+    local tailscale_source="" tailscale_repo=false
     # shellcheck disable=SC2034 # memo reads the caches
     local IN_VM_CACHE="" IN_VM_CACHE_STATUS="" KEY_LOGIN_CACHE="" KEY_LOGIN_CACHE_STATUS="" \
         SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS=""
@@ -353,129 +434,40 @@ apply() {
     fi
     cache_checks
     ups_state
-    ubuntu_items
+    if stay_on="$(key_only_todo)" && [ -n "$stay_on" ] && key_only_reason > /dev/null; then
+        stay_on=""
+    fi
+    # Root-only $AUTO_UPGRADES_CONF: checked with sudo only when other changes need it
+    ! auto_upgrades_unreadable || sudo_ready || auto_upgrades_unchecked=true
+    # 2: unverified without cached sudo
+    ufw_configured -n || ufw=$?
+    ubuntu_items apply
     configure_homebrew_env || result=1
     configure_health_alerts || result=1
 
-    items_pending sleep_masked sleep_conf_written
-    if ! sysctl_file_written; then
-        pending+=("Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF")
-    elif ! sysctl_in_effect; then
-        pending+=("Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system")
-    fi
-    items_pending lingering
-    if ! smartd_enabled; then
-        pending+=("Watch disk health: enable smartd, installing smartmontools without its recommends")
-    elif ! smartd_ready; then
-        pending+=("Watch disk health: start smartd, which is enabled but not running")
-    fi
-    items_pending smartd_hook_ready
-    local ups_todo
-    ups_todo="$(UPS_STATE_CACHED=true ups_todo)"
-    [ -z "$ups_todo" ] || pending+=("$ups_todo")
-    local auto_upgrades_unchecked=false
-    items_pending locale_installed qrencode_installed
-    # Root-only $AUTO_UPGRADES_CONF: checked with sudo only when other changes need it
-    if auto_upgrades_unreadable && ! sudo_ready; then
-        auto_upgrades_unchecked=true
-    else
-        items_pending unattended_upgrades_running
-    fi
-    items_pending keep_conffiles_written apt_timers_enabled openssh_installed cloud_init_off cups_browsed_off \
-        wifi_powersave_off
-    ! openssh_installed || items_pending sshd_enabled
-    local key_only_todo="" key_only_why="" drop_in_lines
-    if key_only_todo="$(key_only_todo)" && [ -n "$key_only_todo" ] &&
-        key_only_why="$(key_only_reason)"; then
-        key_only_todo=""
-    fi
-    if ! sshd_configured; then
-        drop_in_lines="$(sshd_drop_in | grep -v '^#' | tr '\n' ' ')"
-        pending+=("Write $SSHD_DROP_IN${key_only_why:+, turning off SSH password logins since $key_only_why}: $drop_in_lines")
-    fi
-    if "$tailscale_repo" && ! command -v tailscale &>/dev/null; then
-        pending+=("Install Tailscale from its apt repo: write $TAILSCALE_LIST and its key")
-    elif "$tailscale_repo"; then
-        pending+=("Rewrite Tailscale's apt source for $(ubuntu_codename) ($tailscale_source), which Tailscale updates from: write $TAILSCALE_LIST and its key")
-    fi
-    # A fresh install needs a login first
-    local tailscale_set=false
-    if command -v tailscale &>/dev/null && ! tailscale_configured && ! tailscale_needs_login; then
-        tailscale_set=true
-        pending+=("Turn on Tailscale's auto-update and make $(id -un) its operator")
-    fi
-    # 2: unverified without cached sudo; not worth asking for sudo just to read
-    ufw_configured -n || ufw=$?
-    if [ "$ufw" -eq 1 ] && ufw_enabled && ! ufw_stopped -n; then
-        ufw_todo="add the missing ufw rules"
-    elif [ "$ufw" -eq 1 ]; then
-        ufw_todo="install and turn on ufw"
-    elif [ "$ufw" -eq 2 ] && [ ${#pending[@]} -gt 0 ]; then
-        ufw_todo="check the ufw rules, and add any that are missing"
-    fi
-    [ -z "$ufw_todo" ] ||
-        pending+=("Firewall: $ufw_todo, so ufw denies incoming connections but SSH from ${SSH_RANGES[*]}, anything on tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denies SSH on Docker's bridges")
-    while IFS=$'\t' read -r uuid name; do
-        wired=true
-        wake_on_lan_on "$uuid" && continue
-        wol_pending+=("$uuid")
-        pending+=("Wake-on-LAN: set 802-3-ethernet.wake-on-lan to magic on \"$name\"")
-    done < <(wired_connections)
-    ! "$auto_upgrades_unchecked" || [ ${#pending[@]} -eq 0 ] ||
-        pending+=("Check unattended-upgrades' settings in $AUTO_UPGRADES_CONF, which only root can read, and turn it on there if it's off")
-
+    items_pending
     if [ ${#pending[@]} -eq 0 ]; then
         echo "  Everything it can check is already set up."
-        if [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ] && sudo_ready; then
-            echo "  ufw is on, but its rules couldn't be checked: sudo ufw status or sudo sshd -T fails."
-        elif [ "$ufw" -ne 0 ] && [ -d "$SSHD_RUN_DIR" ]; then
-            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
+        if [ "$ufw" -ne 0 ] && sudo_ready; then
+            echo "  ufw is on, but its rules couldn't be checked: sudo ufw status fails."
         elif [ "$ufw" -ne 0 ]; then
-            echo "  ufw is on. Its rules can't be checked until sshd has run, which the first SSH connection does."
+            echo "  ufw is on. Its rules can't be checked without sudo; run sudo -v and re-run this step to check them."
         fi
         ! "$auto_upgrades_unchecked" ||
             echo "  Only root can read $AUTO_UPGRADES_CONF; run sudo -v and re-run this step to check unattended-upgrades."
     elif confirm_sudo_changes "${pending[@]}"; then
-        items_apply sleep_masked sleep_conf_written || result=1
-        sysctl_written || apply_sysctl || result=1
-        items_apply lingering || result=1
-        smartd_ready || install_smartd || result=1
-        items_apply smartd_hook_ready || result=1
-        [ -z "$ups_todo" ] || setup_ups || result=1
-        items_apply locale_installed qrencode_installed unattended_upgrades_running keep_conffiles_written \
-            apt_timers_enabled openssh_installed cloud_init_off cups_browsed_off wifi_powersave_off || result=1
-        ! openssh_installed || items_apply sshd_enabled || result=1
-        sshd_configured || configure_sshd || result=1
-        if "$tailscale_repo"; then
-            if add_tailscale_repo; then
-                command -v tailscale &>/dev/null || apt_get install -y tailscale || result=1
-            else
-                result=1
-            fi
-        fi
-        if "$tailscale_set"; then
-            sudo tailscale set --auto-update --operator="$(id -un)" || result=1
-        fi
-        if [ "$ufw" -ne 0 ]; then
-            ensure_sshd_run_dir && { ufw_configured || configure_ufw; } || result=1
-        fi
-        for uuid in ${wol_pending[@]+"${wol_pending[@]}"}; do
-            sudo nmcli connection modify uuid "$uuid" 802-3-ethernet.wake-on-lan magic || result=1
-        done
-        if [ ${#wol_pending[@]} -gt 0 ]; then
-            echo "  Wake-on-LAN applies the next time the connection comes up. It also needs the BIOS settings"
-            echo "  in the README's Manual steps: Wake-on-LAN on, and ErP/EuP off."
-        fi
+        confirmed=true
+        items_apply || result=1
         if [ "$result" -eq 0 ]; then
             echo "  Applied."
         else
             echo "  Applied the rest. Some changes failed; see the errors above." >&2
         fi
     fi
-    if command -v nmcli &>/dev/null && ! "$wired"; then
+    if command -v nmcli &>/dev/null && [ -z "$(wired_connections)" ]; then
         echo "  No wired connection, so Wake-on-LAN is left off. It works only over Ethernet."
     fi
-    [ -z "$key_only_todo" ] || echo "  Password logins stay on: $key_only_todo."
+    [ -z "$stay_on" ] || echo "  Password logins stay on: $stay_on."
 
     # Not Tailscale SSH (--ssh): it drops every session when auto-update restarts tailscaled
     if command -v tailscale &>/dev/null && ! tailscale_running; then
@@ -483,7 +475,7 @@ apply() {
         echo "  auto-update and operator settings after login. Turn off key expiry for this machine in"
         echo "  the Tailscale admin console, so it doesn't drop off the tailnet after 180 days."
     fi
-    [ -n "$ups_todo" ] || UPS_STATE_CACHED=true warn_no_ups
+    warn_no_ups
     warn_wifi_needs_login
     warn_disk_encryption
     return "$result"

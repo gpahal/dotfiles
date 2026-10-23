@@ -35,23 +35,20 @@ fi
 
 problems_are() {
     if ! sshd_settings_problems "$DROP_IN" -n; then
-        fail "sshd -T failed for $2, with -C $SSHD_FAILED_SPEC"
+        fail "sshd -T failed for $2"
         return 0
     fi
     assert_eq "$1" "$SSHD_PROBLEMS" "the settings sshd doesn't take, $2"
 }
 
 problems_are "" "with the drop-in alone"
-assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T -C user=$me,host=127.0.0.1,addr=127.0.0.1"
+assert_file_contains "$STUB_LOG" "sudo -n $SSHD_BIN -T"
+assert_eq "" "$SSHD_MATCH_FILES" "the files with a Match block, with none"
 
-# sshd matches address patterns as strings, so fd00:* catches fd00::/8's sample too
-sshd_config "Match Address fd00:*" "    PasswordAuthentication yes"
-problems_are "PasswordAuthentication is yes for fd00::1, fd00:1::1" "with a Match block for fd00:*"
-sshd_config "Match Address 192.168.5.0/24,!10.9.9.9" "    PasswordAuthentication yes"
-problems_are "PasswordAuthentication is yes for 192.168.5.1" "with a Match block for a /24"
-
+# sshd -T leaves out Match blocks, so the file with one is named instead
 sshd_config "Match User $me" "    KbdInteractiveAuthentication yes"
-problems_are "KbdInteractiveAuthentication is yes" "with a Match block for you"
+problems_are "" "with a Match block for you"
+assert_eq "$SSHD_CONFIG" "$SSHD_MATCH_FILES" "the files with a Match block"
 sshd_config
 
 # sshd keeps the first value of each setting but merges every AllowUsers line

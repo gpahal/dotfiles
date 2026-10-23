@@ -94,26 +94,13 @@ rules_missing
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp"
 
-# Without $SSHD_RUN_DIR the rules can't be read even with cached credentials
-unset DOTFILES_ASSUME_YES
-cache_sudo yes
-rmdir "$SSHD_RUN_DIR"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "These need sudo"
-assert_contains "$RUN_OUTPUT" "first SSH connection"
-[ ! -e "$SSHD_RUN_DIR" ] || fail "main created $SSHD_RUN_DIR without asking"
-assert_sudo_noninteractive "the step"
-
 # Hand-added rules don't fail the check and aren't deleted
-mkdir -p "$SSHD_RUN_DIR"
 cache_sudo yes
 rules_present
 printf '%s\n' "80/tcp                     ALLOW       Anywhere" >> "$SANDBOX/ufw-status"
 : > "$STUB_LOG"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
-assert_not_contains "$RUN_OUTPUT" "lets SSH in"
 assert_contains "$RUN_OUTPUT" "ok         ufw filters IPv6"
 # IPV6=no leaves sshd open over global IPv6: the step fails before changing ufw
 ufw_defaults no
@@ -135,66 +122,31 @@ done
 ufw_on
 ufw_defaults yes
 
-# Docker bridge deny rules must precede the allow rules, or containers reach sshd
-for misplaced in false true; do
-    { ufw_header; ufw_range_rules; ! "$misplaced" || ufw_deny_rules; } > "$SANDBOX/ufw-status"
-    ufw_tailscale_rules >> "$SANDBOX/ufw-status"
-    assert_exit 1 ufw_configured -n
-    assert_exit 0 ufw_missing_rules -n
-    assert_contains "$RUN_OUTPUT" "22/tcp on docker0 DENY Anywhere"
-    assert_contains "$RUN_OUTPUT" "22/tcp (v6) on br-+ DENY Anywhere (v6)"
-    assert_not_contains "$RUN_OUTPUT" "ALLOW"
-    : > "$STUB_LOG"
-    assert_exit 0 main
-    if "$misplaced"; then
-        assert_file_contains "$STUB_LOG" "sudo ufw delete deny in on docker0 to any port 22 proto tcp"
-    else
-        assert_file_not_contains "$STUB_LOG" "ufw delete"
-    fi
-    assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on docker0 to any port 22 proto tcp"
-    assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
-    assert_exit 0 ufw_configured -n
-done
+# Missing Docker bridge deny rules go on top, ahead of the allow rules, or containers reach sshd
+{ ufw_header; ufw_range_rules; ufw_tailscale_rules; } > "$SANDBOX/ufw-status"
+assert_exit 1 ufw_configured -n
+assert_exit 0 ufw_missing_rules -n
+assert_contains "$RUN_OUTPUT" "22/tcp on docker0 DENY Anywhere"
+assert_contains "$RUN_OUTPUT" "22/tcp (v6) on br-+ DENY Anywhere (v6)"
+assert_not_contains "$RUN_OUTPUT" "ALLOW"
+: > "$STUB_LOG"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on docker0 to any port 22 proto tcp"
+assert_file_contains "$STUB_LOG" "sudo ufw prepend deny in on br-+ to any port 22 proto tcp"
+assert_exit 0 ufw_configured -n
 # `ufw status` lists IPv6 rules after all IPv4 ones
 { ufw_header; ufw_deny_rules | grep -v v6; ufw_range_rules | grep -v :; ufw_deny_rules | grep v6; ufw_range_rules | grep :; } > "$SANDBOX/ufw-status"
 ufw_tailscale_rules >> "$SANDBOX/ufw-status"
 assert_exit 0 ufw_configured -n
-# Adding a missing allow rule leaves the deny rules alone
+# Adding a missing allow rule leaves the deny rules where they are
 rules_present
 grep -v "41641/udp" "$SANDBOX/ufw-status" > "$SANDBOX/ufw-status.new"
 mv "$SANDBOX/ufw-status.new" "$SANDBOX/ufw-status"
 : > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo ufw allow 41641/udp"
-assert_file_not_contains "$STUB_LOG" "ufw delete"
-assert_file_not_contains "$STUB_LOG" "ufw prepend"
-assert_exit 0 ufw_configured -n
-# Any form of rule above the deny rules that lets the SSH port in counts against them
-for rule in "22 ALLOW 192.168.0.0/16" "20:30/tcp ALLOW 10.0.0.0/8" "80,22/tcp ALLOW 10.0.0.0/8" \
-    "OpenSSH ALLOW 10.0.0.0/8" "192.168.1.5 ALLOW 10.0.0.0/8" "22/tcp ALLOW fd00::/8 # lan" \
-    "Anywhere on br-1a2b3c ALLOW 10.0.0.0/8"; do
-    { ufw_header; echo "$rule"; ufw_deny_rules; ufw_range_rules; } > "$SANDBOX/ufw-status"
-    ufw_tailscale_rules >> "$SANDBOX/ufw-status"
-    assert_exit 1 ufw_configured -n
-done
-{ ufw_header; echo "Anywhere on tailscale0 ALLOW Anywhere"; echo "22/udp ALLOW 10.0.0.0/8"; ufw_deny_rules; ufw_range_rules; } > "$SANDBOX/ufw-status"
-echo "41641/udp                  ALLOW       Anywhere" >> "$SANDBOX/ufw-status"
-assert_exit 0 ufw_configured -n
+assert_eq "$(ufw_status_listing)" "$(cat "$SANDBOX/ufw-status")" "the rules after adding the missing one"
 unset DOTFILES_ASSUME_YES
-rules_present
-printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
-    "OpenSSH                    ALLOW       Anywhere" \
-    "22/tcp                     ALLOW       203.0.113.0/24" >> "$SANDBOX/ufw-status"
-assert_exit 0 ufw_configured -n
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "ok         ufw rules allowing SSH from the private ranges"
-assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: 22/tcp ALLOW Anywhere;"
-assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from anywhere: OpenSSH ALLOW Anywhere;"
-assert_contains "$RUN_OUTPUT" "missing    ufw rule lets SSH in from 203.0.113.0/24, outside the private ranges: 22/tcp ALLOW 203.0.113.0/24;"
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "already set up"
-assert_file_not_contains "$STUB_LOG" "ufw delete"
 rules_present
 
 sessions() {
@@ -295,7 +247,7 @@ assert_eq 1 "$RUN_STATUS" "the step with a session from outside"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
 firewall_unchanged
 
-# ssh.socket also on 2222, which sshd -T doesn't report
+# ssh.socket on 2222 too
 printf '%s\n' 22 2222 > "$SANDBOX/socket-ports"
 no_sessions
 rules_missing

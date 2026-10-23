@@ -1,0 +1,11 @@
+# From the dotfiles ubuntu step: push a notice to ntfy when the machine starts
+[Unit]
+Description=Push to ntfy that this machine started
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/.local/share/dotfiles/health-alert/health-alert.sh boot
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=default.target

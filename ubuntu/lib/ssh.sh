@@ -5,8 +5,9 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
+# Read once through a status run, which declares OPENSSH_INSTALLED_CACHE_STATUS
 openssh_installed() {
-    apt_installed openssh-server
+    memo OPENSSH_INSTALLED_CACHE apt_installed openssh-server > /dev/null
 }
 
 install_openssh() {
@@ -137,90 +138,36 @@ sshd_configured() {
     [ "$(sshd_drop_in "$current")" == "$current" ]
 }
 
-# Prints one address inside a CIDR range or * ? pattern: 10.0.0.0/8 -> 10.0.0.1, fd00::/8 ->
-# fd00::1, 10.* -> 10.1 (inet_aton reads it as 10.0.0.1), fd00:* -> fd00:1::1.
-range_sample() {
-    local addr="${1%/*}" first=1
-    case "$addr" in
-        *::*) ;;
-        *:*) [ "${addr//[!:]/}" == ::::::: ] || first=1::1 ;;
-    esac
-    addr="${addr/\*/$first}"
-    addr="${addr//\*/1}"
-    addr="${addr//\?/1}"
-    case "$addr" in
-        *::) echo "${addr}1" ;;
-        *.0) if [ "$addr" == "$1" ]; then echo "$addr"; else echo "${addr%.0}.1"; fi ;;
-        *) echo "$addr" ;;
-    esac
-}
-
-# Prints Match Address entries, e.g. 192.168.5.0/24 or !10.1.2.3. Takes sudo's flags.
-sshd_match_addresses() {
-    local file
+# Takes sudo's flags, for a file only root can read
+sshd_match_files() {
+    local file config
     for file in "$SSHD_CONFIG" "$(dirname "$SSHD_DROP_IN")"/*.conf; do
-        [ ! -e "$file" ] || read_root_file "$file" "$@" || true
-    done 2>/dev/null | awk '
-        { sub(/#.*/, "") }
-        tolower($1) == "match" {
-            for (i = 2; i < NF; i++) {
-                if (tolower($i) != "address") continue
-                n = split($(i + 1), entries, ",")
-                for (j = 1; j <= n; j++) print entries[j]
-                i++
-            }
-        }'
+        config="$(read_root_file "$file" "$@" 2>/dev/null < /dev/null)" || continue
+        ! grep -qiE '^[[:space:]]*Match' <<< "$config" || echo "$file"
+    done
 }
 
-# One address per range a login may come from, so any Match block shows. Takes sudo's flags.
-sshd_login_addresses() {
-    local range
-    {
-        echo 127.0.0.1
-        for range in "${SSH_RANGES[@]}" "$TAILNET_RANGE"; do
-            range_sample "$range"
-        done
-        [ -z "${SSH_CONNECTION:-}" ] || echo "${SSH_CONNECTION%% *}"
-        sshd_match_addresses "$@" | while IFS= read -r range; do
-            case "$range" in '!'* | '') ;; *) range_sample "$range" ;; esac
-        done
-    } | awk '!seen[$0]++'
-}
-
-# UseDNS defaults to no, so host is the address
-sshd_login_spec() {
-    echo "user=$(id -un),host=$1,addr=$1"
-}
-
-# sshd_settings_problems <drop-in> <sudo flags>: sets SSHD_PROBLEMS to the drop-in settings
-# another file or Match block overrides. On sshd -T failure (e.g. a Match on LocalPort, which -C
-# can't give) sets SSHD_FAILED_SPEC and fails.
+# sshd_settings_problems <drop-in> <sudo flags>: sets SSHD_PROBLEMS to the drop-in settings another
+# file sets first, and SSHD_MATCH_FILES to the files with a Match block, which sshd -T doesn't
+# apply, so the settings there go unchecked. Fails when sshd -T does.
 sshd_settings_problems() {
-    local drop_in="$1" addr config key want have problems="" n=0
+    local drop_in="$1" config key want have problems=""
     shift
-    SSHD_PROBLEMS="" SSHD_FAILED_SPEC=""
+    SSHD_PROBLEMS=""
+    SSHD_MATCH_FILES="$(sshd_match_files "$@" | join_lines ', ')"
     [ -d "$SSHD_RUN_DIR" ] || return 1
-    while IFS= read -r addr; do
-        n=$((n + 1))
-        if ! config="$(sudo "$@" "$SSHD_BIN" -T -C "$(sshd_login_spec "$addr")" 2>/dev/null < /dev/null)"; then
-            SSHD_FAILED_SPEC="$(sshd_login_spec "$addr")"
-            return 1
-        fi
-        while read -r key want; do
-            case "$key" in
-                AllowUsers) have="$(awk '$1 == "allowusers" { print $2 }' <<< "$config" | join_lines ' ')" ;;
-                PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication | X11Forwarding | MaxAuthTries)
-                    have="$(awk -v key="$(tr '[:upper:]' '[:lower:]' <<< "$key")" '$1 == key { print $2; exit }' <<< "$config")"
-                    ;;
-                *) continue ;;
-            esac
-            [ "$have" == "$want" ] || problems+="$key is ${have:-unset}"$'\t'"$addr"$'\n'
-        done <<< "$drop_in"
-    done < <(sshd_login_addresses "$@")
-    SSHD_PROBLEMS="$(printf '%s' "$problems" | awk -F '\t' -v n="$n" '
-        !($1 in count) { order[++k] = $1 }
-        { count[$1]++; where[$1] = where[$1] (where[$1] == "" ? "" : ", ") $2 }
-        END { for (i = 1; i <= k; i++) print order[i] (count[order[i]] == n ? "" : " for " where[order[i]]) }')"
+    config="$(sudo "$@" "$SSHD_BIN" -T 2>/dev/null < /dev/null)" || return 1
+    while read -r key want; do
+        case "$key" in
+            AllowUsers) have="$(awk '$1 == "allowusers" { print $2 }' <<< "$config" | join_lines ' ')" ;;
+            PermitRootLogin | PasswordAuthentication | KbdInteractiveAuthentication | X11Forwarding | MaxAuthTries)
+                have="$(awk -v key="$(tr '[:upper:]' '[:lower:]' <<< "$key")" '$1 == key { print $2; exit }' <<< "$config")"
+                ;;
+            *) continue ;;
+        esac
+        [ "$have" == "$want" ] || problems+="$key is ${have:-unset}"$'\n'
+    done <<< "$drop_in"
+    SSHD_PROBLEMS="${problems%$'\n'}"
 }
 
 ensure_sshd_run_dir() {
@@ -298,10 +245,11 @@ configure_sshd() {
         echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
     fi
     if ! "$checked"; then
-        echo "  sudo sshd -T -C $SSHD_FAILED_SPEC failed, so whether sshd takes $SSHD_DROP_IN is" >&2
-        echo "  unchecked. Run it to see why." >&2
+        echo "  sudo sshd -T failed, so whether sshd takes $SSHD_DROP_IN is unchecked. Run it to see why." >&2
         return 1
     fi
+    [ -z "$SSHD_MATCH_FILES" ] ||
+        echo "  $SSHD_MATCH_FILES has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
     if [ -n "$problems" ]; then
         echo "  sshd doesn't take these settings from $SSHD_DROP_IN, since another file, or a Match block, sets them first:" >&2
         while IFS= read -r line; do echo "    $line"; done <<< "$problems" >&2
@@ -319,7 +267,7 @@ status_sshd() {
     current_sshd_drop_in > /dev/null || true
     openssh_installed && installed=true
     items_status openssh_installed
-    ! "$installed" || items_status sshd_enabled
+    ! "$installed" || items_status sshd_enabled_once_installed
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_ready; then
         status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
     else
@@ -332,16 +280,18 @@ status_sshd() {
         elif ! sudo_ready; then
             status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
         elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
-            status_item unverified "$item (sudo sshd -T -C $SSHD_FAILED_SPEC failed; run it to see why)"
+            status_item unverified "$item (sudo sshd -T failed; run it to see why)"
         else
             problems="$SSHD_PROBLEMS"
             # Password logins get their own item below, except as root
             others="$problems"
             [ "$(id -u)" == 0 ] || others="$(grep -vE "$PASSWORD_PROBLEMS" <<< "$problems" || true)"
-            if [ -z "$others" ]; then
-                status_item ok "$item"
-            else
+            if [ -n "$others" ]; then
                 status_item missing "$item ($(join_lines '; ' <<< "$others"); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
+            elif [ -n "$SSHD_MATCH_FILES" ]; then
+                status_item unverified "$item ($SSHD_MATCH_FILES has a Match block, which can override them for some logins; check it by hand)"
+            else
+                status_item ok "$item"
             fi
         fi
     fi

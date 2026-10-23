@@ -121,7 +121,7 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_file_contains "$NUT_DIR/upsd.conf" "LISTEN 127.0.0.1"
 assert_file_contains "$NUT_DIR/ups.conf" 'vendorid = "0764"'
 assert_file_contains "$NUT_DIR/ups.conf" 'productid = "0501"'
-upsmon_password() { nut_value upsmon password < "$NUT_DIR/upsd.users"; }
+upsmon_password() { nut_value password < "$NUT_DIR/upsd.users"; }
 PASSWORD="$(upsmon_password)"
 [ "${#PASSWORD}" -ge 24 ] || fail "upsmon's password is short: '$PASSWORD'"
 assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$PASSWORD\" primary"
@@ -166,30 +166,6 @@ assert_file_not_contains "$STUB_LOG" "install -m"
 assert_file_not_contains "$STUB_LOG" "restart"
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password after a second run"
-
-# NUT reads an unquoted space as the password's end and # as a comment
-USERS="$(cat "$NUT_DIR/upsd.users")"
-for password in 'two words' 'pass#word' 'say "hi"' 'back\slash' 'all "of" #th\is'; do
-    escaped="$(printf '%s' "$password" | sed 's/[\\"]/\\&/g')"
-    printf '%s\n' "[upsmon]" "	password = \"$escaped\"" "	upsmon primary" > "$NUT_DIR/upsd.users"
-    assert_eq "$password" "$(upsmon_password)" "the password NUT reads from upsd.users"
-    assert_eq "\"$escaped\"" "$(nut_quote "$password")" "quoted password"
-done
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_eq "$password" "$(upsmon_password)" "the password kept in upsd.users"
-assert_file_contains "$NUT_DIR/upsd.users" "	password = \"$escaped\""
-assert_file_contains "$NUT_DIR/upsmon.conf" "MONITOR ups@localhost 1 upsmon \"$escaped\" primary"
-: > "$STUB_LOG"
-assert_exit 0 setup_ups
-assert_file_not_contains "$STUB_LOG" "install -m"
-assert_contains "$RUN_OUTPUT" "already set up"
-assert_exit 0 nut_files_current
-printf '%s\n' "[upsmon]" "	password = plain # a comment" > "$NUT_DIR/upsd.users"
-assert_eq plain "$(upsmon_password)" "an unquoted password"
-printf '%s\n' "$USERS" > "$NUT_DIR/upsd.users"
-assert_exit 0 setup_ups
-assert_eq "$PASSWORD" "$(upsmon_password)" "upsmon's password, put back"
 
 # An outdated notifier is reinstalled without restarting NUT
 echo "# edited" >> "$UPS_NOTIFY"
@@ -340,14 +316,14 @@ assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y 
 mv "$UPOWER_HWDB" "$UPOWER_HWDB.gone"
 assert_eq "" "$(ups_todo)" "what the UPS part needs without upower's hwdb"
 run status_ups
-assert_contains "$RUN_OUTPUT" "info       UPS monitored by NUT: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower"
+assert_contains "$RUN_OUTPUT" "info       UPS monitored by NUT: can't tell whether a UPS is on USB: $UPOWER_HWDB is missing (install upower), or udevadm info --export-db failed"
 run warn_no_ups
 assert_contains "$RUN_OUTPUT" "$UPOWER_HWDB is missing"
 mv "$UPOWER_HWDB.gone" "$UPOWER_HWDB"
 touch "$SANDBOX/udev-fails"
 assert_eq "" "$(ups_todo)" "what the UPS part needs when udevadm fails"
 run status_ups
-assert_contains "$RUN_OUTPUT" "unknown    UPS monitored by NUT: can't tell whether a UPS is on USB, since udevadm info --export-db failed"
+assert_contains "$RUN_OUTPUT" "info       UPS monitored by NUT: can't tell whether a UPS is on USB"
 rm "$SANDBOX/udev-fails"
 
 # --- a VM ---

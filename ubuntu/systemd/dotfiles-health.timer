@@ -1,0 +1,11 @@
+# From the dotfiles ubuntu step: run dotfiles-health.service daily
+[Unit]
+Description=Check dotfiles status daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

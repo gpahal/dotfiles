@@ -745,7 +745,7 @@ memo() {
         printf -v "$1" '%s' "$_memo_out"
         printf -v "$_memo_status" '%s' "$_memo_rc"
     fi
-    printf '%s\n' "${!1}"
+    [ -z "${!1}" ] || printf '%s\n' "${!1}"
     return "${!_memo_status}"
 }
 

@@ -81,7 +81,7 @@ The `ubuntu`, `docker`, and `chrome` steps keep the machine reachable:
 
 - Suspend is off, and a kernel panic reboots after 10 seconds.
 - With a USB UPS, the machine shuts down on low battery and starts when power returns.
-- smartd, a daily health check, and each boot push alerts to your phone. Re-run setup after moving the checkout, which they run from.
+- smartd, a daily health check, and each boot push alerts to your phone. The health check reports on the checkout at `~/Dev/setup/dotfiles`, and alerts when it's missing.
 - Security, Chrome, and Docker updates install daily without rebooting.
 - User services, such as the T3 Code server and tmux, start at boot without a login.
 - sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.

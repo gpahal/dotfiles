@@ -85,6 +85,13 @@ ufw_status_listing() {
     ufw_tailscale_rules
 }
 
+# install_health_alert <dir>: health-alert.sh and its libraries, laid out as the ubuntu step copies them
+install_health_alert() {
+    mkdir -p "$1"
+    cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" \
+        "$REPO_DIR/lib/status-format.sh" "$1/"
+}
+
 # Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and
 # PATH, so the copy points them at the sandbox.
 ntfy_hook_copy() {

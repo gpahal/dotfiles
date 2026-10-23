@@ -27,39 +27,9 @@ nut_read() {
     read_root_file "$NUT_DIR/$1" -n
 }
 
-# nut_value <section> <key> < file, parsing quotes, backslashes, and # as NUT does
+# nut_value <key> < file: the first quoted value for the key, as nut_config writes it
 nut_value() {
-    awk -v section="[$1]" -v key="$2" '
-        /^[[:space:]]*\[/ { header = $0; gsub(/[[:space:]]/, "", header); next }
-        header == section {
-            line = $0
-            sub(/^[[:space:]]*/, "", line)
-            if (index(line, key) != 1) next
-            rest = substr(line, length(key) + 1)
-            if (rest !~ /^[[:space:]]*=/) next
-            sub(/^[[:space:]]*=[[:space:]]*/, "", rest)
-            value = ""
-            quoted = 0
-            for (i = 1; i <= length(rest); i++) {
-                c = substr(rest, i, 1)
-                if (c == "\\") {
-                    i++
-                    value = value substr(rest, i, 1)
-                } else if (c == "\"") {
-                    quoted = !quoted
-                } else if (!quoted && (c == "#" || c == " " || c == "\t")) {
-                    break
-                } else {
-                    value = value c
-                }
-            }
-            print value
-            exit
-        }'
-}
-
-nut_quote() {
-    printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+    sed -n "s/^[[:space:]]*$1 = \"\(.*\)\"\$/\1/p" | head -n 1
 }
 
 # Prints "<driver> <vendor> <product>" for the first UPS in nut-scanner -U's ups.conf output
@@ -83,11 +53,9 @@ ups_scan_parse() {
         END { if (driver != "") print driver, tolower(v["vendorid"]), tolower(v["productid"]) }'
 }
 
-# nut_config <file> <driver> <vendor> <product> <password>
-# The password is quoted, since a hand-set one may hold a space or #.
+# nut_config <file> <driver> <vendor> <product> <password>. The password is hex, from nut_password.
 nut_config() {
-    local type password
-    password="$(nut_quote "$5")"
+    local type password="\"$5\""
     case "$1" in
         nut.conf)
             printf '%s\n' "# From the dotfiles ubuntu step: upsd and upsmon run here, for this machine's own UPS" \
@@ -139,7 +107,7 @@ install_ups_rtc_hook() {
 nut_password() {
     local users password
     users="$(nut_read upsd.users)" || return 1
-    password="$(nut_value upsmon password <<< "$users")"
+    password="$(nut_value password <<< "$users")"
     if [ -z "$password" ]; then
         password="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')" || return 1
     fi
@@ -161,10 +129,10 @@ nut_file_current() {
 nut_files_current() {
     local conf users driver vendor product password file
     conf="$(nut_read ups.conf)" && users="$(nut_read upsd.users)" || return 2
-    driver="$(nut_value "$UPS_NAME" driver <<< "$conf")"
-    vendor="$(nut_value "$UPS_NAME" vendorid <<< "$conf")"
-    product="$(nut_value "$UPS_NAME" productid <<< "$conf")"
-    password="$(nut_value upsmon password <<< "$users")"
+    driver="$(nut_value driver <<< "$conf")"
+    vendor="$(nut_value vendorid <<< "$conf")"
+    product="$(nut_value productid <<< "$conf")"
+    password="$(nut_value password <<< "$users")"
     [ -n "$driver" ] && [ -n "$password" ] || return 1
     for file in "${NUT_FILES[@]}"; do
         nut_file_current "$file" "$(nut_config "$file" "$driver" "$vendor" "$product" "$password")" ||
@@ -196,7 +164,7 @@ install_ups_notifier() {
 ups_configured_for() {
     local conf ids
     conf="$(nut_read ups.conf)" || return 2
-    ids="$(nut_value "$UPS_NAME" vendorid <<< "$conf"):$(nut_value "$UPS_NAME" productid <<< "$conf")"
+    ids="$(nut_value vendorid <<< "$conf"):$(nut_value productid <<< "$conf")"
     grep -qxF "$(tr 'A-F' 'a-f' <<< "$ids")" <<< "$1" || return 1
     nut_files_current
 }
@@ -214,21 +182,24 @@ ups_ready() {
         ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
 }
 
-# Sets UPS_STATE and UPS_PLUGGED. UPS_STATE_CACHED skips the udev database read on later calls.
+# Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, once per run of a caller that
+# declares UPS_STATE="" local
 ups_state() {
-    [ "${UPS_STATE_CACHED:-}" != true ] || return 0
+    [ -z "${UPS_STATE:-}" ] || return 0
     UPS_PLUGGED=""
     if in_vm; then
         UPS_STATE=vm
-    elif [ ! -e "$UPOWER_HWDB" ]; then
-        UPS_STATE=nohwdb
-    elif ! UPS_PLUGGED="$(ups_plugged)"; then
-        UPS_STATE=noudev
+    elif [ ! -e "$UPOWER_HWDB" ] || ! UPS_PLUGGED="$(ups_plugged)"; then
+        UPS_STATE=unknown
     elif [ -z "$UPS_PLUGGED" ]; then
         UPS_STATE=none
     else
         UPS_STATE=plugged
     fi
+}
+
+ups_set_up() {
+    nut_installed && ups_ready "$UPS_PLUGGED"
 }
 
 # Prints the sudo change needed, or nothing. NUT is installed only when a UPS is plugged in.
@@ -245,12 +216,15 @@ ups_todo() {
     fi
 }
 
+ups_unknown() {
+    echo "can't tell whether a UPS is on USB: $UPOWER_HWDB is missing (install upower), or udevadm info --export-db failed"
+}
+
 warn_no_ups() {
     ups_state
     case "$UPS_STATE" in
         none) echo "  No UPS on USB, so NUT isn't set up. Plug in the UPS's USB cable and re-run the step." ;;
-        nohwdb) echo "  Can't tell whether a UPS is on USB: $UPOWER_HWDB is missing. Install upower and re-run the step." ;;
-        noudev) echo "  Can't tell whether a UPS is on USB: udevadm info --export-db failed." ;;
+        unknown) echo "  NUT isn't set up, since it $(ups_unknown)." ;;
     esac
 }
 
@@ -312,8 +286,7 @@ setup_ups() {
     sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
-        echo "  NUT watches the UPS on USB ($vendor:$product) with $driver, and shuts the machine down on"
-        echo "  a low battery. Test it as the README's manual steps say."
+        echo "  NUT watches the UPS on USB ($vendor:$product) with $driver; test it as the README's manual steps say."
     elif ! ups_services_active; then
         sudo systemctl start "${NUT_UNITS[@]}" || return 1
     elif ! upsc_value ups.status > /dev/null; then
@@ -336,8 +309,7 @@ status_ups() {
     case "$UPS_STATE" in
         vm) status_item skipped "$label: this is a VM" ;;
         # info, not unknown: a machine without upower may have no UPS, and the daily alert would nag
-        nohwdb) status_item info "$label: can't tell whether a UPS is on USB, since $UPOWER_HWDB is missing; install upower" ;;
-        noudev) status_item unknown "$label: can't tell whether a UPS is on USB, since udevadm info --export-db failed" ;;
+        unknown) status_item info "$label: $(ups_unknown)" ;;
         none) status_item skipped "$label: no UPS on USB; plug in the UPS's USB cable and re-run the ubuntu step" ;;
     esac
     [ "$UPS_STATE" == plugged ] || return 0

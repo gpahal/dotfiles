@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # The ubuntu step from a fresh machine: declined, applied, and re-run, plus its held-back package,
-# ntfy URL, and health alert unit checks.
+# ntfy URL, and health alert checks.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -117,9 +117,13 @@ assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMARTD_HOOK): $SMARTD_CONF has no uncommented line with -M exec"
 mv "$SMARTD_CONF.bak" "$SMARTD_CONF"
 
+# The units run a copy of the script, outside the repo
+for file in health-alert.sh ntfy.sh paths.sh status-format.sh; do
+    [ -e "$HOME/.local/share/dotfiles/health-alert/$file" ] || fail "the health alert's $file wasn't copied"
+done
+
 # After a failed daemon-reload, the next run reloads even though the files match
-sed -i.orig "s|$REPO_DIR|$SANDBOX/old-repo|" "$USER_UNITS/dotfiles-health.service"
-rm "$USER_UNITS/dotfiles-health.service.orig"
+echo "# changed" >> "$USER_UNITS/dotfiles-health.service"
 touch "$SANDBOX/reload-needed" "$SANDBOX/reload-fails"
 assert_exit 1 main
 rm "$SANDBOX/reload-fails"
@@ -130,33 +134,4 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
 assert_exit 0 main --status
-
-# From a worktree, setup leaves units that run another checkout alone
-OTHER_REPO="$SANDBOX/other-checkout"
-for unit in dotfiles-health.service dotfiles-boot-notice.service; do
-    sed -i.orig "s|$REPO_DIR|$OTHER_REPO|" "$USER_UNITS/$unit"
-    rm "$USER_UNITS/$unit.orig"
-done
-OTHER_UNIT="$(cat "$USER_UNITS/dotfiles-health.service")"
-replace_fn in_git_worktree true
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_eq "$OTHER_UNIT" "$(cat "$USER_UNITS/dotfiles-health.service")" "the units after a run from a worktree"
-assert_file_not_contains "$STUB_LOG" "systemctl --user"
-DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 configure_health_alerts
-assert_file_contains "$USER_UNITS/dotfiles-health.service" "$REPO_DIR/ubuntu/health-alert.sh"
-DOTFILES_ALLOW_WORKTREE=1 assert_exit 0 main --status
-
-restore_fn in_git_worktree
-GIT_REPO="$SANDBOX/git-main"
-git init -q "$GIT_REPO"
-mkdir "$GIT_REPO/sub"
-git_commit "$GIT_REPO" --allow-empty -m init
-git -C "$GIT_REPO" worktree add -q "$SANDBOX/git-wt" -b wt
-mkdir "$SANDBOX/git-wt/sub"
-assert_exit 1 in_git_worktree "$GIT_REPO"
-assert_exit 1 in_git_worktree "$GIT_REPO/sub"
-assert_exit 0 in_git_worktree "$SANDBOX/git-wt"
-assert_exit 0 in_git_worktree "$SANDBOX/git-wt/sub"
-assert_exit 1 in_git_worktree "$SANDBOX"
 test_done

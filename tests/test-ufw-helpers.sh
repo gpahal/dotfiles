@@ -1,9 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# The ubuntu step's ufw helpers: the SSH ports, which addresses count as outside, which rules let SSH
-# in from outside the private ranges, and when ufw counts as on. test-ufw-recheck.sh covers the step
-# around them.
+# The ubuntu step's ufw helpers: the SSH ports, which addresses count as outside, and when ufw counts
+# as on. test-ufw-recheck.sh covers the step around them.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,24 +13,13 @@ setup_sandbox
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths
 
-stub_sudo_exec
-mkdir -p "$SSHD_RUN_DIR"
-
-# --- sshd_ports ---
-stub sshd '[ "$1" != -T ] || printf "%s\n" "port 22" "listenaddress 127.0.0.1:2300"'
-stub systemctl 'case "$*" in
-    "is-active -q ssh.socket") ;;
-    "show ssh.socket -p Listen --value") printf "%s\n" "0.0.0.0:2222 (Stream)" "[::]:2222 (Stream)" ;;
-    *) exit 1 ;;
-esac'
+# --- sshd_ports: ssh.socket's, or 22 ---
+stub systemctl '[ "$*" != "show ssh.socket -p Listen --value" ] ||
+    printf "%s\n" "0.0.0.0:2222 (Stream)" "[::]:2222 (Stream)" "[::]:22 (Stream)"'
 assert_eq "22
-2222
-2300" "$(sshd_ports -n)" "the SSH ports with ssh.socket active"
-stub systemctl '[ "$1" != is-active ] || exit 3'
-assert_eq "22
-2300" "$(sshd_ports -n)" "the SSH ports with ssh.socket inactive"
-stub sshd 'exit 255'
-assert_exit 1 sshd_ports -n
+2222" "$(sshd_ports)" "the SSH ports ssh.socket listens on"
+stub systemctl 'exit 1'
+assert_eq 22 "$(sshd_ports)" "the SSH ports without ssh.socket"
 
 # --- outside_address ---
 stub ip 'case "$3" in
@@ -50,58 +38,6 @@ for address in 203.0.113.9 172.16.0.9 172.17.0.2 172.31.255.1 172.32.0.1 172.15.
     11.0.0.1 2001:db8::7 fc00::1 fec0::1 fd::1 198.51.100.1; do
     assert_eq outside "$(outside "$address")" "$address"
 done
-
-# --- ufw_broad_ssh_rules ---
-stub sshd '[ "$1" != -T ] || printf "%s\n" "port 22" "port 2222"'
-stub systemctl '[ "$1" != is-active ] || exit 3'
-stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
-wanted_rules() {
-    ufw_header
-    ufw_range_rules 22
-    ufw_range_rules 2222
-    ufw_tailscale_rules
-}
-# Narrower ranges inside each private one, and other ports, aren't broad
-{
-    wanted_rules
-    printf '%s\n' "22/tcp                     ALLOW       192.168.1.0/24" \
-        "22/tcp                     ALLOW       10.0.0.0/12" \
-        "22/tcp                     ALLOW       10.1.2.3" \
-        "22/tcp                     ALLOW       fd00::/9" \
-        "22/tcp                     ALLOW       fe80::/64" \
-        "80/tcp                     ALLOW       Anywhere" \
-        "22/udp                     ALLOW       Anywhere" \
-        "22/tcp                     ALLOW OUT   Anywhere" \
-        "22/tcp                     DENY        Anywhere" \
-        "8000:8100/tcp              ALLOW       Anywhere"
-} > "$SANDBOX/ufw-rules"
-assert_eq "" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules among the wanted ones"
-{
-    wanted_rules
-    printf '%s\n' "22/tcp                     ALLOW       Anywhere" \
-        "22/tcp (v6)                ALLOW       Anywhere (v6)" \
-        "OpenSSH                    LIMIT       Anywhere" \
-        "2000:3000/tcp              ALLOW       Anywhere" \
-        "80,2222/tcp                ALLOW       Anywhere # web" \
-        "Anywhere                   ALLOW       203.0.113.9" \
-        "22                         ALLOW       10.0.0.0/7" \
-        "192.168.1.5 22/tcp on eth0 ALLOW       Anywhere" \
-        "22/tcp                     ALLOW       172.16.0.0/12" \
-        "22/tcp                     ALLOW       192.168.0.0/15" \
-        "22/tcp                     ALLOW       fd00::/7" \
-        "22/tcp                     ALLOW       fe80::/9"
-} > "$SANDBOX/ufw-rules"
-assert_eq "$(printf '%s\t%s\n' Anywhere "22/tcp ALLOW Anywhere" Anywhere "22/tcp (v6) ALLOW Anywhere (v6)" \
-    Anywhere "OpenSSH LIMIT Anywhere" Anywhere "2000:3000/tcp ALLOW Anywhere" \
-    Anywhere "80,2222/tcp ALLOW Anywhere # web" 203.0.113.9 "Anywhere ALLOW 203.0.113.9" \
-    10.0.0.0/7 "22 ALLOW 10.0.0.0/7" Anywhere "192.168.1.5 22/tcp on eth0 ALLOW Anywhere" \
-    172.16.0.0/12 "22/tcp ALLOW 172.16.0.0/12" 192.168.0.0/15 "22/tcp ALLOW 192.168.0.0/15" \
-    fd00::/7 "22/tcp ALLOW fd00::/7" fe80::/9 "22/tcp ALLOW fe80::/9")" "$(ufw_broad_ssh_rules -n)" "the broad SSH rules"
-stub ufw 'exit 1'
-assert_exit 1 ufw_broad_ssh_rules -n
-stub ufw '[ "$1" != status ] || cat "'"$SANDBOX"'/ufw-rules"'
-stub sshd 'exit 255'
-assert_exit 1 ufw_broad_ssh_rules -n
 
 # --- ufw_enabled: incoming denied by DROP or REJECT ---
 stub ufw

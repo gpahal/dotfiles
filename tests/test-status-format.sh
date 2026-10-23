@@ -7,8 +7,14 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
+# shellcheck source=ubuntu-sandbox.sh
+source "$TESTS_DIR/ubuntu-sandbox.sh"
+
 setup_sandbox
-load_script ubuntu/health-alert.sh
+load_script lib/common.sh
+install_health_alert "$SANDBOX/health-alert"
+# shellcheck source=../ubuntu/health-alert.sh
+source "$SANDBOX/health-alert/health-alert.sh"
 
 for state in $STATUS_STATES; do
     line="$(status_item "$state" "the $state item: with  spaces")"

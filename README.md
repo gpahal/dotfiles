@@ -156,6 +156,7 @@ Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user se
 - **Gmail** opens in its own Chrome window, and the stat keys open Resources.
 - **Power** shows the CPU package, its cores, and the GPU, with no figure for the whole machine.
 - Keys that open apps do nothing while the screen is locked.
+- The deck's brightness is 60%, set each time it connects.
 - `journalctl --user -u dotfiles-stream-deck` shows its log.
 
 ### Hammerspoon
@@ -196,6 +197,7 @@ A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the 
 1. Pick a device the switch moves, such as the keyboard's receiver. `just monitor-input` lists the attached devices' `vendor:product` IDs, and the common input codes.
 2. On the Mac: `just monitor-input <vendor:product> <Mac's input>`, such as `just monitor-input 19f5:2620 27` for USB-C.
 3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <Mac's input>`, such as `just monitor-input 19f5:2620 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
+4. In the monitor's menu, turn off its automatic input selection, so it wakes from sleep on the input it showed rather than the one it prefers. On a Dell, under **Input Source**, set **Auto Select for USB-C** to **No**, then **Auto Select** to **Off**.
 
 `just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the Mac shows failures in Hammerspoon's console.
 

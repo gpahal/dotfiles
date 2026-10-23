@@ -4,8 +4,6 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
@@ -58,12 +56,12 @@ assert_not_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "run sudo -v and re-run this step to check them"
 assert_sudo_noninteractive "the step"
 # Without openssh-server there are no SSH ports to check the rules against, so sudo can't help
-stub dpkg-query '[ "${!#}" != openssh-server ] && echo "install ok installed"'
+stub_apt_packages '*' '!openssh-server'
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "openssh-server isn't installed"
 assert_not_contains "$RUN_OUTPUT" "sudo -v"
 assert_sudo_noninteractive
-stub dpkg-query 'echo "install ok installed"'
+stub_apt_packages '*'
 
 # Credentials cached: rules checked up front
 cache_sudo yes
@@ -169,12 +167,18 @@ assert_file_not_contains "$STUB_LOG" "sudo ss "
 assert_file_contains "$STUB_LOG" "sudo ufw --force enable"
 
 # ufw.service stopped or disabled, or ufw stopped by ufw-init stop while files and unit say on
-for broken in units/ufw.service.inactive units/ufw.service.disabled ufw-stopped; do
-    touch "$SANDBOX/$broken"
+for broken in units/ufw.service.active units/ufw.service.enabled ufw-stopped; do
+    case "$broken" in
+        units/*) rm "$SANDBOX/$broken" ;;
+        *) touch "$SANDBOX/$broken" ;;
+    esac
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    ufw on, denying incoming connections"
     assert_exit 0 main
-    [ ! -e "$SANDBOX/$broken" ] || fail "the step left $broken"
+    case "$broken" in
+        units/*) [ -e "$SANDBOX/$broken" ] || fail "the step left $broken missing" ;;
+        *) [ ! -e "$SANDBOX/$broken" ] || fail "the step left $broken" ;;
+    esac
     assert_exit 0 main --status
 done
 

@@ -14,7 +14,7 @@ ubuntu_sandbox_paths
 as_os ubuntu
 
 file_group() { owner_group_mode "$1" | awk '{ print $2 }'; }
-mkdir -p "$NUT_DIR" "$SANDBOX/udev"
+mkdir -p "$NUT_DIR" "$SANDBOX/udev" "$(dirname "$UPOWER_HWDB")"
 touch "$UPOWER_HWDB"
 
 stub udevadm '[ "$1 $2" == "info --export-db" ] || exit 0
@@ -51,33 +51,19 @@ ups_scan() {
         "	productid = \"$3\"" '	product = "CP1500PFCLCD"' '	serial = "CXXNV2000123"' '	vendor = "CPS"' \
         '	# bus = "001"' '	# device = "004"' '	# busport = "002"' > "$SANDBOX/scan"
 }
-stub dpkg-query 'case "${!#}" in
-    nut-client | nut-server) [ -e "$SANDBOX/nut-installed" ] && echo "install ok installed" ;;
-    *) echo "install ok installed" ;;
-esac'
-stub apt-get '[[ " $* " != *" install "* ]] || touch "$SANDBOX/nut-installed"'
+stub_apt_packages '*' '!nut-client' '!nut-server'
 stub upsc '[ -e "$SANDBOX/upsc" ] || { echo "Error: Driver not connected" >&2; exit 1; }
 sed -n "s/^$2: //p" "$SANDBOX/upsc"'
 upsc_answers() {
     printf '%s\n' "ups.status: $1" "battery.charge: 100" "ups.vendorid: $2" "ups.productid: $3" > "$SANDBOX/upsc"
 }
-stub systemctl 'cmd="$1"
-shift
-case "$cmd" in
-    is-active)
-        [ "$1" != -q ] || shift
-        for unit in "$@"; do [ ! -e "$SANDBOX/active-$unit" ] || exit 0; done
-        exit 3 ;;
-    restart | start) for unit in "$@"; do touch "$SANDBOX/active-$unit"; done ;;
-    is-enabled) [ ! -e "$SANDBOX/disabled-${!#}" ] ;;
-    enable) for unit in "$@"; do rm -f "$SANDBOX/disabled-$unit"; done ;;
-esac'
+stub_systemctl_units "$SANDBOX/units"
 stub systemd-detect-virt 'exit 1'
 
 # --- no UPS on USB ---
 assert_eq "" "$(ups_todo)" "what the UPS part needs with no UPS on USB"
 assert_exit 0 status_ups
-[ ! -e "$SANDBOX/nut-installed" ] || fail "NUT was installed without a UPS"
+! apt_installed nut-client || fail "NUT was installed without a UPS"
 
 # --- a UPS plugged in on a later run ---
 usb_device 1-3 0764 0501 ups
@@ -225,10 +211,10 @@ done
 broken 'echo "# edited" >> "$UPS_RTC_HOOK"' "" "RTC wake hook ($UPS_RTC_HOOK): missing or out of date" \
     "" "Installed the RTC wake hook" 0
 assert_eq "$(ups_rtc_hook)" "$(cat "$UPS_RTC_HOOK")" "the RTC wake hook after a re-run"
-broken 'rm "$SANDBOX/active-nut-monitor.service"' "" "nut-server and nut-monitor running" \
+broken 'rm "$SANDBOX/units/nut-monitor.service.active"' "" "nut-server and nut-monitor running" \
     "sudo systemctl start nut-server.service nut-monitor.service" "" 0
 # NUT wouldn't start after a reboot
-broken 'touch "$SANDBOX/disabled-nut.target"' "" "nut.target enabled, so NUT starts at boot" \
+broken 'rm "$SANDBOX/units/nut.target.enabled"' "" "nut.target enabled, so NUT starts at boot" \
     "" "Enabled nut.target, so NUT starts at boot." 0
 # upsd not answering, as when its driver stopped
 broken 'rm "$SANDBOX/upsc"' 'upsc_answers OL 0764 0501' "" \
@@ -265,7 +251,7 @@ assert_contains "$RUN_OUTPUT" "skipped    UPS monitored by NUT: no UPS on USB; p
 
 # --- NUT removed while a UPS is plugged in ---
 usb_device 1-4 0463 ffff ups
-rm "$SANDBOX/nut-installed"
+stub_apt_packages '*' '!nut-client' '!nut-server'
 assert_contains "$(ups_todo)" "UPS: install nut-client and nut-server"
 run status_ups
 assert_contains "$RUN_OUTPUT" "missing    UPS on USB (0463:ffff) monitored by NUT: nut-client and nut-server aren't installed"

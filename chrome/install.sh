@@ -49,10 +49,6 @@ auto_updates_configured() {
     file_is "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
 }
 
-write_auto_updates() {
-    write_root_file "$UNATTENDED_CONF" "$UNATTENDED_CONTENT"
-}
-
 # Else Chrome's postinst and cron job would rewrite $GOOGLE_SOURCES. Keeps your other settings.
 stop_repo_readd() {
     local content
@@ -107,7 +103,8 @@ chrome_items() {
     item --sudo "" "Install google-chrome-stable from Google's apt repo, with repo_add_once=\"false\" in $CHROME_DEFAULTS so it leaves the source alone" \
         "apt_installed google-chrome-stable" install_chrome
     item --sudo "Chrome origins allowed in unattended-upgrades ($UNATTENDED_CONF)" \
-        "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" auto_updates_configured write_auto_updates
+        "Let unattended-upgrades install Chrome updates: write $UNATTENDED_CONF" \
+        auto_updates_configured "write_root_content UNATTENDED_CONF UNATTENDED_CONTENT"
     item --sudo "Firefox removed, since Chrome replaces it" \
         "Remove Firefox, which Chrome replaces: its snap and the firefox .deb that installs it" firefox_removed remove_firefox
 }

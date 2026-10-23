@@ -9,11 +9,12 @@
 # yes|no|stdin.
 # tests/run.sh covers skips, timeouts, the os mark, timing, and sharding.
 # Reuse before writing your own: stub_at, stub_sudo_exec, stub_sudo_cacheable, stub_uname,
-# stub_dpkg_arch, stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
-# stub_gsettings, stub_gnome_session, fake_step, fake_github_remotes, pam_sandbox, user_shortcut,
-# git_commit, in_terminal, jq_edit, assert_sudo_noninteractive, snapshot and assert_unchanged,
-# as_unwritable, and wait_for.
-# tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox.
+# stub_dpkg_arch, stub_apt_packages, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
+# stub_gsettings, stub_gnome_session, stub_systemctl_units, sandbox_paths, fake_step,
+# fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit,
+# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, and wait_for.
+# tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox, and
+# tests/ubuntu-step-fixture.sh, which sources it, stubs an Ubuntu machine for that step.
 # shellcheck shell=bash
 
 set -euo pipefail
@@ -402,9 +403,8 @@ esac'
 
 # A GNOME session keeping its state in dir $1: stub_gsettings, GNOME Shell 50.1, busctl answering
 # for the shell while $SHELL_STATE is set, with an extension in that state (unknown: none) and
-# $SHELL_ERROR, and a systemctl keeping units in [user-]<unit>.enabled and .active files, with
-# graphical-session.target active while $SESSION is set. daemon-reload fails while reload-fails
-# exists, and else makes show report units loaded.
+# $SHELL_ERROR, and stub_systemctl_units on dir $1, with graphical-session.target active while
+# $SESSION is set.
 stub_gnome_session() {
     local state="$1" body
     mkdir -p "$state"
@@ -419,24 +419,89 @@ case "$*" in
 esac
 EOF
     stub busctl "$body"
+    stub_systemctl_units "$state" \
+        '[ "$*" != "--user is-active --quiet graphical-session.target" ] || { [ -n "${SESSION:-}" ]; exit; }'
+}
+
+# stub_systemctl_units <dir> [prefix-body]: a systemctl keeping each unit's state in <dir> as files
+# a test can create or remove: <unit>.enabled, .active, .masked and .failed, named user-<unit>.* for
+# --user units. enable --now leaves a failed unit failed; start and restart clear it. show answers LoadState (not-found while <unit>.not-found exists), NeedDaemonReload
+# (yes while <dir>/reload-needed exists), ActiveState and UnitFileState. daemon-reload fails while
+# <dir>/reload-fails exists, and else clears reload-needed and the not-found marks.
+# show-environment fails while <dir>/no-user-manager exists. The prefix body runs first, with the
+# args as "$@", and may handle a command and exit.
+stub_systemctl_units() {
+    local body
+    mkdir -p "$1"
     IFS= read -r -d '' body << 'EOF' || true
 user=""
-[ "$1" != --user ] || { user=user-; shift; }
-case "$1" in
-    show-environment | try-restart) ;;
-    daemon-reload) [ ! -e "$state/reload-fails" ] && touch "$state/loaded" ;;
-    show) if [ -e "$state/loaded" ]; then echo loaded; else echo not-found; fi ;;
-    is-enabled) [ -e "$state/$user${*: -1}.enabled" ] ;;
-    is-active)
-        case "${*: -1}" in
-            graphical-session.target) [ -n "${SESSION:-}" ] ;;
-            *) [ -e "$state/$user${*: -1}.active" ] ;;
-        esac ;;
-    enable) touch "$state/$user${*: -1}.enabled"; [ "$2" != --now ] || touch "$state/$user${*: -1}.active" ;;
-    start | restart) touch "$state/$user${*: -1}.active" ;;
+[ "${1:-}" != --user ] || { user=user-; shift; }
+cmd="${1:-}"
+shift
+now=false quiet=false value=false units=() props=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --now) now=true ;;
+        -q | --quiet) quiet=true ;;
+        --value) value=true ;;
+        -p | --property) props+=("$2"); shift ;;
+        --property=*) props+=("${1#*=}") ;;
+        -*) ;;
+        *) units+=("$1") ;;
+    esac
+    shift
+done
+say() { "$quiet" || echo "$1"; }
+found=1
+for unit in "${units[@]}"; do
+    f="$dir/$user$unit"
+    case "$cmd" in
+        is-enabled)
+            if [ -e "$f.masked" ]; then say masked
+            elif [ -e "$f.enabled" ]; then say enabled; found=0
+            else say disabled; fi ;;
+        is-active) if [ -e "$f.active" ]; then say active; found=0; else say inactive; fi ;;
+        is-failed) if [ -e "$f.failed" ]; then say failed; found=0; else say inactive; fi ;;
+        enable)
+            [ ! -e "$f.masked" ] || { echo "Failed to enable unit: Unit $unit is masked." >&2; exit 1; }
+            touch "$f.enabled"
+            ! "$now" || [ -e "$f.failed" ] || touch "$f.active" ;;
+        disable) rm -f "$f.enabled"; ! "$now" || rm -f "$f.active" ;;
+        start | restart | reload-or-restart)
+            [ ! -e "$f.masked" ] || { echo "Failed to start $unit: Unit $unit is masked." >&2; exit 1; }
+            rm -f "$f.failed"
+            touch "$f.active" ;;
+        try-restart | try-reload-or-restart) ;;
+        stop) rm -f "$f.active" ;;
+        mask) rm -f "$f.enabled"; touch "$f.masked"; ! "$now" || rm -f "$f.active" ;;
+        unmask) rm -f "$f.masked" ;;
+        reset-failed) rm -f "$f.failed" ;;
+        show)
+            for prop in "${props[@]}"; do
+                case "$prop" in
+                    LoadState)
+                        if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.not-found" ]; then v=not-found; else v=loaded; fi ;;
+                    NeedDaemonReload) if [ -e "$dir/reload-needed" ]; then v=yes; else v=no; fi ;;
+                    ActiveState) if [ -e "$f.active" ]; then v=active; else v=inactive; fi ;;
+                    UnitFileState)
+                        if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.enabled" ]; then v=enabled; else v=disabled; fi ;;
+                    *) v="" ;;
+                esac
+                if "$value"; then echo "$v"; else echo "$prop=$v"; fi
+            done ;;
+        *) echo "stub_systemctl_units: no $cmd" >&2; exit 1 ;;
+    esac
+done
+case "$cmd" in
+    is-enabled | is-active | is-failed) exit "$found" ;;
+    show-environment) [ ! -e "$dir/no-user-manager" ] ;;
+    daemon-reload)
+        [ ! -e "$dir/reload-fails" ] || exit 1
+        rm -f "${dir:?}/reload-needed" "${dir:?}"/*.not-found ;;
 esac
 EOF
-    stub systemctl "$(printf 'state=%q' "$state")
+    stub systemctl "$(printf 'dir=%q' "$1")
+${2:-}
 $body"
 }
 
@@ -511,13 +576,53 @@ stub_dpkg_arch() {
     stub dpkg '[ "$1" != --print-architecture ] || echo '"${1:-amd64}"
 }
 
-# dpkg-query reports package $1 installed once apt-get's last argument named it. The marker file
-# $2, by default $SANDBOX/installed-$1, records that.
-stub_apt_package() {
-    local marker
-    marker="$(printf '%q' "${2:-$SANDBOX/installed-$1}")"
-    stub dpkg-query '[ "${*: -1}" == '"$1"' ] && [ -e '"$marker"' ] && printf "install ok installed"'
-    stub apt-get '[ "${*: -1}" != '"$1"' ] || touch '"$marker"
+# stub_apt_packages [--apt-get <body>] [package...]: dpkg-query reports installed the packages
+# listed in $SANDBOX/installed, which starts with these; a * line counts every package not listed
+# as !<package>. apt-get install adds its packages, purge and remove take them out, and -s prints
+# $SANDBOX/apt-upgrade. The body runs first in apt-get, with its args as "$@", and may exit.
+# shellcheck disable=SC2120 # with no packages, none are installed
+stub_apt_packages() {
+    local body="" list="$SANDBOX/installed"
+    if [ "${1:-}" == --apt-get ]; then
+        body="$2"
+        shift 2
+    fi
+    : > "$list"
+    [ $# -eq 0 ] || printf '%s\n' "$@" > "$list"
+    stub dpkg-query 'list="$SANDBOX/installed" status=0
+for p in "$@"; do
+    case "$p" in -*) continue ;; esac
+    if grep -qxF "$p" "$list" || { grep -qxF "*" "$list" && ! grep -qxF "!$p" "$list"; }; then
+        printf "install ok installed"
+    else
+        status=1
+    fi
+done
+exit "$status"'
+    stub apt-get "$body"'
+list="$SANDBOX/installed" cmd="" simulate=false packages=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o | -c | -t) shift ;;
+        -s | --simulate) simulate=true ;;
+        -*) ;;
+        *) if [ -z "$cmd" ]; then cmd="$1"; else packages+=("$1"); fi ;;
+    esac
+    shift
+done
+if "$simulate"; then
+    cat "$SANDBOX/apt-upgrade" 2> /dev/null || true
+    exit 0
+fi
+for p in ${packages[@]+"${packages[@]}"}; do
+    others="$(grep -vxF -e "$p" -e "!$p" "$list" || true)"
+    case "$cmd" in
+        install) { [ -z "$others" ] || echo "$others"; echo "$p"; } > "$list" ;;
+        purge | remove)
+            { [ -z "$others" ] || echo "$others"; } > "$list"
+            ! grep -qxF "*" "$list" || echo "!$p" >> "$list" ;;
+    esac
+done'
 }
 
 # A gpg listing a key with fingerprint $1, as --show-keys --with-colons does, and with $2 a subkey
@@ -536,12 +641,39 @@ stub_http_status() {
     stub curl 'cat "$SANDBOX/http-status"'
 }
 
-# Replace fetch: it logs "fetch <url>", fails while $SANDBOX/fetch-fails exists, and else writes
-# $1, by default "key", to the file
+# stub_fetch [content]: replaces fetch, which logs "fetch <url>", fails while $SANDBOX/fetch-fails
+# exists, and else writes the content, by default "key", to the file.
+# stub_fetch <url prefix>=<path>...: a curl, which a script run as its own process also gets,
+# serving a URL from the first prefix it starts with: the path plus the rest of the URL, to the
+# file -o names, or else to stdout. A URL no prefix maps to an existing file fails as a 404 does,
+# and every URL as an unreachable host does while $SANDBOX/fetch-fails exists.
 stub_fetch() {
-    replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+    local map
+    case "${1:-}" in
+        *=*) ;;
+        *)
+            replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
 [ ! -e "$SANDBOX/fetch-fails" ] || return 1
 echo '"$(printf '%q' "${1:-key}")"' > "$2"'
+            return 0
+            ;;
+    esac
+    : > "$SANDBOX/fetch-map"
+    for map; do
+        printf '%s\t%s\n' "${map%=*}" "${map##*=}" >> "$SANDBOX/fetch-map"
+    done
+    stub curl 'out="" file="" url="${!#}"
+while [ $# -gt 0 ]; do
+    [ "$1" != -o ] || { out="$2"; shift; }
+    shift
+done
+[ ! -e "$SANDBOX/fetch-fails" ] || { echo "curl: (6) Could not resolve host" >&2; exit 6; }
+tab="$(printf "\t")"
+while IFS="$tab" read -r prefix path; do
+    case "$url" in "$prefix"*) file="$path${url#"$prefix"}"; break ;; esac
+done < "$SANDBOX/fetch-map"
+[ -n "$file" ] && [ -f "$file" ] || { echo "curl: (22) The requested URL returned error: 404" >&2; exit 22; }
+if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi'
 }
 
 # Usage: jq_edit <file> <jq args>...: edits the file in place, as you would by hand
@@ -571,6 +703,52 @@ load_script() {
     # shellcheck source=/dev/null
     source "$script" "$@"
     _stubs_first
+}
+
+# Usage: sandbox_paths [NAME=value]... <script>...: sets each NAME=value, then points every other
+# upper-case constant the scripts set whose value, or an element of it, starts with /etc, /var,
+# /usr, /run or /dev at the same path under $SANDBOX, as /etc/x becomes $SANDBOX/etc/x. Scripts are
+# repo-relative and may be globs. Call it after each load_script, which resets the constants. It
+# fails the test on any it couldn't move, such as a colon list; set those.
+sandbox_paths() {
+    local arg name value values moved files=() set=" " left=""
+    for arg; do
+        case "$arg" in
+            [A-Z]*=*)
+                printf -v "${arg%%=*}" '%s' "${arg#*=}"
+                set="$set${arg%%=*} "
+                ;;
+            *)
+                # shellcheck disable=SC2206 # a glob
+                files+=("$REPO_DIR"/$arg)
+                ;;
+        esac
+    done
+    while IFS= read -r name; do
+        case "$set" in *" $name "*) continue ;; esac
+        eval "values=(\${${name}[@]+\"\${${name}[@]}\"})"
+        moved=()
+        for value in ${values[@]+"${values[@]}"}; do
+            case "$value" in
+                # A checkout under /var, as mktemp's dirs are on macOS
+                "$REPO_DIR"/*) ;;
+                /etc | /etc/* | /var | /var/* | /usr | /usr/* | /run | /run/* | /dev | /dev/*)
+                    case "$value" in
+                        *:*) left="$left $name=$value" ;;
+                        *) value="$SANDBOX$value" ;;
+                    esac
+                    ;;
+            esac
+            moved+=("$value")
+        done
+        [ ${#moved[@]} -gt 0 ] || continue
+        if [[ "$(declare -p "$name")" == "declare -a"* ]]; then
+            eval "$name=(\"\${moved[@]}\")"
+        else
+            printf -v "$name" '%s' "${moved[0]}"
+        fi
+    done < <(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "${files[@]}" | sort -u)
+    [ -z "$left" ] || fail "sandbox_paths left these on the real machine:$left"
 }
 
 # Empty $STUB_LOG, then run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always

@@ -6,8 +6,6 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
@@ -42,7 +40,7 @@ assert_contains "$RUN_OUTPUT" "missing    Tailscale SSH off"
 rm "$SANDBOX/tailscale-serve" "$SANDBOX/tailscale-ssh"
 
 # Tailscale's apt source; test-apt-sources.sh covers its states
-mkdir -p "$SANDBOX/keyrings"
+mkdir -p "$(dirname "$TAILSCALE_KEYRING")"
 stub_fetch
 stub_gpg_fpr "$TAILSCALE_KEY_FPR"
 stub_http_status
@@ -70,11 +68,11 @@ install -y tailscale" "$(grep -oE '^apt-get -o DPkg::Lock::Timeout=300 (update -
     [ "$TEST_FAILURES" -eq "$failures" ]
 ) || fail "installing Tailscale"
 echo "$TAILSCALE_ENTRY" > "$TAILSCALE_LIST"
-stub apt-get 'cat "$SANDBOX/apt-upgrade" 2> /dev/null || true'
+stub_apt_packages '*'
 
 # enable --now doesn't start a failed smartd, so it restarts it
-rm "$SANDBOX/smartd-active"
-touch "$SANDBOX/smartd-failed"
+rm "$SANDBOX/units/smartmontools.service.active"
+touch "$SANDBOX/units/smartmontools.service.failed"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "ok         smartmontools, with smartd enabled at boot"
 assert_contains "$RUN_OUTPUT" "missing    smartd running"
@@ -109,21 +107,21 @@ assert_exit 0 main --status
 
 # Another file raising an inotify limit further is fine
 SYSCTL_ITEM="Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)"
-echo "fs.inotify.max_user_watches = 2097152" > "$SANDBOX/sysctl.d/99-idea.conf"
+echo "fs.inotify.max_user_watches = 2097152" > "$SANDBOX/etc/sysctl.d/99-idea.conf"
 echo "fs.inotify.max_user_watches=2097152" >> "$SANDBOX/sysctl-live"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "sysctl --system"
-rm "$SANDBOX/sysctl.d/99-idea.conf"
-echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/sysctl.d/99-low.conf"
+rm "$SANDBOX/etc/sysctl.d/99-idea.conf"
+echo "fs.inotify.max_user_watches = 8192" > "$SANDBOX/etc/sysctl.d/99-low.conf"
 echo "fs.inotify.max_user_watches=8192" >> "$SANDBOX/sysctl-live"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effect (fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf; change or remove them there, and re-run the ubuntu step)"
+assert_contains "$RUN_OUTPUT" "missing    $SYSCTL_ITEM: written but not in effect (fs.inotify.max_user_watches is 8192, set by $SANDBOX/etc/sysctl.d/99-low.conf; change or remove them there, and re-run the ubuntu step)"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "sysctl --system didn't put $SYSCTL_CONF in effect, since another file sets these:
-    fs.inotify.max_user_watches is 8192, set by $SANDBOX/sysctl.d/99-low.conf"
-rm "$SANDBOX/sysctl.d/99-low.conf"
+    fs.inotify.max_user_watches is 8192, set by $SANDBOX/etc/sysctl.d/99-low.conf"
+rm "$SANDBOX/etc/sysctl.d/99-low.conf"
 assert_exit 0 main
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         $SYSCTL_ITEM"
@@ -181,10 +179,9 @@ run warn_disk_encryption
 assert_contains "$RUN_OUTPUT" "The disk is encrypted with a passphrase"
 
 # --- packages missing ---
-stub dpkg-query 'case "$*" in *smartmontools* | *unattended-upgrades* | *locales*) ;; *) echo "install ok installed" ;; esac'
-stub apt-get
+stub_apt_packages '*' '!smartmontools' '!unattended-upgrades' '!locales'
 stub_systemctl
-rm -f "$SANDBOX/smartd" "$SANDBOX/locale" "$AUTO_UPGRADES_CONF"
+rm -f "$SANDBOX/units/smartmontools.service.enabled" "$SANDBOX/locale" "$AUTO_UPGRADES_CONF"
 run main
 assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends smartmontools"
 assert_file_contains "$AUTO_UPGRADES_CONF" 'APT::Periodic::Unattended-Upgrade "1";'

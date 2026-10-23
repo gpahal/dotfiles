@@ -51,10 +51,7 @@ hotkey() {
 
 status() {
     local hotkey key target name
-    if ! has_gnome_desktop; then
-        status_item skipped "GNOME shortcuts: no GNOME desktop"
-        return 0
-    fi
+    skip_without_desktop --status "GNOME shortcuts" && return 0
     status_require_cmd gsettings "GNOME shortcuts" || return 0
     if [ ! -x "$OPEN_IN" ]; then
         status_item missing "The Stream Deck's open-in, which the shortcuts run: bash setup.sh stream-deck"
@@ -67,10 +64,7 @@ status() {
 
 apply() {
     echo "Adding GNOME shortcuts..."
-    if ! has_gnome_desktop; then
-        echo "  No GNOME desktop, so skipped."
-        return 0
-    fi
+    skip_without_desktop && return 0
     require_cmd gsettings || return 1
     if [ ! -x "$OPEN_IN" ]; then
         echo "  The shortcuts run the Stream Deck's open-in, which isn't installed. Run: bash setup.sh stream-deck" >&2

@@ -19,21 +19,16 @@ health_unit_files() {
     return "$status"
 }
 
-# A failed daemon-reload leaves the old ExecStart running though the files match
 health_units_loaded() {
-    local unit
-    for unit in "${HEALTH_UNITS[@]}"; do
-        [ "$(systemctl --user show -p NeedDaemonReload --value "$unit" 2>/dev/null)" == no ] || return 1
-    done
+    unit_loaded_current --user "${HEALTH_UNITS[@]}"
 }
 
 health_timer_on() {
-    systemctl --user is-enabled --quiet dotfiles-health.timer 2>/dev/null &&
-        systemctl --user is-active --quiet dotfiles-health.timer 2>/dev/null
+    unit_on --user dotfiles-health.timer
 }
 
 boot_notice_on() {
-    systemctl --user is-enabled --quiet dotfiles-boot-notice.service 2>/dev/null
+    unit_enabled --user dotfiles-boot-notice.service
 }
 
 # The boot notice is enabled, not started, so it first pushes at the next boot
@@ -42,11 +37,7 @@ configure_health_alerts() {
     health_alert_files copy_file || return 1
     COPIED=false
     health_unit_files copy_file || return 1
-    if ! systemctl --user show-environment &>/dev/null; then
-        echo "  Couldn't reach your systemd user manager, so the daily health alert and the boot notice"
-        echo "  aren't on yet. Re-run the step after the next reboot or login."
-        return 0
-    fi
+    user_manager_reachable "the daily health alert and the boot notice aren't on" || return 0
     if ! "$COPIED" && health_units_loaded && health_timer_on && boot_notice_on; then
         echo "  The daily health alert and the boot notice are already set up."
         return 0

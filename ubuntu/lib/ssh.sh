@@ -18,12 +18,7 @@ install_openssh() {
 
 # Either unit counts: with ssh.service enabled, ssh.socket couldn't bind sshd's port
 sshd_enabled() {
-    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ] ||
-        [ "$(systemctl is-enabled ssh.service 2>/dev/null)" == enabled ]
-}
-
-enable_sshd() {
-    sudo systemctl enable --now "$SSH_UNIT"
+    unit_enabled "$SSH_UNIT" || unit_enabled ssh.service
 }
 
 authorized_key_fingerprints() {

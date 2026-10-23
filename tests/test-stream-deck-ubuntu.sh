@@ -14,18 +14,14 @@ STATE="$SANDBOX/state"
 # SESSION and SHELL_STATE are set per run
 stub_gnome_session "$STATE"
 stub pnpm 'mkdir -p node_modules'
-stub_apt_package resources
+stub_apt_packages
 stub_sudo_exec
 
-# shellcheck disable=SC2034 # the loaded step reads them
+# shellcheck disable=SC2034 # the loaded step reads it
 the_step() {
     load_script stream-deck/install.sh
+    sandbox_paths RAPL_DIR="$SANDBOX/powercap" HIDRAW_DIR="$SANDBOX/hidraw" stream-deck/install.sh 'stream-deck/lib/*.sh'
     as_os ubuntu
-    POWER_SCRIPT="$SANDBOX/libexec/dotfiles-power"
-    POWER_UNIT="$SANDBOX/systemd/dotfiles-power.service"
-    RAPL_DIR="$SANDBOX/powercap"
-    HIDRAW_DIR="$SANDBOX/hidraw"
-    DEV_DIR="$SANDBOX/dev"
     APT_UPDATE_RETRY_DELAY=0
 }
 
@@ -47,16 +43,16 @@ chmod +x "$node_bin"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ~/.local/share/dotfiles/stream-deck/daemon.js"
 assert_contains "$RUN_OUTPUT" "missing    GNOME extension dotfiles@gpahal.com enabled"
-assert_contains "$RUN_OUTPUT" "missing    Power helper ($SANDBOX/libexec/dotfiles-power)"
+assert_contains "$RUN_OUTPUT" "missing    Power helper ($SANDBOX/usr/local/libexec/dotfiles-power)"
 assert_contains "$RUN_OUTPUT" "info       Stream Deck not attached here"
 
 # Declining sudo still sets up the rest; with no desktop session the daemon waits for login
 answer no
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Turned on the GNOME extension dotfiles@gpahal.com. It loads at your next login."
-assert_contains "$RUN_OUTPUT" "No desktop session, so the daemon starts at your next login."
+assert_contains "$RUN_OUTPUT" "No desktop session, so the Stream Deck daemon starts at your next login."
 [ -e "$STATE/user-dotfiles-stream-deck.service.enabled" ] || fail "the daemon's service wasn't enabled"
-[ ! -e "$SANDBOX/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
+[ ! -e "$SANDBOX/usr/local/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded: GNOME Shell isn't running"
@@ -65,7 +61,7 @@ assert_contains "$RUN_OUTPUT" "unverified Stream Deck daemon running: no desktop
 # Accepting sudo installs Resources and the power helper, and starts it
 answer yes
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Install $SANDBOX/libexec/dotfiles-power, which shares the CPU's power for the Power key"
+assert_contains "$RUN_OUTPUT" "Install $SANDBOX/usr/local/libexec/dotfiles-power, which shares the CPU's power for the Power key"
 assert_file_contains "$STUB_LOG" "install -y resources"
 assert_file_contains "$STUB_LOG" "systemctl enable --now dotfiles-power.service"
 assert_file_not_contains "$STUB_LOG" "pnpm"
@@ -78,7 +74,7 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "The Stream Deck daemon is already running."
 assert_not_contains "$RUN_OUTPUT" "Copied"
 assert_not_contains "$RUN_OUTPUT" "Wrote"
-assert_eq "" "$(grep -vE '^(gsettings get|busctl --user (status|--json=short call org.gnome.Shell /org/gnome/Shell)|systemctl --user (show-environment|is-)|systemctl is-|dpkg-query)' "$STUB_LOG")" \
+assert_eq "" "$(grep -vE '^(gsettings get|busctl --user (status|--json=short call org.gnome.Shell /org/gnome/Shell)|systemctl --user (show-environment|show -p|is-)|systemctl is-|dpkg-query)' "$STUB_LOG")" \
     "commands that changed something on a second run"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         GNOME extension loaded"

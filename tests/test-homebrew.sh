@@ -347,6 +347,20 @@ echo '{"uninstall_artifacts": [{"app": ["T3 Code (Alpha).app"]}, {"binary": ["t3
 assert_eq "brew	$SANDBOX/T3 Code (Alpha).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose uninstall does more"
 rm -r "$SANDBOX/T3 Code (Alpha).app"
 assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state t3-code "" "$listing")" "a renamed cask whose app is gone"
+# --renamed: an app that renamed itself before the cask caught up, beside where brew put it, but not
+# one --except matches
+mkdir -p "$SANDBOX/T3 Code (Nightly).app" "$SANDBOX/T3 Code.app"
+renamed=(--renamed "T3 Code*.app" --except "*(Nightly).app")
+assert_eq "renamed	$SANDBOX/T3 Code.app" "$(cask_state "${renamed[@]}" t3-code "" "$listing")" "a cask whose app renamed itself"
+run status_cask "${renamed[@]}" t3-code "" "$listing"
+assert_eq "  ok         t3-code (cask), as T3 Code.app" "$RUN_OUTPUT" "status of a cask whose app renamed itself"
+run install_cask t3-code "$SANDBOX/T3 Code.app" renamed
+assert_eq "  t3-code already installed, as T3 Code.app." "$RUN_OUTPUT" "installing a cask whose app renamed itself"
+assert_eq "other	$SANDBOX/T3 Code.app" "$(cask_state "${renamed[@]}" t3-code "$SANDBOX/T3 Code (Beta).app" "")" \
+    "a renamed app brew doesn't list"
+rm -r "$SANDBOX/T3 Code.app"
+assert_eq "gone	$SANDBOX/T3 Code (Beta).app" "$(cask_state "${renamed[@]}" t3-code "" "$listing")" "a cask with only the excepted app"
+rm -r "$SANDBOX/T3 Code (Nightly).app"
 
 : > "$STUB_LOG"
 as_os ubuntu

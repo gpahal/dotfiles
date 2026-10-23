@@ -7,8 +7,6 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
@@ -38,14 +36,14 @@ assert_file_contains "$STUB_LOG" "sudo systemctl try-reload-or-restart ssh.servi
 
 # A broken file elsewhere: the drop-in stays and the step does the rest
 echo "# old, working" > "$SSHD_DROP_IN"
-echo "Bogus yes" > "$SANDBOX/sshd_config.d/50-other.conf"
+echo "Bogus yes" > "$SANDBOX/etc/ssh/sshd_config.d/50-other.conf"
 rm "$SLEEP_CONF"
 assert_exit 1 main
 assert_eq "# old, working" "$(cat "$SSHD_DROP_IN")" "the drop-in beside a broken file"
-assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/50-other.conf"
+assert_contains "$RUN_OUTPUT" "$SANDBOX/etc/ssh/sshd_config.d/50-other.conf"
 assert_file_not_contains "$STUB_LOG" "try-reload-or-restart ssh.service"
 [ -e "$SLEEP_CONF" ] || fail "the step stopped at the sshd failure"
-rm "$SANDBOX/sshd_config.d/50-other.conf"
+rm "$SANDBOX/etc/ssh/sshd_config.d/50-other.conf"
 
 replace_fn sshd_drop_in 'echo "Bogus new"'
 assert_exit 1 main
@@ -123,15 +121,15 @@ assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
 rm "$SANDBOX/sshd-T"
 # A Match block can override the drop-in for some logins, which sshd -T doesn't show, so the
 # settings are unverified and the file named
-printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/sshd_config.d/99-match.conf"
+printf '%s\n' "Match User $me" "    PasswordAuthentication yes" > "$SANDBOX/etc/ssh/sshd_config.d/99-match.conf"
 assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "unverified $item ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
-assert_contains "$RUN_OUTPUT" "unverified Password and keyboard-interactive SSH logins off ($SANDBOX/sshd_config.d/99-match.conf has a Match block"
+assert_contains "$RUN_OUTPUT" "unverified $item ($SANDBOX/etc/ssh/sshd_config.d/99-match.conf has a Match block"
+assert_contains "$RUN_OUTPUT" "unverified Password and keyboard-interactive SSH logins off ($SANDBOX/etc/ssh/sshd_config.d/99-match.conf has a Match block"
 rm "$SSHD_DROP_IN"
 DOTFILES_SSH_KEY_ONLY=1 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "$SANDBOX/sshd_config.d/99-match.conf has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
+assert_contains "$RUN_OUTPUT" "$SANDBOX/etc/ssh/sshd_config.d/99-match.conf has a Match block, so whether sshd takes $SSHD_DROP_IN for every login is unchecked."
 assert_not_contains "$RUN_OUTPUT" "Password logins are off now"
-rm "$SANDBOX/sshd_config.d/99-match.conf"
+rm "$SANDBOX/etc/ssh/sshd_config.d/99-match.conf"
 # Password logins went off at the reload even though another setting failed
 echo "permitrootlogin yes" > "$SANDBOX/sshd-T"
 rm "$SSHD_DROP_IN"

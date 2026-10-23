@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # lib/common.sh's confirm, memo, regex_escape, version_at_least, run_bounded, and quitting a running app
-# to merge its settings, and stub_sudo_exec's refusals.
+# to merge its settings, lib/gnome.sh's skip_without_desktop, and stub_sudo_exec's refusals.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -183,5 +183,19 @@ if command -v perl &> /dev/null; then
 else
     skip_rest "run_bounded without timeout(1): perl isn't installed"
 fi
+
+# --- skip_without_desktop: says so and succeeds only without GNOME, as on Ubuntu Server ---
+load_script lib/gnome.sh
+assert_exit 1 skip_without_desktop
+assert_eq "" "$RUN_OUTPUT" "skip_without_desktop's output with GNOME"
+assert_exit 1 skip_without_desktop --status "GNOME settings"
+without_desktop() {
+    hide gnome-shell
+    assert_exit 0 skip_without_desktop
+    assert_eq "  No GNOME desktop, so skipped." "$RUN_OUTPUT" "skip_without_desktop's output"
+    assert_exit 0 skip_without_desktop --status "GNOME settings"
+    assert_eq "  skipped    GNOME settings: no GNOME desktop" "$RUN_OUTPUT" "skip_without_desktop's status line"
+}
+subtest without_desktop
 
 test_done

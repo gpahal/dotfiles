@@ -40,7 +40,7 @@ done
 # --- ufw_enabled: incoming denied by DROP or REJECT ---
 stub ufw
 stub systemctl
-mkdir -p "$(dirname "$UFW_CONF")"
+mkdir -p "$(dirname "$UFW_CONF")" "$(dirname "$UFW_DEFAULTS")"
 echo ENABLED=yes > "$UFW_CONF"
 for policy in DROP REJECT; do
     echo "DEFAULT_INPUT_POLICY=\"$policy\"" > "$UFW_DEFAULTS"

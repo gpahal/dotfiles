@@ -7,8 +7,6 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
@@ -61,9 +59,9 @@ assert_exit 0 main --status
 
 # Not installed counts as off; in a VM, cloud-init is left alone, as it may set up the network
 rm "$CLOUD_INIT_DISABLED" "$SANDBOX/cups-browsed"
-stub dpkg-query '[ "${*: -1}" == cloud-init ] || [ "${*: -1}" == cups-browsed ] || echo "install ok installed"'
+stub_apt_packages '*' '!cloud-init' '!cups-browsed'
 assert_exit 0 main --status
-stub dpkg-query 'echo "install ok installed"'
+stub_apt_packages '*'
 stub systemd-detect-virt
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "cloud-init"

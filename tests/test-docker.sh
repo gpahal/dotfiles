@@ -15,30 +15,19 @@ command -v jq &>/dev/null || skip "jq isn't installed"
 # apt-config stays a sentinel: only the ubuntu step checks the upgrade schedule
 load_script docker/install.sh
 as_os ubuntu
-docker_sandbox_paths
+sandbox_paths docker/install.sh
 stub pgrep 'exit 1'
-stub_docker_packages
 stub_docker_group
 stub_dpkg_arch
 # install-fails fails the packages' install; update-fails fails the full update
-stub apt-get 'S="$SANDBOX"
-case "$*" in
-    *"install -y docker-ce"*)
-        [ ! -e "$S/install-fails" ] || exit 100
-        printf "%s\n" docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >> "$S/installed" ;;
-    *" update") [ ! -e "$S/update-fails" ] || exit 100 ;;
+stub_apt_packages --apt-get 'case "$*" in
+    *"install -y docker-ce"*) [ ! -e "$SANDBOX/install-fails" ] || exit 100 ;;
+    *" update") [ ! -e "$SANDBOX/update-fails" ] || exit 100 ;;
 esac'
-# Units are on unless $SANDBOX/<unit>-off exists; the daemon runs unless $SANDBOX/docker-inactive does
-stub systemctl 'S="$SANDBOX"
-case "$*" in
-    "enable --now docker.service") rm -f "$S/service-off" ;;
-    "enable --now docker.socket") rm -f "$S/socket-off" ;;
-    "is-enabled --quiet docker.service") [ ! -e "$S/service-off" ] ;;
-    "is-active --quiet docker.service") [ ! -e "$S/docker-inactive" ] ;;
-    *docker.socket*) [ ! -e "$S/socket-off" ] ;;
-    try-restart*) ;;
-    *) exit 1 ;;
-esac'
+# Both units start enabled and running
+UNITS="$SANDBOX/units"
+stub_systemctl_units "$UNITS"
+touch "$UNITS"/docker.service.{enabled,active} "$UNITS"/docker.socket.{enabled,active}
 # docker prints $SANDBOX/docker-df or docker-ps, and exits with its .status file
 stub docker 'case "$1 $2" in
     "system df") out=docker-df ;;
@@ -54,7 +43,7 @@ stub_fetch
 stub_gpg_fpr "$DOCKER_KEY_FPR"
 
 reset() {
-    rm -rf "$SANDBOX/apt" "$SANDBOX/update-fails" "$SANDBOX/install-fails" "$DOCKER_DAEMON_CONFIG"
+    rm -rf "$SANDBOX/etc/apt" "$SANDBOX/update-fails" "$SANDBOX/install-fails" "$DOCKER_DAEMON_CONFIG"
     mkdir -p "$(dirname "$DOCKER_SOURCES")"
     stub_http_status
     : > "$SANDBOX/installed"
@@ -143,7 +132,7 @@ subtest without_curl
 # --- installed: the units, and the docker group asked about only by the run that installs Docker ---
 reset
 docker_set_up
-touch "$SANDBOX/service-off" "$SANDBOX/socket-off"
+rm "$UNITS"/docker.service.enabled "$UNITS"/docker.socket.{enabled,active}
 answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.service"
@@ -157,7 +146,7 @@ assert_contains "$RUN_OUTPUT" "info       me not in the docker group, which is o
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 assert_not_contains "$RUN_OUTPUT" "docker group"
-touch "$SANDBOX/service-off"
+rm "$UNITS/docker.service.enabled"
 answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now docker.service"
@@ -219,10 +208,10 @@ read_only
 cache_sudo no
 touch "$SANDBOX/in-group"
 # docker.socket would start a stopped daemon
-touch "$SANDBOX/docker-inactive"
+rm "$UNITS/docker.service.active"
 assert_exit 0 diag status_docker_usage
 assert_file_not_contains "$STUB_LOG" "docker system"
-rm "$SANDBOX/docker-inactive"
+touch "$UNITS/docker.service.active"
 DOTFILES_STATUS_FOR_ALERTS=1 assert_exit 0 diag status_docker_usage
 assert_contains "$RUN_OUTPUT" "unverified Docker disk usage: skipped by --for-alerts"
 assert_file_not_contains "$STUB_LOG" "docker system"
@@ -255,7 +244,7 @@ assert_exit 3 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: couldn't list the containers"
 rm "$SANDBOX/docker-ps" "$SANDBOX/docker-ps.status"
 # Daemon down: no moby shim means no containers; with one, live-restore kept them running
-touch "$SANDBOX/docker-inactive"
+rm "$UNITS/docker.service.active"
 stub pgrep '[ "$1" == -f ] && grep -qE -- "$2" "$SANDBOX/shims" 2> /dev/null'
 assert_exit 0 diag status_docker_ports
 assert_contains "$RUN_OUTPUT" "ok         No container ports published on every address, which ufw doesn't filter: the daemon isn't running"
@@ -270,7 +259,8 @@ assert_exit 3 diag status_docker_ports
 cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_contains "$RUN_OUTPUT" "unknown    Container ports published on every address, which ufw doesn't filter: containers are running while the Docker daemon is down"
 assert_file_not_contains "$SANDBOX/both.log" "docker ps"
-rm "$SANDBOX/docker-inactive" "$SANDBOX/shims"
+touch "$UNITS/docker.service.active"
+rm "$SANDBOX/shims"
 stub pgrep 'exit 1'
 read_only
 run status

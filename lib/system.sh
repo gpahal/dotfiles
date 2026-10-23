@@ -49,6 +49,23 @@ write_root_file() {
     return "$status"
 }
 
+# write_root_content <dest-var> <content-var> [mode]: write_root_file taking variable names, so it
+# works as an item's fix, such as "write_root_content SLEEP_CONF SLEEP_CONF_CONTENT"
+write_root_content() {
+    write_root_file "${!1}" "${!2}" "${3:-}"
+}
+
+# root_copy_current <src> <dest> <mode>. The mode is fixed, not the repo file's, since a checkout
+# can lose exec bits and run-parts skips a non-executable hook.
+root_copy_current() {
+    cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
+}
+
+# install_root_copy <src> <dest> <mode>
+install_root_copy() {
+    root_copy_current "$@" || install_root_file "$@"
+}
+
 # read_root_file <file> [-n]: -n uses sudo -n. Prints nothing when missing, fails when unreadable.
 # In a directory only root can search, such as /etc/nut, only sudo can tell whether it exists.
 read_root_file() {

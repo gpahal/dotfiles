@@ -7,7 +7,7 @@ smartmontools_installed() {
 }
 
 smartd_enabled() {
-    smartmontools_installed && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
+    smartmontools_installed && unit_enabled "$SMARTD_UNIT"
 }
 
 # smartd's unit has ConditionVirtualization=no. Cached through a memo scope.
@@ -15,12 +15,8 @@ in_vm() {
     memo IN_VM systemd-detect-virt -q &>/dev/null
 }
 
-smartd_active() {
-    systemctl is-active -q "$SMARTD_UNIT" 2>/dev/null
-}
-
 smartd_ready() {
-    smartd_enabled && { in_vm || smartd_active; }
+    smartd_enabled && { in_vm || unit_active "$SMARTD_UNIT"; }
 }
 
 # smartctl's exit bits: 1 bad args or sudo refused, 2 open failed or asleep, 4 SMART command
@@ -123,7 +119,7 @@ status_firmware() {
         status_item unverified "$label: skipped by --for-alerts"
         return 0
     fi
-    if ! systemctl is-active --quiet fwupd.service 2>/dev/null; then
+    if ! unit_active fwupd.service; then
         status_item info "$label: fwupd isn't running, and status doesn't start it; fwupdmgr get-updates checks"
         return 0
     fi
@@ -157,8 +153,8 @@ install_smartd() {
     if ! apt_installed smartmontools; then
         apt_install_fresh --no-install-recommends smartmontools || return 1
     fi
-    sudo systemctl enable --now "$SMARTD_UNIT" || return 1
-    in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
+    enable_units_now "$SMARTD_UNIT" || return 1
+    in_vm || unit_active "$SMARTD_UNIT" || sudo systemctl restart "$SMARTD_UNIT"
 }
 
 smartd_hook_installed() {

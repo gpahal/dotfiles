@@ -61,9 +61,9 @@ ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh
 
 # --- setup-alerts.sh ---
 load_script ubuntu/setup-alerts.sh
+# Before anything runs, so a notifier installed on this machine never is
+sandbox_paths ubuntu/setup-alerts.sh 'ubuntu/lib/*.sh'
 as_os ubuntu
-NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
-SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
 stub_sudo_exec
 # No nut group in a test
 replace_fn ntfy_url_group 'id -gn'
@@ -130,8 +130,6 @@ generated="$(head -n 1 "$NTFY_URL_FILE")"
 generated="${generated#https://ntfy.sh/}"
 [[ "$generated" =~ ^[0-9a-f]{32}$ ]] || fail "the generated topic isn't 32 hex characters: $generated"
 
-# Point at the sandbox first, so a notifier installed on this machine is never run
-UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
 assert_exit 1 main --test
 assert_contains "$RUN_OUTPUT" "isn't installed"
 mkdir -p "$(dirname "$SMARTD_HOOK")"

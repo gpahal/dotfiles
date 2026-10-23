@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement,
-# json_merge's backups and bad input, and root files' modes and groups.
+# write_back, json_merge, append_line, install_root_file, write_root_file, and the root-file item
+# helpers: atomic replacement, json_merge's backups and bad input, and root files' modes and groups.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -264,4 +264,28 @@ mkdir -p "$SANDBOX/etc/private"
 chmod 750 "$SANDBOX/etc/private"
 assert_exit 0 write_root_file "$SANDBOX/etc/private/file" "x"
 assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directory"
+# --- write_root_content takes variable names, so it works as an item's fix ---
+CONF="$SANDBOX/etc/apt/apt.conf.d/50 two words"
+CONF_CONTENT='Unattended-Upgrade::Origins-Pattern { "origin=Docker"; };
+// a second line'
+conf_written() { file_is "$CONF" "$CONF_CONTENT"; }
+items_reset
+item --sudo "conf" "Write conf" conf_written "write_root_content CONF CONF_CONTENT 0640"
+assert_exit 0 items_apply
+assert_eq "$CONF_CONTENT" "$(cat "$CONF")" "the content write_root_content wrote"
+assert_eq 640 "$(file_mode "$CONF")" "the mode write_root_content gave"
+assert_exit 0 items_ok
+
+# --- root_copy_current and install_root_copy: a hook must be executable, whatever the repo's mode ---
+src="$SANDBOX/hook-src"
+hook="$SANDBOX/etc/run.d/50hook"
+echo "echo hi" > "$src"
+chmod 644 "$src"
+! root_copy_current "$src" "$hook" 0755 || fail "a missing hook counts as current"
+assert_exit 0 install_root_copy "$src" "$hook" 0755
+assert_exit 0 root_copy_current "$src" "$hook" 0755
+assert_eq 755 "$(file_mode "$hook")" "the hook's mode"
+chmod 644 "$hook"
+assert_exit 1 root_copy_current "$src" "$hook" 0755
+assert_exit 0 root_copy_current "$src" "$hook" 0644
 test_done

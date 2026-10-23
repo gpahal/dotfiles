@@ -8,6 +8,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -45,7 +47,7 @@ docker_installed() {
 
 # Cached through a memo scope, such as one status run
 docker_active() {
-    memo DOCKER_ACTIVE systemctl is-active --quiet docker.service &>/dev/null
+    memo DOCKER_ACTIVE unit_active docker.service
 }
 
 docker_auto_updates_configured() {
@@ -80,24 +82,11 @@ in_docker_group() {
 }
 
 starts_at_boot() {
-    systemctl is-enabled --quiet docker.service 2>/dev/null
+    unit_enabled docker.service
 }
 
 socket_ready() {
-    systemctl is-enabled --quiet docker.socket 2>/dev/null &&
-        systemctl is-active --quiet docker.socket 2>/dev/null
-}
-
-enable_docker_service() {
-    sudo systemctl enable --now docker.service
-}
-
-enable_docker_socket() {
-    sudo systemctl enable --now docker.socket
-}
-
-write_docker_auto_updates() {
-    write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
+    unit_on docker.socket
 }
 
 # docker_items [repair]: repair adds apply's rewrite of Docker's apt source. Order matters: the
@@ -111,15 +100,15 @@ docker_items() {
     [ "${1:-}" != repair ] ||
         item --sudo "" "Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES" \
             docker_source_ok add_docker_repo
-    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready "enable_units_now docker.socket"
     item --sudo "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "$daemon_pending$(daemon_restart_note)" \
         daemon_configured configure_installed_daemon
     item --sudo "Docker starts at boot (docker.service enabled)" \
         "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
-        starts_at_boot enable_docker_service
+        starts_at_boot "enable_units_now docker.service"
     item --sudo "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
         "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
-        docker_auto_updates_configured write_docker_auto_updates
+        docker_auto_updates_configured "write_root_content DOCKER_UNATTENDED_CONF DOCKER_UNATTENDED_CONTENT"
 }
 
 # After a failed install there's no dockerd to check the config with
@@ -309,7 +298,7 @@ configure_daemon() {
         return 1
     fi
     rm -f "$tmp"
-    systemctl is-active --quiet docker.service && running=true
+    unit_active docker.service && running=true
     sudo systemctl try-restart docker.service && return 0
     if "$exists"; then
         if ! write_root_file "$DOCKER_DAEMON_CONFIG" "$original"; then

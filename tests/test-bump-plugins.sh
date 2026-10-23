@@ -48,24 +48,14 @@ while read -r repo old; do
     done
 done <<< "$start_pins"
 
-# curl serves $SANDBOX/plug-<tag>.vim for each tag
+# curl serves $SANDBOX/vim-plug/<tag>/plug.vim for each tag
 git init -q "$REMOTES/junegunn/vim-plug"
 commit junegunn/vim-plug 1 > /dev/null
 # 0.9.10 and 0.13.0 catch a string sort, which would rank 0.9.10 above 0.13.0 and the real tags
 for tag in 0.9.10 0.13.0 "$(cat "$PLUG_VERSION")" nightly; do
     git -C "$REMOTES/junegunn/vim-plug" tag "$tag"
 done
-stub curl 'out="" url=""
-while [ $# -gt 0 ]; do
-    case "$1" in -o) out="$2"; shift ;; *) url="$1" ;; esac
-    shift
-done
-case "$url" in
-    https://raw.githubusercontent.com/junegunn/vim-plug/*/plug.vim) ;;
-    *) exit 22 ;;
-esac
-tag="${url#https://raw.githubusercontent.com/junegunn/vim-plug/}"
-cp "$SANDBOX/plug-${tag%/plug.vim}.vim" "$out" 2> /dev/null || exit 22'
+stub_fetch "https://raw.githubusercontent.com/junegunn/vim-plug/=$SANDBOX/vim-plug/"
 # Newer than the repo's, so the tag never matches a real one
 IFS=. read -r plug_major plug_minor _ < "$PLUG_VERSION"
 NEXT="$plug_major.$((plug_minor + 1)).0"
@@ -94,7 +84,8 @@ old_version="$(cat "$PLUG_VERSION")"
 rm -rf "$REMOTES/preservim/nerdtree"
 surround="$(commit tpope/vim-surround 2)"
 git -C "$REMOTES/junegunn/vim-plug" tag "$NEXT"
-echo "<html>Not Found</html>" > "$SANDBOX/plug-$NEXT.vim"
+mkdir -p "$SANDBOX/vim-plug/$NEXT"
+echo "<html>Not Found</html>" > "$SANDBOX/vim-plug/$NEXT/plug.vim"
 bump 1
 assert_contains "$RUN_OUTPUT" "Couldn't read preservim/nerdtree's HEAD"
 assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "the pin whose HEAD couldn't be read"

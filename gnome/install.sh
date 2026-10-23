@@ -9,6 +9,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/gnome.sh
+source "$DOTFILES_DIR/lib/gnome.sh"
 
 STEP_OS=ubuntu
 
@@ -50,10 +52,7 @@ gnome_items() {
 
 status() {
     local setting schema key value text state
-    if ! has_gnome_desktop; then
-        status_item skipped "GNOME settings: no GNOME desktop"
-        return 0
-    fi
+    skip_without_desktop --status "GNOME settings" && return 0
     status_require_cmd gsettings "GNOME settings" || return 0
     for setting in "${GNOME_SETTINGS[@]}"; do
         IFS='|' read -r schema key value text <<< "$setting"
@@ -71,10 +70,7 @@ status() {
 
 apply() {
     echo "Setting GNOME's keyboard, Files, and dock..."
-    if ! has_gnome_desktop; then
-        echo "  No GNOME desktop, so skipped."
-        return 0
-    fi
+    skip_without_desktop && return 0
     require_cmd gsettings || return 1
     local setting schema key value text state result=0 changed=false
     for setting in "${GNOME_SETTINGS[@]}"; do

@@ -12,7 +12,7 @@ source "$TESTS_DIR/docker-fixture.sh"
 command -v jq &>/dev/null || skip "jq isn't installed"
 load_script docker/install.sh
 as_os ubuntu
-docker_sandbox_paths
+sandbox_paths docker/install.sh
 stub_sudo_exec
 stub systemctl
 stub dockerd

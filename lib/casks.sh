@@ -1,14 +1,33 @@
 # Helpers for Homebrew casks. Source after lib/common.sh; don't run it.
+# cask_state, status_cask, and install_cask take these options before the cask:
+#   --renamed <glob>: when brew's name for the cask's app is gone, an app matching the glob beside
+#     it is the cask's, as when an app renames itself as it updates before the cask catches up
+#   --except <glob>: an app matching this isn't, such as another channel's
 # shellcheck shell=bash
 
-# install_cask <cask> [app] [state]: [state] is cask_state's first field, if the caller has it.
-# Exits on interrupt: brew catches Ctrl-C and exits 130, which a caller's || would swallow.
+# Moves the leading --renamed and --except options into the caller's opts
+_cask_opts() {
+    _cask_shift=0
+    while [ "${1:-}" == --renamed ] || [ "${1:-}" == --except ]; do
+        opts+=("$1" "$2")
+        shift 2
+        _cask_shift=$((_cask_shift + 2))
+    done
+}
+
+# install_cask [options] <cask> [app] [state]: [state] and [app] are cask_state's fields, if the
+# caller has them. Exits on interrupt: brew catches Ctrl-C and exits 130, which a caller's ||
+# would swallow.
 install_cask() {
-    local cask="$1" from="${3:-}" status=0
+    local opts=() _cask_shift
+    _cask_opts "$@"
+    shift "$_cask_shift"
+    local cask="$1" app="${2:-}" from="${3:-}" status=0
     require_cmd brew || return 1
-    [ -n "$from" ] || IFS=$'\t' read -r from _ <<< "$(cask_state "$cask" "${2:-}")"
+    [ -n "$from" ] || IFS=$'\t' read -r from app <<< "$(cask_state ${opts[@]+"${opts[@]}"} "$cask" "$app")"
     case "$from" in
         brew) echo "  $cask already installed." ;;
+        renamed) echo "  $cask already installed, as ${app##*/}." ;;
         gone)
             echo "  brew lists $cask, but its app is gone; reinstalling it..."
             brew reinstall --cask "$cask" || status=$?
@@ -53,11 +72,17 @@ recorded_cask_app() {
     esac
 }
 
-# cask_state <cask> [app] [listing]: prints "<state>\t<app path>", state being brew, gone (listed
-# but app deleted, macOS only), other (app present, not listed), or missing. [app] is the
-# fallback path; [listing] is installed_cask_apps's output, saving a brew call per cask.
+# cask_state [options] <cask> [app] [listing]: prints "<state>\t<app path>", state being brew,
+# gone (listed but app deleted, macOS only), renamed (listed, with the app --renamed found), other
+# (app present, not listed), or missing. [app] is the fallback path; [listing] is
+# installed_cask_apps's output, saving a brew call per cask.
 cask_state() {
-    local cask="$1" app="" listed=false entry state recorded
+    local renamed="" except=""
+    while [ "${1:-}" == --renamed ] || [ "${1:-}" == --except ]; do
+        if [ "$1" == --renamed ]; then renamed="$2"; else except="$2"; fi
+        shift 2
+    done
+    local cask="$1" app="" listed=false entry state recorded found
     if [ $# -ge 3 ]; then
         if app="$(printf '%s\n' "$3" |
             awk -F '\t' -v cask="$cask" '$1 == cask { print $2; found = 1 } END { exit !found }')"; then
@@ -96,15 +121,43 @@ cask_state() {
     else
         state=missing
     fi
+    if [ -n "$renamed" ] && { [ "$state" == gone ] || [ "$state" == missing ]; } &&
+        found="$(cask_app_matching "$(dirname "${app:-/Applications/x}")" "$renamed" "$except")"; then
+        app="$found"
+        if [ "$state" == gone ]; then state=renamed; else state=other; fi
+    fi
     printf '%s\t%s\n' "$state" "$app"
 }
 
+# cask_app_matching <dir> <glob> [except glob]: the first app in <dir> the glob matches. case, not
+# [[ ]], which bash 4.1 and later match with extglob, so *(...) would mean something else.
+cask_app_matching() {
+    local app
+    for app in "$1"/*.app; do
+        [ -d "$app" ] || continue
+        # shellcheck disable=SC2254 # globs
+        case "${app##*/}" in
+            # / is in no app's name
+            ${3:-/}) ;;
+            $2)
+                echo "$app"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# status_cask [options] <cask> [app] [listing]
 status_cask() {
-    local state
+    local opts=() _cask_shift state app
+    _cask_opts "$@"
+    shift "$_cask_shift"
     status_require_cmd brew "$1 (cask)" || return 0
-    IFS=$'\t' read -r state _ <<< "$(cask_state "$@")"
+    IFS=$'\t' read -r state app <<< "$(cask_state ${opts[@]+"${opts[@]}"} "$@")"
     case "$state" in
         brew) status_item ok "$1 (cask)" ;;
+        renamed) status_item ok "$1 (cask), as ${app##*/}" ;;
         gone) status_item missing "$1 (cask): brew lists it, but its app is gone; run brew reinstall --cask $1" ;;
         other) status_item ok "$1 (cask), installed outside Homebrew" ;;
         *) status_item missing "$1 (cask)" ;;

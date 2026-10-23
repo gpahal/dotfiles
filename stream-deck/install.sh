@@ -13,6 +13,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=../lib/gnome.sh
 source "$DOTFILES_DIR/lib/gnome.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 
 # pnpm, from Homebrew, and Node, from mise, run the Ubuntu daemon
 # shellcheck disable=SC2034 # run_steps reads it

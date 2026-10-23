@@ -24,7 +24,7 @@ ubuntu_step() {
     # The real check finds gnome-shell only on a desktop, which CI runners aren't
     replace_fn has_gnome_desktop 'true'
     assert_eq "$config" "$(claude_desktop_config)" "config path on Ubuntu"
-    stub_apt_package claude-desktop
+    stub_apt_packages
     stub pgrep 'exit 1'
     stub_sudo_exec
     # shellcheck disable=SC2034 # the step reads it

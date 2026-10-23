@@ -28,15 +28,9 @@ output() {
     fi
 }
 
-# shellcheck disable=SC2034 # the loaded scripts read them
-sandbox_paths() {
-    MONITOR_INPUT_MAC_CONF="$HOME/.hammerspoon/monitor-input.conf"
-    MONITOR_INPUT_CONF="$SANDBOX/etc-dotfiles/monitor-input.conf"
-    MONITOR_INPUT_RULE="$SANDBOX/rules.d/90-dotfiles-monitor-input.rules"
-    MONITOR_INPUT_SCRIPT="$SANDBOX/libexec/dotfiles-monitor-input"
-    MONITOR_INPUT_UNIT="$SANDBOX/systemd/dotfiles-monitor-input.service"
-    USB_DEVICES_DIR="$USB"
-    DRM_DIR="$DRM"
+# The scripts' paths in the sandbox, and the fake sysfs trees
+monitor_input_paths() {
+    sandbox_paths USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" monitor-input/lib/paths.sh
 }
 
 usb_device 1-1 05e3:0610 "USB2.1 Hub"
@@ -52,9 +46,9 @@ stub_sudo_exec
 
 the_step() {
     load_script monitor-input/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os ubuntu
-    stub_apt_package ddcutil
+    stub_apt_packages
     # shellcheck disable=SC2034 # apt_get_update reads it
     APT_UPDATE_RETRY_DELAY=0
 
@@ -94,7 +88,7 @@ subtest the_step
 setup_on_ubuntu() {
     output card1-HDMI-A-1 connected 4
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os ubuntu
     answer yes
     # Left by the_step
@@ -150,7 +144,7 @@ subtest setup_on_ubuntu
 
 setup_on_mac() {
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     stub ioreg 'cat <<"EOF"
 +-o Root  <class IORegistryEntry, id 0x100000100, retain 25>
@@ -192,7 +186,7 @@ m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
 
     # The hammerspoon step reports switching only once it's on, and fails when m1ddc goes
     load_script hammerspoon/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "ok         Monitor input switching, with $STUB_DIR/m1ddc"
@@ -204,12 +198,12 @@ m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
     assert_contains "$RUN_OUTPUT" "Monitor input switching needs m1ddc"
 
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 0 main off
     [ ! -e "$MONITOR_INPUT_MAC_CONF" ] || fail "off left the Mac's settings"
     load_script hammerspoon/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 0 main
     assert_exit 0 main --status

@@ -1,12 +1,23 @@
-# Helpers for GNOME Shell extensions and custom shortcuts, for the stream-deck, hotkeys, and vicinae
-# steps. Source after lib/common.sh. They need gsettings, and busctl and jq to ask GNOME Shell what
-# it loaded.
+# Helpers for GNOME steps: skipping without a desktop, and GNOME Shell extensions and custom
+# shortcuts. Source after lib/common.sh. They need gsettings, and busctl and jq to ask GNOME Shell
+# what it loaded.
 # shellcheck shell=bash
 
 # GNOME Shell's ExtensionState
 GNOME_EXTENSION_ACTIVE=1
 GNOME_EXTENSION_ERROR=3
 GNOME_EXTENSION_OUT_OF_DATE=4
+
+# skip_without_desktop [--status <label>]: succeeds, saying so, when there's no GNOME desktop, as on
+# Ubuntu Server. --status says it as a skipped status item about <label>.
+skip_without_desktop() {
+    ! has_gnome_desktop || return 1
+    if [ "${1:-}" == --status ]; then
+        status_item skipped "$2: no GNOME desktop"
+    else
+        echo "  No GNOME desktop, so skipped."
+    fi
+}
 
 # Whether you're logged in at the desktop, not only over SSH
 gnome_session_running() {

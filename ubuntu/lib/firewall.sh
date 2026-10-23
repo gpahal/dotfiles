@@ -6,8 +6,7 @@ ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
         grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
         grep -qxE 'DEFAULT_INPUT_POLICY="(DROP|REJECT)"' "$UFW_DEFAULTS" 2>/dev/null &&
-        systemctl is-enabled -q ufw.service 2>/dev/null &&
-        systemctl is-active -q ufw.service 2>/dev/null
+        unit_on ufw.service
 }
 
 # ufw_status <sudo flags>. Cached through a memo scope, such as a status_ufw run, once called
@@ -202,7 +201,7 @@ configure_ufw() {
     "$on" && return 0
     sudo ufw --force enable > /dev/null || return 1
     # ufw enable leaves a stopped ufw.service stopped
-    sudo systemctl enable --now -q ufw.service
+    enable_units_now -q ufw.service
 }
 
 status_ufw() {

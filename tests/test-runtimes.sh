@@ -52,18 +52,14 @@ case "$1 ${2:-}" in
     "ls --missing")
         [ -z "${MISE_LS_OUT:-}" ] || echo "$MISE_LS_OUT" ;;
 esac'
-stub curl 'while [ $# -gt 0 ]; do
-    if [ "$1" == -o ]; then
-        echo "echo \"rustup-init \$*\" >> \"\$STUB_LOG\"" > "$2"
-        cat >> "$2" <<"INSTALL"
+cat > "$SANDBOX/rustup-init" << 'INSTALL'
+echo "rustup-init $*" >> "$STUB_LOG"
 mkdir -p "$HOME/.cargo/bin"
 cp "$RUST_STUB" "$HOME/.cargo/bin/rustup"
 echo stable > "$RUST_DEFAULT"
 touch "$RUST_HEALTHY"
 INSTALL
-    fi
-    shift
-done'
+stub_fetch "https://sh.rustup.rs=$SANDBOX/rustup-init"
 
 touch "$GLOBALS_FILE"
 assert_exit 0 main

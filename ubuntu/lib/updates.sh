@@ -49,15 +49,7 @@ status_unattended_upgrades() {
 
 # A stopped timer never fires until the next boot, so check active too
 apt_timers_enabled() {
-    local timer
-    for timer in "${APT_TIMERS[@]}"; do
-        [ "$(systemctl is-enabled "$timer" 2>/dev/null)" == enabled ] || return 1
-        systemctl is-active -q "$timer" 2>/dev/null || return 1
-    done
-}
-
-enable_apt_timers() {
-    sudo systemctl enable --now "${APT_TIMERS[@]}"
+    unit_on "${APT_TIMERS[@]}"
 }
 
 # Replaces our keys statement by statement and keeps the rest, such as Software & Updates'
@@ -170,10 +162,6 @@ turn_on_unattended_upgrades() {
 
 keep_conffiles_written() {
     file_is "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
-}
-
-write_keep_conffiles() {
-    write_root_file "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
 }
 
 # New dependencies and phased updates count as upgradable, as for unattended-upgrades, so only

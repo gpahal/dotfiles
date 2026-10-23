@@ -13,21 +13,24 @@ S="$SANDBOX/state"
 USERNS_RESTRICT_SYSCTL="$S/userns"
 BWRAP_PROFILE="$SANDBOX/apparmor.d/bwrap-userns-restrict"
 
-stub_apt_package bubblewrap "$S/bubblewrap"
 stub apparmor_parser 'touch "'"$S"'/loaded"'
 stub bwrap 'S="'"$S"'"
-[ -e "$S/bubblewrap" ] && [ ! -e "$S/bwrap-broken" ] &&
+grep -qx bubblewrap "$SANDBOX/installed" && [ ! -e "$S/bwrap-broken" ] &&
     { [ "$(cat "$S/userns")" != 1 ] || [ -e "$S/loaded" ]; }'
 
-# Usage: reset <restricted: 0 or 1> [state file]...
+# Usage: reset <restricted: 0 or 1> [state file, or bubblewrap installed]...
 reset() {
     rm -rf "$S" "$(dirname "$BWRAP_PROFILE")"
     mkdir -p "$S" "$(dirname "$BWRAP_PROFILE")"
     echo "$1" > "$USERNS_RESTRICT_SYSCTL"
     shift
+    stub_apt_packages
     local f
     for f in "$@"; do
-        touch "$S/$f"
+        case "$f" in
+            bubblewrap) stub_apt_packages bubblewrap ;;
+            *) touch "$S/$f" ;;
+        esac
     done
     : > "$STUB_LOG"
     answer no

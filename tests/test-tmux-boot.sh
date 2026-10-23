@@ -11,16 +11,10 @@ load_script tmux/install.sh
 as_os ubuntu
 replace_fn sync_tmux_plugins
 
-touch "$SANDBOX/manager"
-stub systemctl 'case "$*" in
-    "--user show-environment") [ -e "$SANDBOX/manager" ] ;;
-    "--user is-enabled --quiet tmux.service") [ -e "$SANDBOX/enabled" ] ;;
-    "--user enable tmux.service") touch "$SANDBOX/enabled" ;;
-    *) exit 1 ;;
-esac'
+stub_systemctl_units "$SANDBOX/units"
 # start-server stands in for continuum enabling the unit
 stub tmux 'echo "TMUX_TMPDIR=$TMUX_TMPDIR TMUX=${TMUX-unset}" >> "$SANDBOX/tmux-env"
-[ "$1" != start-server ] || [ -e "$SANDBOX/broken" ] || touch "$SANDBOX/enabled"'
+[ "$1" != start-server ] || [ -e "$SANDBOX/broken" ] || touch "$SANDBOX/units/user-tmux.service.enabled"'
 
 run status
 assert_contains "$RUN_OUTPUT" "missing    tmux starts at boot (continuum's systemd user unit, tmux.service)"
@@ -43,12 +37,12 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "tmux already starts at boot"
 assert_file_not_contains "$STUB_LOG" "tmux start-server"
 
-rm "$SANDBOX/enabled"
+rm "$SANDBOX/units/user-tmux.service.enabled"
 touch "$SANDBOX/broken"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "continuum didn't enable tmux.service"
 
-rm "$SANDBOX/manager"
+touch "$SANDBOX/units/no-user-manager"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Couldn't reach your systemd user manager"
 assert_file_not_contains "$STUB_LOG" "tmux start-server"

@@ -1,59 +1,12 @@
 # Helpers for tests of the ubuntu step and its hooks. Call ubuntu_sandbox_paths after each
-# load_script ubuntu/install.sh, which resets the paths. It fails the test when a step constant
-# still names a system path.
+# load_script ubuntu/install.sh, which resets the paths.
 # shellcheck shell=bash
-# shellcheck disable=SC2034 # the step reads them
 
+# sandbox_paths for the ubuntu step, with sudo's PATH and sshd in the stubs, and no nut user.
+# UPS_POWERDOWN_FLAG keeps its path: the step only writes it into NUT's config and the RTC hook.
 ubuntu_sandbox_paths() {
-    SBIN_PATH="$STUB_DIR"
-    SSHD_DROP_IN="$SANDBOX/sshd_config.d/10-dotfiles.conf"
-    SSHD_CONFIG="$SANDBOX/sshd_config"
-    SSHD_RUN_DIR="$SANDBOX/run-sshd"
-    SSHD_BIN="$STUB_DIR/sshd"
-    SLEEP_CONF="$SANDBOX/sleep.conf.d/10-dotfiles.conf"
-    REBOOT_REQUIRED="$SANDBOX/reboot-required"
-    LINGER_DIR="$SANDBOX/systemd-linger"
-    SYSCTL_CONF="$SANDBOX/sysctl.d/90-dotfiles.conf"
-    SYSCTL_SOURCES=("$SANDBOX/sysctl.d")
-    SMARTD_HOOK="$SANDBOX/run.d/50dotfiles-notify"
-    SMARTD_CONF="$SANDBOX/smartd.conf"
-    NTFY_URL_FILE="$SANDBOX/etc-dotfiles/ntfy-url"
-    NUT_DIR="$SANDBOX/nut"
-    # No nut group in a test
-    NUT_OWNER="$(id -un)"
-    NUT_GROUP="$(id -gn)"
-    UPOWER_HWDB="$SANDBOX/95-upower-hid.hwdb"
-    UPS_RTC_HOOK="$SANDBOX/system-shutdown/dotfiles-rtc-wake"
-    UPS_NOTIFY="$SANDBOX/libexec/dotfiles-ups-notify"
-    NTFY_LIB="$SANDBOX/lib-dotfiles/ntfy.sh"
-    FWUPD_METADATA_DIRS="$SANDBOX/fwupd-metadata"
-    AUTO_UPGRADES_CONF="$SANDBOX/apt.conf.d/20auto-upgrades"
-    KEEP_CONFFILES_CONF="$SANDBOX/apt.conf.d/50dotfiles-keep-conffiles"
-    UFW_CONF="$SANDBOX/ufw/ufw.conf"
-    UFW_DEFAULTS="$SANDBOX/default-ufw"
-    TAILSCALE_KEYRING="$SANDBOX/keyrings/tailscale-archive-keyring.gpg"
-    TAILSCALE_LIST="$APT_SOURCES_DIR/tailscale.list"
-    CRYPTTAB="$SANDBOX/crypttab"
-    WIFI_POWERSAVE_CONF="$SANDBOX/NetworkManager/conf.d/${WIFI_POWERSAVE_CONF##*/}"
-    CLOUD_INIT_DISABLED="$SANDBOX/cloud/cloud-init.disabled"
-    _ubuntu_system_paths_left
-}
-
-_ubuntu_system_paths_left() {
-    local name value left=""
-    while IFS= read -r name; do
-        # Only written into NUT's config, never opened
-        [ "$name" != UPS_POWERDOWN_FLAG ] || continue
-        eval "set -- \${${name}[@]+\"\${${name}[@]}\"}"
-        for value; do
-            case "$value" in
-                # A checkout under /var, as mktemp's dirs are on macOS
-                "$REPO_DIR"/*) ;;
-                /etc* | /var* | /usr* | /run* | /dev*) left="$left $name=$value" ;;
-            esac
-        done
-    done < <(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "$REPO_DIR/ubuntu/install.sh" "$REPO_DIR"/ubuntu/lib/*.sh | sort -u)
-    [ -z "$left" ] || fail "ubuntu_sandbox_paths left these on the real machine:$left"
+    sandbox_paths SBIN_PATH="$STUB_DIR" SSHD_BIN="$STUB_DIR/sshd" NUT_OWNER="$(id -un)" NUT_GROUP="$(id -gn)" \
+        UPS_POWERDOWN_FLAG="$UPS_POWERDOWN_FLAG" ubuntu/install.sh 'ubuntu/lib/*.sh' lib/system.sh
 }
 
 # `ufw status` output for the rules the ubuntu step adds, in its order. The rules functions take the

@@ -141,12 +141,8 @@ upsc_value() {
     upsc "$UPS_NAME@localhost" "$1" 2>/dev/null
 }
 
-# One at a time: is-active with several units succeeds when any one is active
 ups_services_active() {
-    local unit
-    for unit in "${NUT_UNITS[@]}"; do
-        systemctl is-active -q "$unit" 2>/dev/null || return 1
-    done
+    unit_active "${NUT_UNITS[@]}"
 }
 
 ups_notifier_installed() {
@@ -166,17 +162,12 @@ ups_configured_for() {
     nut_files_current
 }
 
-# NUT's units hang off nut.target; disabled, they don't start after a reboot
-nut_target_enabled() {
-    systemctl is-enabled -q nut.target 2>/dev/null
-}
-
 # Unreadable files don't count against it, so a run doesn't ask for sudo just to read them
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?
     [ "$configured" -ne 1 ] && ups_notifier_installed && ups_rtc_hook_installed &&
-        ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
+        ups_services_active && unit_enabled nut.target && upsc_value ups.status > /dev/null
 }
 
 # Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, looking once per memo scope
@@ -281,7 +272,7 @@ setup_ups() {
         install_ups_rtc_hook || return 1
         rtc=true
     fi
-    nut_target_enabled || target=true
+    unit_enabled nut.target || target=true
     sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
@@ -335,7 +326,7 @@ status_ups() {
         status_item missing "upsd answers for $UPS_NAME@localhost (upsc $UPS_NAME@localhost)"
     fi
     status_check "nut-server and nut-monitor running" ups_services_active
-    status_check "nut.target enabled, so NUT starts at boot" nut_target_enabled
+    status_check "nut.target enabled, so NUT starts at boot" unit_enabled nut.target
     if ups_notifier_installed; then
         status_item ok "UPS events pushed to ntfy ($UPS_NOTIFY)"
     else

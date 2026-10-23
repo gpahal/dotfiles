@@ -6,18 +6,16 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 ubuntu_step_setup
 ubuntu_step_set_up
 
-echo 'APT::Periodic::Unattended-Upgrade "0";' > "$SANDBOX/apt.conf.d/99off"
+echo 'APT::Periodic::Unattended-Upgrade "0";' > "$SANDBOX/etc/apt/apt.conf.d/99off"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "effective periodic settings still disable daily updates"
-rm "$SANDBOX/apt.conf.d/99off"
+rm "$SANDBOX/etc/apt/apt.conf.d/99off"
 
 # Software & Updates writes other APT::Periodic keys into 20auto-upgrades; keep them
 printf '%s\n' 'APT::Periodic::Update-Package-Lists "1";' 'APT::Periodic::Download-Upgradeable-Packages "1";' \

@@ -18,7 +18,7 @@ default org.gnome.shell.extensions.dash-to-dock dock-fixed true
 default org.gnome.shell.extensions.dash-to-dock autohide true
 default org.gnome.shell.extensions.dash-to-dock intellihide true
 stub gnome-shell
-stub_apt_package gnome-sushi
+stub_apt_packages
 stub_sudo_exec
 load_script gnome/install.sh
 as_os ubuntu

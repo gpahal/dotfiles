@@ -9,6 +9,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 UBUNTU_LIB_DIR="$DOTFILES_DIR/ubuntu/lib"
 # shellcheck source=lib/ssh.sh
 source "$UBUNTU_LIB_DIR/ssh.sh"
@@ -124,6 +126,7 @@ WIFI_POWERSAVE_CONTENT='# From the dotfiles ubuntu step: Wi-Fi power save off (2
 [connection]
 wifi.powersave = 2'
 CLOUD_INIT_DISABLED=/etc/cloud/cloud-init.disabled
+# shellcheck disable=SC2034 # write_root_content reads it
 CLOUD_INIT_DISABLED_CONTENT='# From the dotfiles ubuntu step: cloud-init only sets up a fresh install, so it stays off at boot'
 CUPS_BROWSED_UNIT=cups-browsed.service
 
@@ -136,16 +139,6 @@ ubuntu_root_files() {
     "$1" "$SMARTD_HOOK_SRC" "$SMARTD_HOOK"
     "$1" "$UPS_NOTIFY_SRC" "$UPS_NOTIFY"
     "$1" "$NTFY_LIB_SRC" "$NTFY_LIB"
-}
-
-# root_copy_current <src> <dest> <mode>. The mode is fixed, not the repo file's, since a checkout
-# can lose exec bits and run-parts skips a non-executable hook.
-root_copy_current() {
-    cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
-}
-
-install_root_copy() {
-    root_copy_current "$@" || install_root_file "$@"
 }
 
 # Installed outside the repo, since the UPS notifier runs as nut, who may not be able to read it
@@ -168,7 +161,8 @@ ubuntu_items() {
     items_reset
     item --sudo "Sleep masked" "Never sleep: mask ${SLEEP_TARGETS[*]}" sleep_masked mask_sleep
     item --sudo "Suspend and hibernation off in systemd ($SLEEP_CONF)" \
-        "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" sleep_conf_written write_sleep_conf
+        "Turn off suspend and hibernation in systemd: write $SLEEP_CONF" \
+        sleep_conf_written "write_root_content SLEEP_CONF SLEEP_CONF_CONTENT"
     text="Reboot 10 s after a kernel panic, and raise the inotify limits: write $SYSCTL_CONF"
     ! sysctl_file_written || text="Put $SYSCTL_CONF in effect, which an earlier run wrote: sysctl --system"
     item --sudo "Reboot 10 s after a kernel panic, and more inotify instances and watches ($SYSCTL_CONF)" \
@@ -196,13 +190,14 @@ ubuntu_items() {
         "unattended_upgrades_checked ${auto_upgrades_unchecked:-false}" turn_on_unattended_upgrades
     item --sudo "Updates keep conffiles you edited, so unattended-upgrades doesn't skip them ($KEEP_CONFFILES_CONF)" \
         "Keep conffiles you edited through updates, so unattended-upgrades doesn't skip them: write $KEEP_CONFFILES_CONF" \
-        keep_conffiles_written write_keep_conffiles
+        keep_conffiles_written "write_root_content KEEP_CONFFILES_CONF KEEP_CONFFILES_CONTENT"
     item --sudo --hint "run sudo systemctl enable --now ${APT_TIMERS[*]}" "apt's daily timers enabled and running" \
-        "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled enable_apt_timers
+        "Turn on apt's daily timers: systemctl enable --now ${APT_TIMERS[*]}" apt_timers_enabled "enable_units_now ${APT_TIMERS[*]}"
     item --sudo "openssh-server" "Install openssh-server" openssh_installed install_openssh
     # Skipped in a VM, which may need cloud-init at every boot for its network and users
     in_vm || item --sudo "cloud-init off, since it only sets up a fresh install ($CLOUD_INIT_DISABLED)" \
-        "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off turn_off_cloud_init
+        "Turn off cloud-init, which only sets up a fresh install: write $CLOUD_INIT_DISABLED" cloud_init_off \
+        "write_root_content CLOUD_INIT_DISABLED CLOUD_INIT_DISABLED_CONTENT"
     item --sudo "cups-browsed masked, so network printers aren't added by themselves" \
         "Mask cups-browsed, which adds network printers by itself; cups still prints" cups_browsed_off mask_cups_browsed
     ! command -v nmcli &>/dev/null ||
@@ -210,7 +205,7 @@ ubuntu_items() {
             "Turn off Wi-Fi power save, which makes SSH over Wi-Fi lag: write $WIFI_POWERSAVE_CONF" \
             wifi_powersave_off turn_off_wifi_powersave
     item --sudo --hint "run sudo systemctl enable --now $SSH_UNIT" "sshd starts at boot" \
-        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled_once_installed enable_sshd
+        "Start sshd at boot: systemctl enable --now $SSH_UNIT" sshd_enabled_once_installed "enable_units_now $SSH_UNIT"
     "$apply" || return 0
     [ -z "$(key_only_todo 2>/dev/null)" ] || why="$(key_only_reason)" || why=""
     item --sudo "" "Write $SSHD_DROP_IN${why:+, turning off SSH password logins since $why}: $(sshd_drop_in | grep -v '^#' | tr '\n' ' ')" \
@@ -283,13 +278,11 @@ configure_homebrew_env() {
     ! cmp -s "$HOMEBREW_ENV_SRC" "$HOMEBREW_ENV_CONF" || changed=false
     ubuntu_files copy_file || return 1
     "$changed" || return 0
-    if systemctl --user daemon-reload &>/dev/null; then
-        echo "  User services started from now on get Homebrew on PATH. Running ones, such as tmux and"
-        echo "  T3 Code, get it when they restart."
-    else
-        echo "  Couldn't reach your systemd user manager. User services get Homebrew on PATH"
-        echo "  after the next reboot or login."
-    fi
+    user_manager_reachable "user services don't get Homebrew on PATH" \
+        "They get it after the next reboot or login." || return 0
+    systemctl --user daemon-reload || return 1
+    echo "  User services started from now on get Homebrew on PATH. Running ones, such as tmux and"
+    echo "  T3 Code, get it when they restart."
 }
 
 # The homebrew step installs locales
@@ -340,7 +333,7 @@ status() {
     if in_vm; then
         status_item skipped "smartd running: this is a VM, whose host manages the disks"
     else
-        status_check "smartd running (check a drive with sudo smartctl -a /dev/<disk>)" smartd_active
+        status_check "smartd running (check a drive with sudo smartctl -a /dev/<disk>)" unit_active "$SMARTD_UNIT"
     fi
     status_smart
     status_smartd_hook

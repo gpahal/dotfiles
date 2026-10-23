@@ -55,10 +55,6 @@ solaar_pinned() {
     file_is "$SOLAAR_PIN" "$SOLAAR_PIN_CONTENT"
 }
 
-write_solaar_pin() {
-    write_root_file "$SOLAAR_PIN" "$SOLAAR_PIN_CONTENT" 0644
-}
-
 solaar_source_ok() {
     file_is "$SOLAAR_SOURCES" "$(solaar_sources)"
 }
@@ -90,7 +86,7 @@ logitech_items() {
     items_reset
     item --sudo "Only Solaar taken from the Solaar team's PPA ($SOLAAR_PIN)" \
         "Let apt take only Solaar from the Solaar team's PPA: write $SOLAAR_PIN" \
-        solaar_pinned write_solaar_pin
+        solaar_pinned "write_root_content SOLAAR_PIN SOLAAR_PIN_CONTENT 0644"
     item --sudo "The Solaar team's PPA" "Add the Solaar team's PPA ($SOLAAR_SOURCES)" \
         solaar_source_ok add_solaar_repo
     item --sudo --hint "older ones fail every settings change after the USB switch replugs the receiver" \

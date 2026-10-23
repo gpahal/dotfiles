@@ -7,12 +7,9 @@
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 load_script logitech/install.sh
+sandbox_paths logitech/install.sh
 as_os ubuntu
 
-SOLAAR_SOURCES="$SANDBOX/apt/sources.list.d/solaar.sources"
-SOLAAR_PIN="$SANDBOX/apt/preferences.d/dotfiles-solaar"
-# shellcheck disable=SC2034 # the step reads it
-SOLAAR_KEYRING="$SANDBOX/keyrings/solaar.asc"
 OS_RELEASE="$SANDBOX/os-release"
 echo "VERSION_CODENAME=resolute" > "$OS_RELEASE"
 
@@ -24,7 +21,7 @@ case "$*" in
     *Version*) printf "%s" "$(cat "$v")" ;;
 esac'
 stub apt-get 'if [ "${*: -1}" == solaar ]; then
-    if [ -e "$SANDBOX/apt/sources.list.d/solaar.sources" ]; then
+    if [ -e "$SANDBOX/etc/apt/sources.list.d/solaar.sources" ]; then
         echo "1.1.20+202607061356~ubuntu26.04.1" > "$SANDBOX/solaar-version"
     else
         echo "1.1.19-1" > "$SANDBOX/solaar-version"

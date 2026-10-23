@@ -7,6 +7,8 @@ set -euo pipefail
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -61,25 +63,17 @@ tmux_files() {
 # continuum enables it when a server loads it with @continuum-boot on (tmux.conf, outside macOS)
 TMUX_BOOT_UNIT=tmux.service
 
-tmux_boot_enabled() {
-    systemctl --user is-enabled --quiet "$TMUX_BOOT_UNIT" 2>/dev/null
-}
-
 # A running server may have an older config, so start a throwaway one on a new socket; it exits
 # once the config has run, having no sessions.
 setup_tmux_boot() {
     local tmpdir
-    if ! systemctl --user show-environment &>/dev/null; then
-        echo "Couldn't reach your systemd user manager, so tmux doesn't start at boot yet. Re-run the"
-        echo "step after the next reboot or login."
-        return 0
-    fi
+    user_manager_reachable "tmux doesn't start at boot" || return 0
     echo "Setting tmux to start at boot..."
     tmpdir="$(mktemp -d)" || return 1
     env -u TMUX TMUX_TMPDIR="$tmpdir" tmux start-server || true
     env -u TMUX TMUX_TMPDIR="$tmpdir" tmux kill-server &>/dev/null || true
     rm -rf "$tmpdir"
-    if ! tmux_boot_enabled; then
+    if ! unit_enabled --user "$TMUX_BOOT_UNIT"; then
         echo "  continuum didn't enable $TMUX_BOOT_UNIT, so tmux won't start at boot." >&2
         return 1
     fi
@@ -90,7 +84,7 @@ tmux_items() {
     items_reset
     is_ubuntu || return 0
     item "tmux starts at boot (continuum's systemd user unit, $TMUX_BOOT_UNIT)" "Start tmux at boot" \
-        tmux_boot_enabled setup_tmux_boot
+        "unit_enabled --user $TMUX_BOOT_UNIT" setup_tmux_boot
 }
 
 status() {

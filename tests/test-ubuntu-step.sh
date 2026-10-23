@@ -6,8 +6,6 @@
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
@@ -43,17 +41,12 @@ assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
 # sshd gets enabled in the run that installs openssh-server, which apply checks again after
-stub dpkg-query 'case "${!#}" in
-    openssh-server) [ ! -e "$SANDBOX/openssh" ] || echo "install ok installed" ;;
-    *) echo "install ok installed" ;;
-esac'
-stub apt-get '[[ "$*" != *"install -y openssh-server"* ]] || touch "$SANDBOX/openssh"'
-echo disabled > "$SANDBOX/units/ssh.socket"
+stub_apt_packages '*' '!openssh-server'
+rm "$SANDBOX/units/ssh.socket.enabled"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "install -y openssh-server"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
-stub dpkg-query 'echo "install ok installed"'
-stub apt-get 'cat "$SANDBOX/apt-upgrade" 2> /dev/null || true'
+stub_apt_packages '*'
 
 # New dependencies don't hold a package back, as they don't stop unattended-upgrades
 printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
@@ -76,13 +69,14 @@ assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 rm "$SANDBOX/apt-upgrade"
 
 # ssh.service enabled instead of ssh.socket: leave ssh.socket off, since it couldn't bind sshd's port
-echo disabled > "$SANDBOX/units/ssh.socket"
-echo enabled > "$SANDBOX/units/ssh.service"
+rm "$SANDBOX/units/ssh.socket.enabled"
+touch "$SANDBOX/units/ssh.service.enabled"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "enable --now ssh.socket"
-rm "$SANDBOX/units/"*
+rm "$SANDBOX/units/ssh.service.enabled"
+touch "$SANDBOX/units/ssh.socket.enabled"
 
 # Re-run: only sudo -n, to read the ufw rules
 assert_exit 0 main
@@ -130,13 +124,13 @@ done
 
 # After a failed daemon-reload, the next run reloads even though the files match
 echo "# changed" >> "$USER_UNITS/dotfiles-health.service"
-touch "$SANDBOX/reload-needed" "$SANDBOX/reload-fails"
+touch "$SANDBOX/units/reload-needed" "$SANDBOX/units/reload-fails"
 assert_exit 1 main
-rm "$SANDBOX/reload-fails"
+rm "$SANDBOX/units/reload-fails"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-[ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
+[ ! -e "$SANDBOX/units/reload-needed" ] || fail "the units weren't reloaded"
 assert_exit 0 main --status
 test_done

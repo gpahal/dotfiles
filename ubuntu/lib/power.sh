@@ -14,10 +14,6 @@ sleep_conf_written() {
     file_is "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
 }
 
-write_sleep_conf() {
-    write_root_file "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
-}
-
 sysctl_file_written() {
     file_is "$SYSCTL_CONF" "$SYSCTL_CONTENT"
 }
@@ -94,7 +90,7 @@ sysctl_overrides() {
 # (as in a VM), so judge by sysctl_in_effect instead.
 apply_sysctl() {
     local overrides line
-    sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT" || return 1
+    sysctl_file_written || write_root_content SYSCTL_CONF SYSCTL_CONTENT || return 1
     sudo sysctl --system > /dev/null || true
     sysctl_in_effect && return 0
     overrides="$(sysctl_overrides)"

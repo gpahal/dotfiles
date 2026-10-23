@@ -11,6 +11,10 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 # shellcheck source=../../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../../lib/gnome.sh
+source "$DOTFILES_DIR/lib/gnome.sh"
+# shellcheck source=../../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 # shellcheck source=../../lib/casks.sh
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/app-json.sh
@@ -99,10 +103,7 @@ T3_CODE_LIBATOMIC_PENDING="Install libatomic1, which the t3 CLI needs"
 setup_t3_code_desktop_ubuntu() {
     echo "Setting up the T3 Code desktop app..."
     local result=0 merged=true notes=()
-    if ! has_gnome_desktop; then
-        echo "  No GNOME desktop, so no desktop app; the service runs the server."
-        return 0
-    fi
+    skip_without_desktop && return 0
     t3_code_files copy_file || result=1
     if ! merge_app_json t3code \
         "The desktop app's own server is already off, and its app settings are set" \
@@ -311,41 +312,18 @@ t3_code_status_client_settings() {
     status_check "App settings in ~/.t3/userdata/client-settings.json" json_applied "$T3_CODE_CLIENT_SETTINGS" "$T3_CODE_CLIENT_FILTER"
 }
 
-# The app's name changes between releases, so fall back to any non-nightly T3 Code*.app.
-# Usage: t3_code_app_path [cask_app_path output, to skip asking brew again]
+# The app's name changes between releases, so any non-nightly T3 Code*.app is the cask's
+T3_CODE_APP_GLOB="T3 Code*.app"
+T3_CODE_NIGHTLY_GLOB="*(Nightly).app"
+
 t3_code_app_path() {
-    local app dir=/Applications
-    if [ $# -gt 0 ]; then
-        app="$1"
-    else
-        app="$(cask_app_path t3-code)"
-    fi
+    local app
+    app="$(cask_app_path t3-code)"
     if [ -n "$app" ] && [ -d "$app" ]; then
         echo "$app"
         return 0
     fi
-    [ -z "$app" ] || dir="${app%/*}"
-    for app in "$dir/T3 Code"*.app; do
-        if [ -d "$app" ] && [[ "$app" != *"(Nightly).app" ]]; then
-            echo "$app"
-            return 0
-        fi
-    done
-    return 1
-}
-
-# As cask_state, plus "renamed": brew lists the cask but the app renamed itself in an update before
-# the cask caught up. A renamed app brew doesn't list is "other".
-t3_code_cask_state() {
-    local state app found
-    IFS=$'\t' read -r state app <<< "$(cask_state t3-code)"
-    if [ "$state" == gone ] || [ "$state" == missing ]; then
-        if found="$(t3_code_app_path "$app")"; then
-            app="$found"
-            if [ "$state" == gone ]; then state=renamed; else state=other; fi
-        fi
-    fi
-    printf '%s\t%s\n' "$state" "$app"
+    cask_app_matching "$(dirname "${app:-/Applications/x}")" "$T3_CODE_APP_GLOB" "$T3_CODE_NIGHTLY_GLOB"
 }
 
 t3_code_macos_items() {
@@ -367,11 +345,10 @@ turn_off_t3_code_telemetry() {
     echo "  Turned off telemetry (restart T3 Code if it's running)"
 }
 
-# Usage: configure_t3_code [cask app path]
 configure_t3_code() {
     echo "Configuring T3 Code..."
     local app_name
-    app_name="$(t3_code_app_path "$@" || true)"
+    app_name="$(t3_code_app_path || true)"
     app_name="${app_name##*/}"
     app_name="${app_name%.app}"
     local result=0
@@ -444,14 +421,6 @@ t3_code_describe_server() {
     echo "PID $pid, $name ($cmd); to fix it, $fix"
 }
 
-t3_code_service_enabled() {
-    systemctl --user is-enabled --quiet t3code.service 2>/dev/null
-}
-
-t3_code_service_active() {
-    systemctl --user is-active --quiet t3code.service 2>/dev/null
-}
-
 t3_code_launcher_has_server() {
     pgrep -P "$1" > /dev/null 2>&1
 }
@@ -496,7 +465,7 @@ wait_for_t3_code_service() {
     local _ pid last="" polls=0
     for _ in $(seq 1 20); do
         pid="$(t3_code_main_pid || true)"
-        if t3_code_service_active && [ -n "$pid" ] && [ "$pid" == "$last" ]; then
+        if unit_active --user t3code.service && [ -n "$pid" ] && [ "$pid" == "$last" ]; then
             polls=$((polls + 1))
             [ "$polls" -ge 4 ] && return 0
         else
@@ -561,7 +530,7 @@ t3_code_drop_in_current() {
 # The loaded unit, not the running process, which keeps its environment until restarted
 t3_code_drop_in_loaded() {
     local environment
-    [ "$(systemctl --user show -p NeedDaemonReload --value t3code.service 2>/dev/null)" == no ] || return 1
+    unit_loaded_current --user t3code.service || return 1
     environment=" $(systemctl --user show -p Environment --value t3code.service 2>/dev/null) "
     [[ "$environment" == *" T3CODE_TELEMETRY_ENABLED=false "* ]] &&
         [[ "$environment" == *" T3CODE_PORT=$T3_CODE_PORT "* ]] &&
@@ -596,7 +565,7 @@ t3_code_running_env_current() {
 # Unreadable process state counts as pending
 t3_code_restart_pending() {
     [ -f "$T3_CODE_SERVICE_DROP_IN" ] || return 1
-    t3_code_service_active || return 1
+    unit_active --user t3code.service || return 1
     ! { t3_code_drop_in_loaded && t3_code_running_env_current; }
 }
 
@@ -660,7 +629,7 @@ update_t3_code_server() {
         fi
         return 0
     fi
-    if ! t3_code_service_active; then
+    if ! unit_active --user t3code.service; then
         if ! json_merge "$T3_CODE_SETTINGS" "$(t3_code_server_filter)"; then
             echo "  Couldn't set all of the $T3_CODE_SERVER_SETTINGS_NAME and $T3_CODE_SERVICE_DROP_IN" >&2
             return 1
@@ -678,7 +647,7 @@ update_t3_code_server() {
         fi
         return 0
     fi
-    if ! systemctl --user stop t3code.service || t3_code_service_active; then
+    if ! systemctl --user stop t3code.service || unit_active --user t3code.service; then
         echo "  Couldn't stop the T3 Code service, so its settings are unchanged. Check:" >&2
         echo "  systemctl --user status t3code" >&2
         return 1
@@ -725,7 +694,7 @@ ensure_t3_code_service() {
         if ! lingering; then
             echo "  Linger is off, so the service only starts once you log in. Run: bash setup.sh ubuntu"
         fi
-        if ! t3_code_service_enabled; then
+        if ! unit_enabled --user t3code.service; then
             if ! systemctl --user enable t3code.service; then
                 echo "  Couldn't enable the T3 Code service. Check: systemctl --user status t3code" >&2
                 return 1
@@ -733,7 +702,7 @@ ensure_t3_code_service() {
             echo "  Enabled the T3 Code service, so it starts at boot"
             changed=true
         fi
-        if ! t3_code_service_active; then
+        if ! unit_active --user t3code.service; then
             start_t3_code_service
             echo "  Started the T3 Code service"
             changed=true
@@ -793,7 +762,7 @@ setup_t3_code_browser() {
 # A crash-looping server shows active between restarts, so it must have run 2 s; --for-alerts skips that
 t3_code_service_running_now() {
     local pid age
-    t3_code_service_active || return 1
+    unit_active --user t3code.service || return 1
     ! status_for_alerts || return 0
     pid="$(t3_code_main_pid)" || return 1
     age="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')" || return 1
@@ -860,17 +829,7 @@ status() {
     local jq=true
     status_require_cmd jq "T3 Code's settings" || jq=false
     if is_macos; then
-        local state="" app="" listing=""
-        if command -v brew &>/dev/null; then
-            IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
-        fi
-        if [ "$state" == renamed ]; then
-            status_item ok "t3-code (cask), as ${app##*/}"
-        else
-            # Pass the listing so brew isn't asked again
-            case "$state" in brew | gone) listing="t3-code"$'\t'"$app" ;; esac
-            status_cask t3-code "$app" "$listing"
-        fi
+        status_cask --renamed "$T3_CODE_APP_GLOB" --except "$T3_CODE_NIGHTLY_GLOB" t3-code
         if "$jq"; then
             t3_code_status_server_settings
             t3_code_status_client_settings
@@ -881,9 +840,7 @@ status() {
         status_item skipped "t3 CLI and the T3 Code service: Ubuntu only; on macOS the app runs the server"
         return 0
     fi
-    if ! has_gnome_desktop; then
-        status_item skipped "T3 Code desktop app: no GNOME desktop"
-    else
+    if ! skip_without_desktop --status "T3 Code desktop app"; then
         t3_code_ubuntu_items
         items_status "apt_installed t3code"
         t3_code_files status_file
@@ -904,7 +861,7 @@ status() {
     ! "$jq" || t3_code_status_server_settings
     t3_code_status_service
     if [ -f "$T3_CODE_SERVICE_UNIT" ]; then
-        status_check "T3 Code service enabled at boot" t3_code_service_enabled
+        status_check "T3 Code service enabled at boot" unit_enabled --user t3code.service
         status_check "Linger enabled for T3 Code to start without login" lingering
     fi
     t3_code_status_listeners
@@ -943,14 +900,9 @@ apply() {
         require_cmd curl || return 1
     fi
     if is_macos; then
-        local cask_failed=0 state app
-        IFS=$'\t' read -r state app <<< "$(t3_code_cask_state)"
-        if [ "$state" == renamed ]; then
-            echo "  t3-code already installed, as ${app##*/}."
-        else
-            install_cask t3-code "" "$state" || cask_failed=1
-        fi
-        configure_t3_code "$app" || return 1
+        local cask_failed=0
+        install_cask --renamed "$T3_CODE_APP_GLOB" --except "$T3_CODE_NIGHTLY_GLOB" t3-code || cask_failed=1
+        configure_t3_code || return 1
         return "$cask_failed"
     else
         # One scope, so the desktop app and the t3 CLI share one sudo question

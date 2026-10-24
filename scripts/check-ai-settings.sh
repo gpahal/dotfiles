@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check the claude-code and codex steps' settings and the reviewer flags against the installed CLIs.
+# Check the claude-code and codex steps' settings, the reviewer flags, and Codex's sandbox against
+# the installed CLIs.
 # Each doctor must first reject a broken file, so a change in its output can't turn this into a pass.
 # claude doctor skips unknown keys; codex doctor skips unknown [desktop] keys (check those by hand).
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Ubuntu signs with a passphrase-less key, since T3 Code's agents have no ssh-agent or terminal
+# git/setup-signing.sh. Ubuntu signs with a passphrase-less key, since T3 Code's agents have no
+# ssh-agent or terminal; macOS signs with ~/.ssh/id_ed25519 and its keychain passphrase.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

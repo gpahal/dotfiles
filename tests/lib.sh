@@ -323,7 +323,7 @@ hide() {
     done
 }
 
-# skip_rest carries on; the test then exits 77 unless a check failed
+# skip exits 77 now; skip_rest carries on, and the test then exits 77 unless a check failed
 skip() {
     echo "SKIP: $1"
     exit 77
@@ -771,7 +771,7 @@ sandbox_paths() {
 }
 
 # Empty $STUB_LOG, then run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always
-# succeeds. To check the log of two runs, save it before the second.
+# succeeds.
 run() {
     local errexit=false
     : > "$STUB_LOG"
@@ -1004,8 +1004,8 @@ _snapshot_path() {
 }
 
 # Usage: as_unwritable <path> <cmd>...: asserts the command fails with the path read-only, leaving
-# $RUN_OUTPUT, then makes it writable again. Fails, running nothing, when it's writable anyway, as
-# to root.
+# $RUN_OUTPUT, then makes it writable again. Returns 1, running nothing, when it's writable anyway,
+# as to root.
 as_unwritable() {
     local path="$1"
     shift

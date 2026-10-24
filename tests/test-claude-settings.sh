@@ -92,7 +92,8 @@ for event in WorktreeCreate WorktreeRemove; do
     assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 done
 
-# Ours is removed from every event once another WorktreeCreate command appears, so they don't stack
+# Ours is removed from the events it registers once another WorktreeCreate or WorktreeRemove command
+# appears, so they don't stack
 jq -n '{hooks: {
     WorktreeCreate: [{hooks: [{type: "command", command: "~/.claude/hooks/worktree-hook.sh", timeout: 120}]},
         {hooks: [{type: "command", command: "my-hook.sh"}]}],

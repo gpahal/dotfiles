@@ -61,9 +61,8 @@ assert_exit 1 claude_write_failure
 assert_not_contains "$RUN_OUTPUT" "Turned on push notifications"
 [ -f "$HOME/.claude/CLAUDE.md" ] || fail "Claude skipped its instructions after a failed merge"
 
-# These need mikefarah's yq, and a brew, since the step fails early without one
-stub brew 'exit 1'
-yq --version 2> /dev/null | grep -q mikefarah || skip "mikefarah's yq isn't installed"
+# These need mikefarah's yq $YQ_MIN_VERSION or newer, which the step checks first
+(load_script ai_tools/codex/install.sh && codex_yq_new_enough) || skip "mikefarah's yq isn't installed, or is too old"
 codex_failure() {
     load_script ai_tools/codex/install.sh
     as_os "$TEST_OS"

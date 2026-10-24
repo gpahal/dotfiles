@@ -94,7 +94,8 @@ assert_not_contains "$RUN_OUTPUT" "S6B0NX0T123456"
 assert_file_contains "$STUB_LOG" "sudo -n $STUB_DIR/smartctl -H -n standby -d sat /dev/sda"
 assert_file_contains "$STUB_LOG" "sudo -n $STUB_DIR/smartctl -H -n standby -d nvme /dev/nvme0"
 
-# A past threshold crossing or log errors are ok
+# FAILED or a prefailure attribute at its threshold is missing; a past threshold crossing or log
+# errors are ok
 : > "$SANDBOX/disks"
 disk sda sat "${HEADER}SMART overall-health self-assessment test result: FAILED!\nDrive failure expected in less than 24 hours. SAVE ALL DATA.\n" 24
 disk sdb sat "${HEADER}SMART overall-health self-assessment test result: PASSED\n" 16

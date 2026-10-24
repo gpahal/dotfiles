@@ -9,7 +9,6 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 load_script lib/common.sh
 load_script lib/system.sh
 
-# read -p prints no question without a terminal, so confirm echoes it
 file="$HOME/settings.json"
 printf 'old\n' > "$file"
 chmod 640 "$file"

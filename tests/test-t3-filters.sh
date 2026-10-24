@@ -1,5 +1,5 @@
 #!/bin/bash
-# The step's functions call the ones this test replaces
+# Its functions run only through run or the step
 # shellcheck disable=SC2329
 
 # The T3 Code server settings filter: what it sets, and which of your values it keeps.

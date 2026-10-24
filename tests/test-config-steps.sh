@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# The config-only steps through setup.sh: apply, a second run changing nothing, status, and where
+# The config steps (the config-only ones, and git, ssh, zsh, and vim) through setup.sh: apply, a second run changing nothing, status, and where
 # each OS puts their configs.
 
 # shellcheck source=lib.sh

@@ -82,13 +82,14 @@ done
 # an outside connection without a logind login (a scanner) doesn't count. test-ufw-helpers.sh
 # covers which addresses count as outside.
 sessions 22 192.168.1.5:22 192.168.1.20:51000 192.168.1.5:22 203.0.113.9:51000 192.168.1.5:22 198.51.100.8:51001
-logins 192.168.1.20 203.0.113.9
+logins 192.168.1.20 203.0.113.9 198.51.100.9
 rm -f "$SANDBOX/linger"
-export TMUX=/tmp/tmux-1000/default,1,0 SSH_CONNECTION="192.168.1.20 51000 192.168.1.5 22"
+export TMUX=/tmp/tmux-1000/default,1,0 SSH_CONNECTION="198.51.100.9 51000 192.168.1.5 22"
 firewall_run
 unset TMUX SSH_CONNECTION
 assert_eq 1 "$RUN_STATUS" "the step with a session from outside"
 assert_contains "$RUN_OUTPUT" "203.0.113.9"
+assert_not_contains "$RUN_OUTPUT" "198.51.100.9"
 assert_not_contains "$RUN_OUTPUT" "198.51.100.8"
 firewall_unchanged
 

@@ -11,7 +11,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
 
-# SESSION and SHELL_STATE are set per run
+# SESSION and SHELL_STATE stay unset, as with no desktop session, until the test exports them
 stub_gnome_session "$STATE"
 stub pnpm 'mkdir -p node_modules'
 stub_apt_packages

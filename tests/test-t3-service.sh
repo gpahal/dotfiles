@@ -492,7 +492,7 @@ kill "$(cat "$SANDBOX/t3-pid")" 2> /dev/null || true
 stub sleep
 printf '%s\n' "$T3_STUB" > "$HOME/.local/bin/t3"
 
-# Only declining the sudo for libatomic1 doesn't fail the step.
+# A t3 installer that leaves no t3 fails the step; declining the sudo for libatomic1 doesn't.
 reset
 rm -f "$HOME/.local/bin/t3"
 replace_fn apt_installed '[ "$1" != libatomic1 ] || [ -e "$STATE/libatomic1" ]'

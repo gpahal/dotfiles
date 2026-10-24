@@ -266,7 +266,8 @@ assert_file_not_contains "$STUB_LOG" "outside"
 
 # --- cask failures and missing_ubuntu_commands ---
 
-# brew exits 130 on Ctrl-C, so install_cask exits rather than return a failure `|| result=1` hides.
+# brew exits 130 on Ctrl-C, and 129 or 143 on another signal, so install_cask exits rather than
+# return a failure `|| failed+=(...)` hides.
 # Other codes, 137, 141, and 255 included, return so the rest still install.
 load_script homebrew/install.sh
 as_os ubuntu

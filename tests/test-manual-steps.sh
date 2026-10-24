@@ -201,12 +201,14 @@ subtest doc_sync
 contract() {
     local os cmd
     for cmd in sqlite3 plutil sfltool tmutil pro fdesetup tailscale gh lsblk nmcli gsettings gdbus busctl ss \
-        systemctl dpkg-query getent; do
+        systemctl dpkg-query getent dscl; do
         stub "$cmd" 'exit 1'
     done
     stub_sudo_cacheable
     cache_sudo yes
+    # uname too, since a check that runs another step's code loads lib/common.sh again
     for os in macos ubuntu; do
+        if [ "$os" == macos ]; then stub_uname Darwin; else stub_uname Linux; fi
         load_script manual-steps/install.sh
         as_os "$os"
         assert_read_only 3 main --status
@@ -215,6 +217,7 @@ contract() {
         assert_contains "$RUN_OUTPUT" "Remaining manual steps on $(manual_os_name "$os")"
         assert_eq "" "$(machine_changes "$STUB_LOG")" "apply's changes on $os"
     done
+    rm -f "$STUB_DIR/uname"
 }
 subtest contract
 

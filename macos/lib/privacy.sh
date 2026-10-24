@@ -101,7 +101,7 @@ login_item_state() {
         END {
             finish()
             if (!records) exit 2
-            print state == "" ? "none" : state
+            print (state == "" ? "none" : state)
         }' <<< "$BTM_DUMP")" && return 0
     MANUAL_DETAIL="couldn't read sfltool dumpbtm's list"
     return 2

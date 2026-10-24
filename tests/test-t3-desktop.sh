@@ -4,6 +4,9 @@
 # T3 Code's macOS setup: the telemetry LaunchAgent, written but not loaded, launchd's telemetry
 # variable, the settings, and the cask, including an app an update renamed.
 
+# plutil comes with macOS, so only a run there lints the plist. tests/lib.sh makes it a sentinel.
+REAL_PLUTIL="$(command -v plutil || true)"
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -28,9 +31,8 @@ ENV_ITEM="T3 Code's telemetry off in launchd's environment"
 
 # Loading the agent would open T3 Code, so it's only written
 assert_exit 0 configure_t3_code
-# plutil comes with macOS, so only a run there lints the plist
-if [ "$(uname -s)" == Darwin ]; then
-    plutil -lint "$T3_CODE_TELEMETRY_AGENT" > /dev/null || fail "the LaunchAgent isn't a valid plist"
+if [ -n "$REAL_PLUTIL" ]; then
+    "$REAL_PLUTIL" -lint "$T3_CODE_TELEMETRY_AGENT" > /dev/null || fail "the LaunchAgent isn't a valid plist"
 fi
 assert_file_contains "$STUB_LOG" "launchctl setenv T3CODE_TELEMETRY_ENABLED false"
 assert_file_not_contains "$STUB_LOG" "launchctl load"

@@ -64,6 +64,13 @@ gnome_extension_state() {
     jq -r '.data[0] | select(.state) | "\(.state.data | floor)\t\(.error.data // "")"' <<< "$info"
 }
 
+# Whether the lock screen is up. GNOME Shell turns off extensions that don't list the unlock-dialog
+# session mode while it is.
+gnome_screen_locked() {
+    [ "$(busctl --user call org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver \
+        GetActive 2> /dev/null)" == "b true" ]
+}
+
 # status_gnome_extension <uuid> <dir> <label>. Whether GNOME loaded it matters only once it's
 # installed in <dir> and enabled.
 status_gnome_extension() {
@@ -81,7 +88,12 @@ status_gnome_extension() {
         "$GNOME_EXTENSION_OUT_OF_DATE") status_item missing "$label loaded: it doesn't list this GNOME version in metadata.json" ;;
         "$GNOME_EXTENSION_ERROR") status_item missing "$label loaded: it failed: ${error:-no error given}" ;;
         "") status_item missing "$label loaded: log out and back in, since GNOME loads a new extension at login" ;;
-        *) status_item missing "$label loaded: it's in state $state, not running; log out and back in" ;;
+        *)
+            if gnome_screen_locked; then
+                status_item unverified "$label loaded: the screen is locked, and GNOME turns extensions off while it is; check once it's unlocked"
+            else
+                status_item missing "$label loaded: it's in state $state, not running; log out and back in"
+            fi ;;
     esac
 }
 

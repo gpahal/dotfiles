@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a runner that
-# couldn't run or a missing repo, the boot notice, and the ubuntu step's report of a failed last run.
+# couldn't run, a missing or unrecorded checkout, the boot notice, and the ubuntu step's report of a
+# failed last run.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -10,9 +11,11 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
 
-# Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>
-export DOTFILES_REPO="$SANDBOX/repo"
-REPO="$DOTFILES_REPO"
+# Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>, in the recorded checkout
+REPO="$SANDBOX/repo"
+CHECKOUT="$HOME/.local/state/dotfiles/checkout"
+mkdir -p "$(dirname "$CHECKOUT")"
+echo "$REPO" > "$CHECKOUT"
 mkdir -p "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
 install_health_alert "$SANDBOX/health-alert"
 for runner in setup ai_tools; do
@@ -143,8 +146,14 @@ mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 mv "$REPO" "$SANDBOX/repo.away"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
-assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO"
+assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO; run bash setup.sh ubuntu where the repo is now"
 mv "$SANDBOX/repo.away" "$REPO"
+# No checkout recorded
+mv "$CHECKOUT" "$SANDBOX/checkout.away"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no checkout recorded in $CHECKOUT"
+assert_file_not_contains "$STUB_LOG" "setup --status"
+mv "$SANDBOX/checkout.away" "$CHECKOUT"
 
 # A failed push leaves the state alone; a changed message is pushed despite a recent push
 echo 3 > "$SANDBOX/exit/setup"

@@ -34,7 +34,7 @@ It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effo
 
 ## Updating
 
-`upgrade-ai-tools`, which `upgrade` runs, updates what's installed and lists failed stages:
+`upgrade-ai-tools` (or `just upgrade-ai-tools`), which `upgrade` runs, updates what's installed and lists failed stages. It picks the checkout as [`upgrade` does](../README.md#updating).
 
 - `claude update`.
 - The Claude, ChatGPT, and T3 Code casks unless running, and the Codex CLI.

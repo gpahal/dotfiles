@@ -1,12 +1,16 @@
 #!/bin/bash
 
-# The zsh step: one source line per startup file, the login shell offer, and a file it can't copy.
+# The zsh step: one source line per startup file, the recorded checkout, the login shell offer, and a
+# file it can't copy. tests/test-checkout.sh covers which checkout it records.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 stub_login_shell_zsh
 load_script zsh/install.sh
+checkout="$(main_checkout)"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Checkout for upgrade and upgrade-ai-tools, recorded in ~/.local/state/dotfiles/checkout: $checkout; none is recorded"
 replace_fn current_login_shell 'echo /bin/zsh'
 replace_fn login_zsh_path 'echo /bin/zsh'
 
@@ -46,6 +50,7 @@ assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         profile.sh sourced in ~/.profile"
 assert_contains "$RUN_OUTPUT" "ok         path.zsh sourced in ~/.zshenv"
 assert_contains "$RUN_OUTPUT" "skipped    path.zsh sourced in ~/.zprofile: macOS only"
+assert_contains "$RUN_OUTPUT" "ok         Checkout for upgrade and upgrade-ai-tools, recorded in ~/.local/state/dotfiles/checkout: $checkout"
 
 # A declined login shell change doesn't fail the step
 stub_sudo_cacheable

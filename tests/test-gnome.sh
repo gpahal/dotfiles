@@ -113,6 +113,11 @@ extension_states() {
     assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: it doesn't list this GNOME version"
     SHELL_STATE=3 SHELL_ERROR="TypeError: x is undefined" assert_exit 3 loaded
     assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: it failed: TypeError: x is undefined"
+    SHELL_STATE=2 assert_exit 3 loaded
+    assert_contains "$RUN_OUTPUT" "missing    GNOME extension loaded: it's in state 2, not running"
+    # The lock screen turns extensions off until it's unlocked
+    SHELL_STATE=2 SCREEN_LOCKED=1 assert_exit 0 loaded
+    assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded: the screen is locked"
     # Over SSH with no desktop login
     assert_exit 0 loaded
     assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded"

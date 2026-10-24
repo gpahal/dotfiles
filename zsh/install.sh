@@ -3,9 +3,14 @@ set -euo pipefail
 
 # Copy the zsh and starship config, source it at login, and offer zsh as the login shell.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.
+# Records the checkout, for upgrade and upgrade-ai-tools in aliases.zsh.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/checkout.sh
+source "$DOTFILES_DIR/lib/checkout.sh"
+
+UPGRADE_FUNCTIONS="upgrade and upgrade-ai-tools"
 
 # Lines written to the startup files, expanded when the shell reads them. STARTUP_FILES names them.
 # shellcheck disable=SC2016,SC2034
@@ -140,6 +145,7 @@ status() {
         status_item skipped "profile.sh sourced in ~/.profile: Ubuntu only"
     fi
     login_shell_status
+    status_checkout "$UPGRADE_FUNCTIONS"
 }
 
 apply() {
@@ -155,6 +161,7 @@ apply() {
     local status=0
     echo "Copying zsh and starship config..."
     zsh_files copy_file || status=1
+    apply_checkout "$UPGRADE_FUNCTIONS" || status=1
     echo "Setting up the startup files..."
     zsh_items
     items_apply_confirmed --done "  The startup files already source the zsh config" || status=1

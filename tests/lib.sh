@@ -432,6 +432,7 @@ case "$*" in
     *GetExtensionInfo*)
         if [ "$SHELL_STATE" == unknown ]; then echo "{\"type\":\"a{sv}\",\"data\":[{}]}"
         else echo "{\"type\":\"a{sv}\",\"data\":[{\"state\":{\"type\":\"d\",\"data\":$SHELL_STATE.0},\"error\":{\"type\":\"s\",\"data\":\"${SHELL_ERROR:-}\"}}]}"; fi ;;
+    *ScreenSaver*GetActive*) if [ -n "${SCREEN_LOCKED:-}" ]; then echo "b true"; else echo "b false"; fi ;;
 esac
 EOF
     stub busctl "$body"
@@ -443,8 +444,9 @@ EOF
 # a test can create or remove: <unit>.enabled, .enabled-runtime, .active, .masked and .failed,
 # named user-<unit>.* for --user units. enable --now leaves a failed unit failed; start and restart
 # clear it. show answers LoadState (not-found while <unit>.not-found exists), NeedDaemonReload
-# (yes while <dir>/reload-needed exists), ActiveState and UnitFileState. daemon-reload fails while
-# <dir>/reload-fails exists, and else clears reload-needed and the not-found marks.
+# (yes while <dir>/reload-needed exists), ActiveState, Result (exit-code while <unit>.failed
+# exists) and UnitFileState. daemon-reload fails while <dir>/reload-fails exists, and else clears
+# reload-needed and the not-found marks.
 # show-environment fails while <dir>/no-user-manager exists. The prefix body runs first, with the
 # args as "$@", and may handle a command and exit.
 stub_systemctl_units() {
@@ -501,6 +503,7 @@ for unit in "${units[@]}"; do
                         if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.not-found" ]; then v=not-found; else v=loaded; fi ;;
                     NeedDaemonReload) if [ -e "$dir/reload-needed" ]; then v=yes; else v=no; fi ;;
                     ActiveState) if [ -e "$f.active" ]; then v=active; else v=inactive; fi ;;
+                    Result) if [ -e "$f.failed" ]; then v=exit-code; else v=success; fi ;;
                     UnitFileState)
                         if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.enabled" ]; then v=enabled; else v=disabled; fi ;;
                     *) v="" ;;

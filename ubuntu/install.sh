@@ -30,6 +30,8 @@ source "$UBUNTU_LIB_DIR/alerts.sh"
 source "$UBUNTU_LIB_DIR/ups.sh"
 # shellcheck source=lib/paths.sh
 source "$UBUNTU_LIB_DIR/paths.sh"
+# shellcheck source=../lib/checkout.sh
+source "$DOTFILES_DIR/lib/checkout.sh"
 # shellcheck source=lib/services.sh
 source "$UBUNTU_LIB_DIR/services.sh"
 

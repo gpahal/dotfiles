@@ -80,6 +80,14 @@ setup *steps:
 setup-ai *steps:
     bash ai_tools/setup.sh "$@"
 
+# Update everything installed, with this checkout's Brewfile and plugin pins
+upgrade:
+    bash scripts/upgrade.sh
+
+# Update only the AI tools
+upgrade-ai-tools:
+    bash scripts/upgrade.sh ai-tools
+
 # Report setup status; exits 1 on failure, 3 on attention
 status:
     #!/bin/bash

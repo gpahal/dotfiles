@@ -161,9 +161,9 @@ stub_at() {
     chmod +x "$1"
 }
 
-# Stub sudo to run its command as you, dropping install's -o and -g, which need root. It refuses
-# paths outside the sandbox and /dev, and repo files the command would change. The optional body
-# runs first and may rewrite "$@" with set --.
+# Stub sudo to run its command as you, dropping install's -o, and its -g for a group you aren't in,
+# which need root. It refuses paths outside the sandbox and /dev, and repo files the command would
+# change. The optional body runs first and may rewrite "$@" with set --.
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
@@ -190,7 +190,12 @@ if [ "$cmd" == install ]; then
     args=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -o | -g) shift 2 ;;
+            -o) shift 2 ;;
+            # Without it, a new file takes its directory group, as on macOS
+            -g)
+                ! id -Gn | tr " " "\n" | grep -qxF -- "$2" || args+=("$1" "$2")
+                shift 2
+                ;;
             *) args+=("$1"); shift ;;
         esac
     done

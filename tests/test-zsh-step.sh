@@ -100,6 +100,38 @@ replace_fn current_login_shell 'echo /opt/homebrew/bin/zsh'
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt/homebrew/bin/zsh"
 
+# Shell history goes into atuin once, before atuin has a database; with no history there's
+# nothing to import
+atuin_import() {
+    local db="$HOME/.local/share/atuin/history.db"
+    replace_fn current_login_shell 'echo /bin/zsh'
+    stub atuin '[ "$*" == "import zsh" ] && [ "$HISTFILE" == "$HOME/.zsh_history" ] || exit 1
+mkdir -p "$HOME/.local/share/atuin" && touch "$HOME/.local/share/atuin/history.db"'
+    rm -f "$HOME/.zsh_history"
+    assert_exit 0 main
+    assert_file_not_contains "$STUB_LOG" atuin
+    echo ": 1700000000:0;ls" > "$HOME/.zsh_history"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    Shell history imported into atuin"
+    assert_exit 0 main
+    assert_contains "$RUN_OUTPUT" "Imported ~/.zsh_history into atuin"
+    [ -e "$db" ] || fail "the import made no atuin database"
+    assert_idempotent main
+    assert_file_not_contains "$STUB_LOG" atuin
+    assert_exit 0 main --status
+    assert_contains "$RUN_OUTPUT" "ok         Shell history imported into atuin"
+    # A failed import, or no atuin, fails the step after the rest
+    rm "$db"
+    stub atuin 'exit 1'
+    assert_exit 1 main
+    assert_contains "$RUN_OUTPUT" "Couldn't import ~/.zsh_history into atuin."
+    assert_contains "$RUN_OUTPUT" "zsh is already the login shell."
+    hide atuin
+    assert_exit 1 main
+    assert_contains "$RUN_OUTPUT" "atuin isn't installed."
+}
+subtest atuin_import
+
 # A file it can't copy fails the step after it copies the rest
 replace_fn current_login_shell 'echo /bin/zsh'
 rm -rf "$HOME/.zsh" "$HOME/.zshrc" "$HOME/.config/starship.toml"

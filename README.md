@@ -38,8 +38,8 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
 | `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login |
-| `zsh` | Copies the zsh and starship config, hooks it into the startup files, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
-| `vim` | Copies the vim config and vim-plug, and moves installed plugins to their pins |
+| `zsh` | Copies the zsh and starship config, hooks it into the startup files, imports your zsh history into atuin, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
+| `vim` | Copies the vim config and vim-plug, installs the plugins at their pins, and installs the Go tools vim-go uses |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
 | `zed` | Copies the Zed settings and keymap |
@@ -55,7 +55,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
 | `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
-| `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
+| `manual-steps` | Prints this OS's [manual steps](#manual-steps) that aren't done yet |
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
 - `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached.
@@ -234,32 +234,29 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 
 ## Manual steps
 
-`bash setup.sh manual-steps` prints these from this section. The AI tools' are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).
+`bash setup.sh manual-steps` prints the ones here that aren't done, leaving out each it can check is done, and `bash setup.sh --status manual-steps` reports those checks. The AI tools' are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).
 
 ### macOS
 
 **Permissions**
 
 1. Give Ghostty Full Disk Access in **System Settings → Privacy & Security → Full Disk Access**, reopen it, and run `bash setup.sh macos` in the repo again. Do the rest from Ghostty.
-2. Turn on [Ghostty notifications](#ghostty-notifications).
-3. Add Ghostty in **System Settings → Privacy & Security → Accessibility**.
+2. Allow Ghostty's notifications, with step 1 of [Ghostty notifications](#ghostty-notifications).
+3. Add Ghostty to any Focus mode's **Allowed Apps**.
+4. Add Ghostty in **System Settings → Privacy & Security → Accessibility**.
 
 **Apps**
 
-4. Set Google Chrome as the default browser.
-5. Open Logi Options+, grant its permissions, and pair your devices.
-6. Open OrbStack once and finish its setup.
-7. Open Vicinae and finish its onboarding. Grant Accessibility, which paste and snippets need, and keep Launch at login on. Full Disk Access is optional; file search needs it to cover every folder.
-8. Open Rectangle, grant accessibility, and set your shortcuts.
-9. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
-10. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
-11. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
-12. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
-13. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
-
-**Shell**
-
-14. Run `atuin import auto`, and `:GoInstallBinaries` in vim.
+5. Set Google Chrome as the default browser.
+6. Open Logi Options+, grant its permissions, and pair your devices.
+7. Open OrbStack once and finish its setup.
+8. Open Vicinae and finish its onboarding. Grant Accessibility, which paste and snippets need, and keep Launch at login on. Full Disk Access is optional; file search needs it to cover every folder.
+9. Open Rectangle, grant accessibility, and set your shortcuts.
+10. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
+11. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
+12. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
+13. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
+14. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
 
 **Accounts and keys**
 
@@ -272,15 +269,16 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 **Security and backups**
 
 20. Optional: `just touch-id`.
-21. Turn on FileVault. `bash setup.sh --status macos` reports it.
-22. Back up off the Mac, and restore a file once to check it.
+21. Turn on FileVault.
+22. Back up off the Mac, such as with Time Machine.
+23. Restore a file from the backup once, to check it.
 
 **Performance and privacy**
 
-23. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
-24. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
-25. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
-26. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
+24. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
+25. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+26. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
+27. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
 ### Ubuntu
 
@@ -290,31 +288,34 @@ Once:
 2. **Network.** Use Ethernet, or run the `nmcli` commands the `ubuntu` step prints so Wi-Fi connects at boot.
 3. **Disk encryption.** Store the recovery key off the machine.
 4. **Login shell.** `chsh -s /usr/bin/zsh`, if you skipped it.
-5. **Shell.** Run `atuin import auto`, and `:GoInstallBinaries` in vim.
-6. **Tailscale.** Run `sudo tailscale up`. In the admin console, disable key expiry for the machine, limit the access policy, remove `root` from `users` in its `ssh` rules, and remove the `funnel` nodeAttr unless you use it.
-7. **SSH key.** On the Mac:
+5. **Tailscale.**
+   - Run `sudo tailscale up`.
+   - In the admin console, disable key expiry for the machine.
+   - Limit the access policy, and remove `root` from `users` in its `ssh` rules.
+   - Remove the `funnel` nodeAttr, unless you use it.
+6. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
    3. `ssh-copy-id <alias>`.
    4. `ssh -O exit <alias>`.
 
    Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
-8. **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
-9. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
-10. **AI tools.** Do the AI tools' [manual steps](./ai_tools/README.md#manual-steps).
-11. **Logitech.** At the desktop, open Solaar and pair your devices.
-12. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
-13. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
-14. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-15. **Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
-16. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
+7. **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
+8. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
+9. **Logitech.** At the desktop, open Solaar and pair your devices.
+10. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
+11. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
+12. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
+13. **Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
+14. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
     3. At the machine, `sudo rtcwake -m off -s 120` starts it 2 minutes later. If it doesn't, only the BIOS setting brings it back.
     4. Run `just alerts test` again.
-17. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, and restore a few files once.
-18. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
-19. **Display scale.** In **Settings → Displays**, set **Scale** to **200%**. Whole-number scaling is sharper than 150% and lighter on the CPU's built-in GPU.
+15. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, such as with Déjà Dup.
+16. **Restore.** Restore a few files from the backup once, to check it.
+17. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
+18. **Display scale.** In **Settings → Displays**, set **Scale** to **200%**. Whole-number scaling is sharper than 150% and lighter on the CPU's built-in GPU.
 
 When needed:
 
@@ -375,6 +376,7 @@ At the desktop, with the Stream Deck switched to it:
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
 - To change the Stream Deck's keys, edit `stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json`, run `bash stream-deck/build-profile.sh`, and commit both. Then re-run `bash setup.sh stream-deck` on each machine. On the Mac, accept Stream Deck's prompt for each changed profile, pressing **Overview** for the **System** profile.
 - To update the Ubuntu Stream Deck's packages, run `pnpm update` in `stream-deck/linux`, commit `pnpm-lock.yaml`, and re-run `bash setup.sh stream-deck`.
+- The manual steps live in `manual-steps/steps.sh` and `ai_tools/manual-steps/steps.sh`, each with the check that tells it's done. After editing one, run `just manual-steps-doc`, which rewrites the READMEs' Manual steps lists.
 - [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.
 
 ## License

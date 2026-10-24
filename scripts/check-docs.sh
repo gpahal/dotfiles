@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Check the READMEs' step lists match the runners' STEPS on both OSes, step header lines,
-# that each STEP_NEEDS names a setup.sh step, the Manual steps sections, and local links.
+# that each STEP_NEEDS names a setup.sh step, the Manual steps lists, and local links.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -103,13 +103,16 @@ backquoted "${sentence%%.*}" > "$tmp/ai-list"
 compare "ai_tools/README.md's step list" "$tmp/ai-macos" "$tmp/ai-list" \
     'a line starting "The steps, in order, are `<step>`, ..." in ai_tools/README.md'
 
-# The manual-steps scripts print these sections
+# scripts/manual-steps-doc.sh writes these sections
 for doc in README.md ai_tools/README.md; do
     for os in macOS Ubuntu; do
         md_section "$DOTFILES_DIR/$doc" "## Manual steps" "### $os" > /dev/null ||
-            fail "$doc has no \"### $os\" under \"## Manual steps\", which the manual-steps scripts print"
+            fail "$doc has no \"### $os\" under \"## Manual steps\", which scripts/manual-steps-doc.sh writes"
     done
 done
+
+# The manual-steps steps' lists match the READMEs'
+bash "$DOTFILES_DIR/scripts/manual-steps-doc.sh" --check || fail "Run just manual-steps-doc, which writes the Manual steps lists"
 
 for doc in README.md ai_tools/README.md; do
     while IFS= read -r problem; do

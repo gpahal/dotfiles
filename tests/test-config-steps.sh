@@ -12,6 +12,7 @@ command -v git &>/dev/null || skip "git isn't installed"
 # A brew on PATH stops lib/common.sh from putting Homebrew's dirs before the stubs
 stub brew 'exit 1'
 stub gh 'exit 1'
+stub_go
 stub_login_shell_zsh
 # A temp HOME mustn't load the LaunchAgent into your session
 stub launchctl '[ "$1" == print ]'

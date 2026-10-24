@@ -3,8 +3,17 @@
 # The Stream Deck plugin's open-in: New Tab's lock, then folders from the front app, with stubs
 # for lsappinfo, osascript, open, mdls, and the Zed CLI.
 
+# open-in reads T3 Code's database with the real sqlite3, which tests/lib.sh makes a sentinel
+REAL_SQLITE3="$(command -v sqlite3 || true)"
+
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+# Unlike a stub, it doesn't log
+if [ -n "$REAL_SQLITE3" ]; then
+    printf '#!/bin/bash\nexec %q "$@"\n' "$REAL_SQLITE3" > "$STUB_DIR/sqlite3"
+    chmod +x "$STUB_DIR/sqlite3"
+fi
 
 OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
 dir="$SANDBOX/project"
@@ -76,7 +85,7 @@ ERROR="execution error: System Events got an error: Can't get window 1 of proces
 
 # T3 Code in front: open-in reads the thread's folder from its state database, querying only an ID
 # that's a UUID
-if command -v sqlite3 &> /dev/null; then
+if [ -n "$REAL_SQLITE3" ]; then
     export DOTFILES_T3_STATE="$SANDBOX/statev2.sqlite"
     thread=11111111-1111-4111-8111-111111111111
     sqlite3 "$DOTFILES_T3_STATE" "

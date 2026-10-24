@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# print_doc_section, which manual-steps prints with: a heading-like line in a code fence doesn't end
-# the section.
+# md_section, which the docs checks and scripts/manual-steps-doc.sh read sections with: a
+# heading-like line in a code fence doesn't end the section. print_doc_text, which manual-steps
+# prints with: repo links name their file, web links their URL, and bold goes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -29,8 +30,13 @@ cat > "$DOTFILES_DIR/README.md" <<'DOC'
 ## Next
 DOC
 
-run print_doc_section "$DOTFILES_DIR/README.md" "## Manual steps" "### macOS"
+run md_section "$DOTFILES_DIR/README.md" "## Manual steps" "### macOS"
 assert_eq 0 "$RUN_STATUS" "exit status"
 assert_contains "$RUN_OUTPUT" "Then this." "the section after a fenced heading-like line"
 assert_not_contains "$RUN_OUTPUT" "Next" "the section"
+
+run print_doc_text "$DOTFILES_DIR/README.md" <<< $'1. **Bold.** See [this](#here), [that](docs/a.md#b), and [web](https://example.com).\n\n- x'
+assert_eq "  1. Bold. See this (see README.md), that (see docs/a.md), and web (https://example.com).
+
+  - x" "$RUN_OUTPUT" "print_doc_text's output"
 test_done

@@ -7,6 +7,8 @@
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 setup_sh="$REPO_DIR/setup.sh"
+# The vim step installs vim-go's tools with go
+stub_go
 
 first=""
 for args in "vim --status" "--backup --status vim --for-alerts"; do

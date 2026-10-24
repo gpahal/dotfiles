@@ -1,0 +1,17 @@
+# The Go tools :GoInstallBinaries installs at vim-go's pin in vimrc, as "<tool> <package>".
+# just bump-plugins rewrites it; the vim step installs them.
+asmfmt github.com/klauspost/asmfmt/cmd/asmfmt@latest
+dlv github.com/go-delve/delve/cmd/dlv@latest
+errcheck github.com/kisielk/errcheck@latest
+fillstruct github.com/davidrjenni/reftools/cmd/fillstruct@master
+godef github.com/rogpeppe/godef@latest
+goimports golang.org/x/tools/cmd/goimports@master
+revive github.com/mgechev/revive@latest
+gopls golang.org/x/tools/gopls@latest
+golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+staticcheck honnef.co/go/tools/cmd/staticcheck@latest
+gomodifytags github.com/fatih/gomodifytags@latest
+gotags github.com/jstemmer/gotags@master
+impl github.com/josharian/impl@main
+motion github.com/fatih/motion@latest
+iferr github.com/koron/iferr@master

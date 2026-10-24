@@ -11,12 +11,14 @@ COPY="$SANDBOX/repo"
 mkdir -p "$COPY/scripts" "$COPY/vim" "$COPY/tmux"
 cp -R "$REPO_DIR/lib" "$COPY/"
 cp "$REPO_DIR/scripts/bump-plugins.sh" "$COPY/scripts/"
-cp "$REPO_DIR/vim/vimrc" "$REPO_DIR/vim/plug.vim" "$REPO_DIR/vim/plug.vim.version" "$COPY/vim/"
+cp "$REPO_DIR/vim/vimrc" "$REPO_DIR/vim/plug.vim" "$REPO_DIR/vim/plug.vim.version" "$REPO_DIR/vim/vim-go-tools" \
+    "$COPY/vim/"
 cp "$REPO_DIR/tmux/plugins.lock" "$COPY/tmux/"
 VIMRC="$COPY/vim/vimrc"
 LOCK="$COPY/tmux/plugins.lock"
 PLUG_VIM="$COPY/vim/plug.vim"
 PLUG_VERSION="$COPY/vim/plug.vim.version"
+GO_TOOLS="$COPY/vim/vim-go-tools"
 
 # A git url rewrite makes each repo under $REMOTES https://github.com/<repo>
 REMOTES="$SANDBOX/remotes"
@@ -48,6 +50,22 @@ while read -r repo old; do
     done
 done <<< "$start_pins"
 
+# vim-go's plugin/go.vim lists the repo's tools in s:packages, then any given "<tool> <package>"
+vim_go_plugin() {
+    mkdir -p "$REMOTES/fatih/vim-go/plugin"
+    {
+        echo "let s:packages = {"
+        { awk '!/^#/ && NF == 2' "$REPO_DIR/vim/vim-go-tools"; [ $# -eq 0 ] || echo "$*"; } |
+            awk -v q="'" '{ printf "      \\ %s%s%s: [%s%s%s],\n", q, $1, q, q, $2, q }'
+        echo "\\ }"
+    } > "$REMOTES/fatih/vim-go/plugin/go.vim"
+    git -C "$REMOTES/fatih/vim-go" add plugin/go.vim
+}
+old="$(pin_of fatih/vim-go)"
+vim_go_plugin
+new="$(commit fatih/vim-go 2)"
+sed "s/$old/$new/" "$VIMRC" > "$VIMRC.new" && mv "$VIMRC.new" "$VIMRC"
+
 # curl serves $SANDBOX/vim-plug/<tag>/plug.vim for each tag
 git init -q "$REMOTES/junegunn/vim-plug"
 commit junegunn/vim-plug 1 > /dev/null
@@ -63,7 +81,7 @@ NEXT="$plug_major.$((plug_minor + 1)).0"
 # A replaced file changes its inode
 pinned_files() {
     local f
-    for f in "$VIMRC" "$LOCK" "$PLUG_VIM" "$PLUG_VERSION"; do
+    for f in "$VIMRC" "$LOCK" "$PLUG_VIM" "$PLUG_VERSION" "$GO_TOOLS"; do
         /bin/ls -i "$f" | awk '{ print $1 }'
         cat "$f"
     done
@@ -92,4 +110,17 @@ assert_eq "$old_nerdtree" "$(pin_of preservim/nerdtree)" "the pin whose HEAD cou
 assert_eq "$surround" "$(pin_of tpope/vim-surround)" "a pin that moved beside a failure"
 assert_eq "$old_plug" "$(cat "$PLUG_VIM")" "plug.vim after an error page"
 assert_eq "$old_version" "$(cat "$PLUG_VERSION")" "plug.vim.version after an error page"
+
+# A tool vim-go adds joins the list; a vim-go whose list can't be read leaves it
+vim_go_plugin "newtool example.com/cmd/newtool@latest"
+commit fatih/vim-go 3 > /dev/null
+bump 1
+assert_contains "$RUN_OUTPUT" "added: newtool example.com/cmd/newtool@latest"
+assert_eq "newtool example.com/cmd/newtool@latest" "$(tail -n 1 "$GO_TOOLS")" "the tools list's last line"
+tools="$(cat "$GO_TOOLS")"
+git -C "$REMOTES/fatih/vim-go" rm -q plugin/go.vim
+commit fatih/vim-go 4 > /dev/null
+bump 1
+assert_contains "$RUN_OUTPUT" "Couldn't read the tools at vim-go's pin, so the list stays as it was."
+assert_eq "$tools" "$(cat "$GO_TOOLS")" "the tools list when vim-go's can't be read"
 test_done

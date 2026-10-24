@@ -175,12 +175,17 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 
 ## Manual steps
 
-`bash ai_tools/setup.sh manual-steps` prints these from this section. The rest are in the main README's [Manual steps](../README.md#manual-steps).
+`bash ai_tools/setup.sh manual-steps` prints the ones here that aren't done, leaving out each it can check is done, and `bash ai_tools/setup.sh --status manual-steps` reports those checks. The rest are in the main README's [Manual steps](../README.md#manual-steps).
 
 ### macOS
 
-1. **Logins.** Run `claude auth login`, sign in to the Claude and ChatGPT apps, and open T3 Code once. If `--status` says Codex isn't signed in, run `codex login`.
-2. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for Claude, ChatGPT, T3 Code, **Codex Computer Use**, and any terminal other than Ghostty. `manual-steps` opens the ones it can tell aren't set.
+1. **Logins.**
+   - Run `claude auth login`.
+   - Sign in to the Claude and ChatGPT apps, and open T3 Code once.
+   - Run `codex login`, if signing in to the ChatGPT app didn't sign Codex in.
+2. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
+   - Claude, ChatGPT, and T3 Code. `manual-steps` opens the ones it can tell aren't set.
+   - **Codex Computer Use**, and any terminal other than Ghostty.
 3. **Claude in Chrome.** See [Browser (Claude in Chrome)](#browser-claude-in-chrome).
 4. **Claude Code computer use.** Per project, see [Computer use](#computer-use).
 5. **ChatGPT app.** Set up Codex's [Browser](#browser) and [Computer use](#computer-use-1).
@@ -188,7 +193,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 7. **Codex Remote.** In the ChatGPT app, set up **Settings → Connections → Control this Mac or PC** and scan the QR code with the phone app.
 8. **Claude phone app.** Install it, sign in, and allow notifications.
 9. **Training opt-outs.** See [Privacy](#privacy).
-10. **GitHub repositories.** Enable **Allow squash merging**, and **Allow auto-merge** if you use it.
+10. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
 
 ### Ubuntu
 

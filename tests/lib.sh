@@ -10,7 +10,7 @@
 # tests/run.sh covers skips, timeouts, the os mark, timing, and sharding.
 # Reuse before writing your own: stub_at, stub_sudo_exec, stub_sudo_cacheable, stub_uname,
 # stub_dpkg_arch, stub_apt_packages, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
-# stub_gsettings, stub_gnome_session, stub_systemctl_units, sandbox_paths, fake_step,
+# stub_gsettings, stub_gnome_session, stub_systemctl_units, stub_go, sandbox_paths, fake_step,
 # fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit, diag,
 # assert_sudo_noninteractive, assert_read_only, assert_idempotent, snapshot and assert_unchanged,
 # as_unwritable, wait_for, and process_exited. A test sets df's output in $SANDBOX/df-table.
@@ -697,6 +697,20 @@ done < "$SANDBOX/fetch-map"
 if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi'
 }
 
+# A go whose env GOBIN prints $SANDBOX/go-bin, and whose install puts an executable named for the
+# package's last path element there, or fails for a package listed in $SANDBOX/go-install-fails
+stub_go() {
+    stub go 'case "$1" in
+    env) [ "${2:-}" != GOBIN ] || echo "$SANDBOX/go-bin" ;;
+    install)
+        ! grep -qxF -- "$2" "$SANDBOX/go-install-fails" 2> /dev/null || exit 1
+        name="${2%@*}"
+        mkdir -p "$SANDBOX/go-bin" && printf "#!/bin/sh\n" > "$SANDBOX/go-bin/${name##*/}" && chmod +x "$SANDBOX/go-bin/${name##*/}"
+        ;;
+    *) exit 1 ;;
+esac'
+}
+
 # Usage: jq_edit <file> <jq args>...: edits the file in place, as you would by hand
 jq_edit() {
     local file="$1"
@@ -904,7 +918,7 @@ sysctl (--system|-w|-p|--load)
 ufw (allow|deny|reject|limit|prepend|insert|delete|default|enable|disable|reload|reset|route|--force)
 nmcli (connection|con|c) (modify|mod|up|down|add|delete|reload)
 tailscale (up|down|set|login|logout)"
-SUDO_READS="true|cat|test|sh -c|bash -c|sshd -T|ufw status|docker (system df|ps)|smartctl (-H|--scan)"
+SUDO_READS="true|cat|test|sh -c|bash -c|sshd -T|ufw status|docker (system df|ps)|smartctl (-H|--scan)|sqlite3 -readonly|sfltool dumpbtm|plutil -extract"
 
 # Usage: machine_changes <log>: prints the log's lines for commands that change the machine
 machine_changes() {

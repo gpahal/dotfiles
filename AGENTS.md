@@ -42,10 +42,19 @@ Docs change with the code, in the same commit, and `just check` catches most dri
 - An app's keys rechecked against a new version: the version table in `ai_tools/README.md` "Maintenance".
 - What an `ai_tools/setup.sh` step does: the **(script)** marks in `ai_tools/README.md`.
 - `scripts/upgrade.sh`: "Updating" in README for `upgrade`, and in `ai_tools/README.md` for `upgrade-ai-tools`.
-- A manual step: "Manual steps" in README or `ai_tools/README.md`.
 - A key added to `scripts/claude-settings-keys.txt`: check it against Claude Code first.
 
 READMEs say what a user does and sees; how a step handles a case goes in a comment or a test. Run prose through `unslop`.
+
+## Manual steps
+
+A manual step is the last resort. Before adding one:
+
+- If a script can do it, automate it in a step instead.
+- If anything readable shows whether it's done (a file, a setting, a CLI, an API), give it a `--check`, so `manual-steps` leaves it out once done and `--status` reports it. A check that can't tell returns 2, so a guess never shows as missing.
+- If only part of it can be checked, split that part into its own step, so it can drop out.
+
+`manual-steps/steps.sh` and `ai_tools/manual-steps/steps.sh` are the single source, and `lib/manual.sh` says how to declare a step. `just manual-steps-doc` writes the READMEs' lists from them, and `just check` fails while they differ.
 
 ## Skills
 

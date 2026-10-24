@@ -1,11 +1,13 @@
 #!/bin/bash
 
-# The vim step's vendored vim-plug and plugin pins, and a vimrc that starts without vim-plug.
+# The vim step's vendored vim-plug, plugin pins, and vim-go's Go tools, and a vimrc that starts
+# without vim-plug.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 PLUG="$HOME/.vim/autoload/plug.vim"
+stub_go
 
 assert_exit 0 bash "$REPO_DIR/vim/install.sh"
 
@@ -35,10 +37,40 @@ plugin_pins() {
     assert_eq "$new" "$(git -C "$plug" rev-parse HEAD)" "the plugin's commit after a re-run"
     assert_exit 0 main --status
     assert_exit 0 apply
-    assert_contains "$RUN_OUTPUT" "vim-plug and the vim plugins already at their pinned versions"
+    assert_contains "$RUN_OUTPUT" "vim-plug, the vim plugins' pins, and vim-go's tools already set up"
     rm -rf "$HOME/.vim/plugged"
 }
 subtest plugin_pins
+
+# vim-go's tools go in go's bin dir; one on PATH counts, and a failed install fails the step after
+# the others
+go_tools() {
+    load_script vim/install.sh
+    replace_fn vim_go_packages 'printf "%s\n" "dotfiles-tool-a example.com/dotfiles-tool-a@latest" "dotfiles-tool-b example.com/cmd/dotfiles-tool-b@v1" "dotfiles-tool-c example.com/c@latest"'
+    stub dotfiles-tool-c
+    echo example.com/dotfiles-tool-a@latest > "$SANDBOX/go-install-fails"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    vim-go's Go tools, which :GoInstallBinaries installs: dotfiles-tool-a, dotfiles-tool-b"
+    assert_exit 1 apply
+    assert_contains "$RUN_OUTPUT" "Couldn't install dotfiles-tool-a. Run go install example.com/dotfiles-tool-a@latest to retry."
+    assert_eq "go install example.com/dotfiles-tool-a@latest
+go install example.com/cmd/dotfiles-tool-b@v1" "$(grep '^go install' "$STUB_LOG")" "the tools installed"
+    rm "$SANDBOX/go-install-fails"
+    assert_exit 0 apply
+    assert_exit 0 main --status
+    assert_contains "$RUN_OUTPUT" "ok         vim-go's Go tools, which :GoInstallBinaries installs"
+    assert_idempotent apply
+    # Without go, status says where it comes from, and apply fails
+    hide go
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "dotfiles-tool-b; go isn't installed. Run bash setup.sh runtimes first."
+    assert_exit 1 apply
+}
+subtest go_tools
+
+# The vendored list has a tool on each line, as the vim step reads it
+assert_eq "" "$(grep -vE '^(#.*|[a-z0-9-]+ [a-z0-9./-]+@[a-zA-Z0-9.-]+)$' "$REPO_DIR/vim/vim-go-tools" || true)" \
+    "vim/vim-go-tools lines that aren't a comment or \"<tool> <package>@<version>\""
 
 # Vendored vim-plug: vims starting at once can't race to download it
 assert_file_not_contains "$REPO_DIR/vim/vimrc" "curl"

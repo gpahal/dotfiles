@@ -50,12 +50,12 @@ mkdir -p "$repo/build"
 echo out > "$repo/build/out"
 
 real_git="$(command -v git)"
-stub_at "$HOME/.local/bin/git" "$(
-    cat << EOF
+# A heredoc inside $( ) with a case in it doesn't parse in macOS's bash 3.2, so read it instead
+read -r -d '' body << EOF || true
 case " \$* " in *" fetch "*) printf '%s\\n' "git \$* | \${GIT_SSH_COMMAND:-}" >> "$SANDBOX/fetch.log" ;; esac
 exec "$real_git" "\$@"
 EOF
-)"
+stub_at "$HOME/.local/bin/git" "$body"
 : > "$SANDBOX/fetch.log"
 
 mkdir -p "$HOME/.claude"
@@ -127,8 +127,7 @@ remove "$dir/ssh-wrapper"
 git -C "$repo" remote set-url origin "$SANDBOX/origin.git"
 
 cp "$HOME/.local/bin/git" "$SANDBOX/git-before-stall"
-stub_at "$HOME/.local/bin/git" "$(
-    cat << EOF
+read -r -d '' body << EOF || true
 case " \$* " in
     *" fetch "*)
         (trap '' TERM; exec sleep 40) &
@@ -138,7 +137,7 @@ case " \$* " in
 esac
 exec "$real_git" "\$@"
 EOF
-)"
+stub_at "$HOME/.local/bin/git" "$body"
 rm -f "$stamp"
 started=$SECONDS
 WORKTREE_HOOK_FETCH_DEADLINE=1 create stalled "$repo"

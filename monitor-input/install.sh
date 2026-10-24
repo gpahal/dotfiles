@@ -9,6 +9,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 # shellcheck source=lib/paths.sh
 source "$DOTFILES_DIR/monitor-input/lib/paths.sh"
 
@@ -18,7 +20,7 @@ SCRIPT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input"
 UNIT_SRC="$DOTFILES_DIR/monitor-input/dotfiles-monitor-input.service"
 
 script_installed() {
-    cmp -s "$SCRIPT_SRC" "$MONITOR_INPUT_SCRIPT" && [ -x "$MONITOR_INPUT_SCRIPT" ]
+    root_copy_current "$SCRIPT_SRC" "$MONITOR_INPUT_SCRIPT" 0755
 }
 
 install_script() {
@@ -26,11 +28,11 @@ install_script() {
 }
 
 unit_installed() {
-    cmp -s "$UNIT_SRC" "$MONITOR_INPUT_UNIT"
+    root_copy_current "$UNIT_SRC" "$MONITOR_INPUT_UNIT" 0644
 }
 
 install_unit() {
-    install_root_file "$UNIT_SRC" "$MONITOR_INPUT_UNIT" 0644 && sudo systemctl daemon-reload
+    install_root_unit "$UNIT_SRC" "$MONITOR_INPUT_UNIT"
 }
 
 monitor_input_items() {
@@ -82,16 +84,8 @@ status() {
 
 apply() {
     echo "Setting up monitor input switching..."
-    local pending=()
     monitor_input_items
-    items_pending
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  ddcutil and the input switcher are already installed."
-    else
-        confirm_sudo_changes "${pending[@]}" || return 0
-        items_apply || return 1
-        echo "  Applied."
-    fi
+    items_apply_confirmed --done "  ddcutil and the input switcher are already installed." || return 1
     [ -e "$MONITOR_INPUT_CONF" ] || echo "  Switching stays off until just monitor-input sets this machine's inputs."
 }
 

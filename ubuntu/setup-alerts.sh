@@ -78,7 +78,7 @@ current_url() {
 }
 
 save_url() {
-    write_root_file "$NTFY_URL_FILE" "$1" 0640 "$(ntfy_url_group)" "$(id -un)"
+    write_root_file "$NTFY_URL_FILE" "$1" 0640 "$(ntfy_url_group)" "$CURRENT_USER"
 }
 
 send_test_push() {

@@ -19,21 +19,23 @@ health_unit_files() {
     return "$status"
 }
 
-# A failed daemon-reload leaves the old ExecStart running though the files match
 health_units_loaded() {
+    unit_loaded_current --user "${HEALTH_UNITS[@]}"
+}
+
+health_units_installed() {
     local unit
     for unit in "${HEALTH_UNITS[@]}"; do
-        [ "$(systemctl --user show -p NeedDaemonReload --value "$unit" 2>/dev/null)" == no ] || return 1
+        [ -e "$HEALTH_UNIT_DIR/$unit" ] || return 1
     done
 }
 
 health_timer_on() {
-    systemctl --user is-enabled --quiet dotfiles-health.timer 2>/dev/null &&
-        systemctl --user is-active --quiet dotfiles-health.timer 2>/dev/null
+    unit_on --user dotfiles-health.timer
 }
 
 boot_notice_on() {
-    systemctl --user is-enabled --quiet dotfiles-boot-notice.service 2>/dev/null
+    unit_enabled --user dotfiles-boot-notice.service
 }
 
 # The boot notice is enabled, not started, so it first pushes at the next boot
@@ -42,11 +44,7 @@ configure_health_alerts() {
     health_alert_files copy_file || return 1
     COPIED=false
     health_unit_files copy_file || return 1
-    if ! systemctl --user show-environment &>/dev/null; then
-        echo "  Couldn't reach your systemd user manager, so the daily health alert and the boot notice"
-        echo "  aren't on yet. Re-run the step after the next reboot or login."
-        return 0
-    fi
+    user_manager_reachable "the daily health alert and the boot notice aren't on" || return 0
     if ! "$COPIED" && health_units_loaded && health_timer_on && boot_notice_on; then
         echo "  The daily health alert and the boot notice are already set up."
         return 0
@@ -82,7 +80,7 @@ ntfy_url_group() {
 ntfy_url_file_problem() {
     local meta want topic
     meta="$(owner_group_mode "$NTFY_URL_FILE" 2>/dev/null)" || meta=""
-    want="$(id -un) $(ntfy_url_group) 640"
+    want="$CURRENT_USER $(ntfy_url_group) 640"
     if [ "$meta" != "$want" ]; then
         echo "it's ${meta:-unreadable} (owner, group, mode), not $want"
     elif ! topic="$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)"; then
@@ -107,7 +105,8 @@ status_health_alerts() {
     local url_label="ntfy URL for the disk, UPS, health, and boot alerts" problem
     health_alert_files status_file
     health_unit_files status_file
-    health_units_loaded || ! systemctl --user show-environment &>/dev/null ||
+    # systemd hasn't loaded a unit that was never installed, which the lines above report
+    health_units_loaded || ! health_units_installed || ! systemctl --user show-environment &>/dev/null ||
         status_item missing "The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them (re-run the ubuntu step)"
     status_check "Daily health alert to ntfy (dotfiles-health.timer) enabled and active" health_timer_on
     status_check "Boot notice to ntfy (dotfiles-boot-notice.service) enabled" boot_notice_on

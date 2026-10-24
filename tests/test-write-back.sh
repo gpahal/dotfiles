@@ -1,22 +1,15 @@
 #!/bin/bash
-set -euo pipefail
 
-# write_back, json_merge, append_line, install_root_file, and write_root_file: atomic replacement,
-# json_merge's backups and bad input, and root files' modes and groups.
+# write_back, merge_file, json_merge, append_line, install_root_file, write_root_file, and the root-file
+# item helpers: atomic replacement, json_merge's backups and bad input, and root files' modes and groups.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 load_script lib/system.sh
 
 # read -p prints no question without a terminal, so confirm echoes it
-fake_terminal() {
-    replace_fn is_interactive true
-    replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]'
-}
-
 file="$HOME/settings.json"
 printf 'old\n' > "$file"
 chmod 640 "$file"
@@ -32,9 +25,9 @@ assert_eq "settings.json" "$(/bin/ls -A "$HOME")" "files in the directory after 
 
 new="$(mktemp)"
 printf 'replacement\n' > "$new"
-stub cp 'for last; do :; done; printf part > "$last"; exit 1'
+stub install 'for last; do :; done; printf part > "$last"; exit 1'
 assert_exit 1 write_back "$new" "$file"
-rm -f "$STUB_DIR/cp"
+rm -f "$STUB_DIR/install"
 assert_eq new "$(cat "$file")" "file after a partial copy"
 assert_eq replacement "$(cat "$new")" "new contents after a partial copy"
 assert_eq settings.json "$(/bin/ls -A "$HOME")" "files after a partial copy"
@@ -76,6 +69,15 @@ assert_exit 1 write_back "$new" "$HOME/dangling.json"
 [ ! -e "$HOME/real/nowhere.json" ] || fail "write_back wrote through a dangling symlink"
 [ -e "$new" ] || fail "a failed write_back through a dangling symlink removed the new contents"
 rm -f "$new" "$HOME/dangling.json"
+
+# mv would move the new file into a directory
+mkdir -p "$HOME/dir.json"
+new="$(mktemp)"
+printf 'new\n' > "$new"
+assert_exit 1 write_back "$new" "$HOME/dir.json"
+assert_eq "" "$(/bin/ls -A "$HOME/dir.json")" "files in a directory destination"
+[ -e "$new" ] || fail "a failed write_back to a directory removed the new contents"
+rm -f "$new"
 
 if [ "$(id -u)" -ne 0 ]; then
     mkdir -p "$HOME/ro"
@@ -141,7 +143,7 @@ if command -v jq &>/dev/null; then
     assert_eq '"my edit"' "$(cat "$edited")" "file after a failed backup"
 
     # A failing or multi-value filter makes no backup, since jq runs before maybe_backup
-    fake_terminal
+    answer stdin
     settings="$HOME/badfilter/settings.json"
     mkdir -p "$HOME/badfilter"
     printf '{"mine": 1}\n' > "$settings"
@@ -176,6 +178,23 @@ else
     skip_rest "jq isn't installed, so json_merge isn't tested"
 fi
 
+# merge_file pipes the reader's output through the transform, and leaves a file the result matches
+# untouched
+# shellcheck disable=SC2329 # merge_file calls them
+upper() { tr '[:lower:]' '[:upper:]'; }
+# shellcheck disable=SC2329
+uncommented() { grep -v '^#' "$1"; }
+merged="$HOME/merge/list.txt"
+assert_exit 0 merge_file "$merged" upper
+assert_eq "" "$(cat "$merged")" "a missing file after merge_file"
+printf '# a comment\nabc\n' > "$merged"
+assert_exit 0 merge_file "$merged" upper uncommented
+assert_eq ABC "$(cat "$merged")" "file after merge_file with a reader"
+inode="$(/bin/ls -i "$merged" | awk '{print $1}')"
+assert_exit 0 merge_file "$merged" upper
+assert_eq "$inode" "$(/bin/ls -i "$merged" | awk '{print $1}')" "inode after a merge_file that changes nothing"
+assert_eq list.txt "$(/bin/ls -A "$HOME/merge")" "files after merge_file"
+
 # Lines grep would read as options
 lines="$HOME/lines"
 for line in '-e x' '--' 'plain'; do
@@ -185,15 +204,7 @@ for line in '-e x' '--' 'plain'; do
 done
 assert_eq "$(printf '%s\n' '-e x' '--' plain)" "$(cat "$lines")" "file after appending each line twice"
 
-# install runs for real, minus -g, since the sandbox's user can't give a file root's groups
-stub_sudo_exec 'if [ "${1:-}" == install ]; then
-    shift
-    args=()
-    while [ $# -gt 0 ]; do
-        case "$1" in -g) shift 2 ;; *) args+=("$1"); shift ;; esac
-    done
-    set -- install "${args[@]}"
-fi'
+stub_sudo_exec
 dir="$SANDBOX/etc/example.d"
 dest="$dir/10-example.conf"
 src="$SANDBOX/src"
@@ -228,11 +239,11 @@ assert_eq 10-example.conf "$(/bin/ls -A "$dir")" "files after a failed write_roo
 
 # The group is set in the install that writes the file, so a failed chgrp can't leave it root:root
 dest="$SANDBOX/etc/nut/upsd.users"
-: > "$STUB_LOG"
 assert_exit 0 write_root_file "$dest" "secret" 0640 nut
 assert_eq secret "$(cat "$dest")" "file write_root_file wrote"
 assert_eq 640 "$(file_mode "$dest")" "mode write_root_file set"
 assert_file_contains "$STUB_LOG" "sudo install -m 0640 -g nut "
+assert_file_contains "$STUB_LOG" "sudo mv -f "
 : > "$STUB_LOG"
 printf 'other\n' > "$SANDBOX/src"
 assert_exit 0 install_root_file "$SANDBOX/src" "$dest" "" nut
@@ -250,6 +261,7 @@ for kind in dir link; do
         ln -s "$SANDBOX/etc/real-dir" "$dest"
     fi
     assert_exit 1 write_root_file "$dest" "x"
+    assert_contains "$RUN_OUTPUT" "$dest is a directory; remove it and re-run."
     assert_eq "" "$(/bin/ls -A "$dest/")" "files in a $kind destination"
 done
 
@@ -267,6 +279,7 @@ assert_eq 640 "$(file_mode "$target")" "symlink target's mode after write_root_f
 assert_eq target.conf "$(/bin/ls -A "$(dirname "$target")")" "files beside the symlink target"
 ln -s "$SANDBOX/etc/nowhere.conf" "$SANDBOX/etc/dangling.conf"
 assert_exit 1 write_root_file "$SANDBOX/etc/dangling.conf" "new"
+assert_contains "$RUN_OUTPUT" "$SANDBOX/etc/dangling.conf is a symlink to nothing; remove it and re-run."
 [ -L "$SANDBOX/etc/dangling.conf" ] || fail "install_root_file replaced a dangling symlink"
 [ ! -e "$SANDBOX/etc/nowhere.conf" ] || fail "write_root_file wrote through a dangling symlink"
 
@@ -280,4 +293,28 @@ mkdir -p "$SANDBOX/etc/private"
 chmod 750 "$SANDBOX/etc/private"
 assert_exit 0 write_root_file "$SANDBOX/etc/private/file" "x"
 assert_eq 750 "$(file_mode "$SANDBOX/etc/private")" "mode of an existing directory"
+# --- write_root_content takes variable names, so it works as an item's fix ---
+CONF="$SANDBOX/etc/apt/apt.conf.d/50 two words"
+CONF_CONTENT='Unattended-Upgrade::Origins-Pattern { "origin=Docker"; };
+// a second line'
+conf_written() { file_is "$CONF" "$CONF_CONTENT"; }
+items_reset
+item --sudo "conf" "Write conf" conf_written "write_root_content CONF CONF_CONTENT 0640"
+assert_exit 0 items_apply
+assert_eq "$CONF_CONTENT" "$(cat "$CONF")" "the content write_root_content wrote"
+assert_eq 640 "$(file_mode "$CONF")" "the mode write_root_content gave"
+assert_exit 0 items_ok
+
+# --- root_copy_current and install_root_copy: a hook must be executable, whatever the repo's mode ---
+src="$SANDBOX/hook-src"
+hook="$SANDBOX/etc/run.d/50hook"
+echo "echo hi" > "$src"
+chmod 644 "$src"
+! root_copy_current "$src" "$hook" 0755 || fail "a missing hook counts as current"
+assert_exit 0 install_root_copy "$src" "$hook" 0755
+assert_exit 0 root_copy_current "$src" "$hook" 0755
+assert_eq 755 "$(file_mode "$hook")" "the hook's mode"
+chmod 644 "$hook"
+assert_exit 1 root_copy_current "$src" "$hook" 0755
+assert_exit 0 root_copy_current "$src" "$hook" 0644
 test_done

@@ -1,16 +1,15 @@
 #!/bin/bash
-set -euo pipefail
 
 # sshd_settings_problems against the real sshd -T, which only parses the config (no daemon).
 
+REAL_SSHD="$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v sshd || true)"
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # shellcheck source=ubuntu-sandbox.sh
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
-REAL_SSHD="$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v sshd)" || skip "sshd isn't installed"
+[ -n "$REAL_SSHD" ] || skip "sshd isn't installed"
 
-setup_sandbox
 # DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
 stub systemd-detect-virt
 load_script ubuntu/install.sh

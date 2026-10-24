@@ -44,6 +44,19 @@ stream_deck_ubuntu_files() {
     return "$status"
 }
 
+# A path for a unit's ExecStart, which expands % and $
+systemd_quote() {
+    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
+}
+
+# write_content <dest> <text>: write_back of the text and a newline
+write_content() {
+    local tmp
+    tmp="$(mktemp)" || return 1
+    printf '%s\n' "$2" > "$tmp" || { rm -f "$tmp"; return 1; }
+    write_back "$tmp" "$1"
+}
+
 gmail_desktop() {
     printf '%s\n' "# From the dotfiles stream-deck step: Gmail in its own window, for the Stream Deck's Gmail key" \
         "[Desktop Entry]" "Type=Application" "Name=Gmail" "Comment=Gmail in a Google Chrome app window" \
@@ -70,10 +83,6 @@ install_deck_deps() {
     cp "$LINUX_SRC/pnpm-lock.yaml" "$DECK_DEPS_STAMP"
 }
 
-deck_unit_enabled() {
-    systemctl --user is-enabled --quiet "$DECK_UNIT_NAME" 2> /dev/null
-}
-
 # The Stream Deck's hidraw nodes, while it's attached here rather than to the Mac
 deck_hidraw_nodes() {
     local dir
@@ -88,7 +97,7 @@ rapl_present() {
 }
 
 power_script_installed() {
-    cmp -s "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" && [ -x "$POWER_SCRIPT" ]
+    root_copy_current "$LINUX_SRC/dotfiles-power" "$POWER_SCRIPT" 0755
 }
 
 # A running helper keeps the old script and unit until restarted
@@ -98,21 +107,12 @@ install_power_script() {
 }
 
 power_unit_installed() {
-    cmp -s "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT"
+    root_copy_current "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT" 0644
 }
 
 install_power_unit() {
-    install_root_file "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT" 0644 && sudo systemctl daemon-reload &&
+    install_root_unit "$LINUX_SRC/dotfiles-power.service" "$POWER_UNIT" &&
         sudo systemctl try-restart dotfiles-power.service
-}
-
-power_service_on() {
-    systemctl is-enabled --quiet dotfiles-power.service 2> /dev/null &&
-        systemctl is-active --quiet dotfiles-power.service 2> /dev/null
-}
-
-start_power_service() {
-    sudo systemctl enable --now dotfiles-power.service
 }
 
 stream_deck_ubuntu_items() {
@@ -125,7 +125,7 @@ stream_deck_ubuntu_items() {
     item --sudo "Power helper ($POWER_SCRIPT)" "Install $POWER_SCRIPT, which shares the CPU's power for the Power key" \
         power_script_installed install_power_script
     item --sudo "Power helper running" "Start the power helper, and at each boot" \
-        power_service_on start_power_service
+        "unit_on dotfiles-power.service" "enable_units_now dotfiles-power.service"
 }
 
 status_daemon() {
@@ -135,14 +135,7 @@ status_daemon() {
     [ ! -e "$DECK_RESTART_PENDING" ] ||
         status_item missing "Stream Deck daemon restarted on its new files: re-run the stream-deck step"
     [ -f "$DECK_UNIT" ] || return 0
-    status_check "Stream Deck daemon starts at login" deck_unit_enabled
-    if ! gnome_session_running; then
-        status_item unverified "Stream Deck daemon running: no desktop session; it starts at the next login"
-    elif systemctl --user is-active --quiet "$DECK_UNIT_NAME" 2> /dev/null; then
-        status_item ok "Stream Deck daemon running"
-    else
-        status_item missing "Stream Deck daemon running: journalctl --user -u $DECK_UNIT_NAME says why it stopped"
-    fi
+    status_user_service "$DECK_UNIT_NAME" "Stream Deck daemon"
 }
 
 # uaccess gives the desktop session's user the deck; an SSH session alone doesn't count
@@ -206,32 +199,13 @@ mark_restart_pending() {
 setup_deck_service() {
     local changed=false
     [ ! -e "$DECK_RESTART_PENDING" ] || changed=true
-    if ! systemctl --user show-environment &> /dev/null; then
-        echo "  Couldn't reach your systemd user manager, so the daemon isn't on yet. Re-run the step after"
-        echo "  the next login."
-        return 0
-    fi
+    user_manager_reachable "the daemon isn't on" || return 0
     if ! file_is "$DECK_UNIT" "$(deck_unit)"; then
         mkdir -p "$(dirname "$DECK_UNIT")" && mark_restart_pending && write_content "$DECK_UNIT" "$(deck_unit)" || return 1
         changed=true
     fi
-    if "$changed"; then
-        systemctl --user daemon-reload || return 1
-    fi
-    deck_unit_enabled || systemctl --user enable "$DECK_UNIT_NAME" || return 1
-    if ! gnome_session_running; then
-        rm -f "$DECK_RESTART_PENDING"
-        echo "  No desktop session, so the daemon starts at your next login."
-    elif "$changed"; then
-        systemctl --user restart "$DECK_UNIT_NAME" || return 1
-        rm -f "$DECK_RESTART_PENDING"
-        echo "  Restarted the Stream Deck daemon."
-    elif ! systemctl --user is-active --quiet "$DECK_UNIT_NAME"; then
-        systemctl --user start "$DECK_UNIT_NAME" || return 1
-        echo "  Started the Stream Deck daemon."
-    else
-        echo "  The Stream Deck daemon is already running."
-    fi
+    start_user_service "$DECK_UNIT_NAME" "the Stream Deck daemon" "$changed" || return 1
+    rm -f "$DECK_RESTART_PENDING"
 }
 
 # Copies a file, noting in EXTENSION_COPIED or DECK_COPIED whose it was when it changed

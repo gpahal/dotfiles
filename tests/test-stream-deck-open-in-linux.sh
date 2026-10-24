@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The Ubuntu Stream Deck's open-in, with busctl standing in for the dotfiles GNOME extension and
 # Nautilus, and stubs for systemd-run, pgrep, notify-send, and the apps.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 # Beside the lib it sources, as the stream-deck step installs it
 OPEN_IN="$SANDBOX/bin/open-in"
@@ -49,7 +47,6 @@ front() {
 # e.g. check files 0 "run nautilus --new-window $dir": the stub log less the queries, with apps
 # started as "run <app>" and the extension's calls as "shell <method>"
 check() {
-    : > "$STUB_LOG"
     assert_exit "$2" bash "$OPEN_IN" "$1"
     sed -e "s|systemd-run --user --quiet --collect -p ExitType=cgroup -- $STUB_DIR/|run |" \
         -e 's|^busctl --user --json=short call org.gnome.Shell /com/gpahal/Dotfiles com.gpahal.Dotfiles |shell |' \

@@ -39,9 +39,33 @@ claude_code_keep_list() {
     fi
 }
 
-claude_code_keep_read() {
+claude_code_read_custom_values() {
     claude_code_keep_list
-    keep_read CLAUDE_CODE_KEEP "$(jq -c . "$CLAUDE_CODE_SETTINGS" 2>/dev/null)"
+    read_custom_values "$(jq -c . "$CLAUDE_CODE_SETTINGS" 2>/dev/null)" "${CLAUDE_CODE_KEEP[@]}"
+}
+
+# Sets CLAUDE_CODE_REPLACE[k] to true for each value of your own you agree to replace
+claude_code_choose_custom_values() {
+    local k
+    claude_code_read_custom_values
+    CLAUDE_CODE_REPLACE=()
+    for ((k = 0; k < ${#CLAUDE_CODE_KEEP[@]} / 3; k++)); do
+        if replace_custom_value "${CLAUDE_CODE_KEEP[k * 3 + 2]}" "${CUSTOM_VALUES[k * 2]:-}" \
+            "${CUSTOM_VALUES[k * 2 + 1]:-}"; then
+            CLAUDE_CODE_REPLACE[k]=true
+        fi
+    done
+}
+
+claude_code_status_custom_values() {
+    local k current wanted
+    claude_code_read_custom_values
+    for ((k = 0; k < ${#CLAUDE_CODE_KEEP[@]} / 3; k++)); do
+        current="${CUSTOM_VALUES[k * 2]:-}"
+        wanted="${CUSTOM_VALUES[k * 2 + 1]:-}"
+        [ -z "$current" ] || [ "$current" == "$wanted" ] ||
+            status_custom_value "${CLAUDE_CODE_KEEP[k * 3 + 2]}" "$current" "$wanted"
+    done
 }
 
 claude_code_have_git_wt() {
@@ -104,7 +128,7 @@ claude_code_settings() {
     claude_code_keep_list
     for ((k = 0; k < ${#CLAUDE_CODE_KEEP[@]} / 3; k++)); do
         op="//="
-        [ "$(keep_value CLAUDE_CODE_KEEP REPLACE "$k")" != true ] || op="="
+        [ "${CLAUDE_CODE_REPLACE[k]:-}" != true ] || op="="
         keepable+="| ${CLAUDE_CODE_KEEP[k * 3]} $op ${CLAUDE_CODE_KEEP[k * 3 + 1]}"
     done
     # shellcheck disable=SC2016 # jq variables, not shell ones
@@ -161,8 +185,7 @@ claude_code_settings() {
 configure_claude_code() {
     echo "Configuring Claude Code..."
     local settings
-    claude_code_keep_read
-    keep_choose CLAUDE_CODE_KEEP
+    claude_code_choose_custom_values
     settings="$(claude_code_settings "${1:-true}")"
     if json_applied "$CLAUDE_CODE_SETTINGS" "$settings"; then
         echo "  Push notifications, Remote Control off, auto mode, no auto memory, transcript retention,"
@@ -212,8 +235,7 @@ status() {
     fi
     if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
         status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
-        claude_code_keep_read
-        keep_status CLAUDE_CODE_KEEP
+        claude_code_status_custom_values
     fi
     claude_code_have_git_wt || status_item missing "Worktree hook: $CLAUDE_CODE_NO_GIT_WT"
     while IFS= read -r line; do

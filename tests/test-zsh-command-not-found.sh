@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # zsh/command-not-found.zsh. brew is asked only on a terminal, so a pipe never waits on its
 # auto-update.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 
 stub brew '[ "$*" == "which-formula --explain brewtool" ] && echo "brewtool: brew install brewtool"; true'

@@ -67,9 +67,7 @@ check_codex() {
     check="$(codex_config_check)" || check=""
     [ -n "$check" ] && [ "$(jq -r .status <<< "$check")" != ok ] ||
         fail "codex doctor didn't reject a broken config.toml, so it can't check the step's"
-    rm -f "$CODEX_CONFIG"
-    edited="$(codex_config_edited)" || { fail "couldn't build the codex step's config"; return "$errors"; }
-    mv "$edited" "$CODEX_CONFIG" || { fail "couldn't write the codex step's config"; return "$errors"; }
+    codex_config_edit < /dev/null > "$CODEX_CONFIG" || { fail "couldn't write the codex step's config"; return "$errors"; }
     if ! check="$(codex_config_check)"; then
         fail "codex doctor --json has no config.load check"
     elif [ "$(jq -r .status <<< "$check")" != ok ]; then
@@ -87,6 +85,9 @@ check_codex() {
 # A made-up flag must be reported missing, so the check can fail.
 echo "Reviewer flags:"
 reviewer="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
+help_lists() {
+    grep -qE -- "(^|[ ,])$1([ ,=<]|\$)" <<< "$help"
+}
 for family in claude codex; do
     if [ "$family" == claude ]; then
         help="$(claude --help < /dev/null 2>&1)" || true
@@ -96,16 +97,10 @@ for family in claude codex; do
     flags="$(awk -v start="    $family)" '$0 == start { on = 1; next } on && /^ *;;$/ { exit } on' "$reviewer" |
         grep -oE -- '(^|[[:space:]])--?[a-zA-Z][a-zA-Z-]*' | tr -d '[:blank:]' | sort -u)"
     [ -n "$flags" ] || fail "couldn't read the $family flags from run-reviewer.sh"
-    missing=""
-    for flag in $flags --dotfiles-no-such-flag; do
-        grep -qE -- "(^|[ ,])$flag([ ,=<]|\$)" <<< "$help" || missing="$missing $flag"
-    done
-    case "$missing" in
-        *" --dotfiles-no-such-flag") missing="${missing% --dotfiles-no-such-flag}" ;;
-        *) fail "the search of $family's help found a made-up flag, so it can't check the real ones" ;;
-    esac
-    if [ -n "$missing" ]; then
-        fail "$family's help doesn't list these flags run-reviewer.sh passes:$missing"
+    # shellcheck disable=SC2086 # a list of flags
+    missing_names "of $family's help" flag --dotfiles-no-such-flag help_lists $flags
+    if [ -n "$MISSING" ]; then
+        fail "$family's help doesn't list these flags run-reviewer.sh passes:$MISSING"
     else
         echo "  $family's help lists every flag run-reviewer.sh passes ($(printf '%s\n' "$flags" | paste -sd' ' -))"
     fi
@@ -118,8 +113,4 @@ else
     fail "codex sandbox can't run true with the codex step's config"
 fi
 
-if [ "$errors" -gt 0 ]; then
-    echo "$errors check(s) failed" >&2
-    exit 1
-fi
-echo "All checks passed"
+finish_checks

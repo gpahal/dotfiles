@@ -11,6 +11,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../../lib/gnome.sh
+source "$DOTFILES_DIR/lib/gnome.sh"
 # shellcheck source=../lib/app-json.sh
 source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
 
@@ -123,10 +125,7 @@ claude_desktop_ubuntu_items() {
 }
 
 status() {
-    if is_ubuntu && ! has_gnome_desktop; then
-        status_item skipped "Claude desktop app: no GNOME desktop"
-        return 0
-    fi
+    is_ubuntu && skip_without_desktop --status "Claude desktop app" && return 0
     if is_macos; then
         status_cask claude /Applications/Claude.app
     else
@@ -141,10 +140,7 @@ status() {
 
 apply() {
     echo "Setting up the Claude desktop app..."
-    if is_ubuntu && ! has_gnome_desktop; then
-        echo "  No GNOME desktop, so no desktop app."
-        return 0
-    fi
+    is_ubuntu && skip_without_desktop && return 0
     require_cmd jq || return 1
     local result=0
     if is_macos; then
@@ -152,11 +148,7 @@ apply() {
         install_cask claude /Applications/Claude.app || result=1
     else
         claude_desktop_ubuntu_items
-        if items_ok; then
-            echo "  claude-desktop is already installed from Anthropic's apt repo."
-        else
-            items_apply_confirmed || result=1
-        fi
+        items_apply_confirmed --done "  claude-desktop is already installed from Anthropic's apt repo." || result=1
     fi
     claude_desktop_files copy_file || result=1
     configure_claude_desktop || result=1

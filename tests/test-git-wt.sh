@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # git wt: where worktrees go, their bases, and what rm and prune may delete.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 export PATH="$REPO_DIR/git/bin:$PATH"
 
 # other_key <checkout>: resolve only the parent, since a bare repo's stand-in checkout needn't exist

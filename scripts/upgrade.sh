@@ -56,7 +56,7 @@ _capture() {
 # Upgrade outdated casks, skipping running apps, which replacing would break.
 # Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
 _upgrade_self_updating_casks() {
-    local rerun="$1" entry cask process info path app running installed outdated one
+    local rerun="$1" entry cask process path app running installed outdated one
     local exit_status=0 listed=() names=()
     shift
     if ! _capture installed _installed_casks; then
@@ -92,9 +92,8 @@ _upgrade_self_updating_casks() {
             app="$cask"
             ! pgrep -x "$process" &>/dev/null || running=true
         else
-            # A failed brew info mustn't pass for a cask with no app (empty path)
-            if ! _capture info brew info --json=v2 --cask "$cask" ||
-                ! path="$(jq -er ".casks[0] | $CASK_APP_JQ" <<< "$info")"; then
+            # Without jq, cask_app_path prints nothing, which would pass for a cask with no app
+            if ! command -v jq &>/dev/null || ! _capture path cask_app_path "$cask"; then
                 echo "Couldn't read $cask's metadata; leaving it alone." >&2
                 exit_status=1
                 continue

@@ -2,10 +2,7 @@
 # ubuntu/install.sh sets the constants.
 
 nut_installed() {
-    local package
-    for package in "${NUT_PACKAGES[@]}"; do
-        apt_installed "$package" || return 1
-    done
+    apt_installed "${NUT_PACKAGES[@]}"
 }
 
 # Prints <vendor>:<product> per UPS. upower's hwdb tags them, so this needs neither sudo nor NUT.
@@ -144,12 +141,8 @@ upsc_value() {
     upsc "$UPS_NAME@localhost" "$1" 2>/dev/null
 }
 
-# One at a time: is-active with several units succeeds when any one is active
 ups_services_active() {
-    local unit
-    for unit in "${NUT_UNITS[@]}"; do
-        systemctl is-active -q "$unit" 2>/dev/null || return 1
-    done
+    unit_active "${NUT_UNITS[@]}"
 }
 
 ups_notifier_installed() {
@@ -169,32 +162,33 @@ ups_configured_for() {
     nut_files_current
 }
 
-# NUT's units hang off nut.target; disabled, they don't start after a reboot
-nut_target_enabled() {
-    systemctl is-enabled -q nut.target 2>/dev/null
-}
-
 # Unreadable files don't count against it, so a run doesn't ask for sudo just to read them
 ups_ready() {
     local configured=0
     ups_configured_for "$1" || configured=$?
     [ "$configured" -ne 1 ] && ups_notifier_installed && ups_rtc_hook_installed &&
-        ups_services_active && nut_target_enabled && upsc_value ups.status > /dev/null
+        ups_services_active && unit_enabled nut.target && upsc_value ups.status > /dev/null
 }
 
-# Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, once per run of a caller that
-# declares UPS_STATE="" local
+# Sets UPS_STATE (vm, unknown, none, or plugged) and UPS_PLUGGED, looking once per memo scope
 ups_state() {
-    [ -z "${UPS_STATE:-}" ] || return 0
+    memo UPS_FOUND read_ups_state > /dev/null || true
+    UPS_STATE="${UPS_FOUND%%$'\n'*}"
     UPS_PLUGGED=""
+    [[ "$UPS_FOUND" != *$'\n'* ]] || UPS_PLUGGED="${UPS_FOUND#*$'\n'}"
+}
+
+# Prints the state, then the UPSes on USB a line each
+read_ups_state() {
+    local plugged=""
     if in_vm; then
-        UPS_STATE=vm
-    elif [ ! -e "$UPOWER_HWDB" ] || ! UPS_PLUGGED="$(ups_plugged)"; then
-        UPS_STATE=unknown
-    elif [ -z "$UPS_PLUGGED" ]; then
-        UPS_STATE=none
+        echo vm
+    elif [ ! -e "$UPOWER_HWDB" ] || ! plugged="$(ups_plugged)"; then
+        echo unknown
+    elif [ -z "$plugged" ]; then
+        echo none
     else
-        UPS_STATE=plugged
+        printf '%s\n%s\n' plugged "$plugged"
     fi
 }
 
@@ -278,7 +272,7 @@ setup_ups() {
         install_ups_rtc_hook || return 1
         rtc=true
     fi
-    nut_target_enabled || target=true
+    unit_enabled nut.target || target=true
     sudo systemctl enable nut.target "${NUT_UNITS[@]}" || return 1
     if "$changed"; then
         restart_nut || return 1
@@ -318,7 +312,7 @@ status_ups() {
     case "$configured" in
         0) status_item ok "$label" ;;
         1) status_item missing "$label: not set up for it (re-run the ubuntu step)" ;;
-        *) status_item unverified "$label: can't read NUT configuration files in $NUT_DIR without sudo; run sudo -v, then status, to check them" ;;
+        *) status_needs_root "$label:" "can't read NUT configuration files in $NUT_DIR without sudo" them ;;
     esac
     if state="$(upsc_value ups.status)" && [ -n "$state" ]; then
         case " $state " in
@@ -332,7 +326,7 @@ status_ups() {
         status_item missing "upsd answers for $UPS_NAME@localhost (upsc $UPS_NAME@localhost)"
     fi
     status_check "nut-server and nut-monitor running" ups_services_active
-    status_check "nut.target enabled, so NUT starts at boot" nut_target_enabled
+    status_check "nut.target enabled, so NUT starts at boot" unit_enabled nut.target
     if ups_notifier_installed; then
         status_item ok "UPS events pushed to ntfy ($UPS_NOTIFY)"
     else

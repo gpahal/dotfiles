@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The vicinae step. On Ubuntu: libopengl0 from apt, Vicinae from its installer into ~/.local, its GNOME extension from
 # extensions.gnome.org, its user service, and Super+Space; and update_vicinae, which upgrade runs.
@@ -10,7 +9,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
 export STATE
@@ -19,15 +17,16 @@ stub_gnome_session "$STATE"
 stub gnome-extensions 'dir="$HOME/.local/share/gnome-shell/extensions/vicinae@dagimg-dot"
 mkdir -p "$dir"
 printf "{\"uuid\": \"vicinae@dagimg-dot\", \"version\": %s}\n" "$(cat "${!#}")" > "$dir/metadata.json"'
-# extensions.gnome.org's newest version for GNOME 50
-echo 12 > "$STATE/ego-version"
-stub curl 'case "$*" in
-    *"extension-info/?uuid=vicinae@dagimg-dot&shell_version=50"*) echo "{\"version\": $(cat "$STATE/ego-version")}" ;;
-    *) exit 22 ;;
-esac'
+# extensions.gnome.org's newest version for GNOME 50, and its zip, which holds the version
+ego_version() {
+    echo "{\"version\": $1}" > "$STATE/ego-info.json"
+    echo "$1" > "$STATE/ego.zip"
+}
+ego_version 12
+stub_fetch "https://extensions.gnome.org/extension-info/?uuid=vicinae@dagimg-dot&shell_version=50=$STATE/ego-info.json" \
+    "https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50=$STATE/ego.zip"
 stub_sudo_exec
-stub dpkg-query '[ "${*: -1}" == libopengl0 ] && [ -e "$STATE/libopengl0" ] && printf "install ok installed"'
-stub apt-get '[ "${*: -1}" != libopengl0 ] || touch "$STATE/libopengl0"'
+stub_apt_packages
 
 load_script vicinae/install.sh
 as_os ubuntu
@@ -42,14 +41,10 @@ gs() { gsettings get "$@"; }
 # What the installer writes for --prefix ~/.local, the binary printing $STATE/vicinae-version
 replace_fn run_installer 'echo "installer $1 $2 $3 ${*:4} TERM=${TERM:-}" >> "$STUB_LOG"
 [ ! -e "$STATE/installer-fails" ] || return 1
-mkdir -p "$(dirname "'"$bin"'")" "$(dirname "'"$unit"'")"
-printf "#!/bin/sh\ncat \"%s\"\n" "$STATE/vicinae-version" > "'"$bin"'"
-chmod +x "'"$bin"'"
+mkdir -p "$(dirname "'"$unit"'")"
+stub_at "'"$bin"'" "cat \"$STATE/vicinae-version\""
 echo "ExecStart='"$bin"' server --replace" > "'"$unit"'"'
 echo "v0.29.2" > "$STATE/vicinae-version"
-replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
-[ ! -e "$STATE/fetch-fails" ] || return 1
-cat "$STATE/ego-version" > "$2"'
 user_shortcut
 gsettings set org.gnome.shell enabled-extensions "['ubuntu-dock@ubuntu.com']"
 # GNOME's default
@@ -64,7 +59,7 @@ answer yes
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "install -y libopengl0"
 assert_file_contains "$STUB_LOG" "installer bash https://vicinae.com/install Vicinae's installer --prefix $HOME/.local TERM=dumb"
-assert_file_contains "$STUB_LOG" "fetch https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50"
+assert_file_contains "$STUB_LOG" "https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50"
 [ -e "$STATE/user-vicinae.service.enabled" ] || fail "Vicinae's service wasn't enabled"
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 assert_eq "['XF86Keyboard']" "$(gs org.gnome.desktop.wm.keybindings switch-input-source)" "the layout switch's keys"
@@ -79,33 +74,24 @@ assert_not_contains "$RUN_OUTPUT" "overrides"
 
 # At the desktop it starts Vicinae; then a re-run changes nothing
 export SESSION=1 SHELL_STATE=1
-: > "$STUB_LOG"
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Started Vicinae."
-assert_file_not_contains "$STUB_LOG" "installer"
-: > "$STUB_LOG"
-snapshot "$settings"
-assert_exit 0 main
-assert_file_not_contains "$STUB_LOG" "gsettings set"
-assert_file_not_contains "$STUB_LOG" "fetch"
-assert_file_not_contains "$STUB_LOG" "daemon-reload"
+assert_idempotent main
+assert_contains "$FIRST_OUTPUT" "Started Vicinae."
+assert_not_contains "$FIRST_LOG" "installer" "the first run's commands"
+assert_file_not_contains "$STUB_LOG" "download-extension"
 assert_file_not_contains "$STUB_LOG" "apt-get"
-assert_unchanged "$settings" "on a re-run"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Vicinae running"
 assert_contains "$RUN_OUTPUT" "ok         Vicinae's GNOME extension loaded"
 
 # Declining sudo leaves libopengl0 out without failing the step, and status still names it
-rm "$STATE/libopengl0"
+stub_apt_packages
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "apt-get"
-: > "$STUB_LOG"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    libopengl0, which Vicinae needs to start"
 assert_sudo_noninteractive
-touch "$STATE/libopengl0"
+stub_apt_packages libopengl0
 
 # Vicinae's own settings.json: a comment header, and its settings window's changes, which win.
 # Status names the repo's keys it overrides; with the import there, the step leaves it as it is.
@@ -151,63 +137,65 @@ assert_exit 0 main
 assert_eq "@as []" "$(gs org.gnome.desktop.wm.keybindings switch-input-source)" "the layout switch's keys"
 
 # update_vicinae: the installer runs each time, and a new version restarts Vicinae
-: > "$STUB_LOG"
 run update_vicinae
 assert_eq 0 "$RUN_STATUS" "update_vicinae's status"
 assert_file_contains "$STUB_LOG" "installer bash https://vicinae.com/install"
 assert_file_not_contains "$STUB_LOG" "try-restart"
-assert_file_not_contains "$STUB_LOG" "fetch"
+assert_file_not_contains "$STUB_LOG" "download-extension"
 replace_fn run_installer 'echo "installer $*" >> "$STUB_LOG"; echo v0.30.0 > "$STATE/vicinae-version"'
-: > "$STUB_LOG"
 run update_vicinae
 assert_eq 0 "$RUN_STATUS" "update_vicinae's status after a new release"
 assert_file_contains "$STUB_LOG" "systemctl --user try-restart vicinae.service"
 # A newer extension on extensions.gnome.org is installed
-echo 13 > "$STATE/ego-version"
-: > "$STUB_LOG"
+ego_version 13
 run update_vicinae
 assert_eq 0 "$RUN_STATUS" "update_vicinae's status after a new extension"
-assert_file_contains "$STUB_LOG" "fetch https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50"
+assert_file_contains "$STUB_LOG" "https://extensions.gnome.org/download-extension/vicinae@dagimg-dot.shell-extension.zip?shell_version=50"
 assert_eq 13 "$(jq -r .version "$ext_dir/metadata.json")" "the extension's version after updating"
 # extensions.gnome.org unreachable fails the update
-stub curl 'exit 7'
+touch "$SANDBOX/fetch-fails"
 run update_vicinae
 assert_eq 1 "$RUN_STATUS" "update_vicinae's status without extensions.gnome.org"
+rm "$SANDBOX/fetch-fails"
 
 # A failed install fails the step but still sets up what it can
 rm -rf "$HOME/.local/bin" "$ext_dir"
 replace_fn run_installer 'echo "installer $*" >> "$STUB_LOG"; return 1'
-: > "$STUB_LOG"
 assert_exit 1 main
-assert_file_contains "$STUB_LOG" "fetch https://extensions.gnome.org"
+assert_file_contains "$STUB_LOG" "https://extensions.gnome.org/download-extension/"
 [ -f "$ext_dir/metadata.json" ] || fail "the extension wasn't installed after the installer failed"
 run update_vicinae
 assert_eq 0 "$RUN_STATUS" "update_vicinae's status with no Vicinae"
 
 # Ubuntu Server: no GNOME, nothing to do
 hide gnome-shell
-: > "$STUB_LOG"
 assert_exit 0 main
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main --status
-assert_file_not_contains "$STUB_LOG" "installer"
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_file_not_contains "$SANDBOX/both.log" "installer"
 
 # macOS: the homebrew step's app, and settings.json with Cmd+Space and paste on
 as_os macos
 rm -rf "$HOME/.config/vicinae"
 VICINAE_APP="$SANDBOX/Vicinae.app"
-: > "$STUB_LOG"
 assert_exit 1 main
+cp "$STUB_LOG" "$SANDBOX/all.log"
 assert_contains "$RUN_OUTPUT" "Vicinae isn't installed"
 [ ! -e "$HOME/.config/vicinae" ] || fail "the step wrote settings without Vicinae"
 assert_exit 3 main --status
+cat "$STUB_LOG" >> "$SANDBOX/all.log"
 mkdir -p "$VICINAE_APP"
 assert_exit 0 main
+cat "$STUB_LOG" >> "$SANDBOX/all.log"
 assert_eq '{"imports":["dotfiles.json"],"global_shortcuts":{"toggle":"control+SPACE"},"input_server":{"enabled":true}}' \
     "$(jq -c . "$settings")" "settings.json on macOS"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the step ran on macOS"
+assert_eq "" "$(cat "$SANDBOX/all.log")" "commands the step ran on macOS"
 assert_exit 0 main --status
+cp "$STUB_LOG" "$SANDBOX/both.log"
 run update_vicinae
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_eq 0 "$RUN_STATUS" "update_vicinae's status on macOS"
-assert_eq "" "$(cat "$STUB_LOG")" "commands update_vicinae ran on macOS"
+assert_eq "" "$(cat "$SANDBOX/both.log")" "commands update_vicinae ran on macOS"
 
 test_done

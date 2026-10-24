@@ -1,12 +1,10 @@
 #!/bin/bash
 # The steps' functions call the replaced ones
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # A failed install or settings write fails the AI tool steps after they set up the rest.
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 stub brew 'exit 1'
 stub pgrep 'exit 1'
 

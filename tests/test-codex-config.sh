@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The codex step's config.toml edit through yq: its keys set, the rest of the file kept, comments
 # included, values of your own kept, and no edit when yq would drop comments or change values.
@@ -8,7 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script ai_tools/codex/install.sh
 stub pgrep 'exit 1'
 stub bwrap
@@ -212,7 +210,6 @@ stub yq "echo 'yq (https://github.com/mikefarah/yq/) version v4.54.1'"
 codex_yq_new_enough || fail "yq 4.54.1 counts as too old"
 stub yq "echo 'yq (https://github.com/mikefarah/yq/) version v4.54.0'"
 codex_yq_new_enough && fail "yq 4.54.0 counts as new enough"
-: > "$STUB_LOG"
 run apply
 assert_eq 1 "$RUN_STATUS" "apply's exit with yq 4.54.0"
 assert_contains "$RUN_OUTPUT" "yq 4.54.0 isn't mikefarah's yq 4.54.1 or newer"

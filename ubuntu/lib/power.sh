@@ -14,10 +14,6 @@ sleep_conf_written() {
     file_is "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
 }
 
-write_sleep_conf() {
-    write_root_file "$SLEEP_CONF" "$SLEEP_CONF_CONTENT"
-}
-
 sysctl_file_written() {
     file_is "$SYSCTL_CONF" "$SYSCTL_CONTENT"
 }
@@ -44,8 +40,15 @@ sysctl_in_effect() {
     differences="$(sysctl_differences)" && [ -z "$differences" ]
 }
 
+# Sets ITEM_DETAIL to why a written file isn't in effect
 sysctl_written() {
-    sysctl_file_written && sysctl_in_effect
+    local overrides
+    sysctl_file_written || return 1
+    sysctl_in_effect && return 0
+    overrides="$(sysctl_overrides | join_lines '; ')"
+    # shellcheck disable=SC2034 # the item drivers read it
+    ITEM_DETAIL="written but not in effect (${overrides:+$overrides; change or remove them there, and }re-run the ubuntu step)"
+    return 1
 }
 
 # Files sysctl --system reads after $SYSCTL_CONF, which override it: *.conf sorted by name, first
@@ -87,7 +90,7 @@ sysctl_overrides() {
 # (as in a VM), so judge by sysctl_in_effect instead.
 apply_sysctl() {
     local overrides line
-    sysctl_file_written || write_root_file "$SYSCTL_CONF" "$SYSCTL_CONTENT" || return 1
+    sysctl_file_written || write_root_content SYSCTL_CONF SYSCTL_CONTENT || return 1
     sudo sysctl --system > /dev/null || true
     sysctl_in_effect && return 0
     overrides="$(sysctl_overrides)"

@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The stream-deck step on Ubuntu: the daemon's files and packages, its user service, the GNOME
 # extension, the Gmail app window, Resources, and the root power helper. Stubs stand in for pnpm,
@@ -9,26 +8,20 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 STATE="$SANDBOX/state"
-export SANDBOX
 
 # SESSION and SHELL_STATE are set per run
 stub_gnome_session "$STATE"
 stub pnpm 'mkdir -p node_modules'
-stub_apt_package resources
+stub_apt_packages
 stub_sudo_exec
 
-# shellcheck disable=SC2034 # the loaded step reads them
+# shellcheck disable=SC2034 # the loaded step reads it
 the_step() {
     load_script stream-deck/install.sh
+    sandbox_paths RAPL_DIR="$SANDBOX/powercap" HIDRAW_DIR="$SANDBOX/hidraw" stream-deck/install.sh 'stream-deck/lib/*.sh'
     as_os ubuntu
-    POWER_SCRIPT="$SANDBOX/libexec/dotfiles-power"
-    POWER_UNIT="$SANDBOX/systemd/dotfiles-power.service"
-    RAPL_DIR="$SANDBOX/powercap"
-    HIDRAW_DIR="$SANDBOX/hidraw"
-    DEV_DIR="$SANDBOX/dev"
     APT_UPDATE_RETRY_DELAY=0
 }
 
@@ -39,10 +32,7 @@ deck_dir="$HOME/.local/share/dotfiles/stream-deck"
 echo "@as ['ding@rastersoft.com', 'ubuntu-dock@ubuntu.com']" > "$SANDBOX/gsettings/org.gnome.shell.enabled-extensions"
 the_step
 
-# Without Node from mise, it fails before changing anything
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "Node LTS isn't at $node_bin. Run bash setup.sh runtimes first."
-[ ! -e "$deck_dir" ] || fail "the step changed things without Node"
+# Node from mise; test-step-prereqs.sh covers it missing
 mkdir -p "$(dirname "$node_bin")"
 printf '#!/bin/sh\n' > "$node_bin"
 chmod +x "$node_bin"
@@ -50,17 +40,16 @@ chmod +x "$node_bin"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ~/.local/share/dotfiles/stream-deck/daemon.js"
 assert_contains "$RUN_OUTPUT" "missing    GNOME extension dotfiles@gpahal.com enabled"
-assert_contains "$RUN_OUTPUT" "missing    Power helper ($SANDBOX/libexec/dotfiles-power)"
+assert_contains "$RUN_OUTPUT" "missing    Power helper ($SANDBOX/usr/local/libexec/dotfiles-power)"
 assert_contains "$RUN_OUTPUT" "info       Stream Deck not attached here"
 
 # Declining sudo still sets up the rest; with no desktop session the daemon waits for login
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Turned on the GNOME extension dotfiles@gpahal.com. It loads at your next login."
-assert_contains "$RUN_OUTPUT" "No desktop session, so the daemon starts at your next login."
+assert_contains "$RUN_OUTPUT" "No desktop session, so the Stream Deck daemon starts at your next login."
 [ -e "$STATE/user-dotfiles-stream-deck.service.enabled" ] || fail "the daemon's service wasn't enabled"
-[ ! -e "$SANDBOX/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
+[ ! -e "$SANDBOX/usr/local/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded: GNOME Shell isn't running"
@@ -68,24 +57,21 @@ assert_contains "$RUN_OUTPUT" "unverified Stream Deck daemon running: no desktop
 
 # Accepting sudo installs Resources and the power helper, and starts it
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Install $SANDBOX/libexec/dotfiles-power, which shares the CPU's power for the Power key"
+assert_contains "$RUN_OUTPUT" "Install $SANDBOX/usr/local/libexec/dotfiles-power, which shares the CPU's power for the Power key"
 assert_file_contains "$STUB_LOG" "install -y resources"
 assert_file_contains "$STUB_LOG" "systemctl enable --now dotfiles-power.service"
 assert_file_not_contains "$STUB_LOG" "pnpm"
 
 # In the desktop session: it starts the daemon, then a second run changes nothing
 export SESSION=1 SHELL_STATE=1
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Started the Stream Deck daemon."
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "The Stream Deck daemon is already running."
 assert_not_contains "$RUN_OUTPUT" "Copied"
 assert_not_contains "$RUN_OUTPUT" "Wrote"
-assert_eq "" "$(grep -vE '^(gsettings get|busctl --user (status|--json=short call org.gnome.Shell /org/gnome/Shell)|systemctl --user (show-environment|is-)|systemctl is-|dpkg-query)' "$STUB_LOG")" \
+assert_eq "" "$(grep -vE '^(gsettings get|busctl --user (status|--json=short call org.gnome.Shell /org/gnome/Shell)|systemctl --user (show-environment|show -p|is-)|systemctl is-|dpkg-query)' "$STUB_LOG")" \
     "commands that changed something on a second run"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         GNOME extension loaded"
@@ -94,14 +80,12 @@ assert_contains "$RUN_OUTPUT" "ok         Power helper running"
 
 # A changed daemon file or lockfile restarts the daemon; a changed extension asks for a login
 echo "// an edit" >> "$deck_dir/daemon.js"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 echo stale > "$deck_dir/node_modules/.dotfiles-lock"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon's dependencies"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "pnpm install"
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
@@ -118,7 +102,6 @@ assert_not_contains "$RUN_OUTPUT" "Restarted"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Stream Deck daemon restarted on its new files: re-run the stream-deck step"
 rm "$STATE/reload-fails"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Restarted the Stream Deck daemon."
 assert_file_contains "$STUB_LOG" "systemctl --user restart dotfiles-stream-deck.service"

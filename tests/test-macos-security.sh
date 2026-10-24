@@ -1,13 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The macos step: its defaults, Activity Monitor's ShowCategory, and Spotlight's Cmd+Space shortcut;
 # and its sudo items: the hostname, the firewall, its stealth mode, and automatic App Store updates.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-
-setup_sandbox
 
 # socketfilterfw and scutil keep their settings as files in $STATE. The step runs socketfilterfw
 # from $APP_FIREWALL_DIR, set to the stubs' dir below.
@@ -67,8 +64,8 @@ case "$1 $2" in
 esac'
 stub killall
 stub activateSettings
-stub pgrep '[ -e "'"$SANDBOX"'/running" ]'
-stub osascript 'rm -f "'"$SANDBOX"'/running"'
+stub pgrep '[ -e "$SANDBOX/running" ]'
+stub osascript 'rm -f "$SANDBOX/running"'
 stub fdesetup 'echo "FileVault is On."'
 stub_sudo_exec
 
@@ -133,7 +130,6 @@ defaults_items() {
     assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "ok         Spotlight's Cmd+Space shortcut off"
 
-    : > "$STUB_LOG"
     assert_exit 0 main
     assert_contains "$RUN_OUTPUT" "macOS defaults are already set."
     assert_file_not_contains "$STUB_LOG" "activateSettings"
@@ -201,7 +197,6 @@ real_confirm "$@"'
     assert_contains "$RUN_OUTPUT" "ok         Firewall stealth mode on"
     assert_contains "$RUN_OUTPUT" "ok         App Store apps update automatically"
 
-    : > "$STUB_LOG"
     assert_exit 0 main
     assert_file_not_contains "$STUB_LOG" "sudo"
 

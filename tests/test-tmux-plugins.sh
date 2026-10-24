@@ -1,14 +1,12 @@
 #!/bin/bash
 # The step's functions call the OS checks this test replaces
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The tmux step installs each plugin at its tmux/plugins.lock pin. Local repos stand in for GitHub.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v git &>/dev/null || skip "git isn't installed"
 
 # plugins.lock pins every plugin tmux.conf loads, in order, to a full sha
@@ -34,8 +32,7 @@ fake_tmux_plugins() {
         done
         echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
     done < <(awk '!/^#/ && NF' "$REPO_DIR/tmux/plugins.lock")
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
-    export GIT_CONFIG_VALUE_0=https://github.com/
+    fake_github_remotes "$FAKE_PLUGIN_REMOTES"
 }
 fake_tmux_plugins
 load_script tmux/install.sh
@@ -59,6 +56,13 @@ upgrade_stage() {
 
 assert_exit 0 main
 assert_eq "$pinned" "$(installed)" "the plugins' checkouts"
+# A second run installs nothing
+assert_exit 0 main
+assert_eq "" "$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added|Installed' || true)" \
+    "the second run's Copied, Added, and Installed lines"
+# Status reports what apply set
+assert_exit 0 main --status
+assert_not_contains "$RUN_OUTPUT" "missing"
 short="$(awk '$1 == "tmux-plugins/tmux-yank" { print substr($2, 1, 7) }' "$DOTFILES_TMUX_PLUGINS_LOCK")"
 
 # A plugin at another commit, as a bumped pin leaves it

@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # hammerspoon/init.lua under lua with a fake hs that records each call.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 LUA="$(command -v lua || command -v lua5.4 || true)"
 [ -n "$LUA" ] || skip "lua isn't installed"
 

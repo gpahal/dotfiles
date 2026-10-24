@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # zsh/hooks.zsh takes the outer terminal and SSH login from tmux at attach, and title.zsh's titles.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v zsh &>/dev/null || skip "zsh isn't installed"
 SOCKET="$SANDBOX/tmux/default"
 export TMUX_ENV="$SANDBOX/tmux-env"
@@ -25,7 +23,6 @@ done'
 
 printf '%s\n' TERM_PROGRAM=ghostty TERM_PROGRAM_VERSION=1.2.0 OTHER=x > "$TMUX_ENV"
 
-unset TMUX
 assert_eq "tmux 3.5" "$(hook :)" "variables outside tmux"
 
 export TMUX="$SOCKET,1234,0"

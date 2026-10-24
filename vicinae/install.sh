@@ -16,6 +16,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 source "$DOTFILES_DIR/lib/gnome.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 
 # The homebrew step installs the cask on macOS, and the installer's curl and jq with apt on Ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -124,6 +126,11 @@ settings_filter() {
     done < <(vicinae_os_settings)
 }
 
+# For merge_file
+settings_merged() {
+    jq "$(settings_filter)"
+}
+
 settings_imported() {
     jq -e --arg f "$VICINAE_IMPORT" 'any(.imports[]?; . == $f)' <<< "$1" > /dev/null
 }
@@ -140,7 +147,7 @@ settings_overrides() {
 
 # Rewrites settings.json without its comments, as Vicinae does when it saves
 setup_settings() {
-    local file current new tmp key value text now
+    local file current new key value text now
     vicinae_files copy_file || return 1
     file="$(vicinae_settings)"
     if ! current="$(vicinae_settings_json)"; then
@@ -161,13 +168,7 @@ setup_settings() {
         echo "  $file already imports $VICINAE_IMPORT and has this OS's settings"
         return 0
     fi
-    maybe_backup "$file" || return 1
-    mkdir -p "$(dirname "$file")" && tmp="$(mktemp)" || return 1
-    if ! jq . <<< "$new" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    write_back "$tmp" "$file" || return 1
+    merge_file "$file" settings_merged vicinae_settings_json || return 1
     settings_imported "$current" || echo "  $file imports $VICINAE_IMPORT"
     while IFS='|' read -r key value text; do
         [ "$(jq -c ".$key" <<< "$current")" != null ] || echo "  $text ($key = $value)"
@@ -249,14 +250,6 @@ install_extension() {
     echo "  Installed Vicinae's GNOME extension $(installed_extension_version). GNOME loads it at your next login."
 }
 
-unit_enabled() {
-    systemctl --user is-enabled --quiet "$VICINAE_UNIT_NAME" 2> /dev/null
-}
-
-unit_loaded() {
-    [ "$(systemctl --user show --property=LoadState --value "$VICINAE_UNIT_NAME" 2> /dev/null)" == loaded ]
-}
-
 vicinae_command() {
     printf "'%s' toggle" "$VICINAE_BIN"
 }
@@ -288,44 +281,18 @@ setup_hotkey() {
 
 # Restarts a running server when the installer changed it, so it runs the new version
 setup_service() {
-    local changed="$1"
-    if ! systemctl --user show-environment &> /dev/null; then
-        echo "  Couldn't reach your systemd user manager, so Vicinae's service isn't on yet. Re-run the"
-        echo "  step after the next login."
-        return 0
-    fi
+    user_manager_reachable "Vicinae's service isn't on" || return 0
     if [ ! -f "$VICINAE_UNIT" ]; then
         echo "  Vicinae's installer didn't write $VICINAE_UNIT." >&2
         return 1
     fi
-    if "$changed" || ! unit_loaded; then
-        systemctl --user daemon-reload || return 1
-    fi
-    unit_enabled || systemctl --user enable "$VICINAE_UNIT_NAME" || return 1
-    if ! gnome_session_running; then
-        echo "  No desktop session, so Vicinae starts at your next login."
-    elif "$changed"; then
-        systemctl --user restart "$VICINAE_UNIT_NAME" || return 1
-        echo "  Restarted Vicinae."
-    elif ! systemctl --user is-active --quiet "$VICINAE_UNIT_NAME"; then
-        systemctl --user start "$VICINAE_UNIT_NAME" || return 1
-        echo "  Started Vicinae."
-    else
-        echo "  Vicinae is already running."
-    fi
+    start_user_service "$VICINAE_UNIT_NAME" Vicinae "$1"
 }
 
 status_service() {
     status_check "Vicinae's service ($VICINAE_UNIT)" test -f "$VICINAE_UNIT"
     [ -f "$VICINAE_UNIT" ] || return 0
-    status_check "Vicinae starts at login" unit_enabled
-    if ! gnome_session_running; then
-        status_item unverified "Vicinae running: no desktop session; it starts at the next login"
-    elif systemctl --user is-active --quiet "$VICINAE_UNIT_NAME" 2> /dev/null; then
-        status_item ok "Vicinae running"
-    else
-        status_item missing "Vicinae running: journalctl --user -u $VICINAE_UNIT_NAME says why it stopped"
-    fi
+    status_user_service "$VICINAE_UNIT_NAME" Vicinae
 }
 
 status_ubuntu() {
@@ -347,8 +314,7 @@ status() {
         else
             status_item missing "Vicinae ($VICINAE_APP): bash setup.sh homebrew installs it"
         fi
-    elif ! has_gnome_desktop; then
-        status_item skipped "Vicinae: no GNOME desktop"
+    elif skip_without_desktop --status Vicinae; then
         return 0
     else
         status_ubuntu
@@ -400,9 +366,7 @@ apply() {
         fi
         require_cmd jq || return 1
         setup_settings
-    elif ! has_gnome_desktop; then
-        echo "  No GNOME desktop, so skipped."
-    else
+    elif ! skip_without_desktop; then
         apply_ubuntu
     fi
 }

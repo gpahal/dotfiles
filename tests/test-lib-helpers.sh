@@ -1,13 +1,11 @@
 #!/bin/bash
-set -euo pipefail
 
-# lib/common.sh's confirm, regex_escape, version_at_least, run_bounded, and quitting a running app
-# to merge its settings, and stub_sudo_exec's refusals.
+# lib/common.sh's confirm, memo, file_is, parent_dir, regex_escape, version_at_least, run_bounded,
+# and quitting a running app to merge its settings, and lib/gnome.sh's skip_without_desktop.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 
 # --- confirm and DOTFILES_ASSUME_YES ---
@@ -24,6 +22,43 @@ stub systemd-detect-virt 'exit 1'
 assert_exit 1 confirm "Proceed?"
 assert_eq "" "$RUN_OUTPUT" "confirm's output off a VM"
 
+# --- memo: one run per scope, which a function opens or joins ---
+runs="$SANDBOX/memo-runs"
+: > "$runs"
+counted() {
+    echo x >> "$runs"
+    echo "out $1"
+    return "$1"
+}
+assert_exit 3 memo COUNTED counted 3
+assert_eq "out 3" "$RUN_OUTPUT" "memo's output"
+memo COUNTED counted 4 > /dev/null || true
+assert_eq "out 4 4" "$COUNTED $COUNTED_STATUS" "memo's variables"
+memo COUNTED counted 0 > /dev/null
+assert_eq 3 "$(wc -l < "$runs" | tr -d ' ')" "runs without a scope"
+inner() {
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    memo COUNTED counted "$1"
+}
+outer() {
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    memo COUNTED counted 5 || true
+    inner 6 || true
+    memo COUNTED counted 7 || true
+}
+: > "$runs"
+assert_eq "out 5
+out 5
+out 5" "$(outer)" "output in one scope"
+assert_eq 1 "$(wc -l < "$runs" | tr -d ' ')" "runs in one scope"
+: > "$runs"
+seq_before="$MEMO_SEQ"
+outer > /dev/null
+outer > /dev/null
+assert_eq 2 "$(wc -l < "$runs" | tr -d ' ')" "runs in two scopes"
+assert_eq $((seq_before + 2)) "$MEMO_SEQ" "scopes opened"
+assert_exit 6 inner 6
+
 # confirm asks whenever stdin is a terminal, even with stdout piped (bash setup.sh | tee log)
 unset DOTFILES_ASSUME_YES
 interactive="$SANDBOX/interactive"
@@ -36,6 +71,27 @@ else
 fi
 run bash -c 'set -o pipefail; . "$0/lib/common.sh"; confirm "Proceed?" | cat' "$REPO_DIR"
 assert_eq 1 "$RUN_STATUS" "confirm's status with stdin from /dev/null and stdout piped"
+
+# --- file_is: compares as $(cat) would, dropping trailing newlines ---
+f="$SANDBOX/file-is"
+for content in "" "a" "a"$'\n' "a"$'\n\n\n' $'\n\n' " a b "$'\n' $'a\n\nb\n' "a\\"; do
+    printf '%s' "$content" > "$f"
+    for want in "" "a" " a b " $'a\n\nb' $'a\n' "a\\"; do
+        expected=1
+        [ "$(cat "$f")" != "$want" ] || expected=0
+        assert_exit "$expected" file_is "$f" "$want"
+    done
+done
+rm "$f"
+assert_exit 0 file_is "$f" ""
+assert_exit 1 file_is "$f" "a"
+assert_eq "" "$RUN_OUTPUT" "file_is's output for a missing file"
+
+# --- parent_dir: dirname's answer, a path with no slash included ---
+for path in /a/b/c /a "a b/c" a; do
+    parent_dir dir "$path"
+    assert_eq "$(dirname "$path")" "$dir" "parent_dir of $path"
+done
 
 # --- regex_escape ---
 for s in 'Logi Options+' '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code' 'a.b*c?d[e]f{1}|g^h$i\j'; do
@@ -67,8 +123,8 @@ app_json() {
     merge() {
         merge_app_json "Some App" "already set" "set" "$settings" '.repo = 2'
     }
-    stub pgrep '[ -e "'"$SANDBOX"'/app-running" ]'
-    stub osascript '[ -e "'"$SANDBOX"'/stays-running" ] || rm -f "'"$SANDBOX"'/app-running"'
+    stub pgrep '[ -e "$SANDBOX/app-running" ]'
+    stub osascript '[ -e "$SANDBOX/stays-running" ] || rm -f "$SANDBOX/app-running"'
     stub sleep
     touch "$SANDBOX/app-running"
     as_os macos
@@ -116,15 +172,6 @@ else
     skip_rest "merge_app_json: jq isn't installed"
 fi
 
-# --- stub_sudo_exec: the refused commands name a missing repo dir, so they'd fail even if run ---
-stub_sudo_exec
-echo hi > "$SANDBOX/file"
-gone="$REPO_DIR/no-such-dir/file"
-assert_exit 1 sudo install -m 0644 "$SANDBOX/file" "$gone"
-assert_contains "$RUN_OUTPUT" "refused: install would change $gone, in the repo"
-assert_exit 1 sudo cat /etc/hosts
-assert_contains "$RUN_OUTPUT" "refused: /etc/hosts is outside the sandbox"
-
 # run_bounded: timeout(1) exits 137 after its SIGKILL, which is a timeout only past the deadline
 run_bounded_killed() {
     stub timeout '[ "$1 $2" == "-k 5" ] || exit 99; exit 137'
@@ -148,5 +195,19 @@ if command -v perl &> /dev/null; then
 else
     skip_rest "run_bounded without timeout(1): perl isn't installed"
 fi
+
+# --- skip_without_desktop: says so and succeeds only without GNOME, as on Ubuntu Server ---
+load_script lib/gnome.sh
+assert_exit 1 skip_without_desktop
+assert_eq "" "$RUN_OUTPUT" "skip_without_desktop's output with GNOME"
+assert_exit 1 skip_without_desktop --status "GNOME settings"
+without_desktop() {
+    hide gnome-shell
+    assert_exit 0 skip_without_desktop
+    assert_eq "  No GNOME desktop, so skipped." "$RUN_OUTPUT" "skip_without_desktop's output"
+    assert_exit 0 skip_without_desktop --status "GNOME settings"
+    assert_eq "  skipped    GNOME settings: no GNOME desktop" "$RUN_OUTPUT" "skip_without_desktop's status line"
+}
+subtest without_desktop
 
 test_done

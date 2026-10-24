@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # lib/system.sh's apt sources: status_apt_source, apt_repo_published, add_apt_repo's checks and
 # rollbacks, and apt_get_update's lock retries.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-setup_sandbox
 load_script lib/common.sh
 load_script lib/system.sh
 stub_sudo_exec
@@ -82,7 +80,6 @@ echo "$fpr" > "$SANDBOX/served-key"
 echo old-key > "$keyring"
 echo "${content/resolute/stale-suite}" > "$file"
 echo 0123456789ABCDEF0123456789ABCDEF01234567 > "$SANDBOX/served-key"
-: > "$STUB_LOG"
 assert_exit 1 add
 assert_eq old-key "$(cat "$keyring")" "the key after a key with another fingerprint"
 assert_eq "${content/resolute/stale-suite}" "$(cat "$file")" "the source after a key with another fingerprint"
@@ -121,12 +118,12 @@ stub apt-get
 
 # The lock wait must show as it happens, not once the update is done
 rm -f "$file"
-stub apt-get 'if [ ! -e "'"$SANDBOX"'/locked-once" ]; then
-    touch "'"$SANDBOX"'/locked-once"
+stub apt-get 'if [ ! -e "$SANDBOX/locked-once" ]; then
+    touch "$SANDBOX/locked-once"
     echo "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 812 (apt-get)"
     exit 100
 fi
-cat "'"$SANDBOX"'/add-output" > "'"$SANDBOX"'/seen-during-update"'
+cat "$SANDBOX/add-output" > "$SANDBOX/seen-during-update"'
 add > "$SANDBOX/add-output" 2>&1 || fail "add_apt_repo failed after the lock was freed"
 seen="$(cat "$SANDBOX/seen-during-update")"
 assert_contains "$seen" "Updating apt's lists for Example" "output before the update"
@@ -167,7 +164,7 @@ assert_eq example.gpg "$(ls -A "$SANDBOX/keyrings")" "files beside the key after
 [ ! -e "$file" ] || fail "the source was written after the key failed"
 
 # Writing the source fails: the old key and source are back, or no source, with no temp files
-stub mv 'if [ "${!#}" = "'"$file"'" ] && rm "'"$SANDBOX"'/mv-fails-once" 2> /dev/null; then
+stub mv 'if [ "${!#}" = "'"$file"'" ] && rm "$SANDBOX/mv-fails-once" 2> /dev/null; then
     exit 1
 fi
 exec "'"$real_mv"'" "$@"'
@@ -228,7 +225,7 @@ assert_eq 2 "$(grep -c "^apt-get .* update$" "$STUB_LOG")" "apt-get updates afte
 
 # --- apt_get_update ---
 # Retried only for apt's lists lock, which apt-daily can hold
-stub apt-get 'S="'"$SANDBOX"'"
+stub apt-get 'S="$SANDBOX"
 if [ -e "$S/apt-broken" ]; then
     echo "E: The repository http://example.invalid resolute Release does not have a Release file." >&2
     exit 100

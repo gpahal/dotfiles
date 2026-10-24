@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The dotfiles GNOME extension's methods under node, with GNOME Shell's modules mocked: the apps
 # ActivateApp allows, the keys SendKeys allows, and what FocusedWindow shares.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v node &> /dev/null || skip "node isn't installed"
 EXTENSION="$REPO_DIR/stream-deck/linux/gnome-extension/dotfiles@gpahal.com/extension.js"
 mocks="$SANDBOX/mocks"

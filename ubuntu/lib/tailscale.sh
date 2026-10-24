@@ -7,13 +7,13 @@
 tailscale_configured() {
     local prefs
     prefs="$(tailscale_prefs)" || return 1
-    jq -e --arg user "$(id -un)" '.AutoUpdate.Apply == true and .OperatorUser == $user' \
+    jq -e --arg user "$CURRENT_USER" '.AutoUpdate.Apply == true and .OperatorUser == $user' \
         <<< "$prefs" &>/dev/null
 }
 
-# Read once through a status run, which declares TAILSCALE_PREFS_CACHE_STATUS
+# Cached through a memo scope, once called outside a $( )
 tailscale_prefs() {
-    memo TAILSCALE_PREFS_CACHE tailscale debug prefs 2>/dev/null
+    memo TAILSCALE_PREFS tailscale debug prefs 2>/dev/null
 }
 
 tailscale_state() {
@@ -47,7 +47,7 @@ install_tailscale() {
 }
 
 set_up_tailscale() {
-    sudo tailscale set --auto-update --operator="$(id -un)"
+    sudo tailscale set --auto-update --operator="$CURRENT_USER"
 }
 
 # Prints the host:port of each funnel, including a foreground one, or fails when it can't ask

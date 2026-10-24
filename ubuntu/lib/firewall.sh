@@ -6,13 +6,13 @@ ufw_enabled() {
     sbin_cmd ufw &>/dev/null &&
         grep -qx 'ENABLED=yes' "$UFW_CONF" 2>/dev/null &&
         grep -qxE 'DEFAULT_INPUT_POLICY="(DROP|REJECT)"' "$UFW_DEFAULTS" 2>/dev/null &&
-        systemctl is-enabled -q ufw.service 2>/dev/null &&
-        systemctl is-active -q ufw.service 2>/dev/null
+        unit_on ufw.service
 }
 
-# ufw_status <sudo flags>. Cached through a status_ufw run, which declares UFW_STATUS_CACHE_STATUS.
+# ufw_status <sudo flags>. Cached through a memo scope, such as a status_ufw run, once called
+# outside a $( ).
 ufw_status() {
-    memo UFW_STATUS_CACHE sudo "$@" ufw status 2>/dev/null
+    memo UFW_STATUS sudo "$@" ufw status 2>/dev/null
 }
 
 # ufw_stopped <sudo flags>: catches ufw-init stop, which ufw_enabled can't see
@@ -201,12 +201,11 @@ configure_ufw() {
     "$on" && return 0
     sudo ufw --force enable > /dev/null || return 1
     # ufw enable leaves a stopped ufw.service stopped
-    sudo systemctl enable --now -q ufw.service
+    enable_units_now -q ufw.service
 }
 
 status_ufw() {
-    # shellcheck disable=SC2034 # memo reads the caches
-    local ufw=0 UFW_STATUS_CACHE="" UFW_STATUS_CACHE_STATUS=""
+    local ufw=0 MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     local rules="ufw rules allowing SSH from the private ranges, tailscale0, and Tailscale's $TAILSCALE_PORT/udp, and denying it on Docker's bridges"
     if [ -e "$UFW_DEFAULTS" ] && ! ufw_ipv6_on; then
         status_item missing "ufw filters IPv6: $UFW_DEFAULTS lacks IPV6=yes, so sshd answers on the global IPv6 address; set it, run sudo ufw reload if ufw is on, then re-run the ubuntu step"
@@ -227,7 +226,7 @@ status_ufw() {
         return 0
     fi
     if ! sudo_ready; then
-        status_item unverified "$rules (only root can read them; run sudo -v, then status, to check them)"
+        status_needs_root "$rules" "only root can read them" them
         return 0
     fi
     ufw_configured -n || ufw=$?

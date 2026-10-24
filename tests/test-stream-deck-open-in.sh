@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The Stream Deck plugin's open-in: New Tab's lock, then folders from the front app, with stubs
 # for lsappinfo, osascript, open, mdls, and the Zed CLI.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 OPEN_IN="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
 dir="$SANDBOX/project"
 file="$dir/main.go"
@@ -41,7 +39,6 @@ export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" ANSWER="" ERROR=""
 
 # e.g. check files com.apple.finder 0 "open $dir": the stub log less the queries
 check() {
-    : > "$STUB_LOG"
     FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1"
     assert_eq "$4" "$(grep -vE '^(lsappinfo|osascript|mdls|pbpaste) ' "$STUB_LOG" || true)" "$1 from $2"
 }

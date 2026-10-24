@@ -1,26 +1,22 @@
 # shellcheck shell=bash
 # ubuntu/install.sh sets the constants.
 
-# Read once through a status run, which declares SMARTMONTOOLS_CACHE_STATUS
+# Cached through a memo scope, such as one status or apply run
 smartmontools_installed() {
-    memo SMARTMONTOOLS_CACHE apt_installed smartmontools > /dev/null
+    memo SMARTMONTOOLS_INSTALLED apt_installed smartmontools > /dev/null
 }
 
 smartd_enabled() {
-    smartmontools_installed && [ "$(systemctl is-enabled "$SMARTD_UNIT" 2>/dev/null)" == enabled ]
+    smartmontools_installed && unit_enabled "$SMARTD_UNIT"
 }
 
-# smartd's unit has ConditionVirtualization=no. Cached once cache_checks runs.
+# smartd's unit has ConditionVirtualization=no. Cached through a memo scope.
 in_vm() {
-    memo IN_VM_CACHE systemd-detect-virt -q &>/dev/null
-}
-
-smartd_active() {
-    systemctl is-active -q "$SMARTD_UNIT" 2>/dev/null
+    memo IN_VM systemd-detect-virt -q &>/dev/null
 }
 
 smartd_ready() {
-    smartd_enabled && { in_vm || smartd_active; }
+    smartd_enabled && { in_vm || unit_active "$SMARTD_UNIT"; }
 }
 
 # smartctl's exit bits: 1 bad args or sudo refused, 2 open failed or asleep, 4 SMART command
@@ -76,7 +72,7 @@ status_smart() {
         return 0
     fi
     if ! sudo_ready; then
-        status_item unverified "$label: reading it needs root; run sudo -v, then status, to check it"
+        status_needs_root "$label:" "reading it needs root"
         return 0
     fi
     # e.g. /dev/sda -d sat # /dev/sda [SAT], ATA device
@@ -119,11 +115,11 @@ status_firmware() {
         status_item skipped "$label: fwupd isn't installed"
         return 0
     fi
-    if status_quick; then
-        status_item unverified "$label: skipped by --quick"
+    if status_for_alerts; then
+        status_item unverified "$label: skipped by --for-alerts"
         return 0
     fi
-    if ! systemctl is-active --quiet fwupd.service 2>/dev/null; then
+    if ! unit_active fwupd.service; then
         status_item info "$label: fwupd isn't running, and status doesn't start it; fwupdmgr get-updates checks"
         return 0
     fi
@@ -157,8 +153,8 @@ install_smartd() {
     if ! apt_installed smartmontools; then
         apt_install_fresh --no-install-recommends smartmontools || return 1
     fi
-    sudo systemctl enable --now "$SMARTD_UNIT" || return 1
-    in_vm || smartd_active || sudo systemctl restart "$SMARTD_UNIT"
+    enable_units_now "$SMARTD_UNIT" || return 1
+    in_vm || unit_active "$SMARTD_UNIT" || sudo systemctl restart "$SMARTD_UNIT"
 }
 
 smartd_hook_installed() {

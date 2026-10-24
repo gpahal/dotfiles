@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The monitor-input step, just monitor-input on both OSes, the switcher the Ubuntu service runs,
 # and the hammerspoon step's m1ddc check. Fake sysfs trees stand in for USB devices and outputs.
@@ -8,8 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-export SANDBOX
 USB="$SANDBOX/usb"
 DRM="$SANDBOX/drm"
 
@@ -31,15 +28,9 @@ output() {
     fi
 }
 
-# shellcheck disable=SC2034 # the loaded scripts read them
-sandbox_paths() {
-    MONITOR_INPUT_MAC_CONF="$HOME/.hammerspoon/monitor-input.conf"
-    MONITOR_INPUT_CONF="$SANDBOX/etc-dotfiles/monitor-input.conf"
-    MONITOR_INPUT_RULE="$SANDBOX/rules.d/90-dotfiles-monitor-input.rules"
-    MONITOR_INPUT_SCRIPT="$SANDBOX/libexec/dotfiles-monitor-input"
-    MONITOR_INPUT_UNIT="$SANDBOX/systemd/dotfiles-monitor-input.service"
-    USB_DEVICES_DIR="$USB"
-    DRM_DIR="$DRM"
+# The scripts' paths in the sandbox, and the fake sysfs trees
+monitor_input_paths() {
+    sandbox_paths USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" monitor-input/lib/paths.sh
 }
 
 usb_device 1-1 05e3:0610 "USB2.1 Hub"
@@ -55,9 +46,9 @@ stub_sudo_exec
 
 the_step() {
     load_script monitor-input/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os ubuntu
-    stub_apt_package ddcutil
+    stub_apt_packages
     # shellcheck disable=SC2034 # apt_get_update reads it
     APT_UPDATE_RETRY_DELAY=0
 
@@ -75,7 +66,6 @@ the_step() {
     answer yes
     assert_exit 0 main
 
-    : > "$STUB_LOG"
     assert_exit 0 main
     assert_contains "$RUN_OUTPUT" "already installed"
     assert_file_not_contains "$STUB_LOG" "sudo"
@@ -98,7 +88,7 @@ subtest the_step
 setup_on_ubuntu() {
     output card1-HDMI-A-1 connected 4
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os ubuntu
     answer yes
     # Left by the_step
@@ -116,7 +106,6 @@ setup_on_ubuntu() {
     assert_contains "$RUN_OUTPUT" "DP-1 isn't a connected output with DDC"
     [ ! -e "$MONITOR_INPUT_CONF" ] || fail "a rejected run saved the settings"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19F5:2620 0x11 27
     assert_contains "$RUN_OUTPUT" "Saved. With 19f5:2620 here the monitor shows input 17 on HDMI-A-1; without it, input 27."
     assert_eq "# From just monitor-input. dotfiles-monitor-input reads it.
@@ -127,7 +116,6 @@ connector=HDMI-A-1" "$(cat "$MONITOR_INPUT_CONF")" "the settings"
     assert_file_contains "$MONITOR_INPUT_RULE" 'ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="19f5/2620/*", RUN+="/usr/bin/systemctl --no-block restart dotfiles-monitor-input.service"'
     assert_file_contains "$STUB_LOG" "udevadm control --reload"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19f5:2620 17 27 HDMI-A-1
     assert_contains "$RUN_OUTPUT" "Already set."
     assert_file_not_contains "$STUB_LOG" "sudo"
@@ -156,7 +144,7 @@ subtest setup_on_ubuntu
 
 setup_on_mac() {
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     stub ioreg 'cat <<"EOF"
 +-o Root  <class IORegistryEntry, id 0x100000100, retain 25>
@@ -185,7 +173,6 @@ EOF'
     assert_contains "$RUN_OUTPUT" "m1ddc finds no external display"
     rm "$SANDBOX/no-display"
 
-    : > "$STUB_LOG"
     assert_exit 0 main 19f5:2620 0x1b
     assert_not_contains "$RUN_OUTPUT" "isn't attached now"
     assert_eq "# From just monitor-input. Hammerspoon reloads when this changes.
@@ -199,7 +186,7 @@ m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
 
     # The hammerspoon step reports switching only once it's on, and fails when m1ddc goes
     load_script hammerspoon/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "ok         Monitor input switching, with $STUB_DIR/m1ddc"
@@ -211,12 +198,12 @@ m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
     assert_contains "$RUN_OUTPUT" "Monitor input switching needs m1ddc"
 
     load_script monitor-input/setup.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 0 main off
     [ ! -e "$MONITOR_INPUT_MAC_CONF" ] || fail "off left the Mac's settings"
     load_script hammerspoon/install.sh
-    sandbox_paths
+    monitor_input_paths
     as_os macos
     assert_exit 0 main
     assert_exit 0 main --status
@@ -241,7 +228,6 @@ subtest input_codes
 
 # The switcher takes its paths from the environment, which the service doesn't set.
 switcher() {
-    : > "$STUB_LOG"
     assert_exit "$1" env MONITOR_INPUT_CONF="$SANDBOX/switcher.conf" USB_DEVICES_DIR="$USB" DRM_DIR="$DRM" \
         MONITOR_INPUT_SETTLE=0 MONITOR_INPUT_VERIFY_DELAY=0 "$BASH" "$REPO_DIR/monitor-input/dotfiles-monitor-input"
 }

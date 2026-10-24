@@ -1,7 +1,6 @@
 #!/bin/bash
 # The step's functions call the replaced ones
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The claude-code step's settings merge and its worktree hook registration. Keepable values share
 # one loop, so a few stand in for all.
@@ -9,9 +8,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
-stub systemd-detect-virt
 load_script ai_tools/claude-code/install.sh
 
 command -v jq &> /dev/null || skip "jq isn't installed"
@@ -55,21 +51,16 @@ replace_fn claude_code_path 'echo "$HOME/.local/bin/claude"'
 run status
 assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude/settings.json"
 assert_contains "$RUN_OUTPUT" "ok         Claude Code's status line refresh interval (statusLine.refreshInterval): yours, 11 (the repo's is 5)"
-replace_fn is_interactive 'true'
-replace_fn confirm 'local reply
-echo "$1"
-read -r reply
-[ "$reply" == y ]'
+answer stdin
 assert_exit 0 configure_claude_code <<< n
 assert_contains "$RUN_OUTPUT" "(statusLine.refreshInterval) is 11, not the repo's 5. Replace it?"
 assert_eq 11 "$(interval)" "the refresh interval after no"
 assert_exit 0 configure_claude_code <<< y
 assert_eq 5 "$(interval)" "the refresh interval after yes"
-# Restores the real confirm and is_interactive
-load_script ai_tools/claude-code/install.sh
+answer yes
 jq_edit "$settings" '.statusLine.refreshInterval = 11'
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
-assert_eq 5 "$(interval)" "the refresh interval with DOTFILES_ASSUME_YES=1"
+assert_exit 0 configure_claude_code
+assert_eq 5 "$(interval)" "the refresh interval after a yes without a terminal"
 
 load_claude_step
 as_os ubuntu
@@ -80,7 +71,8 @@ assert_eq "~/.claude/statusline.sh ghostty" \
     "$(jq -r '"\(.statusLine.command) \(.preferredNotifChannel)"' "$settings")" "the values set when unset"
 as_os macos
 jq_edit "$settings" '.preferredNotifChannel = "terminal_bell"'
-DOTFILES_ASSUME_YES=1 assert_exit 0 configure_claude_code
+answer yes
+assert_exit 0 configure_claude_code
 assert_eq terminal_bell "$(jq -r '.preferredNotifChannel' "$settings")" "the channel off Ubuntu"
 run status
 assert_not_contains "$RUN_OUTPUT" "preferredNotifChannel"

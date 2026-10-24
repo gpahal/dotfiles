@@ -1,14 +1,12 @@
 #!/bin/bash
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The T3 Code server settings filter: what it sets, and which of your values it keeps.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script ai_tools/t3-code/install.sh
 
 settings="$HOME/settings.json"
@@ -59,11 +57,7 @@ choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude
 assert_eq '{"instanceId":"claudeAgent","model":"claude-opus-5-5","options":[{"id":"effort","value":"high"},{"id":"contextWindow","value":"200k"}]}' \
     "$(selection)" "an effort of your own without a terminal"
 
-replace_fn is_interactive 'true'
-replace_fn confirm 'local reply
-echo "$1"
-read -r reply
-[ "$reply" == y ]'
+answer stdin
 printf '%s\n' "{\"defaultModelSelection\": $codex}" > "$settings"
 t3_code_choose_custom_values <<< y > /dev/null
 json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
@@ -74,7 +68,6 @@ t3_code_choose_custom_values <<< y > "$SANDBOX/choose.out"
 assert_not_contains "$(cat "$SANDBOX/choose.out")" "effort"
 json_merge "$settings" "$(t3_code_server_filter)" > /dev/null
 assert_eq "$ours" "$(selection)" "the model selection after yes, from another instance with an effort"
-replace_fn is_interactive 'false'
 answer no
 
 claude_work='{"instanceId":"claude_work","model":"claude-opus-5-5","options":[{"id":"effort","value":"high"}]}'
@@ -91,13 +84,11 @@ assert_eq "$mine" "$(selection)" "a context window of your own"
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "medium"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection without a context window"
 # Replacing your effort or model also sets the repo's context window
-replace_fn is_interactive 'true'
 answer yes
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-opus-5-5", "options": [{"id": "effort", "value": "high"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your effort"
 choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude-sonnet-5", "options": [{"id": "effort", "value": "medium"}, {"id": "contextWindow", "value": "200k"}]}}'
 assert_eq "$ours" "$(selection)" "the model selection after replacing your model"
-replace_fn is_interactive 'false'
 answer no
 
 # Worktrees from origin's tip and auto-pull are reported when off, never set: T3 drops the default

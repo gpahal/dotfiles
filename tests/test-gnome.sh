@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The gnome step: GNOME settings that match the macos step, and gnome-sushi. stub_gsettings starts
 # from Ubuntu's defaults. Also lib/gnome.sh's shortcut clashes and extension states.
@@ -8,8 +7,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-export SANDBOX
 stub_gsettings
 default() { printf '%s\n' "$3" > "$SANDBOX/gsettings/$1.$2"; }
 default org.gnome.desktop.peripherals.keyboard delay "uint32 500"
@@ -21,7 +18,7 @@ default org.gnome.shell.extensions.dash-to-dock dock-fixed true
 default org.gnome.shell.extensions.dash-to-dock autohide true
 default org.gnome.shell.extensions.dash-to-dock intellihide true
 stub gnome-shell
-stub_apt_package gnome-sushi
+stub_apt_packages
 stub_sudo_exec
 load_script gnome/install.sh
 as_os ubuntu
@@ -34,7 +31,6 @@ assert_contains "$RUN_OUTPUT" "ok         Keys repeat every 30 ms"
 
 # Declining sudo still sets the GNOME settings, which need none
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq "uint32 225" "$(gsettings get org.gnome.desktop.peripherals.keyboard delay)" "the key repeat delay"
 assert_eq "true" "$(gsettings get org.gtk.Settings.FileChooser show-hidden)" "hidden files in GTK 3 file choosers"
@@ -48,11 +44,9 @@ assert_file_not_contains "$STUB_LOG" "apt-get"
 
 # Accepting installs gnome-sushi; then a re-run changes nothing
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "install -y gnome-sushi"
 assert_exit 0 main --status
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "gsettings set"
 assert_file_not_contains "$STUB_LOG" "sudo"
@@ -67,21 +61,38 @@ rm "$SANDBOX/gsettings/no-schema"
 # --- lib/gnome.sh ---
 # shellcheck source=../lib/gnome.sh
 source "$REPO_DIR/lib/gnome.sh"
+# One spelling per accelerator: modifier aliases in any case and order, and a letter in either case
+while IFS='|' read -r accel want; do
+    assert_eq "$want" "$(gnome_accelerator "$accel")" "the spelling of $accel"
+done << 'EOF'
+<Ctrl><Super>t|<control><super>t
+<Super><Control>T|<control><super>t
+<Mod1><SHIFT>a|<alt><shift>a
+<Primary><primary>x|<control>x
+<Hyper><Mod4>F1|<hyper><mod4>F1
+<Shft>space|<shift>space
+<Release><ALT>Q|<alt><release>q
+<Meta><Ctl><Super><Shift><Hyper><Alt>1|<alt><control><hyper><meta><shift><super>1
+A|a
+z|z
+EOF
 # Another custom shortcut on the same keys clashes however its binding is spelled
 user_shortcut
 gsettings set "$GNOME_MEDIA_KEYS.custom-keybinding:$GNOME_KEYBINDING_DIR/custom0/" binding "'<Ctrl><Super>t'"
 own="$GNOME_KEYBINDING_DIR/dotfiles/"
 for binding in "<Ctrl><Super>t" "<Super><Control>T" "<super><primary>t"; do
-    assert_eq "$GNOME_KEYBINDING_DIR/custom0/" "$(gnome_keybinding_clash "$binding" "$own")" "the clash with $binding"
+    gnome_keybinding_clash "$binding" "$own" || fail "no clash with $binding"
+    assert_eq "$GNOME_KEYBINDING_DIR/custom0/" "$GNOME_KEYBINDING_CLASH" "the clash with $binding"
 done
 for binding in "<Super>t" "<Shift><Control><Super>t" "<Ctrl><Super>y"; do
     assert_exit 1 gnome_keybinding_clash "$binding" "$own"
 done
 assert_exit 1 gnome_keybinding_clash "<Super><Control>t" "$GNOME_KEYBINDING_DIR/custom0/"
 # The map of bindings is kept through a run, so a change must refresh it
-gnome_keybinding_map_fill
+"$GNOME_KEYBINDING_MAP_FILLED" || fail "gnome_keybinding_clash didn't keep the map of bindings"
 gnome_set_keybinding "$own" Own own "<Super>y"
-assert_eq "$own" "$(gnome_keybinding_clash "<Super>y" "$GNOME_KEYBINDING_DIR/custom0/")" "the clash with a shortcut set in this run"
+gnome_keybinding_clash "<Super>y" "$GNOME_KEYBINDING_DIR/custom0/" || fail "no clash with a shortcut set in this run"
+assert_eq "$own" "$GNOME_KEYBINDING_CLASH" "the clash with a shortcut set in this run"
 
 # An enabled extension's state, as GNOME Shell reports it
 extension_states() {
@@ -124,15 +135,12 @@ assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "Couldn't set org.gnome.desktop.peripherals.keyboard delay"
 assert_eq "'list-view'" "$(gsettings get org.gnome.nautilus.preferences default-folder-viewer)" "Files' view after a failed set"
 
-hide gsettings
-assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "gsettings isn't installed"
-
 # Ubuntu Server: no GNOME, nothing to do
 hide gnome-shell
-: > "$STUB_LOG"
 assert_exit 0 main
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main --status
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_contains "$RUN_OUTPUT" "skipped    GNOME settings: no GNOME desktop"
-assert_eq "" "$(cat "$STUB_LOG")" "commands the step ran without GNOME"
+assert_eq "" "$(cat "$SANDBOX/both.log")" "commands the step ran without GNOME"
 test_done

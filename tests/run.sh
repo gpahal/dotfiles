@@ -3,10 +3,12 @@ set -uo pipefail
 
 # Run every tests/test-*.sh, or the named ones, $TEST_JOBS at a time (default: the CPU count), under
 # this script's bash. Each test gets its own dir under one temp dir, with its HOME, TMUX_TMPDIR,
-# and sandbox in it; the run shows the output of a test that fails or skips.
-# - A "# serial" line: the test runs alone, after the others.
+# and sandbox in it; the run shows the output of a test that fails or skips, then the five slowest
+# tests in whole seconds.
 # - "# os: macos" or "# os: ubuntu" in the first 20 lines: left out of a full run on the other
 #   OS, and skipped there when named.
+# - TEST_SHARD=<k>/<n> (CI): a full run runs only every nth test of its list, starting at the kth.
+#   Named tests ignore it.
 # - Exit 77 skips; TEST_FAIL_ON_SKIP=1 (CI) makes a skip fail.
 # - A test over $TEST_TIMEOUT seconds (default 120) is killed and fails. Without timeout(1), as on
 #   macOS, what the test started isn't killed with it.
@@ -15,12 +17,9 @@ set -uo pipefail
 CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 TEST_TIMEOUT="${TEST_TIMEOUT:-120}"
 
-# Sourcing all of lib/common.sh would change the tests' PATH and environment
-eval "$(sed -n '/^run_bounded() {$/,/^}$/p' ../lib/common.sh)"
-if ! declare -F run_bounded > /dev/null; then
-    echo "No run_bounded() in lib/common.sh" >&2
-    exit 1
-fi
+# Not all of lib/common.sh, which would change the tests' PATH and environment
+# shellcheck source=../lib/run-bounded.sh
+source ../lib/run-bounded.sh || exit 1
 
 # For a test SIGKILLed before its EXIT trap ran: a tmux server outlives its socket's dir
 clean_test_dir() {
@@ -40,6 +39,7 @@ if [ "${1:-}" == --worker ]; then
     TEST_TIMEOUT="$2" dir="$3" t="$4"
     mkdir "$dir/home" "$dir/tmux"
     export HOME="$dir/home" TMUX_TMPDIR="$dir/tmux" TEST_SANDBOX_PARENT="$dir"
+    SECONDS=0
     if ! "$BASH" -n "$t" > "$dir/output" 2>&1; then
         status=2
     else
@@ -50,6 +50,7 @@ if [ "${1:-}" == --worker ]; then
             status=1
         fi
     fi
+    echo "$SECONDS" > "$dir/time"
     clean_test_dir "$dir"
     echo "$status" > "$dir/status"
     exit 0
@@ -87,11 +88,21 @@ Skipped, and TEST_FAIL_ON_SKIP=1 fails a skip" || verdict=SKIP ;;
 
 tests=()
 if [ $# -eq 0 ]; then
+    shard="${TEST_SHARD:-1/1}"
+    shard_k="${shard%%/*}" shard_n="${shard#*/}"
+    case "$shard_k" in '' | *[!0-9]* | 0*) shard_k=0 ;; esac
+    case "$shard_n" in '' | *[!0-9]* | 0*) shard_n=0 ;; esac
+    if [ "$shard" != "$shard_k/$shard_n" ] || [ "$shard_k" -eq 0 ] || [ "$shard_k" -gt "$shard_n" ]; then
+        echo "TEST_SHARD must be <k>/<n>, with 1 <= k <= n, not '$shard'" >&2
+        exit 1
+    fi
+    i=0
     for t in test-*.sh; do
         if other_os "$t" > /dev/null; then
             left_out=$((left_out + 1))
         else
-            tests+=("$t")
+            [ $((i % shard_n + 1)) -ne "$shard_k" ] || tests+=("$t")
+            i=$((i + 1))
         fi
     done
 else
@@ -136,43 +147,31 @@ trap cleanup EXIT
 # timeout(1) makes, so each worker's timeout gets the signal to pass on.
 trap 'trap "" INT TERM; pkill -P "$(pgrep -d , -f "run.sh --worker [0-9]* $tmp/")" 2> /dev/null; kill 0; exit 130' INT TERM
 
-for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_)'); do
-    unset "$var"
-done
-unset TMUX TMUX_PANE
-
 # xargs runs in the foreground: a background job would start the tests with SIGINT ignored, which
-# a test can't undo. Results print in the order given, so output doesn't depend on timing.
-run_batch() {
-    local jobs="$1" i status
-    shift
-    [ $# -gt 0 ] || return 0
-    for i in "$@"; do
+# a test can't undo. GNU xargs would run the worker once with no tests. Results print in the order
+# given, so output doesn't depend on timing.
+if [ "${#tests[@]}" -gt 0 ]; then
+    for i in "${!tests[@]}"; do
         mkdir "$tmp/$i"
         printf '%s\0%s\0' "$tmp/$i" "${tests[i]}"
     done | xargs -0 -n 2 -P "$jobs" "$BASH" "$PWD/run.sh" --worker "$TEST_TIMEOUT" > /dev/null 2>&1
-    for i in "$@"; do
-        status="$(cat "$tmp/$i/status" 2> /dev/null)" || {
-            status=1
-            echo "It didn't finish: xargs stopped first" >> "$tmp/$i/output"
-        }
-        result "${tests[i]}" "$status" "$(cat "$tmp/$i/output")"
-    done
-}
-
-pool=()
-serial=()
+fi
+times=""
 for i in "${!tests[@]}"; do
-    if grep -qx '# serial' "${tests[i]}"; then
-        serial+=("$i")
-    else
-        pool+=("$i")
+    status="$(cat "$tmp/$i/status" 2> /dev/null)" || {
+        status=1
+        echo "It didn't finish: xargs stopped first" >> "$tmp/$i/output"
+    }
+    result "${tests[i]}" "$status" "$(cat "$tmp/$i/output")"
+    if [ -f "$tmp/$i/time" ]; then
+        name="${tests[i]#test-}"
+        times="$times$(cat "$tmp/$i/time") ${name%.sh}
+"
     fi
 done
-run_batch "$jobs" ${pool[@]+"${pool[@]}"}
-run_batch 1 ${serial[@]+"${serial[@]}"}
 
 echo ""
 echo "$passed passed, $failed failed, $skipped skipped"
 [ "$left_out" -eq 0 ] || echo "$left_out left out, as they need commands only the other OS ships"
+[ -z "$times" ] || printf '%s' "$times" | sort -rn | head -n 5 | awk '{ printf "%s%s %ss", (NR > 1 ? ", " : "Slowest: "), $2, $1 } END { print "" }'
 [ "$failed" -eq 0 ]

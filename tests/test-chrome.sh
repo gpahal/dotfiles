@@ -1,44 +1,32 @@
 #!/bin/bash
 # The step's functions call the ones this test replaces
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The chrome step on Ubuntu (amd64), and the Firefox it removes once Chrome is in.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script chrome/install.sh
+sandbox_paths chrome/install.sh
 as_os ubuntu
 stub_sudo_exec
-UNATTENDED_CONF="$SANDBOX/52dotfiles-google-chrome"
-GOOGLE_SOURCES="$SANDBOX/google-chrome.sources"
 KEY_URL=https://dl.google.com/linux/linux_signing_key.pub
 
 stub_dpkg_arch
-# Firefox's snap and its .deb are there while $SANDBOX/firefox-snap and firefox-deb are
-stub dpkg-query 'case "${!#}" in
-    google-chrome-stable) [ ! -e "'"$SANDBOX"'/installed" ] || echo "install ok installed" ;;
-    firefox) [ ! -e "'"$SANDBOX"'/firefox-deb" ] || echo "install ok installed" ;;
-esac'
+# Firefox's snap is there while $SANDBOX/firefox-snap is
 stub snap 'case "$*" in
-    "list firefox") [ -e "'"$SANDBOX"'/firefox-snap" ] ;;
-    "remove --purge firefox") rm "'"$SANDBOX"'/firefox-snap" ;;
+    "list firefox") [ -e "$SANDBOX/firefox-snap" ] ;;
+    "remove --purge firefox") rm "$SANDBOX/firefox-snap" ;;
 esac'
-CHROME_DEFAULTS="$SANDBOX/default-google-chrome"
-GOOGLE_KEYRING="$SANDBOX/google-chrome.gpg"
 GOOGLE_SOURCES_CONTENT="${GOOGLE_SOURCES_CONTENT//\/usr\/share\/keyrings\/google-chrome.gpg/$GOOGLE_KEYRING}"
 # The key Google serves, with a subkey
 stub_gpg_fpr "$GOOGLE_KEY_FPR" 0F06FF86BEEAF4E71866EE5232EE5355A6BC6E42
 # Updates fail while $SANDBOX/update-fails exists
-stub apt-get 'case " $* " in
-    *" update "*) [ ! -e "'"$SANDBOX"'/update-fails" ] || { echo "E: The repository is not signed."; exit 100; } ;;
-    *" install -y google-chrome-stable ") touch "'"$SANDBOX"'/installed" ;;
-esac'
+stub_apt_packages --apt-get '[[ " $* " != *" update "* ]] || [ ! -e "$SANDBOX/update-fails" ] ||
+    { echo "E: The repository is not signed."; exit 100; }'
 stub_http_status
 stub_fetch key
-stub systemd-detect-virt
 
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Add Google's apt repo, which Chrome updates from, with its pinned key"
@@ -57,17 +45,17 @@ assert_contains "$RUN_OUTPUT" "Google has no Chrome .deb for arm64; skipping."
 assert_not_contains "$RUN_OUTPUT" "These need sudo"
 stub_dpkg_arch
 
-export DOTFILES_ASSUME_YES=1
+answer yes
 
-touch "$SANDBOX/fetch-fails"
+# A failed install leaves Firefox, so the machine keeps a browser
+touch "$SANDBOX/fetch-fails" "$SANDBOX/firefox-snap"
 assert_exit 1 main
-[ ! -e "$SANDBOX/installed" ] || fail "Chrome was installed without Google's key"
+! apt_installed google-chrome-stable || fail "Chrome was installed without Google's key"
 [ ! -e "$GOOGLE_SOURCES" ] || fail "Google's apt source was added without its key"
+[ -e "$SANDBOX/firefox-snap" ] || fail "Firefox's snap was removed without Chrome"
 rm "$SANDBOX/fetch-fails"
 
 # A fresh install adds the repo, keeps Chrome from rewriting it, and removes Firefox's snap
-touch "$SANDBOX/firefox-snap"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Applied."
 assert_file_contains "$STUB_LOG" "fetch $KEY_URL"
@@ -77,11 +65,10 @@ assert_eq 'repo_add_once="false"' "$(cat "$CHROME_DEFAULTS")" "Chrome's defaults
 assert_file_contains "$STUB_LOG" "sudo LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y google-chrome-stable"
 assert_file_contains "$STUB_LOG" "sudo snap remove --purge firefox"
 [ ! -e "$SANDBOX/firefox-snap" ] || fail "Firefox's snap wasn't removed after installing Chrome"
-[ -e "$SANDBOX/installed" ] || fail "Chrome wasn't installed"
+apt_installed google-chrome-stable || fail "Chrome wasn't installed"
 assert_eq "$UNATTENDED_CONTENT" "$(cat "$UNATTENDED_CONF")" "the unattended-upgrades file"
 
 before="$(/bin/ls -li "$UNATTENDED_CONF")"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Chrome is already installed and updates automatically."
 assert_file_not_contains "$STUB_LOG" "sudo"
@@ -105,7 +92,6 @@ stub_gpg_fpr "$GOOGLE_KEY_FPR"
 # Google's apt source removed: the step adds it back, and keeps your other Chrome defaults
 rm "$GOOGLE_SOURCES"
 printf '%s\n' 'repo_add_once="true"' 'repo_reenable_on_distupgrade="true"' > "$CHROME_DEFAULTS"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Add Google's apt repo"
 assert_file_contains "$STUB_LOG" "fetch $KEY_URL"
@@ -128,26 +114,26 @@ rm "$SANDBOX/update-fails"
 printf '%s\n' "$GOOGLE_SOURCES_CONTENT" > "$GOOGLE_SOURCES"
 
 # Firefox, as Ubuntu installs it: the snap, and the .deb stub that installs it
-stub apt-get '[ "$*" != "-o DPkg::Lock::Timeout=300 purge -y firefox" ] || rm "'"$SANDBOX"'/firefox-deb"'
-touch "$SANDBOX/firefox-snap" "$SANDBOX/firefox-deb"
+touch "$SANDBOX/firefox-snap"
+echo firefox >> "$SANDBOX/installed"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    Firefox removed, since Chrome replaces it"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Remove Firefox, which Chrome replaces: its snap and the firefox .deb that installs it"
 assert_file_contains "$STUB_LOG" "sudo snap remove --purge firefox"
 assert_file_contains "$STUB_LOG" "apt-get -o DPkg::Lock::Timeout=300 purge -y firefox"
-[ ! -e "$SANDBOX/firefox-snap" ] && [ ! -e "$SANDBOX/firefox-deb" ] || fail "Firefox is still installed"
+if [ -e "$SANDBOX/firefox-snap" ] || apt_installed firefox; then
+    fail "Firefox is still installed"
+fi
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Firefox removed, since Chrome replaces it"
 
 # Without Chrome, Firefox stays, so the machine keeps a browser
-rm "$SANDBOX/installed" "$GOOGLE_SOURCES"
+: > "$SANDBOX/installed"
+rm "$GOOGLE_SOURCES"
 touch "$SANDBOX/firefox-snap" "$SANDBOX/fetch-fails"
 assert_exit 3 main --status
 assert_not_contains "$RUN_OUTPUT" "Firefox"
-answer yes
-: > "$STUB_LOG"
 assert_exit 1 main
 assert_file_not_contains "$STUB_LOG" "snap remove"
 [ -e "$SANDBOX/firefox-snap" ] || fail "Firefox's snap was removed though Chrome's install failed"
@@ -155,7 +141,6 @@ rm "$SANDBOX/firefox-snap" "$SANDBOX/fetch-fails"
 
 rm -f "$GOOGLE_SOURCES" "$CHROME_DEFAULTS"
 hide curl
-: > "$STUB_LOG"
 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "curl"
 [ ! -e "$CHROME_DEFAULTS" ] || fail "Chrome's defaults file was written without curl"

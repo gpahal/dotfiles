@@ -5,23 +5,20 @@ key_fingerprint() {
     ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }'
 }
 
-# Read once through a status run, which declares OPENSSH_INSTALLED_CACHE_STATUS
+# Cached through a memo scope, such as one status or apply run
 openssh_installed() {
-    memo OPENSSH_INSTALLED_CACHE apt_installed openssh-server > /dev/null
+    memo OPENSSH_INSTALLED apt_installed openssh-server > /dev/null
 }
 
+# Apply checks openssh_installed again after this, to enable sshd
 install_openssh() {
+    memo_forget OPENSSH_INSTALLED
     apt_install_fresh openssh-server
 }
 
 # Either unit counts: with ssh.service enabled, ssh.socket couldn't bind sshd's port
 sshd_enabled() {
-    [ "$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null)" == enabled ] ||
-        [ "$(systemctl is-enabled ssh.service 2>/dev/null)" == enabled ]
-}
-
-enable_sshd() {
-    sudo systemctl enable --now "$SSH_UNIT"
+    unit_enabled "$SSH_UNIT" || unit_enabled ssh.service
 }
 
 authorized_key_fingerprints() {
@@ -37,7 +34,7 @@ authorized_key_fingerprints() {
 # ExposeAuthInfo's $SSH_USER_AUTH; every method must be an authorized publickey, since
 # AuthenticationMethods can require several.
 key_login() {
-    memo KEY_LOGIN_CACHE read_key_login
+    memo KEY_LOGIN read_key_login
 }
 
 read_key_login() {
@@ -71,9 +68,9 @@ read_key_login() {
     echo "$found"
 }
 
-# Read once through a status_sshd run, which declares SSHD_DROP_IN_CACHE_STATUS
+# Cached through a memo scope, such as a status_sshd run, once called outside a $( )
 current_sshd_drop_in() {
-    memo SSHD_DROP_IN_CACHE read_root_file "$SSHD_DROP_IN" -n
+    memo SSHD_DROP_IN_CURRENT read_root_file "$SSHD_DROP_IN" -n
 }
 
 key_only_in() {
@@ -108,7 +105,7 @@ sshd_drop_in() {
     echo "X11Forwarding no"
     echo "MaxAuthTries 3"
     [ "$(id -u)" != 0 ] || root=true
-    "$root" || echo "AllowUsers $(id -un)"
+    "$root" || echo "AllowUsers $CURRENT_USER"
     if key_only_in "$current" || { ! "$root" && key_only_reason > /dev/null; }; then
         echo "PasswordAuthentication no"
         echo "KbdInteractiveAuthentication no"
@@ -263,14 +260,14 @@ PASSWORD_PROBLEMS='^(PasswordAuthentication|KbdInteractiveAuthentication) '
 
 # status declares the items first (ubuntu_items)
 status_sshd() {
-    # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false item problems="" others todo SSHD_DROP_IN_CACHE="" SSHD_DROP_IN_CACHE_STATUS="" SSHD_MATCH_FILES=""
+    local installed=false item problems="" others todo SSHD_MATCH_FILES=""
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     current_sshd_drop_in > /dev/null || true
     openssh_installed && installed=true
     items_status openssh_installed
     ! "$installed" || items_status sshd_enabled_once_installed
     if [ -e "$SSHD_DROP_IN" ] && [ ! -r "$SSHD_DROP_IN" ] && ! sudo_ready; then
-        status_item unverified "$SSHD_DROP_IN (only root can read it; run sudo -v, then status, to check it)"
+        status_needs_root "$SSHD_DROP_IN" "only root can read it"
     else
         status_check "$SSHD_DROP_IN" sshd_configured
     fi
@@ -279,7 +276,7 @@ status_sshd() {
         if [ ! -d "$SSHD_RUN_DIR" ]; then
             status_item unverified "$item (sshd -T needs $SSHD_RUN_DIR, which the first SSH connection creates)"
         elif ! sudo_ready; then
-            status_item unverified "$item (the effective values need sudo -v; run sudo -v, then status, to check them)"
+            status_needs_root "$item" "the effective values need sudo -v" them
         elif ! sshd_settings_problems "$(current_sshd_drop_in)" -n; then
             status_item unverified "$item (sudo sshd -T failed; run it to see why)"
         else
@@ -300,7 +297,7 @@ status_sshd() {
     if [ "$(id -u)" == 0 ]; then
         status_item skipped "$item: the step leaves them to root"
     elif ! todo="$(key_only_todo)"; then
-        status_item unverified "$item (only root can read $SSHD_DROP_IN; run sudo -v, then status, to check it)"
+        status_needs_root "$item" "only root can read $SSHD_DROP_IN"
     elif [ -z "$todo" ] && grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         status_item missing "$item ($(grep -E "$PASSWORD_PROBLEMS" <<< "$problems" | join_lines '; '); another file, or a Match block, sets them first, which sudo grep -ri <setting> /etc/ssh finds)"
     elif [ -z "$todo" ] && [ -n "$SSHD_MATCH_FILES" ]; then

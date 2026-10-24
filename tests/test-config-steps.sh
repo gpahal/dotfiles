@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The config-only steps through setup.sh: apply, a second run changing nothing, status, and where
 # each OS puts their configs.
@@ -7,14 +6,8 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-
-STEPS=(git lazygit ssh zsh vim tmux zed hammerspoon editorconfig)
+STEPS=(git lazygit ssh zsh vim zed hammerspoon editorconfig)
 command -v git &>/dev/null || skip "git isn't installed"
-if ! command -v tmux &>/dev/null; then
-    skip_rest "the tmux step: tmux isn't installed"
-    STEPS=(git lazygit ssh zsh vim zed hammerspoon editorconfig)
-fi
 
 # A brew on PATH stops lib/common.sh from putting Homebrew's dirs before the stubs
 stub brew 'exit 1'
@@ -22,39 +15,12 @@ stub gh 'exit 1'
 stub_login_shell_zsh
 # A temp HOME mustn't load the LaunchAgent into your session
 stub launchctl '[ "$1" == print ]'
-# tests/test-tmux-boot.sh covers enabling continuum's unit
-stub systemctl '[ "$*" == "--user is-enabled --quiet tmux.service" ]'
 
-# Local repos stand in for GitHub; each plugin is pinned to its first commit, not HEAD
-fake_tmux_plugins() {
-    local repo sha remote n
-    FAKE_PLUGIN_REMOTES="$SANDBOX/remotes"
-    export DOTFILES_TMUX_PLUGINS_LOCK="$SANDBOX/plugins.lock"
-    echo "# Test pins" > "$DOTFILES_TMUX_PLUGINS_LOCK"
-    while read -r repo _; do
-        remote="$FAKE_PLUGIN_REMOTES/$repo"
-        git init -q "$remote"
-        for n in 1 2; do
-            echo "$repo $n" > "$remote/README"
-            git -C "$remote" add README
-            git_commit "$remote" -m "$n"
-            [ "$n" -eq 2 ] || sha="$(git -C "$remote" rev-parse HEAD)"
-        done
-        echo "$repo $sha" >> "$DOTFILES_TMUX_PLUGINS_LOCK"
-    done < <(awk '!/^#/ && NF' "$REPO_DIR/tmux/plugins.lock")
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$FAKE_PLUGIN_REMOTES/.insteadOf"
-    export GIT_CONFIG_VALUE_0=https://github.com/
-}
-fake_tmux_plugins
-
-assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
-assert_contains "$RUN_OUTPUT" "Copied"
-
-assert_exit 0 bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
-changes="$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added|Installed' || true)"
-assert_eq "" "$changes" "the second run's Copied, Added, and Installed lines"
+assert_idempotent bash "$REPO_DIR/setup.sh" "${STEPS[@]}"
+assert_contains "$FIRST_OUTPUT" "Copied"
 for cmd in brew chsh sudo "launchctl bootstrap"; do
-    assert_file_not_contains "$STUB_LOG" "$cmd"
+    assert_not_contains "$FIRST_LOG
+$(cat "$STUB_LOG")" "$cmd" "both runs' commands"
 done
 
 # gh sets up the credential helper (and Ubuntu's HTTPS rewrite) only after login

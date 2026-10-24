@@ -1,12 +1,23 @@
-# Helpers for GNOME Shell extensions and custom shortcuts, for the stream-deck, hotkeys, and vicinae
-# steps. Source after lib/common.sh. They need gsettings, and busctl and jq to ask GNOME Shell what
-# it loaded.
+# Helpers for GNOME steps: skipping without a desktop, and GNOME Shell extensions and custom
+# shortcuts. Source after lib/common.sh. They need gsettings, and busctl and jq to ask GNOME Shell
+# what it loaded.
 # shellcheck shell=bash
 
 # GNOME Shell's ExtensionState
 GNOME_EXTENSION_ACTIVE=1
 GNOME_EXTENSION_ERROR=3
 GNOME_EXTENSION_OUT_OF_DATE=4
+
+# skip_without_desktop [--status <label>]: succeeds, saying so, when there's no GNOME desktop, as on
+# Ubuntu Server. --status says it as a skipped status item about <label>.
+skip_without_desktop() {
+    ! has_gnome_desktop || return 1
+    if [ "${1:-}" == --status ]; then
+        status_item skipped "$2: no GNOME desktop"
+    else
+        echo "  No GNOME desktop, so skipped."
+    fi
+}
 
 # Whether you're logged in at the desktop, not only over SSH
 gnome_session_running() {
@@ -108,27 +119,52 @@ gnome_keybinding_is() {
 }
 
 # An accelerator spelled one way, as GTK reads it: modifier aliases (<Ctrl> and <Primary> are
-# <Control>, <Mod1> is <Alt>) in any case and order, and a letter key in either case
+# <Control>, <Mod1> is <Alt>) in any case and order, and a letter key in either case. The usual
+# modifiers are matched without a fork; others, such as <Mod4>, take tr and sort.
 gnome_accelerator() {
-    local accel="$1" re='^<([^>]*)>(.*)$' mod mods=""
+    local accel="$1" re='^<([^>]*)>(.*)$' mod mods="" other=false sorted="" upper=ABCDEFGHIJKLMNOPQRSTUVWXYZ \
+        lower=abcdefghijklmnopqrstuvwxyz
     while [[ "$accel" =~ $re ]]; do
-        mod="$(tr '[:upper:]' '[:lower:]' <<< "${BASH_REMATCH[1]}")"
+        mod="${BASH_REMATCH[1]}"
         accel="${BASH_REMATCH[2]}"
         case "$mod" in
-            ctrl | ctl | control | primary) mod=control ;;
-            mod1) mod=alt ;;
-            shft) mod="shift" ;;
+            [Cc][Tt][Rr][Ll] | [Cc][Tt][Ll] | [Cc][Oo][Nn][Tt][Rr][Oo][Ll] | \
+                [Pp][Rr][Ii][Mm][Aa][Rr][Yy]) mod=control ;;
+            [Mm][Oo][Dd]1 | [Aa][Ll][Tt]) mod=alt ;;
+            [Ss][Hh][Ff][Tt] | [Ss][Hh][Ii][Ff][Tt]) mod="shift" ;;
+            [Ss][Uu][Pp][Ee][Rr]) mod=super ;;
+            [Hh][Yy][Pp][Ee][Rr]) mod=hyper ;;
+            [Mm][Ee][Tt][Aa]) mod=meta ;;
+            *)
+                mod="$(tr '[:upper:]' '[:lower:]' <<< "$mod")"
+                other=true
+                ;;
         esac
         mods="$mods<$mod>"$'\n'
     done
-    case "$accel" in
-        [A-Z]) accel="$(tr '[:upper:]' '[:lower:]' <<< "$accel")" ;;
-    esac
-    printf '%s%s\n' "$(printf '%s' "$mods" | sort -u | tr -d '\n')" "$accel"
+    if [ "${#accel}" -eq 1 ]; then
+        case "$upper" in
+            *"$accel"*)
+                mod="${upper%%"$accel"*}"
+                accel="${lower:${#mod}:1}"
+                ;;
+        esac
+    fi
+    if "$other"; then
+        sorted="$(printf '%s' "$mods" | sort -u | tr -d '\n')"
+    else
+        # sort's order
+        for mod in alt control hyper meta shift super; do
+            case "$mods" in
+                *"<$mod>"*) sorted="$sorted<$mod>" ;;
+            esac
+        done
+    fi
+    printf '%s%s\n' "$sorted" "$accel"
 }
 
 # Each custom shortcut's path and binding as gnome_accelerator spells it, a tab between. Filled on
-# first use and emptied when a shortcut changes; fill it outside $( ) to keep it for the process.
+# first use and emptied when a shortcut changes.
 GNOME_KEYBINDING_MAP=""
 GNOME_KEYBINDING_MAP_FILLED=false
 
@@ -146,15 +182,17 @@ gnome_keybinding_map_fill() {
     GNOME_KEYBINDING_MAP_FILLED=true
 }
 
-# gnome_keybinding_clash <binding> <own path>: prints the path of another custom shortcut on the
-# same keys, however it's spelled, which GNOME would run instead
+# gnome_keybinding_clash <binding> <own path>: succeeds when another custom shortcut has the same
+# keys, however it's spelled, which GNOME would run instead, and sets GNOME_KEYBINDING_CLASH to its
+# path. A variable, not output, so the map stays filled.
 gnome_keybinding_clash() {
     local own="$2" want path accel
+    GNOME_KEYBINDING_CLASH=""
     gnome_keybinding_map_fill
     want="$(gnome_accelerator "$1")"
     while IFS=$'\t' read -r path accel; do
         if [ -n "$path" ] && [ "$path" != "$own" ] && [ "$accel" == "$want" ]; then
-            echo "$path"
+            GNOME_KEYBINDING_CLASH="$path"
             return 0
         fi
     done <<< "$GNOME_KEYBINDING_MAP"
@@ -164,19 +202,15 @@ gnome_keybinding_clash() {
 # gnome_keybinding_refuse_clash <keys> <path> <name> <binding>: fails, saying so, when another
 # custom shortcut has the keys. <keys> is how messages name them, such as Super+Space.
 gnome_keybinding_refuse_clash() {
-    local clash
-    gnome_keybinding_map_fill
-    clash="$(gnome_keybinding_clash "$4" "$2")" || return 0
-    echo "  Your shortcut at $clash has $1, so $3 doesn't get it." >&2
+    gnome_keybinding_clash "$4" "$2" || return 0
+    echo "  Your shortcut at $GNOME_KEYBINDING_CLASH has $1, so $3 doesn't get it." >&2
     return 1
 }
 
 # status_gnome_keybinding <keys> <path> <name> <command> <binding>
 status_gnome_keybinding() {
-    local clash
-    gnome_keybinding_map_fill
-    if clash="$(gnome_keybinding_clash "$5" "$2")"; then
-        status_item missing "$1 for $3: your shortcut at $clash has it; change one"
+    if gnome_keybinding_clash "$5" "$2"; then
+        status_item missing "$1 for $3: your shortcut at $GNOME_KEYBINDING_CLASH has it; change one"
     else
         status_check "$1 opens $3" gnome_keybinding_is "$2" "$3" "$4" "$5"
     fi

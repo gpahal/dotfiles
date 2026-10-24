@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # broken_links, which scripts/check-docs.sh and scripts/check-skills.sh run.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 # shellcheck source=../scripts/lib/markdown.sh
 source "$REPO_DIR/scripts/lib/markdown.sh"
 mkdir -p "$SANDBOX/docs"

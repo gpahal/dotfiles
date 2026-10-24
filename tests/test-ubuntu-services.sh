@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # The ubuntu step's cloud-init, cups-browsed, and Wi-Fi items: power save off, and a warning for a
 # Wi-Fi connection that waits for a login. The fixture's NetworkManager stub merges its drop-ins as
@@ -8,17 +7,14 @@ set -euo pipefail
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 # cups-browsed is enabled, as on a fresh install, until masked
 stub_systemctl 'case "$*" in
-    "is-enabled cups-browsed.service") cat "'"$SANDBOX"'/cups-browsed" 2> /dev/null || echo enabled; exit 0 ;;
-    "mask --now cups-browsed.service") echo masked > "'"$SANDBOX"'/cups-browsed"; exit 0 ;;
+    "is-enabled cups-browsed.service") cat "$SANDBOX/cups-browsed" 2> /dev/null || echo enabled; exit 0 ;;
+    "mask --now cups-browsed.service") echo masked > "$SANDBOX/cups-browsed"; exit 0 ;;
 esac'
 
 assert_exit 3 main --status
@@ -28,7 +24,6 @@ assert_contains "$RUN_OUTPUT" "missing    Wi-Fi power save off"
 
 # Declined: nothing changes
 answer no
-: > "$STUB_LOG"
 assert_exit 0 main
 [ ! -e "$CLOUD_INIT_DISABLED" ] || fail "cloud-init was turned off though sudo was declined"
 [ ! -e "$WIFI_POWERSAVE_CONF" ] || fail "the Wi-Fi drop-in was written though sudo was declined"
@@ -44,7 +39,6 @@ assert_file_contains "$STUB_LOG" "iw dev wlp5s0 set power_save off"
 assert_file_not_contains "$STUB_LOG" "iw dev enp6s0"
 
 # A second run changes nothing
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "mask --now"
 assert_file_not_contains "$STUB_LOG" "nmcli general reload"
@@ -60,15 +54,14 @@ rm "$later"
 # Without iw, the drop-in still applies when Wi-Fi next connects
 rm "$WIFI_POWERSAVE_CONF" "$STUB_DIR/iw"
 ubuntu_step_load
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_exit 0 main --status
 
 # Not installed counts as off; in a VM, cloud-init is left alone, as it may set up the network
 rm "$CLOUD_INIT_DISABLED" "$SANDBOX/cups-browsed"
-stub dpkg-query '[ "${*: -1}" == cloud-init ] || [ "${*: -1}" == cups-browsed ] || echo "install ok installed"'
+stub_apt_packages '*' '!cloud-init' '!cups-browsed'
 assert_exit 0 main --status
-stub dpkg-query 'echo "install ok installed"'
+stub_apt_packages '*'
 stub systemd-detect-virt
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "cloud-init"
@@ -78,7 +71,7 @@ assert_not_contains "$RUN_OUTPUT" "cloud-init"
 stub nmcli 'case "$*" in
     "-t -e no -f UUID,TYPE,NAME connection show --active") echo "4444-dddd:802-11-wireless:Office" ;;
     "-g connection.permissions connection show uuid 4444-dddd") echo "" ;;
-    "-g 802-11-wireless-security.psk-flags connection show uuid 4444-dddd") cat "'"$SANDBOX"'/flags" ;;
+    "-g 802-11-wireless-security.psk-flags connection show uuid 4444-dddd") cat "$SANDBOX/flags" ;;
 esac'
 for flags in "1 (agent-owned)" "2 (not-saved)" "3 (agent-owned, not-saved)"; do
     echo "$flags" > "$SANDBOX/flags"

@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # print_doc_section, which manual-steps prints with: a heading-like line in a code fence doesn't end
 # the section.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script lib/common.sh
 # shellcheck source=../scripts/lib/markdown.sh
 source "$REPO_DIR/scripts/lib/markdown.sh"

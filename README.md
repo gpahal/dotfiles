@@ -29,7 +29,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ## How setup works
 
-`bash setup.sh` runs these steps in order. Each is `<step>/install.sh`, except `manual-steps.sh`, and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
 
 | Step | What it does |
 | :- | :- |
@@ -58,7 +58,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps) |
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
-- `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached. `--quick` skips the slowest checks.
+- `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached.
 - Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup.
 - Settings that are yours, such as mise's global versions and the AI tools' models, are set when unset. When yours differs, setup asks before replacing it, and keeps it without a terminal.
 - Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.

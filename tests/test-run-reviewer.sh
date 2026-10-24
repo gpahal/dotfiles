@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # interrogate's run-reviewer.sh and code-review's materialize-head.sh.
 
+REAL_SLEEP="$(command -v sleep)"
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-REAL_SLEEP="$(command -v sleep)"
-setup_sandbox
 
 RUNNER="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
 REPO="$SANDBOX/repo"
@@ -21,8 +19,8 @@ export REVIEWER_SLEEP=600 REVIEWER_TIMEOUT=900
 
 # Each sleep, the reviewer's and the watchdog's, records its pid, so the checks see only this test's
 export SLEEPS="$SANDBOX/sleeps"
-printf '%s\n' '#!/bin/bash' 'echo "$$" >> "$SLEEPS"' "exec $(printf '%q' "$REAL_SLEEP") \"\$@\"" > "$STUB_DIR/sleep"
-chmod +x "$STUB_DIR/sleep"
+stub sleep 'echo "$$" >> "$SLEEPS"
+exec '"$(printf '%q' "$REAL_SLEEP")"' "$@"'
 
 # A zombie isn't running, though kill -0 finds it, and a pid that isn't sleep's was reused
 running_sleeps() {
@@ -103,16 +101,17 @@ assert_contains "$RUN_OUTPUT" "codex reviewer wrote no answer"
 stub claude 'echo "No findings."'
 : > "$STUB_LOG"
 mkdir -p "$SANDBOX/prompts/sub"
+: > "$SANDBOX/both.log"
 for out in "$SANDBOX/prompts/answer.md" "$SANDBOX/prompts/sub/answer.md"; do
     assert_exit 2 bash "$RUNNER" claude model high "$PROMPT" "$out"
+    cat "$STUB_LOG" >> "$SANDBOX/both.log"
     assert_contains "$RUN_OUTPUT" "is inside the prompt file's directory"
 done
-assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for a refused out-file"
+assert_eq "" "$(cat "$SANDBOX/both.log")" "the reviewers started for a refused out-file"
 mkdir -p "$SANDBOX/prompts-answers"
 assert_exit 0 bash "$RUNNER" claude model high "$PROMPT" "$SANDBOX/prompts-answers/answer.md"
 
 mkdir -p "$REPO/ans"
-: > "$STUB_LOG"
 assert_exit 2 bash "$RUNNER" claude model high "$PROMPT" "$REPO/ans/answer.md"
 assert_contains "$RUN_OUTPUT" "is inside the repo under review"
 assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for an out-file in the repo"
@@ -120,7 +119,6 @@ assert_eq "" "$(cat "$STUB_LOG")" "the reviewers started for an out-file in the 
 # The decoy is outside the repo, so a redirected out-file would be accepted
 mkdir -p "$REPO/rel" "$SANDBOX/decoy/rel" "$SANDBOX/decoy/ans"
 echo "Review this." > "$REPO/rel/prompt.md"
-: > "$STUB_LOG"
 CDPATH="$SANDBOX/decoy" assert_exit 0 bash "$RUNNER" claude model high rel/prompt.md "$OUT"
 assert_file_contains "$STUB_LOG" "--add-dir $(pwd -P)/rel "
 CDPATH="$SANDBOX/decoy" assert_exit 2 bash "$RUNNER" claude model high rel/prompt.md ans/answer.md

@@ -22,6 +22,10 @@ case "$(uname -s)" in
     *) _DOTFILES_OS=other ;;
 esac
 
+# Worked out once for the steps that name you. A test that stubs id -un sets it too.
+# shellcheck disable=SC2034 # steps read it
+CURRENT_USER="$(id -un)"
+
 is_macos() {
     [ "$_DOTFILES_OS" == macos ]
 }
@@ -49,9 +53,12 @@ locale_installed() {
     locale -a 2>/dev/null | grep -qiE '^en_US\.utf-?8$'
 }
 
-# Excludes packages removed with their config left
+# apt_installed <package>...: all are installed. Excludes packages removed with their config left.
 apt_installed() {
-    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+    local package
+    for package in "$@"; do
+        [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" == *"install ok installed"* ]] || return 1
+    done
 }
 
 # unattended-upgrades holds dpkg's lock for a while after boot
@@ -91,8 +98,27 @@ apt_get_update() {
     done
 }
 
+# Updates apt's lists first, since stale ones can name a version the mirror no longer has. One
+# successful update serves the rest of the run, until add_apt_repo, in lib/system.sh, changes a
+# source or key.
+APT_LISTS_FRESH=""
+apt_install_fresh() {
+    if [ -z "$APT_LISTS_FRESH" ]; then
+        apt_get_update || return 1
+        APT_LISTS_FRESH=true
+    fi
+    apt_get install -y "$@"
+}
+
+# Compares as $(cat) would, without the fork: a missing file reads as empty, and trailing newlines
+# don't count
 file_is() {
-    [ "$(cat "$1" 2>/dev/null)" == "$2" ]
+    local content=""
+    { IFS= read -r -d '' content < "$1"; } 2>/dev/null || true
+    while [ "${content%$'\n'}" != "$content" ]; do
+        content="${content%$'\n'}"
+    done
+    [ "$content" == "$2" ]
 }
 
 # left_unchanged <indent> <what to run> <what that does>: after a declined confirm, which says no
@@ -122,14 +148,6 @@ require_supported_os() {
     is_ubuntu && return 0
     echo "Only macOS and Ubuntu are supported." >&2
     return 1
-}
-
-warn_untested_platform() {
-    local arch
-    is_macos && return 0
-    arch="$(uname -m)"
-    [ "$arch" == x86_64 ] && return 0
-    echo "Warning: setup is tested on x86_64 Ubuntu, not $arch. Carrying on. A package with no $arch build fails its step." >&2
 }
 
 # Homebrew's default prefixes, macOS's then Linux's. zsh/path.zsh, and zsh/profile.sh for Linux's,
@@ -170,7 +188,7 @@ has_arg() {
 
 status_requested() { has_arg --status "$@"; }
 
-status_quick() { [ "${DOTFILES_STATUS_QUICK:-}" == 1 ]; }
+status_for_alerts() { [ "${DOTFILES_STATUS_FOR_ALERTS:-}" == 1 ]; }
 
 # check_args <usage-fn> <words|no-words> [arg...]: exits 0 on --help and 2 on a bad argument.
 # Other words go in ARG_WORDS. Flag effects are exported so a runner's steps inherit them.
@@ -189,7 +207,7 @@ check_args() {
     for arg in "$@"; do
         case "$arg" in
             --status) export HOMEBREW_NO_AUTO_UPDATE=1 ;;
-            --quick) export DOTFILES_STATUS_QUICK=1 ;;
+            --for-alerts) export DOTFILES_STATUS_FOR_ALERTS=1 ;;
             --backup) export DOTFILES_BACKUP=yes ;;
             --no-backup) export DOTFILES_BACKUP=no ;;
             -*)
@@ -207,8 +225,8 @@ check_args() {
                 ;;
         esac
     done
-    if ! status_requested "$@" && has_arg --quick "$@"; then
-        echo "--quick only works with --status" >&2
+    if ! status_requested "$@" && has_arg --for-alerts "$@"; then
+        echo "--for-alerts only works with --status" >&2
         "$usage_fn" >&2
         exit 2
     fi
@@ -216,7 +234,7 @@ check_args() {
 
 step_args() {
     local step_usage
-    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status [--quick]] [--backup | --no-backup]"
+    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 
@@ -246,29 +264,6 @@ step_os_skip() {
     else
         echo "$step: skipped, $label"
     fi
-}
-
-# Prints the first STEP_NEEDS entry among the failed steps
-_failed_need() {
-    local script="$1" need
-    shift
-    [ $# -gt 0 ] || return 1
-    for need in $(step_header_value "$script" STEP_NEEDS); do
-        if has_arg "$need" "$@"; then
-            echo "$need"
-            return 0
-        fi
-    done
-    return 1
-}
-
-# Reads STEP_OS or STEP_NEEDS without sourcing, so they must be literals on their own lines
-step_header_value() {
-    sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -n 1
-}
-
-step_header_line() {
-    awk 'NR > 1 && /^# / && !/^# shellcheck/ { sub(/^# /, ""); print; exit }' "$1"
 }
 
 step_name() {
@@ -412,24 +407,28 @@ report_failed() {
     return 1
 }
 
-# A path for a unit's ExecStart, which expands % and $
-systemd_quote() {
-    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
+# parent_dir <var> <path>: sets <var> to the path's directory, as dirname would without its fork,
+# for a path with no trailing slash
+parent_dir() {
+    local _parent="${2%/*}"
+    [ "$_parent" != "$2" ] || _parent=.
+    printf -v "$1" '%s' "${_parent:-/}"
 }
 
 # Replaces a differing file without asking or backing up. Sets COPIED=true when it copies.
 copy_file() {
-    local src="$1" dest="$2" new_mode=644 exec=""
+    local src="$1" dest="$2" dir
     if [ -e "$dest" ] && cmp -s "$src" "$dest" && { [ ! -x "$src" ] || [ -x "$dest" ]; }; then
         echo "  $dest is already up to date"
         return 0
     fi
-    mkdir -p "$(dirname "$dest")" || return 1
+    parent_dir dir "$dest"
+    mkdir -p "$dir" || return 1
     if [ -x "$src" ]; then
-        new_mode=755
-        exec=x
-    fi
-    replace_file "$src" "$dest" "$new_mode" "$exec" || {
+        replace_file "$src" "$dest" 755 x
+    else
+        replace_file "$src" "$dest" 644
+    fi || {
         if [ $? -eq 2 ]; then
             echo "  $dest is read-only, so left it unchanged." >&2
         else
@@ -440,37 +439,6 @@ copy_file() {
     # shellcheck disable=SC2034 # callers read it
     COPIED=true
     echo "  Copied ${src#"$DOTFILES_DIR"/} to $dest"
-}
-
-# <file>.bak, or a timestamped name when .bak holds something else
-backup_path() {
-    local bak="$1.bak" base n=1
-    if [ -e "$bak" ] && ! cmp -s "$1" "$bak"; then
-        base="$1.bak.$(date +%Y%m%d-%H%M%S)"
-        bak="$base"
-        while [ -e "$bak" ] && ! cmp -s "$1" "$bak"; do
-            n=$((n + 1))
-            bak="$base-$n"
-        done
-    fi
-    echo "$bak"
-}
-
-# Never overwrites a differing backup. On failure the caller must leave the file as it is.
-backup_file() {
-    local file="$1" bak="${2:-}"
-    if [ -z "$bak" ] || { [ -e "$bak" ] && ! cmp -s "$file" "$bak"; }; then
-        bak="$(backup_path "$file")"
-    fi
-    if cmp -s "$file" "$bak"; then
-        echo "  $file is already backed up to $bak"
-        return 0
-    fi
-    if ! cp "$file" "$bak"; then
-        echo "  Couldn't back up $file to $bak, so left it unchanged." >&2
-        return 1
-    fi
-    echo "  Backed up $file to $bak"
 }
 
 # Succeeds when the repo's value should be written: unset, already equal, or the user agrees
@@ -506,27 +474,46 @@ has_line() {
 }
 
 append_line() {
-    local line="$1" file="$2"
+    local line="$1" file="$2" dir
     if has_line "$line" "$file"; then
         return 0
     fi
-    mkdir -p "$(dirname "$file")" || return 1
+    parent_dir dir "$file"
+    mkdir -p "$dir" || return 1
     end_with_newline "$file" || return 1
     printf '%s\n' "$line" >> "$file"
 }
 
-# On failure the caller must leave the file as it is
+# maybe_backup <file>: offers to copy the file to <file>.bak, or to a timestamped name when .bak
+# holds something else, and never overwrites a differing backup. On failure the caller must leave
+# the file as it is.
 maybe_backup() {
-    local file="$1" bak
+    local file="$1" bak="$1.bak" base n=1
     [ -f "$file" ] || return 0
-    cmp -s "$file" "$file.bak" && return 0
-    bak="$(backup_path "$file")"
+    if [ -e "$bak" ]; then
+        ! cmp -s "$file" "$bak" || return 0
+        base="$file.bak.$(date +%Y%m%d-%H%M%S)"
+        bak="$base"
+        while [ -e "$bak" ] && ! cmp -s "$file" "$bak"; do
+            n=$((n + 1))
+            bak="$base-$n"
+        done
+    fi
     case "${DOTFILES_BACKUP:-}" in
         no) return 0 ;;
         yes) ;;
         *) confirm "  Back up $file to $bak?" || return 0 ;;
     esac
-    backup_file "$file" "$bak"
+    # The loop stopped at a backup made earlier this second
+    if [ -e "$bak" ]; then
+        echo "  $file is already backed up to $bak"
+        return 0
+    fi
+    if ! cp "$file" "$bak"; then
+        echo "  Couldn't back up $file to $bak, so left it unchanged." >&2
+        return 1
+    fi
+    echo "  Backed up $file to $bak"
 }
 
 # Succeeds when a process named $1 is an ancestor of this script
@@ -623,30 +610,45 @@ file_mode() {
     fi
 }
 
-# replace_file <src> <dest> <new-mode> [x]: writes a temp file and renames it, so a script
-# running from the old file reads on unchanged. Follows symlinks. Returns 2 when dest is read-only.
+# replace_file [--sudo] <src> <dest> <mode> [x] [install-option...]: writes a temp file beside dest
+# and renames it into place, so a script running from the old file reads on unchanged, and sudo tee
+# can't cut a drop-in short. The leading dot hides the temp file from run-parts and *.conf globs.
+# Follows symlinks. <mode> is a new file's: an existing one keeps its own, plus exec bits with x,
+# unless <mode> starts with =. --sudo runs each command through sudo. Returns 2 when dest is
+# read-only, 3 when it's a directory, which mv would move the file into, and 4 when it's a dangling
+# symlink, which stat reads as 777 and mv would replace.
+# shellcheck disable=SC2086 # $as is empty or sudo
 replace_file() {
-    local src="$1" dest="$2" mode="$3" tmp target
-    if [ -L "$dest" ]; then
+    local as="" src dest mode exec="" tmp target dir
+    [ "$1" != --sudo ] || { as=sudo; shift; }
+    src="$1" dest="$2" mode="$3"
+    shift 3
+    [ "${1:-}" != x ] || { exec=x; shift; }
+    if $as test -L "$dest"; then
         # On a dangling link macOS's readlink -f fails and GNU's succeeds, so check the target
-        if ! target="$(readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] || [ ! -e "$target" ]; then
-            return 1
+        if ! target="$($as readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
+            ! $as test -e "$target"; then
+            return 4
         fi
         dest="$target"
     fi
-    # mv would move the copy into a directory
-    [ ! -d "$dest" ] || return 1
-    [ ! -e "$dest" ] || [ -w "$dest" ] || return 2
-    if [ -e "$dest" ]; then
-        mode="$(file_mode "$dest")" || return 1
-        [ -z "${4:-}" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
+    ! $as test -d "$dest" || return 3
+    if $as test -e "$dest"; then
+        [ -n "$as" ] || [ -w "$dest" ] || return 2
+        if [ "${mode#=}" == "$mode" ]; then
+            # Through sudo, since the file or its directory may be root-only
+            # shellcheck disable=SC2016 # expanded by the inner bash
+            mode="$($as bash -c "$(declare -f file_mode)"'; file_mode "$1"' _ "$dest")" || return 1
+            [ -z "$exec" ] || mode="$(printf '%o' $((0$mode | ((0$mode & 0444) >> 2))))"
+        fi
     fi
-    tmp="$(mktemp "$(dirname "$dest")/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
-    # cp onto the existing temp file keeps mktemp's 600 until chmod
-    if cp "$src" "$tmp" && chmod "$mode" "$tmp" && mv -f "$tmp" "$dest"; then
+    mode="${mode#=}"
+    parent_dir dir "$dest"
+    tmp="$($as mktemp "$dir/.${dest##*/}.XXXXXX" 2>/dev/null)" || return 1
+    if $as install -m "$mode" ${1+"$@"} "$src" "$tmp" && $as mv -f "$tmp" "$dest"; then
         return 0
     fi
-    rm -f "$tmp"
+    $as rm -f "$tmp"
     return 1
 }
 
@@ -663,50 +665,67 @@ write_back() {
     rm -f "$new"
 }
 
-# write_content <dest> <text>: writes the text and a newline beside dest, then moves it into place
-write_content() {
-    local tmp
-    tmp="$(mktemp "$(dirname "$1")/.${1##*/}.XXXXXX")" || return 1
-    if ! printf '%s\n' "$2" > "$tmp"; then
-        rm -f "$tmp"
-        return 1
+# file_contents <file>: prints the file, or nothing when it's missing; fails, saying so, when it
+# can't be read, such as a dangling symlink, rather than start afresh and lose data
+file_contents() {
+    [ -e "$1" ] || [ -L "$1" ] || return 0
+    cat -- "$1" && return 0
+    echo "  Couldn't read $1, so it was left as it is." >&2
+    return 1
+}
+
+# merge_file <file> <transform-fn> [reader-fn]: pipes what the reader prints (file_contents by
+# default) through the transform, and writes the result when it differs from the file, after
+# offering a backup. Both get the file's path, and print their own errors. Check first that the
+# file needs a change, as the transform's output can differ from the file in form alone.
+merge_file() {
+    local file="$1" transform="$2" input tmp status=1 dir
+    input="$("${3:-file_contents}" "$file")" || return 1
+    tmp="$(mktemp)" || return 1
+    if printf '%s\n' "$input" | "$transform" "$file" > "$tmp"; then
+        if cmp -s "$tmp" "$file"; then
+            status=0
+        elif parent_dir dir "$file" && maybe_backup "$file" && mkdir -p "$dir"; then
+            write_back "$tmp" "$file"
+            return
+        fi
     fi
-    write_back "$tmp" "$1"
+    rm -f "$tmp"
+    return "$status"
 }
 
 # A file the expression doesn't change is left untouched
 json_merge() {
-    local file="$1" filter="$2" tmp input="" values
+    local filter="$2"
     require_cmd jq || return 1
-    ! json_applied "$file" "$filter" || return 0
-    # An unreadable file, such as a dangling symlink, fails rather than start from {} and lose data
-    if [ -e "$file" ] || [ -L "$file" ]; then
-        if ! input="$(cat -- "$file")"; then
-            echo "  Couldn't read $file, so it was left as it is." >&2
-            return 1
-        fi
-    fi
+    ! json_applied "$1" "$filter" || return 0
+    merge_file "$1" _json_merge_filter _json_merge_read
+}
+
+# One JSON value; {} for a missing or blank file
+_json_merge_read() {
+    local input values
+    input="$(file_contents "$1")" || return 1
     [[ "$input" =~ [^[:space:]] ]] || input='{}'
     # jq's own error says where invalid JSON goes wrong
     if ! values="$(printf '%s\n' "$input" | jq -s length)"; then
-        echo "  $file isn't valid JSON, so it was left as it is." >&2
+        echo "  $1 isn't valid JSON, so it was left as it is." >&2
         return 1
     elif [ "$values" != 1 ]; then
-        echo "  $file holds $values JSON values, not one, so it was left as it is." >&2
+        echo "  $1 holds $values JSON values, not one, so it was left as it is." >&2
         return 1
     fi
-    tmp="$(mktemp)"
-    if ! printf '%s\n' "$input" | jq "$filter" > "$tmp" || [ "$(jq -s length "$tmp" 2>/dev/null)" != 1 ]; then
-        echo "  Couldn't update $file with jq." >&2
-        rm -f "$tmp"
+    printf '%s\n' "$input"
+}
+
+# Runs json_merge's filter, which it reads from json_merge's local
+_json_merge_filter() {
+    local out
+    if ! out="$(jq "$filter")" || [ "$(jq -s length <<< "$out" 2>/dev/null)" != 1 ]; then
+        echo "  Couldn't update $1 with jq." >&2
         return 1
     fi
-    if ! maybe_backup "$file"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    mkdir -p "$(dirname "$file")"
-    write_back "$tmp" "$file"
+    printf '%s\n' "$out"
 }
 
 STATUS_NEEDS_ATTENTION=false
@@ -719,54 +738,48 @@ status_item() {
     ! status_state_needs_attention "$1" || STATUS_NEEDS_ATTENTION=true
 }
 
-# Succeeds when an item needs attention. The exit code can't tell: set -e can cut a report short
-# at a command that itself exited 3.
-_status_relay() {
-    local line attention=1 first=true
-    while IFS= read -r line || [ -n "$line" ]; do
-        if "$first"; then
-            printf '%s\n' "$1"
-            first=false
-        fi
-        printf '%s\n' "$line"
-        if status_parse_line "$line" && status_state_needs_attention "$STATUS_LINE_STATE"; then
-            attention=0
-        fi
-    done
-    return "$attention"
-}
-
 sudo_cached() {
     sudo -n true 2> /dev/null
 }
 
-# memo <var> <cmd...>: runs the command once, keeping its output in <var> and its status in
-# <var>_STATUS, then prints the output and returns the status on every call. It caches only when a
-# caller has declared <var>_STATUS="" (as a local, so the cache lasts one status or apply);
-# otherwise it just runs the command.
+# memo <var> <cmd...>: runs the command, keeping its output in <var> and its status in
+# <var>_STATUS, then prints the output and returns the status. While MEMO_SCOPE is set, later calls
+# in the same scope reuse them instead, so a check that runs many times runs its command once. A
+# function opens a scope, or joins its caller's, by declaring:
+#   local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+# A call inside $( ) caches only in that subshell, so call it once outside one first.
+MEMO_SEQ="${MEMO_SEQ:-0}"
+
 memo() {
-    local _memo_status="$1_STATUS" _memo_out _memo_rc=0
-    if [ -z "${!_memo_status+x}" ]; then
-        "${@:2}"
-        return
+    local _memo_var="$1" _memo_out _memo_status=0
+    shift
+    if ! _memo_current "$_memo_var"; then
+        _memo_out="$("$@")" || _memo_status=$?
+        printf -v "$_memo_var" '%s' "$_memo_out"
+        printf -v "${_memo_var}_STATUS" '%s' "$_memo_status"
+        printf -v "${_memo_var}_SCOPE" '%s' "${MEMO_SCOPE:-}"
     fi
-    if [ -z "${!_memo_status}" ]; then
-        _memo_out="$("${@:2}")" || _memo_rc=$?
-        printf -v "$1" '%s' "$_memo_out"
-        printf -v "$_memo_status" '%s' "$_memo_rc"
-    fi
-    [ -z "${!1}" ] || printf '%s\n' "${!1}"
+    [ -z "${!_memo_var}" ] || printf '%s\n' "${!_memo_var}"
+    _memo_status="${_memo_var}_STATUS"
     return "${!_memo_status}"
 }
 
-# Keeps the answer fixed through one status run whose caller declares SUDO_CACHED_CACHE_STATUS
-sudo_ready() {
-    memo SUDO_CACHED_CACHE sudo_cached > /dev/null
+# memo_forget <var>: the next memo call for <var> runs its command again, as after a change to
+# what it reads
+memo_forget() {
+    unset "$1_SCOPE"
 }
 
-# yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
-# shellcheck disable=SC2034 # the codex step reads it
-YQ_MIN_VERSION=4.54.1
+# Succeeds when <var> was set in the current memo scope
+_memo_current() {
+    local scope="$1_SCOPE"
+    [ -n "${MEMO_SCOPE:-}" ] && [ "${!scope:-}" == "$MEMO_SCOPE" ]
+}
+
+# Keeps the answer fixed through a memo scope
+sudo_ready() {
+    memo SUDO_READY sudo_cached > /dev/null
+}
 
 # Missing parts count as 0
 version_at_least() {
@@ -780,31 +793,8 @@ version_at_least() {
     done
 }
 
-# Exits 124 on timeout. macOS lacks timeout(1), so perl's alarm stops only the command, not its
-# children; without perl it runs unbounded.
-run_bounded() {
-    local seconds="$1" status=0 start=$SECONDS
-    shift
-    if command -v timeout &>/dev/null; then
-        timeout -k 5 "$seconds" "$@" || status=$?
-        # 137 means timeout had to SIGKILL
-        if [ "$status" -eq 137 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
-            status=124
-        fi
-        return "$status"
-    fi
-    if ! command -v perl &>/dev/null; then
-        "$@"
-        return
-    fi
-    # exec's block form skips the shell; the alarm survives exec
-    perl -e 'alarm shift; exec { $ARGV[0] } @ARGV or exit 127' "$seconds" "$@" || status=$?
-    # 142 is SIGALRM
-    if [ "$status" -eq 142 ] && [ $((SECONDS - start)) -ge "$seconds" ]; then
-        status=124
-    fi
-    return "$status"
-}
+# shellcheck source=run-bounded.sh
+source "$DOTFILES_DIR/lib/run-bounded.sh"
 
 DISK_FREE_MIN_PERCENT=10
 DISK_FREE_MIN_KIB=$((10 * 1024 * 1024))
@@ -862,14 +852,7 @@ status_check() {
 # are each a function, or a command and its arguments in one string split on spaces, such as
 # "apt_installed ddcutil". Declare items in one function starting with items_reset and call it
 # from status and apply. The drivers take checks, as given to item, to filter by, or drive every
-# item.
-ITEM_STATUS=()
-ITEM_PENDING=()
-ITEM_CHECK=()
-ITEM_FIX=()
-ITEM_SUDO=()
-ITEM_HINT=()
-
+# item. An empty status text makes an apply-only item, which items_status leaves out.
 items_reset() {
     ITEM_STATUS=()
     ITEM_PENDING=()
@@ -878,6 +861,8 @@ items_reset() {
     ITEM_SUDO=()
     ITEM_HINT=()
 }
+
+items_reset
 
 item() {
     local sudo=false hint=""
@@ -904,71 +889,138 @@ item() {
     ITEM_HINT+=("$hint")
 }
 
-# shellcheck disable=SC2120 # with no check functions, it drives every item
-items_status() {
-    local i=0
+# _items_each <fn> [check...]: calls <fn> <index> for each item the checks pick, in the order they
+# were added, and stops at the first call that fails, returning its status
+_items_each() {
+    local fn="$1" i=0
+    shift
     while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
         if _item_wanted "$i" "$@"; then
-            if _item_run "${ITEM_CHECK[i]}"; then
-                status_item ok "${ITEM_STATUS[i]}"
-            else
-                status_item missing "${ITEM_STATUS[i]}${ITEM_HINT[i]:+; ${ITEM_HINT[i]}}"
-            fi
+            "$fn" "$i" || return
         fi
         i=$((i + 1))
     done
 }
 
+# shellcheck disable=SC2120 # with no check functions, it drives every item
+items_status() {
+    _items_each _item_status "$@"
+}
+
+_item_status() {
+    local state=ok text="${ITEM_STATUS[$1]}"
+    [ -n "$text" ] || return 0
+    _item_check "$1" || state=missing
+    state="${ITEM_STATE:-$state}"
+    text="$text${ITEM_DETAIL:+: $ITEM_DETAIL}"
+    [ "$state" != missing ] || text="$text${ITEM_HINT[$1]:+; ${ITEM_HINT[$1]}}"
+    status_item "$state" "$text"
+}
+
 # shellcheck disable=SC2120 # with no check functions, it checks every item
 items_ok() {
-    local i=0
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            return 1
-        fi
-        i=$((i + 1))
-    done
+    _items_each _item_ok "$@"
+}
+
+# A check may set ITEM_DETAIL, which status shows after its text, and ITEM_STATE, which status
+# shows instead of ok or missing and the other drivers take as done when it's skipped or info.
+# Variables, not output, since a check in a $( ) would lose what it caches.
+_item_check() {
+    ITEM_DETAIL=""
+    ITEM_STATE=""
+    _item_run "${ITEM_CHECK[$1]}"
+}
+
+_item_ok() {
+    _item_check "$1" && return 0
+    case "$ITEM_STATE" in
+        skipped | info) return 0 ;;
+    esac
+    return 1
 }
 
 # Appends to the caller's pending array
 # shellcheck disable=SC2120 # with no check functions, it lists every sudo item
 items_pending() {
-    local i=0
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if "${ITEM_SUDO[i]}" && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            pending+=("${ITEM_PENDING[i]}")
+    local others=false
+    _items_each _item_pending "$@"
+}
+
+# Appends a pending sudo item to the caller's pending, and sets the caller's others for one that
+# needs no sudo
+_item_pending() {
+    if ! _item_ok "$1"; then
+        if "${ITEM_SUDO[$1]}"; then
+            pending+=("${ITEM_PENDING[$1]}")
+        else
+            others=true
         fi
-        i=$((i + 1))
-    done
+    fi
 }
 
 # shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply() {
-    local i=0 result=0 sudo=true
+    local result=0 sudo=true
     if [ "${1:-}" == --no-sudo ]; then
         sudo=false
         shift
     fi
-    while [ "$i" -lt ${#ITEM_CHECK[@]} ]; do
-        if { "$sudo" || ! "${ITEM_SUDO[i]}"; } && _item_wanted "$i" "$@" && ! _item_run "${ITEM_CHECK[i]}"; then
-            _item_run "${ITEM_FIX[i]}" || result=1
-        fi
-        i=$((i + 1))
-    done
+    _items_each _item_apply "$@"
     return "$result"
 }
 
-# items_apply_confirmed [check...]: asks once for the sudo items pending, then applies them all,
-# or after a no, only those that need no sudo. Returns items_apply's status.
+# Reads items_apply's sudo and result
+_item_apply() {
+    if { "$sudo" || ! "${ITEM_SUDO[$1]}"; } && ! _item_ok "$1"; then
+        _item_run "${ITEM_FIX[$1]}" || result=1
+    fi
+}
+
+# items_apply_confirmed [--done <message>] [check...]: asks for the sudo items pending, then applies
+# them all, or after a no, only those that need no sudo. It opens a memo scope unless
+# the caller has one, and asks once per scope: later calls reuse the answer. With nothing pending,
+# prints the --done message. Returns items_apply's status. A check that runs before the question
+# can read pending, the sudo changes listed so far.
 # shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply_confirmed() {
-    local pending=()
-    items_pending "$@"
-    if [ ${#pending[@]} -eq 0 ] || confirm_sudo_changes "${pending[@]}"; then
-        items_apply "$@"
-    else
-        items_apply --no-sudo "$@"
+    local done_message="" pending=() others=false result=0
+    local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
+    if [ "${1:-}" == --done ]; then
+        done_message="$2"
+        shift 2
     fi
+    _items_each _item_pending "$@"
+    if [ ${#pending[@]} -eq 0 ]; then
+        if ! "$others"; then
+            [ -z "$done_message" ] || printf '%s\n' "$done_message"
+            return 0
+        fi
+        items_apply --no-sudo "$@"
+        return
+    fi
+    if ! _memo_current SUDO_ANSWER; then
+        SUDO_ANSWER=no
+        ! confirm_sudo_changes "${pending[@]}" || SUDO_ANSWER=yes
+        # shellcheck disable=SC2034 # _memo_current reads it
+        SUDO_ANSWER_SCOPE="$MEMO_SCOPE"
+    fi
+    if ! sudo_confirmed; then
+        items_apply --no-sudo "$@"
+        return
+    fi
+    if items_apply "$@"; then
+        echo "  Applied."
+    else
+        result=1
+        echo "  Applied the rest. Some changes failed; see the errors above." >&2
+    fi
+    return "$result"
+}
+
+# Succeeds once items_apply_confirmed has had a yes, which a memo scope keeps for its later calls.
+# A check can call it to look at root-only state only once sudo is agreed to.
+sudo_confirmed() {
+    _memo_current SUDO_ANSWER && [ "$SUDO_ANSWER" == yes ]
 }
 
 _item_wanted() {
@@ -988,10 +1040,19 @@ _item_run() {
     esac
 }
 
+# shown_path <path>: relative to the repo for a repo file, and starting ~/ under HOME
+# shellcheck disable=SC2088 # shown, not expanded
+shown_path() {
+    case "$1" in
+        "$DOTFILES_DIR"/*) echo "${1#"$DOTFILES_DIR"/}" ;;
+        "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
+        *) echo "$1" ;;
+    esac
+}
+
 status_file() {
-    local src="$1" dest="$2" shown="$2"
-    # shellcheck disable=SC2088 # shown, not expanded
-    [[ "$dest" == "$HOME/"* ]] && shown="~/${dest#"$HOME"/}"
+    local src="$1" dest="$2" shown
+    shown="$(shown_path "$dest")"
     if cmp -s "$src" "$dest"; then
         # A command the step makes executable, such as git-wt, can't run without the bit
         if [ -x "$src" ] && [ ! -x "$dest" ]; then
@@ -1000,7 +1061,7 @@ status_file() {
             status_item ok "$shown"
         fi
     elif [ -e "$dest" ]; then
-        status_item missing "$shown differs from the repo's ${src#"$DOTFILES_DIR"/}"
+        status_item missing "$shown differs from the repo's $(shown_path "$src")"
     else
         status_item missing "$shown"
     fi
@@ -1017,156 +1078,7 @@ status_result() {
     return 0
 }
 
-# Either OS's steps resolve, so a step for the other OS reaches its own skip message
-step_script() {
-    case "$1" in
-        '' | *[[:space:]/]*) return 1 ;;
-    esac
-    case " ${MACOS_STEPS[*]-} ${UBUNTU_STEPS[*]-} " in
-        *" $1 "*) ;;
-        *) return 1 ;;
-    esac
-    # shellcheck disable=SC2154 # STEPS_DIR is set by the caller
-    if [ "$1" == manual-steps ]; then
-        echo "$STEPS_DIR/manual-steps.sh"
-    else
-        echo "$STEPS_DIR/$1/install.sh"
-    fi
-}
-
-# Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Returns only after a setup run succeeds;
-# otherwise exits.
-runner_main() {
-    local name="$1" quick="$2" script status=0
-    shift 2
-    script="$(_repo_path "${BASH_SOURCE[1]}")"
-    if is_macos; then
-        STEPS=("${MACOS_STEPS[@]}")
-    else
-        STEPS=("${UBUNTU_STEPS[@]}")
-    fi
-    check_args _runner_usage words "$@"
-    RUNNER_STEPS=(${ARG_WORDS[@]+"${ARG_WORDS[@]}"})
-    if status_requested "$@"; then
-        echo "=== $name status ==="
-        run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
-        reraise_interrupt "$status"
-        exit "$status"
-    fi
-    echo "=== $name setup ==="
-    run_steps "" ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
-    reraise_interrupt "$status"
-    [ "$status" -eq 0 ] || exit "$status"
-    echo ""
-    echo "=== $name setup complete! ==="
-}
-
-_runner_usage() {
-    local step
-    echo "Usage: bash $script [--status [--quick]] [--backup | --no-backup] [step...]"
-    echo "Steps, run in this order by default: ${STEPS[*]}"
-    for step in "${STEPS[@]}"; do
-        printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"
-    done
-    echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
-    echo "unknown items. $quick"
-    echo "A config file that differs from the repo's is replaced. Settings merged into files other"
-    echo "tools also edit ask whether to back up the file first. --backup or --no-backup answers"
-    echo "every backup question yes or no."
-    echo "Flags may come before or after the step names."
-}
-
 # brew catches SIGINT and exits 130, so bash wouldn't stop on its own
 interrupted_status() {
     [ "$1" -eq 129 ] || [ "$1" -eq 130 ] || [ "$1" -eq 143 ]
-}
-
-# Re-raise so callers stop too: bash carries on after exit 130, not after death by SIGINT
-reraise_interrupt() {
-    local sig
-    case "$1" in
-        129) sig=HUP ;;
-        130) sig=INT ;;
-        143) sig=TERM ;;
-        *) return 0 ;;
-    esac
-    trap - INT TERM HUP
-    kill -s "$sig" $$
-    exit "$1"
-}
-
-# run_steps <''|--status> [step...]: a failed step doesn't stop the rest. --status returns 3 when
-# an item needs attention, 1 when a step failed.
-run_steps() {
-    local mode="$1" step script status codes skipped blocker interrupted="" failed=() attention=()
-    shift
-    require_supported_os || return 1
-    # step_script takes either OS's steps, so the error lists both
-    for step in "$@"; do
-        step_script "$step" > /dev/null || {
-            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
-            return 1
-        }
-    done
-    warn_untested_platform
-    # shellcheck disable=SC2154 # STEPS is set by the caller
-    [ $# -gt 0 ] || set -- "${STEPS[@]}"
-    # bash takes a step that exits normally after Ctrl-C to have handled it
-    trap 'interrupted=130' INT
-    trap 'interrupted=143' TERM
-    trap 'interrupted=129' HUP
-    for step in "$@"; do
-        script="$(step_script "$step")"
-        status=0
-        # An invalid STEP_OS is left for the step's own main to report
-        if [ -n "$mode" ] && skipped="$(step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" --status 2>/dev/null)"; then
-            printf '%s:\n%s\n' "$step" "$skipped"
-            continue
-        elif [ -z "$mode" ] && step_os_skip "$step" "$(step_header_value "$script" STEP_OS)" 2>/dev/null; then
-            continue
-        fi
-        if [ -z "$mode" ] && blocker="$(_failed_need "$script" ${failed[@]+"${failed[@]}"})"; then
-            echo "$step: skipped, $blocker failed" >&2
-            failed+=("$step")
-            continue
-        fi
-        if [ -n "$mode" ]; then
-            # The header prints only before a first line. -e is off in the group, so read
-            # PIPESTATUS.
-            {
-                "$BASH" "$script" --status | _status_relay "$step:"
-                codes="${PIPESTATUS[0]} ${PIPESTATUS[1]}"
-            } || true
-            status="${codes% *}"
-            # Exit 3 with no item needing attention means set -e cut the report short
-            if [ "$status" -eq 3 ] && [ "${codes#* }" -ne 0 ]; then
-                status=1
-            fi
-        else
-            "$BASH" "$script" || status=$?
-        fi
-        [ -z "$interrupted" ] || status="$interrupted"
-        if interrupted_status "$status"; then
-            echo "  The $step step was interrupted; stopping." >&2
-            trap - INT TERM HUP
-            return "$status"
-        elif [ -n "$mode" ] && [ "$status" -eq 3 ]; then
-            attention+=("$step")
-        elif [ "$status" -ne 0 ]; then
-            echo "  The $step step failed." >&2
-            failed+=("$step")
-        fi
-    done
-    trap - INT TERM HUP
-    if [ ${#attention[@]} -gt 0 ]; then
-        echo ""
-        echo "$STATUS_SUMMARY_ATTENTION: ${attention[*]}. Run: bash $0 ${attention[*]}"
-    fi
-    if [ ${#failed[@]} -gt 0 ]; then
-        echo "" >&2
-        echo "$STATUS_SUMMARY_FAILED: ${failed[*]}" >&2
-        echo "Fix the errors above, then re-run them with: bash $0 ${mode:+$mode }${failed[*]}" >&2
-        return 1
-    fi
-    [ ${#attention[@]} -eq 0 ] || return 3
 }

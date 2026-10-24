@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # The Ubuntu Stream Deck daemon, with a fake deck, sampler, and open-in, the plugin's layout.json,
 # and the fonts it hands resvg.
@@ -7,7 +6,6 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v node &> /dev/null || skip "node isn't installed"
 DAEMON="$REPO_DIR/stream-deck/linux/daemon.js"
 PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"

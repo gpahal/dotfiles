@@ -1,18 +1,17 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The runtimes step; test-step-prereqs.sh covers it without mise.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 load_script runtimes/install.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 export GLOBALS_FILE="$SANDBOX/mise-globals"
 export RUST_DEFAULT="$SANDBOX/rust-default" RUST_HEALTHY="$SANDBOX/rust-healthy"
-stub rustup 'case "$1" in
+export RUST_STUB="$SANDBOX/rustup-stub"
+stub_at "$RUST_STUB" 'case "$1" in
     default)
         if [ $# -eq 1 ]; then cat "$RUST_DEFAULT"; else
             [ "${RUST_FAIL:-}" != 1 ] || exit 1
@@ -23,8 +22,6 @@ stub rustup 'case "$1" in
         [ "${RUST_FAIL:-}" != 1 ] || exit 1
         touch "$RUST_HEALTHY" ;;
 esac'
-export RUST_STUB="$SANDBOX/rustup-stub"
-mv "$STUB_DIR/rustup" "$RUST_STUB"
 
 export EXPECTED_MISE_CONFIG="$HOME/.config/mise/config.toml"
 mkdir -p "$HOME/.config/mise"
@@ -55,18 +52,14 @@ case "$1 ${2:-}" in
     "ls --missing")
         [ -z "${MISE_LS_OUT:-}" ] || echo "$MISE_LS_OUT" ;;
 esac'
-stub curl 'while [ $# -gt 0 ]; do
-    if [ "$1" == -o ]; then
-        echo "echo \"rustup-init \$*\" >> \"\$STUB_LOG\"" > "$2"
-        cat >> "$2" <<"INSTALL"
+cat > "$SANDBOX/rustup-init" << 'INSTALL'
+echo "rustup-init $*" >> "$STUB_LOG"
 mkdir -p "$HOME/.cargo/bin"
 cp "$RUST_STUB" "$HOME/.cargo/bin/rustup"
 echo stable > "$RUST_DEFAULT"
 touch "$RUST_HEALTHY"
 INSTALL
-    fi
-    shift
-done'
+stub_fetch "https://sh.rustup.rs=$SANDBOX/rustup-init"
 
 touch "$GLOBALS_FILE"
 assert_exit 0 main
@@ -107,7 +100,6 @@ assert_file_not_contains "$STUB_LOG" "go@latest"
 load_script lib/common.sh
 export PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 rm "$GLOBALS_FILE"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global go@latest"
 assert_file_not_contains "$STUB_LOG" "node@lts"
@@ -116,16 +108,13 @@ assert_contains "$RUN_OUTPUT" "missing    mise's global go: not set; the repo's 
 unset MISE_NODE
 
 touch "$GLOBALS_FILE" "$SANDBOX/global.toml"
-: > "$STUB_LOG"
 MISE_GLOBAL_CONFIG_FILE="$SANDBOX/global.toml" EXPECTED_MISE_CONFIG="$SANDBOX/global.toml" assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "wrong file"
 mv "$EXPECTED_MISE_CONFIG" "$SANDBOX/config.toml.aside"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "mise use --global node@lts go@latest"
 assert_file_not_contains "$STUB_LOG" "mise config get"
 mv "$SANDBOX/config.toml.aside" "$EXPECTED_MISE_CONFIG"
-: > "$STUB_LOG"
 MISE_CONFIG_ERR=1 assert_exit 1 main
 assert_contains "$RUN_OUTPUT" "TOML parse error"
 assert_contains "$RUN_OUTPUT" "Couldn't read mise's global config"
@@ -156,7 +145,6 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" 'rustup default stable'
 assert_exit 0 main --status
 echo custom > "$RUST_DEFAULT"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_eq custom "$(cat "$RUST_DEFAULT")" "custom Rust default"
 assert_file_not_contains "$STUB_LOG" 'toolchain install'
@@ -166,7 +154,6 @@ assert_exit 0 main
 assert_file_contains "$STUB_LOG" 'rustup toolchain install custom'
 
 # mise install in $HOME installs every active config, ~/mise.toml and ~/.tool-versions included
-: > "$STUB_LOG"
 MISE_LS_OUT="python  3.13 (missing)  ~/mise.toml  3.13" assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The tools mise's configs in ~ list installed"
 assert_file_contains "$STUB_LOG" "mise ls --missing"

@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # ssh/add-host.sh: one Host block per alias, above any catch-all so its settings don't win.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v ssh &>/dev/null || skip "ssh isn't installed"
 add_host() {
     bash "$REPO_DIR/ssh/add-host.sh" "$@"
@@ -15,14 +13,12 @@ config="$HOME/.ssh/config"
 
 # The block's ControlMaster socket lives in ~/.ssh, so only you may use it
 mkdir -m 755 "$HOME/.ssh"
-assert_exit 0 add_host box box.example.ts.net
+assert_idempotent add_host box box.example.ts.net
 assert_eq drwx------ "$(/bin/ls -ld "$HOME/.ssh" | cut -c1-10)" "the mode of ~/.ssh"
 assert_eq -rw------- "$(/bin/ls -l "$config" | cut -c1-10)" "the config's mode"
-assert_contains "$RUN_OUTPUT" "ssh -O exit box closes it"
-snapshot "$config"
-assert_exit 0 add_host box box.example.ts.net
+assert_contains "$FIRST_OUTPUT" "ssh -O exit box closes it"
 assert_contains "$RUN_OUTPUT" "already has a block for box"
-assert_unchanged "$config" "on a second run"
+snapshot "$config"
 
 for bad in "my box" "*" "box#1" "$(printf 'a\nb')"; do
     assert_exit 2 add_host "$bad"
@@ -86,14 +82,11 @@ for fixture in "Host other\n  User other\n\nHost *\n  Include $SANDBOX/star.conf
     # shellcheck disable=SC2059 # the fixtures hold \n
     printf "$fixture\n" > "$config"
     other_before="$(ssh -G -F "$config" other 2>&1)"
-    assert_exit 0 add_host box5 box5.example.ts.net
+    assert_idempotent add_host box5 box5.example.ts.net
     assert_exit 0 ssh -G -F "$config" box5
     assert_contains "$RUN_OUTPUT" "serveraliveinterval 30"
     assert_contains "$RUN_OUTPUT" "hostname box5.example.ts.net"
     assert_eq "$other_before" "$(ssh -G -F "$config" other 2>&1)" "another host with: $fixture"
-    snapshot "$config"
-    assert_exit 0 add_host box5 box5.example.ts.net
-    assert_unchanged "$config" "on a second run with: $fixture"
 done
 
 # A block for the alias is found however it's written, and only as ssh would match it

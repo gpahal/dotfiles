@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # Claude Code's status line script: a missing field leaves no gap, and no jq says so.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 script="$REPO_DIR/ai_tools/claude-code/statusline.sh"
 
 command -v jq &> /dev/null || skip "jq isn't installed"

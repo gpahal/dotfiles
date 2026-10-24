@@ -1,6 +1,5 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # The t3-code step's desktop app on Ubuntu: its own server off and its app settings set before it's
 # installed, telemetry off through environment.d, and the latest release's .deb checked against
@@ -9,14 +8,12 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 command -v jq &> /dev/null || skip "jq isn't installed"
 command -v sha256sum &> /dev/null || skip "sha256sum isn't installed"
 load_script ai_tools/t3-code/install.sh
 as_os ubuntu
 replace_fn has_gnome_desktop 'true'
 replace_fn running_inside 'false'
-export SANDBOX
 SETTINGS="$HOME/.t3/userdata/desktop-settings.json"
 
 printf 'a fake deb' > "$SANDBOX/t3.deb"
@@ -28,44 +25,36 @@ release() {
 }
 release "sha256:$(sha256sum "$SANDBOX/t3.deb" | cut -d' ' -f1)"
 
-# fetch's curl: the last argument is the URL, and -o names the file
-stub curl 'out=""; prev=""
-for arg in "$@"; do [ "$prev" != -o ] || out="$arg"; prev="$arg"; done
-case "${*: -1}" in
-    */releases/latest) cp "$SANDBOX/release.json" "$out" ;;
-    */amd64.deb) cp "$SANDBOX/t3.deb" "$out" ;;
-    *) exit 22 ;;
-esac'
+stub_fetch "$T3_CODE_RELEASE_API=$SANDBOX/release.json" "https://example.test/amd64.deb=$SANDBOX/t3.deb"
 stub_dpkg_arch
-stub_apt_package t3code "$SANDBOX/installed"
 # The app's settings must be in place before it's installed, so its first launch starts no server.
-# Replaces stub_apt_package's apt-get, as the app comes from a .deb.
-stub apt-get '[ -e "$HOME/.t3/userdata/desktop-settings.json" ] || { echo "installed before the settings" >&2; exit 9; }
-for arg in "$@"; do case "$arg" in *.deb) cmp -s "$arg" "$SANDBOX/t3.deb" && touch "$SANDBOX/installed" ;; esac; done'
+# It comes from a .deb, which installs t3code only when it's the release's.
+stub_apt_packages --apt-get '[ -e "$HOME/.t3/userdata/desktop-settings.json" ] || { echo "installed before the settings" >&2; exit 9; }
+for arg in "$@"; do case "$arg" in *.deb) cmp -s "$arg" "$SANDBOX/t3.deb" && echo t3code >> "$SANDBOX/installed"; exit 0 ;; esac; done'
 stub pgrep 'exit 1'
 # status also reports the service, which test-t3-service.sh covers
 stub ss 'exit 1'
 stub_sudo_exec
 
 assert_exit 3 main --status
+cp "$STUB_LOG" "$SANDBOX/both.log"
 
 answer no
 assert_exit 0 setup_t3_code_desktop_ubuntu
-assert_file_not_contains "$STUB_LOG" "apt-get"
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_file_not_contains "$SANDBOX/both.log" "apt-get"
 assert_eq "false" "$(jq -r .localEnvironmentEnabled "$SETTINGS")" "the desktop app's own server, before the install"
 assert_eq "steer" "$(jq -r .followUpBehavior "$HOME/.t3/userdata/client-settings.json")" "the desktop app's follow-up behavior"
 
 answer yes
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_file_contains "$STUB_LOG" "install -y"
-[ -e "$SANDBOX/installed" ] || fail "the .deb wasn't installed"
+grep -qx t3code "$SANDBOX/installed" || fail "the .deb wasn't installed"
 run status
 assert_contains "$RUN_OUTPUT" "ok         T3 Code desktop app"
 assert_contains "$RUN_OUTPUT" "ok         Desktop app's own server off"
 
 # Installed: it updates itself, so nothing is fetched again
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_file_not_contains "$STUB_LOG" "curl"
 
@@ -77,18 +66,17 @@ assert_eq "true" "$(jq -r .localEnvironmentEnabled "$SETTINGS")" "settings while
 stub pgrep 'exit 1'
 
 # A .deb that doesn't match GitHub's digest, or no .deb for this architecture, installs nothing
-rm "$SANDBOX/installed"
+: > "$SANDBOX/installed"
 release "sha256:0000"
 assert_exit 1 setup_t3_code_desktop_ubuntu
 assert_contains "$RUN_OUTPUT" "doesn't match the digest"
-[ ! -e "$SANDBOX/installed" ] || fail "a .deb that didn't match its digest was installed"
+! grep -qx t3code "$SANDBOX/installed" || fail "a .deb that didn't match its digest was installed"
 stub_dpkg_arch riscv64
 assert_exit 1 setup_t3_code_desktop_ubuntu
 assert_contains "$RUN_OUTPUT" "no riscv64 .deb"
 
 # Ubuntu Server has no desktop to run it
 replace_fn has_gnome_desktop 'false'
-: > "$STUB_LOG"
 assert_exit 0 setup_t3_code_desktop_ubuntu
 assert_eq "" "$(cat "$STUB_LOG")" "commands run without a desktop"
 

@@ -1,41 +1,23 @@
-# Helpers for sudo changes: root-owned files and third-party apt repos. Source after lib/common.sh.
+# Helpers for sudo changes and system state: root-owned files, third-party apt repos, and linger.
+# Source after lib/common.sh.
 # shellcheck shell=bash
 
-# install_root_file <src> <dest> [mode] [group] [owner]: writes a temp file and renames it, since
-# sudo tee could cut a drop-in short and lose a setting. The leading dot hides the temp file from
-# run-parts and *.conf globs. A dangling symlink fails: stat reads it as 777 and mv would replace
-# the link. A new directory gets 755 regardless of umask so hook users such as nut can read it.
+# install_root_file <src> <dest> [mode] [group] [owner]: replace_file through sudo. A given mode is
+# set; otherwise an existing file keeps its own, and a new one gets 644. The group is set in the
+# install that writes the file, so a failed chgrp can't leave it root:root. A new directory gets
+# 755 regardless of umask so hook users such as nut can read it.
 install_root_file() {
-    local src="$1" dest="$2" mode="${3:-}" group="${4:-}" owner="${5:-}" dir tmp opts target
-    dir="$(dirname "$dest")"
+    local src="$1" dest="$2" mode="${3:+=$3}" opts=() status=0 dir
+    [ -z "${4:-}" ] || opts+=(-g "$4")
+    [ -z "${5:-}" ] || opts+=(-o "$5")
+    parent_dir dir "$dest"
     sudo test -d "$dir" || sudo install -d -m 0755 "$dir" || return 1
-    # mv would move the new file into the directory, and succeed
-    if sudo test -d "$dest"; then
-        echo "  $dest is a directory; remove it and re-run." >&2
-        return 1
-    fi
-    if sudo test -L "$dest"; then
-        if ! target="$(sudo readlink -f -- "$dest" 2>/dev/null)" || [ -z "$target" ] ||
-            ! sudo test -e "$target"; then
-            echo "  $dest is a symlink to nothing; remove it and re-run." >&2
-            return 1
-        fi
-        dest="$target"
-        dir="$(dirname "$dest")"
-    fi
-    # Through sudo, since the file or its directory may be root-only
-    if [ -z "$mode" ]; then
-        mode="$(sudo bash -c "$(declare -f file_mode)"'; [ ! -e "$1" ] || file_mode "$1"' _ "$dest")" ||
-            return 1
-    fi
-    tmp="$(sudo mktemp "$dir/.${dest##*/}.XXXXXX")" || return 1
-    opts=(-m "${mode:-644}")
-    [ -z "$group" ] || opts+=(-g "$group")
-    [ -z "$owner" ] || opts+=(-o "$owner")
-    if sudo install "${opts[@]}" "$src" "$tmp" && sudo mv -f "$tmp" "$dest"; then
-        return 0
-    fi
-    sudo rm -f "$tmp"
+    replace_file --sudo "$src" "$dest" "${mode:-644}" ${opts[@]+"${opts[@]}"} || status=$?
+    case "$status" in
+        0) return 0 ;;
+        3) echo "  $dest is a directory; remove it and re-run." >&2 ;;
+        4) echo "  $dest is a symlink to nothing; remove it and re-run." >&2 ;;
+    esac
     return 1
 }
 
@@ -46,6 +28,23 @@ write_root_file() {
     printf '%s\n' "$2" > "$src" && install_root_file "$src" "$1" "${3:-}" "${4:-}" "${5:-}" || status=1
     rm -f "$src"
     return "$status"
+}
+
+# write_root_content <dest-var> <content-var> [mode]: write_root_file taking variable names, so it
+# works as an item's fix, such as "write_root_content SLEEP_CONF SLEEP_CONF_CONTENT"
+write_root_content() {
+    write_root_file "${!1}" "${!2}" "${3:-}"
+}
+
+# root_copy_current <src> <dest> <mode>. The mode is fixed, not the repo file's, since a checkout
+# can lose exec bits and run-parts skips a non-executable hook.
+root_copy_current() {
+    cmp -s "$1" "$2" && { [ "$3" != 0755 ] || [ -x "$2" ]; }
+}
+
+# install_root_copy <src> <dest> <mode>
+install_root_copy() {
+    root_copy_current "$@" || install_root_file "$@"
 }
 
 # read_root_file <file> [-n]: -n uses sudo -n. Prints nothing when missing, fails when unreadable.
@@ -81,15 +80,11 @@ sbin_cmd() {
     PATH="$SBIN_PATH" command -v "$1"
 }
 
-# Updates apt's lists first, since stale ones can name a version the mirror no longer has. One
-# successful update serves the rest of the run, until add_apt_repo changes a source or key.
-APT_LISTS_FRESH=""
-apt_install_fresh() {
-    if [ -z "$APT_LISTS_FRESH" ]; then
-        apt_get_update || return 1
-        APT_LISTS_FRESH=true
-    fi
-    apt_get install -y "$@"
+LINGER_DIR=/var/lib/systemd/linger
+
+# systemd starts your user services at boot, without a login
+lingering() {
+    [ -e "$LINGER_DIR/$CURRENT_USER" ]
 }
 
 # 000 when the host can't be reached
@@ -211,6 +206,7 @@ add_apt_repo() {
         return 1
     fi
     rm -f "$key"
+    # shellcheck disable=SC2034 # apt_install_fresh, in lib/common.sh, reads it
     APT_LISTS_FRESH=""
     # The key has changed, so a failed write gets the same rollback as a failed update. --error-on=any
     # fails on an unverifiable key, which apt-get update otherwise only warns about.

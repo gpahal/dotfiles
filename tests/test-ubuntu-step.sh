@@ -1,23 +1,18 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # The ubuntu step from a fresh machine: declined, applied, and re-run, plus its held-back package,
-# ntfy URL, and health alert checks.
+# ntfy URL, and health alert checks, and a status that never prompts or changes anything.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-# shellcheck source=ubuntu-sandbox.sh
-source "$TESTS_DIR/ubuntu-sandbox.sh"
 # shellcheck source=ubuntu-step-fixture.sh
 source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
-setup_sandbox
 ubuntu_step_setup
 assert_exit 3 main --status
 
 # Declined: nothing that needs sudo changes
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 [ ! -e "$SLEEP_CONF" ] || fail "sleep.conf.d was written without a yes"
@@ -33,7 +28,6 @@ assert_file_contains "$STUB_LOG" "systemctl --user enable dotfiles-boot-notice.s
 
 # With no SSH key login to go by, the VM opt-in turns password logins off
 export DOTFILES_ASSUME_YES=1 DOTFILES_SSH_KEY_ONLY=1
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "sudo sysctl --system"
 assert_file_contains "$STUB_LOG" "sudo systemctl enable --now smartmontools.service"
@@ -46,11 +40,18 @@ assert_eq magic "$(cat "$SANDBOX/wol")" "Wake-on-LAN"
 assert_exit 0 main --status
 assert_not_contains "$RUN_OUTPUT" "missing"
 
+# sshd gets enabled in the run that installs openssh-server, which apply checks again after
+stub_apt_packages '*' '!openssh-server'
+rm "$SANDBOX/units/ssh.socket.enabled"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "install -y openssh-server"
+assert_file_contains "$STUB_LOG" "sudo systemctl enable --now ssh.socket"
+stub_apt_packages '*'
+
 # New dependencies don't hold a package back, as they don't stop unattended-upgrades
 printf '%s\n' "NOTE: This is only a simulation!" "Reading package lists..." \
     "The following packages have been kept back:" "  nut-client nut-server" "  ubuntu-drivers-common" \
     "0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded." > "$SANDBOX/apt-upgrade"
-: > "$STUB_LOG"
 run status_held_back
 assert_contains "$RUN_OUTPUT" "missing    Packages apt holds back from updates: nut-client, nut-server, ubuntu-drivers-common;"
 assert_file_contains "$STUB_LOG" "-o APT::Get::Upgrade-Allow-New=true"
@@ -68,17 +69,16 @@ assert_contains "$RUN_OUTPUT" "ok         No packages held back from updates"
 rm "$SANDBOX/apt-upgrade"
 
 # ssh.service enabled instead of ssh.socket: leave ssh.socket off, since it couldn't bind sshd's port
-echo disabled > "$SANDBOX/units/ssh.socket"
-echo enabled > "$SANDBOX/units/ssh.service"
+rm "$SANDBOX/units/ssh.socket.enabled"
+touch "$SANDBOX/units/ssh.service.enabled"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         sshd starts at boot"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_not_contains "$STUB_LOG" "enable --now ssh.socket"
-rm "$SANDBOX/units/"*
+rm "$SANDBOX/units/ssh.service.enabled"
+touch "$SANDBOX/units/ssh.socket.enabled"
 
 # Re-run: only sudo -n, to read the ufw rules
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already set up"
 assert_sudo_noninteractive "the re-run"
@@ -124,14 +124,30 @@ done
 
 # After a failed daemon-reload, the next run reloads even though the files match
 echo "# changed" >> "$USER_UNITS/dotfiles-health.service"
-touch "$SANDBOX/reload-needed" "$SANDBOX/reload-fails"
+touch "$SANDBOX/units/reload-needed" "$SANDBOX/units/reload-fails"
 assert_exit 1 main
-rm "$SANDBOX/reload-fails"
+rm "$SANDBOX/units/reload-fails"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them"
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
-[ ! -e "$SANDBOX/reload-needed" ] || fail "the units weren't reloaded"
-assert_exit 0 main --status
+[ ! -e "$SANDBOX/units/reload-needed" ] || fail "the units weren't reloaded"
+# A unit that isn't installed isn't loaded either; the missing file is the whole report
+mv "$USER_UNITS/dotfiles-health.service" "$SANDBOX/health.service"
+touch "$SANDBOX/units/user-dotfiles-health.service.not-found"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "dotfiles-health.service"
+assert_not_contains "$RUN_OUTPUT" "changed since systemd loaded them"
+mv "$SANDBOX/health.service" "$USER_UNITS/dotfiles-health.service"
+rm "$SANDBOX/units/user-dotfiles-health.service.not-found"
+
+# Status never prompts or changes anything, and checks what only root can read once sudo's
+# credentials are cached
+cache_sudo no
+assert_read_only 0 main --status
+assert_contains "$RUN_OUTPUT" "unverified ufw rules"
+cache_sudo yes
+assert_read_only 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         ufw rules"
+assert_not_contains "$RUN_OUTPUT" "unverified"
 test_done

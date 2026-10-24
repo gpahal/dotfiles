@@ -1,15 +1,11 @@
 #!/bin/bash
 # shellcheck disable=SC2329
-set -euo pipefail
 
 # setup_codex_sandbox on Ubuntu, where AppArmor can restrict bwrap's user namespaces.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
-stub systemd-detect-virt
 load_script ai_tools/codex/install.sh
 as_os ubuntu
 stub_sudo_exec
@@ -17,24 +13,27 @@ S="$SANDBOX/state"
 USERNS_RESTRICT_SYSCTL="$S/userns"
 BWRAP_PROFILE="$SANDBOX/apparmor.d/bwrap-userns-restrict"
 
-stub_apt_package bubblewrap "$S/bubblewrap"
 stub apparmor_parser 'touch "'"$S"'/loaded"'
 stub bwrap 'S="'"$S"'"
-[ -e "$S/bubblewrap" ] && [ ! -e "$S/bwrap-broken" ] &&
+grep -qx bubblewrap "$SANDBOX/installed" && [ ! -e "$S/bwrap-broken" ] &&
     { [ "$(cat "$S/userns")" != 1 ] || [ -e "$S/loaded" ]; }'
 
-# Usage: reset <restricted: 0 or 1> [state file]...
+# Usage: reset <restricted: 0 or 1> [state file, or bubblewrap installed]...
 reset() {
     rm -rf "$S" "$(dirname "$BWRAP_PROFILE")"
     mkdir -p "$S" "$(dirname "$BWRAP_PROFILE")"
     echo "$1" > "$USERNS_RESTRICT_SYSCTL"
     shift
+    stub_apt_packages
     local f
     for f in "$@"; do
-        touch "$S/$f"
+        case "$f" in
+            bubblewrap) stub_apt_packages bubblewrap ;;
+            *) touch "$S/$f" ;;
+        esac
     done
     : > "$STUB_LOG"
-    unset DOTFILES_ASSUME_YES
+    answer no
 }
 # apt-get without the environment and options lib/common.sh's apt_get adds
 sudo_calls() {
@@ -62,7 +61,7 @@ assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Load the bwrap-userns-restrict AppArmor profile"
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_eq "" "$(sudo_calls)" "sudo calls after a no"
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
 assert_eq "sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(sudo_calls)" "sudo calls to load the profile"
@@ -70,7 +69,7 @@ assert_eq "sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(
 # 26.04 loads the profile at boot, so it isn't reloaded
 reset 1 loaded
 touch "$BWRAP_PROFILE"
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
 assert_eq "sudo apt-get update
@@ -78,7 +77,7 @@ sudo apt-get install -y bubblewrap" "$(sudo_calls)" "sudo calls with the profile
 
 reset 1
 touch "$BWRAP_PROFILE"
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 0 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "Install bubblewrap"
 assert_contains "$RUN_OUTPUT" "Codex's sandbox works now."
@@ -87,7 +86,7 @@ sudo apt-get install -y bubblewrap
 sudo apparmor_parser -r SANDBOX/apparmor.d/bwrap-userns-restrict" "$(sudo_calls)" "sudo calls for bubblewrap with the profile in apparmor.d"
 
 reset 1
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "sudo apt-get install --reinstall -o Dpkg::Options::=--force-confmiss apparmor"
 assert_eq "sudo apt-get update
@@ -95,7 +94,7 @@ sudo apt-get install -y bubblewrap" "$(sudo_calls)" "sudo calls with no profile 
 
 reset 1 bwrap-broken
 touch "$BWRAP_PROFILE"
-export DOTFILES_ASSUME_YES=1
+answer yes
 assert_exit 1 setup_codex_sandbox
 assert_contains "$RUN_OUTPUT" "bwrap still can't create a sandbox"
 assert_contains "$(sudo_calls)" "sudo apparmor_parser -r"

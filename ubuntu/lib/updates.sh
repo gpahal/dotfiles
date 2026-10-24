@@ -41,7 +41,7 @@ unattended_upgrades_running() {
 status_unattended_upgrades() {
     local item="unattended-upgrades runs daily"
     if auto_upgrades_unreadable && ! sudo_ready; then
-        status_item unverified "$item (only root can read $AUTO_UPGRADES_CONF; run sudo -v, then status, to check it)"
+        status_needs_root "$item" "only root can read $AUTO_UPGRADES_CONF"
     else
         status_check "$item" unattended_upgrades_running
     fi
@@ -49,15 +49,7 @@ status_unattended_upgrades() {
 
 # A stopped timer never fires until the next boot, so check active too
 apt_timers_enabled() {
-    local timer
-    for timer in "${APT_TIMERS[@]}"; do
-        [ "$(systemctl is-enabled "$timer" 2>/dev/null)" == enabled ] || return 1
-        systemctl is-active -q "$timer" 2>/dev/null || return 1
-    done
-}
-
-enable_apt_timers() {
-    sudo systemctl enable --now "${APT_TIMERS[@]}"
+    unit_on "${APT_TIMERS[@]}"
 }
 
 # Replaces our keys statement by statement and keeps the rest, such as Software & Updates'
@@ -170,10 +162,6 @@ turn_on_unattended_upgrades() {
 
 keep_conffiles_written() {
     file_is "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
-}
-
-write_keep_conffiles() {
-    write_root_file "$KEEP_CONFFILES_CONF" "$KEEP_CONFFILES_CONTENT"
 }
 
 # New dependencies and phased updates count as upgradable, as for unattended-upgrades, so only

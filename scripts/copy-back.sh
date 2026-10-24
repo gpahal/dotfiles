@@ -31,25 +31,19 @@ done
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# shellcheck disable=SC2088 # shown, not expanded
-shown() {
-    case "$1" in
-        "$DOTFILES_DIR"/*) echo "${1#"$DOTFILES_DIR"/}" ;;
-        "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
-        *) echo "$1" ;;
-    esac
-}
-
-# <repo file> <tab> <destination> for every step's *_files functions
-common_fns="$(compgen -A function)"
+# <repo file> <tab> <destination> for every step's *_files functions, but not the lib's
+# compgen fails when nothing matches
+common_fns=$'\n'"$(compgen -A function -X '!*_files' || true)"$'\n'
 for install in "$DOTFILES_DIR"/*/install.sh "$DOTFILES_DIR"/ai_tools/*/install.sh; do
     (
         # shellcheck disable=SC2329 # the *_files functions call it
         record() { printf '%s\t%s\n' "$1" "$2" >> "$tmp/copies"; }
         # shellcheck disable=SC1090 # every step
         source "$install" > /dev/null
-        for fn in $(compgen -A function | grep '_files$'); do
-            ! printf '%s\n' "$common_fns" | grep -qxF "$fn" || continue
+        for fn in $(compgen -A function -X '!*_files' || true); do
+            case "$common_fns" in
+                *$'\n'"$fn"$'\n'*) continue ;;
+            esac
             "$fn" record > /dev/null || true
         done
     ) < /dev/null
@@ -87,26 +81,26 @@ while IFS=$'\t' read -r src dest; do
     first="$(awk -F '\t' -v s="$src" '$1 == s { print $2; exit }' "$tmp/taken")"
     if [ -n "$first" ]; then
         if ! cmp -s "$first" "$dest"; then
-            echo "$(shown "$dest") differs from $(shown "$first"), and both are copies of $(shown "$src"). The first was taken; merge this one by hand."
+            echo "$(shown_path "$dest") differs from $(shown_path "$first"), and both are copies of $(shown_path "$src"). The first was taken; merge this one by hand."
             conflicts=$((conflicts + 1))
         fi
         continue
     fi
     printf '%s\t%s\n' "$src" "$dest" >> "$tmp/taken"
     if uncommitted "$src"; then
-        echo "Skipped $(shown "$dest"): $(shown "$src") has uncommitted changes, which copying would overwrite. Commit or discard them, then run this again."
+        echo "Skipped $(shown_path "$dest"): $(shown_path "$src") has uncommitted changes, which copying would overwrite. Commit or discard them, then run this again."
         skipped=$((skipped + 1))
         continue
     fi
     found=$((found + 1))
     if "$dry_run"; then
-        echo "$(shown "$dest") differs from $(shown "$src")"
+        echo "$(shown_path "$dest") differs from $(shown_path "$src")"
         continue
     fi
-    echo "=== $(shown "$dest") -> $(shown "$src")"
-    diff -u -L "$(shown "$src")" -L "$(shown "$dest")" "$src" "$dest" || true
+    echo "=== $(shown_path "$dest") -> $(shown_path "$src")"
+    diff -u -L "$(shown_path "$src")" -L "$(shown_path "$dest")" "$src" "$dest" || true
     if ! cp "$dest" "$src"; then
-        echo "Couldn't copy $(shown "$dest") to $(shown "$src")" >&2
+        echo "Couldn't copy $(shown_path "$dest") to $(shown_path "$src")" >&2
         exit 1
     fi
 done < "$tmp/unique"

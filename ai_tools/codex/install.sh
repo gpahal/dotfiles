@@ -23,6 +23,8 @@ CODEX_INSTRUCTIONS="$CODEX_DIR/AGENTS.md"
 CODEX_CREDENTIALS="$CODEX_DIR/.credentials.json"
 BWRAP_PROFILE=/etc/apparmor.d/bwrap-userns-restrict
 USERNS_RESTRICT_SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+# yq -o toml's encoder arrived in 4.52.1 and was fixed up to 4.54.1
+YQ_MIN_VERSION=4.54.1
 
 # Prints nothing for a yq other than mikefarah's
 codex_yq_version() {
@@ -56,9 +58,33 @@ codex_keep_list() {
     fi
 }
 
-codex_keep_read() {
+codex_read_custom_values() {
     codex_keep_list
-    keep_read CODEX_KEEP "$(yq -p toml -o json -I=0 "$CODEX_CONFIG" 2>/dev/null)"
+    read_custom_values "$(yq -p toml -o json -I=0 "$CODEX_CONFIG" 2>/dev/null)" "${CODEX_KEEP[@]}"
+}
+
+# Sets CODEX_REPLACE[k] to true for each value of your own you agree to replace
+codex_choose_custom_values() {
+    local k
+    codex_read_custom_values
+    CODEX_REPLACE=()
+    for ((k = 0; k < ${#CODEX_KEEP[@]} / 3; k++)); do
+        if replace_custom_value "${CODEX_KEEP[k * 3 + 2]}" "${CUSTOM_VALUES[k * 2]:-}" \
+            "${CUSTOM_VALUES[k * 2 + 1]:-}"; then
+            CODEX_REPLACE[k]=true
+        fi
+    done
+}
+
+codex_status_custom_values() {
+    local k current wanted
+    codex_read_custom_values
+    for ((k = 0; k < ${#CODEX_KEEP[@]} / 3; k++)); do
+        current="${CUSTOM_VALUES[k * 2]:-}"
+        wanted="${CUSTOM_VALUES[k * 2 + 1]:-}"
+        [ -z "$current" ] || [ "$current" == "$wanted" ] ||
+            status_custom_value "${CODEX_KEEP[k * 3 + 2]}" "$current" "$wanted"
+    done
 }
 
 # Values are TOML, which for the types used here is also a yq literal
@@ -71,9 +97,9 @@ codex_settings() {
     local k
     CODEX_PATHS=()
     CODEX_VALUES=()
-    codex_keep_read
+    codex_read_custom_values
     for ((k = 0; k < ${#CODEX_KEEP[@]} / 3; k++)); do
-        if [ "$(keep_value CODEX_KEEP REPLACE "$k")" == true ] || [ -z "$(keep_value CODEX_KEEP CURRENT "$k")" ]; then
+        if [ "${CODEX_REPLACE[k]:-}" == true ] || [ -z "${CUSTOM_VALUES[k * 2]:-}" ]; then
             codex_set "${CODEX_KEEP[k * 3]}" "${CODEX_KEEP[k * 3 + 1]}"
         fi
     done
@@ -161,34 +187,33 @@ codex_comments_kept() {
     [ -z "$(LC_ALL=C comm -23 <(codex_comments "$2") <(codex_comments "$1"))" ]
 }
 
-# Print the path of an edited copy of the config. yq can drop trailing comments and misplace values
-# after top-level dotted keys or arrays of inline tables, so the copy is verified before use.
-codex_config_edited() {
-    local edited filter source=/dev/null
+# For merge_file: prints the config it reads on stdin with the settings set. yq can drop trailing
+# comments and misplace values after top-level dotted keys or arrays of inline tables, so the edit
+# is verified first.
+codex_config_edit() {
+    local source edited filter status=1
     codex_settings
     filter="$(codex_settings_joined ' | ' set)"
-    [ ! -f "$CODEX_CONFIG" ] || source="$CODEX_CONFIG"
-    edited="$(mktemp)" || return 1
+    source="$(mktemp)" || return 1
+    if ! edited="$(mktemp)" || ! cat > "$source"; then
+        rm -f "$source"
+        return 1
+    fi
     if ! yq -p toml -o toml "$filter" "$source" > "$edited" ||
         ! yq -p toml -o json '.' "$edited" > /dev/null; then
         echo "  Couldn't edit $CODEX_CONFIG with yq; is it valid TOML? Leaving it unchanged." >&2
-        rm -f "$edited"
-        return 1
-    fi
-    if [ "$(yq -p toml -o json -I=0 "$filter | sort_keys(..)" "$source")" != \
+    elif [ "$(yq -p toml -o json -I=0 "$filter | sort_keys(..)" "$source")" != \
         "$(yq -p toml -o json -I=0 'sort_keys(..)' "$edited")" ]; then
         echo "  yq would change other values in $CODEX_CONFIG while editing it; leaving it unchanged." >&2
         echo "  Write top-level dotted keys such as a.b = 1 as [a] tables, and top-level arrays of" >&2
         echo "  inline tables such as a = [{...}] as [[a]] tables, then re-run." >&2
-        rm -f "$edited"
-        return 1
-    fi
-    if ! codex_comments_kept "$edited" "$source"; then
+    elif ! codex_comments_kept "$edited" "$source"; then
         echo "  yq would drop comments from $CODEX_CONFIG while editing it; leaving it unchanged." >&2
-        rm -f "$edited"
-        return 1
+    else
+        cat "$edited" && status=0
     fi
-    echo "$edited"
+    rm -f "$source" "$edited"
+    return "$status"
 }
 
 codex_config_matches() {
@@ -202,9 +227,7 @@ codex_config_matches() {
 
 configure_codex() {
     echo "Configuring Codex..."
-    local edited
-    codex_keep_read
-    keep_choose CODEX_KEEP
+    codex_choose_custom_values
     local settings="model, output, sandbox, approval, data-sharing, and status line settings"
     if is_macos; then
         settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
@@ -217,17 +240,10 @@ configure_codex() {
     # Check the edit works before asking to quit ChatGPT, which can rewrite the config as it quits,
     # so the edit is made again after
     if pgrep -ax "$(regex_escape ChatGPT)" > /dev/null 2>&1; then
-        edited="$(codex_config_edited)" || return 1
-        rm -f "$edited"
+        file_contents "$CODEX_CONFIG" | codex_config_edit > /dev/null || return 1
     fi
     ensure_app_quit "ChatGPT" || return 0
-    edited="$(codex_config_edited)" || return 1
-    if ! maybe_backup "$CODEX_CONFIG"; then
-        rm -f "$edited"
-        return 1
-    fi
-    mkdir -p "$(dirname "$CODEX_CONFIG")" || { rm -f "$edited"; return 1; }
-    write_back "$edited" "$CODEX_CONFIG" || return 1
+    merge_file "$CODEX_CONFIG" codex_config_edit || return 1
     echo "  Set the $settings in $CODEX_CONFIG"
 }
 
@@ -326,9 +342,7 @@ setup_codex_sandbox() {
 
     confirm_sudo_changes "${pending[@]}" || return 0
     if "$install"; then
-        # shellcheck disable=SC2119 # needs no options
-        apt_get_update || return 1
-        apt_get install -y bubblewrap || return 1
+        apt_install_fresh bubblewrap || return 1
     fi
     if ! bwrap_works; then
         bwrap_profile_can_fix || return 1
@@ -361,8 +375,7 @@ status() {
             status_item unknown "Settings in ~/.codex/config.toml: $(codex_yq_too_old)"
         else
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
-            codex_keep_read
-            keep_status CODEX_KEEP
+            codex_status_custom_values
         fi
         user_instructions_files status_file
         codex_items

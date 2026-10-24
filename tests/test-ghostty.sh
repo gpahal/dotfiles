@@ -1,13 +1,11 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
-set -euo pipefail
 
 # The ghostty step: config reload, Application Support overrides, and Ubuntu's snap and terminfo.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 terminfo="$SANDBOX/snap-terminfo"
 export DOTFILES_GHOSTTY_TERMINFO="$terminfo"
 load_script ghostty/install.sh
@@ -15,14 +13,10 @@ as_os macos
 config="$HOME/.config/ghostty/config.ghostty"
 
 stub pkill
-assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Reloaded Ghostty config."
-assert_eq "pkill -USR2 -x ghostty" "$(cat "$STUB_LOG")" "commands run for a new config"
-
-: > "$STUB_LOG"
-assert_exit 0 main
+assert_idempotent main
+assert_contains "$FIRST_OUTPUT" "Reloaded Ghostty config."
+assert_eq "pkill -USR2 -x ghostty" "$FIRST_LOG" "commands run for a new config"
 assert_not_contains "$RUN_OUTPUT" "Reload"
-assert_eq "" "$(cat "$STUB_LOG")" "commands run for an unchanged config"
 
 support="$HOME/Library/Application Support/com.mitchellh.ghostty"
 mkdir -p "$support"
@@ -39,18 +33,9 @@ assert_not_contains "$RUN_OUTPUT" "com.mitchellh.ghostty/config.ghostty" "a file
 stub snap 'exit 1'
 as_os ubuntu
 
-# A missing prerequisite fails the step before it changes anything
-missing_snap() {
-    hide snap
-    rm "$config"
-    assert_exit 1 main
-    [ ! -e "$config" ] || fail "the ghostty config was copied without snapd"
-    run status
-    assert_contains "$RUN_OUTPUT" "unknown    Ghostty snap"
-}
-subtest missing_snap
-
-# A failed snap install fails the step after it copies the config
+# A failed snap install fails the step after it copies the config. test-step-prereqs.sh covers
+# snapd missing.
+rm "$config"
 answer yes
 assert_exit 1 main
 assert_file_contains "$STUB_LOG" "sudo snap install ghostty --classic"
@@ -68,7 +53,6 @@ assert_contains "$RUN_OUTPUT" "Install Ghostty from its snap"
 [ ! -e "$HOME/.terminfo" ] || fail "terminfo copied with the snap declined"
 
 stub snap
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Installed the xterm-ghostty terminfo in ~/.terminfo."
 assert_eq "" "$(cmp "$terminfo" "$HOME/.terminfo/x/xterm-ghostty" 2>&1)" "terminfo copied"

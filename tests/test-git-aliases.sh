@@ -1,12 +1,10 @@
 #!/bin/bash
-set -euo pipefail
 
 # The git cobr alias: a branch tracking another remote, and a name a local branch makes ambiguous.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
 # Only the alias, keeping the repo's pager and fsmonitor config out
 git config --file "$HOME/.gitconfig" alias.cobr "$(git config --file "$REPO_DIR/git/gitconfig" alias.cobr)"
 stub fzf 'grep -x -- "$PICK"'

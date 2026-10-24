@@ -1,18 +1,15 @@
 #!/bin/bash
-set -euo pipefail
 
-# The runners, through runner_main, take -h/--help, --status, --quick, --backup, and --no-backup
+# The runners, through runner_main, take -h/--help, --status, --for-alerts, --backup, and --no-backup
 # anywhere among the step names, and fail with a usage line on an unknown flag or step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-
 setup_sh="$REPO_DIR/setup.sh"
 
 first=""
-for args in "vim --status" "--backup --status vim --quick"; do
+for args in "vim --status" "--backup --status vim --for-alerts"; do
     # shellcheck disable=SC2086 # split into arguments
     assert_exit 3 "$BASH" "$setup_sh" $args
     assert_contains "$RUN_OUTPUT" "=== dotfiles status ===" "setup.sh $args"
@@ -26,7 +23,7 @@ done
 assert_exit 0 "$BASH" "$setup_sh" vim --help
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-header="$(load_script lib/common.sh && step_header_line "$REPO_DIR/vim/install.sh")"
+header="$(load_script lib/common.sh && load_script lib/runner.sh && step_header_line "$REPO_DIR/vim/install.sh")"
 [ -n "$header" ] || fail "vim/install.sh has no header line"
 assert_contains "$RUN_OUTPUT" "  vim             $header"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"
@@ -44,11 +41,11 @@ for name in "git lazygit" "git/" "../setup"; do
     assert_not_contains "$RUN_OUTPUT" "git config" "setup.sh --status '$name'"
 done
 
-assert_exit 2 "$BASH" "$setup_sh" --quick --backup vim
-assert_contains "$RUN_OUTPUT" "--quick only works with --status"
+assert_exit 2 "$BASH" "$setup_sh" --for-alerts --backup vim
+assert_contains "$RUN_OUTPUT" "--for-alerts only works with --status"
 assert_contains "$RUN_OUTPUT" "Usage: bash setup.sh"
 assert_not_contains "$RUN_OUTPUT" "==="
-[ ! -e "$HOME/.vimrc" ] || fail "--quick without --status installed ~/.vimrc"
+[ ! -e "$HOME/.vimrc" ] || fail "--for-alerts without --status installed ~/.vimrc"
 
 # A step given a word, as `install.sh status` for --status, fails rather than applying
 export HOME="$SANDBOX/home-help"
@@ -59,8 +56,10 @@ assert_eq "" "$(find "$HOME" -mindepth 1)" "files git/install.sh status wrote"
 # The runners use their own bash, not the first on PATH, such as Homebrew's
 stub bash 'exit 99'
 assert_exit 0 "$BASH" "$setup_sh" vim
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 3 "$BASH" "$setup_sh" --status zed
-assert_file_not_contains "$STUB_LOG" "bash "
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_file_not_contains "$SANDBOX/both.log" "bash "
 rm -f "$STUB_DIR/bash"
 
 # cd prints the path when CDPATH matches, which would double a sourced path

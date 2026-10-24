@@ -1,16 +1,14 @@
 #!/bin/bash
 # The step's functions call the replaced ones
 # shellcheck disable=SC2329
-set -euo pipefail
 
-# ai_tools/manual-steps.sh: which apps' notifications still need allowing, read from macOS's
+# ai_tools/manual-steps/install.sh: which apps' notifications still need allowing, read from macOS's
 # notification settings, and opening those settings only on a yes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-setup_sandbox
-load_script ai_tools/manual-steps.sh
+load_script ai_tools/manual-steps/install.sh
 
 # plutil prints $SANDBOX/ncprefs; with no file it fails, as without Full Disk Access
 NCPREFS="$SANDBOX/ncprefs"
@@ -55,8 +53,10 @@ apps com.mitchellh.ghostty $ok com.anthropic.claudefordesktop $((ALLOWED | TEMPO
 # DOTFILES_ASSUME_YES counts only on a test machine
 stub systemd-detect-virt
 DOTFILES_ASSUME_YES=1 assert_exit 0 main
+cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main
-assert_eq "" "$(grep -v -e '^plutil' -e '^systemd-detect-virt' "$STUB_LOG" || true)" "commands run without a yes"
+cat "$STUB_LOG" >> "$SANDBOX/both.log"
+assert_eq "" "$(grep -v -e '^plutil' -e '^systemd-detect-virt' "$SANDBOX/both.log" || true)" "commands run without a yes"
 
 answer yes
 run open_manual_steps <<< $'\n\n'
@@ -66,7 +66,6 @@ open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com
     "$(grep '^open' "$STUB_LOG")" "settings opened"
 
 rm "$NCPREFS"
-: > "$STUB_LOG"
 run open_manual_steps < /dev/null
 assert_eq 0 "$RUN_STATUS" "exit status when the notification settings can't be read"
 assert_contains "$RUN_OUTPUT" "Couldn't read the notification settings"
@@ -74,7 +73,6 @@ assert_not_contains "$RUN_OUTPUT" "notification settings now?"
 assert_eq "" "$(grep '^open' "$STUB_LOG" || true)" "settings opened when they can't be read"
 
 as_os ubuntu
-: > "$STUB_LOG"
 assert_exit 0 main
 assert_not_contains "$RUN_OUTPUT" "Notifications for"
 assert_eq "" "$(cat "$STUB_LOG")" "commands run on Ubuntu"

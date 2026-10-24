@@ -1,13 +1,24 @@
-# Test helpers. A test sources this, calls setup_sandbox, runs steps or load_script, checks with
-# assert_*, and ends with test_done. Stub every SENTINELS command it reaches; hide makes one missing.
-# Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer yes|no.
-# tests/run.sh covers skips, timeouts, and the serial and os marks.
-# Reuse before writing your own: stub_sudo_exec, stub_sudo_cacheable, stub_uname, stub_dpkg_arch,
-# stub_apt_package, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch, stub_gsettings,
-# stub_gnome_session, fake_step, user_shortcut, git_commit, in_terminal, jq_edit,
-# assert_sudo_noninteractive, snapshot and assert_unchanged, as_unwritable, and wait_for.
-# tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox.
+# Test helpers. Sourcing this runs set -euo pipefail and setup_sandbox, which makes $SANDBOX
+# (exported, for stubs to read) and points HOME and the stubs into it; source any fixture after it.
+# A test then runs steps or load_script, checks with assert_*, and ends with test_done. Stub every
+# SENTINELS command it reaches; hide makes one missing. A test with its own EXIT trap ends it with
+# _sandbox_exit, as setup_sandbox's comment shows.
+# run and assert_exit empty $STUB_LOG first, so the log holds one run's commands; to check two
+# runs', save the log between them.
+# Change a loaded function only with replace_fn, wrap_fn, as_os macos|ubuntu, or answer
+# yes|no|stdin.
+# tests/run.sh covers skips, timeouts, the os mark, timing, and sharding.
+# Reuse before writing your own: stub_at, stub_sudo_exec, stub_sudo_cacheable, stub_uname,
+# stub_dpkg_arch, stub_apt_packages, stub_apt_config, stub_gpg_fpr, stub_http_status, stub_fetch,
+# stub_gsettings, stub_gnome_session, stub_systemctl_units, sandbox_paths, fake_step,
+# fake_github_remotes, pam_sandbox, user_shortcut, git_commit, in_terminal, jq_edit, diag,
+# assert_sudo_noninteractive, assert_read_only, assert_idempotent, snapshot and assert_unchanged,
+# as_unwritable, wait_for, and process_exited. A test sets df's output in $SANDBOX/df-table.
+# tests/ubuntu-sandbox.sh points the ubuntu step's system paths into the sandbox, and
+# tests/ubuntu-step-fixture.sh, which sources it, stubs an Ubuntu machine for that step.
 # shellcheck shell=bash
+
+set -euo pipefail
 
 TESTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$TESTS_DIR/.." && pwd)"
@@ -18,12 +29,15 @@ TEST_DONE=false
 # shellcheck source=sentinels.sh
 source "$TESTS_DIR/sentinels.sh"
 
-# Sets the EXIT trap. A test that sets its own ends it with _sandbox_exit, keeping $?:
+# Sourcing this file runs it. It sets the EXIT trap; a test that sets its own ends it with
+# _sandbox_exit, keeping $?:
 # trap 'status=$?; set +e; <cleanup>; (exit "$status"); _sandbox_exit' EXIT
 setup_sandbox() {
     local var
     # /tmp keeps tmux's socket path under macOS's limit; -P makes printed paths match $HOME
     SANDBOX="$(cd -P "$(mktemp -d "${TEST_SANDBOX_PARENT:-/tmp}/dotfiles-test.XXXXXX")" && pwd)"
+    # Stubs read it at run time
+    export SANDBOX
     trap _sandbox_exit EXIT
     # GIT_* from a hook or worktree would point git at the real repo or add config
     for var in $(compgen -e | grep -E '^(XDG_|DOTFILES_|GIT_)' || true); do
@@ -58,8 +72,18 @@ setup_sandbox() {
     stub sudo 'exit 1'
     export DOTFILES_PAM_DIR="$SANDBOX/pam.d" DOTFILES_PAM_MODULES_DIR="$SANDBOX/pam-modules" \
         DOTFILES_PAM_LOCAL_MODULES_DIR="$SANDBOX/pam-local-modules"
-    # Real free space would sway status reports
+    # Real free space would sway status reports. A test sets its own in $SANDBOX/df-table, as df
+    # prints them: df prints the first line that names the path, else the first line, and fails
+    # for a path listed in $SANDBOX/df-fails.
     stub df 'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+if [ -e "$SANDBOX/df-table" ]; then
+    path="${!#}"
+    ! grep -qxF -- "$path" "$SANDBOX/df-fails" 2> /dev/null || { echo "df: $path: No such file or directory" >&2; exit 1; }
+    line="$(grep -F " $path" "$SANDBOX/df-table" | head -n 1)"
+    [ -n "$line" ] || line="$(head -n 1 "$SANDBOX/df-table")"
+    echo "$line"
+    exit 0
+fi
 for path in "$@"; do case "$path" in -*) ;; *) echo "/dev/test 1048576000 104857600 943718400 10% $path" ;; esac; done'
     exec < /dev/null
     # Else a relative path would reach the repo's tests/
@@ -126,13 +150,20 @@ _stubs_first() {
 
 # The stub logs "<cmd> <args>" to $STUB_LOG, then runs the body with the args as "$@"
 stub() {
-    local name="$1" body="${2:-}"
-    printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "$body" > "$STUB_DIR/$name"
-    chmod +x "$STUB_DIR/$name"
+    stub_at "$STUB_DIR/$1" "${2:-}"
 }
 
-# Stub sudo to run its command as you. It refuses paths outside the sandbox and /dev, and repo
-# files the command would change. The optional body runs first and may rewrite "$@" with set --.
+# stub_at <path> [body]: a stub at any path, such as an app's own copy of a command, logged as the
+# name it runs by
+stub_at() {
+    [ -d "${1%/*}" ] || mkdir -p "${1%/*}"
+    printf '%s\n' '#!/bin/bash' 'printf '"'%s\\n'"' "${0##*/}${*:+ $*}" >> "$STUB_LOG"' "${2:-}" > "$1"
+    chmod +x "$1"
+}
+
+# Stub sudo to run its command as you, dropping install's -o, and its -g for a group you aren't in,
+# which need root. It refuses paths outside the sandbox and /dev, and repo files the command would
+# change. The optional body runs first and may rewrite "$@" with set --.
 stub_sudo_exec() {
     stub sudo "${1:-}
 $(printf 'sandbox=%q repo=%q' "$SANDBOX" "$REPO_DIR")"'
@@ -155,6 +186,21 @@ case "$cmd" in
     *) reads=all-but-last ;;
 esac
 case " $* " in *" -d "*) [ "$cmd" != install ] || reads=none ;; esac
+if [ "$cmd" == install ]; then
+    args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o) shift 2 ;;
+            # Without it, a new file takes its directory group, as on macOS
+            -g)
+                ! id -Gn | tr " " "\n" | grep -qxF -- "$2" || args+=("$1" "$2")
+                shift 2
+                ;;
+            *) args+=("$1"); shift ;;
+        esac
+    done
+    set -- "${args[@]}"
+fi
 i=0
 for arg in "$@"; do
     i=$((i + 1))
@@ -181,10 +227,26 @@ exec env "$@"'
 # body runs next, with -n shifted off.
 stub_sudo_cacheable() {
     stub_sudo_exec 'if [ "${1:-}" == -n ]; then
-    [ -e "'"$SANDBOX"'/sudo-cached" ] || exit 1
+    [ -e "$SANDBOX/sudo-cached" ] || exit 1
     shift
 fi
 '"${1:-}"
+}
+
+# PAM dirs for macos/lib/pam.sh, fresh: a sudo that includes sudo_local and macOS's pam_tid.so.2.
+# Sets SUDO_LOCAL, HEADER and TID_LINE, the lines the Touch ID script writes, and makes "root-owned"
+# mean owned by you. Call it after load_script.
+pam_sandbox() {
+    rm -rf "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR" "$DOTFILES_PAM_LOCAL_MODULES_DIR"
+    mkdir -p "$DOTFILES_PAM_DIR" "$DOTFILES_PAM_MODULES_DIR"
+    printf '%s\n' "# sudo: auth account password session" "auth       include        sudo_local" \
+        "auth       required       pam_opendirectory.so" > "$DOTFILES_PAM_DIR/sudo"
+    # OpenPAM finds macOS's .so.2 modules by bare name
+    touch "$DOTFILES_PAM_MODULES_DIR/pam_tid.so.2"
+    # shellcheck disable=SC2034 # tests and macos/lib/pam.sh read them
+    PAM_ROOT_UID="$(id -u)" SUDO_LOCAL="$DOTFILES_PAM_DIR/sudo_local" \
+        HEADER="# sudo_local: local config file which survives system update and is included for sudo" \
+        TID_LINE="auth       sufficient     pam_tid.so"
 }
 
 cache_sudo() {
@@ -326,11 +388,13 @@ as_os() {
     esac
 }
 
+# answer stdin: confirm reads its answer, y or anything else, from stdin
 answer() {
     case "$1" in
         yes) replace_fn confirm 'echo "$1"' ;;
         no) replace_fn confirm 'echo "$1"; return 1' ;;
-        *) fail "answer: '$1' isn't yes or no" ;;
+        stdin) replace_fn confirm 'local reply; echo "$1"; read -r reply; [ "$reply" == y ]' ;;
+        *) fail "answer: '$1' isn't yes, no, or stdin" ;;
     esac
 }
 
@@ -355,9 +419,8 @@ esac'
 
 # A GNOME session keeping its state in dir $1: stub_gsettings, GNOME Shell 50.1, busctl answering
 # for the shell while $SHELL_STATE is set, with an extension in that state (unknown: none) and
-# $SHELL_ERROR, and a systemctl keeping units in [user-]<unit>.enabled and .active files, with
-# graphical-session.target active while $SESSION is set. daemon-reload fails while reload-fails
-# exists, and else makes show report units loaded.
+# $SHELL_ERROR, and stub_systemctl_units on dir $1, with graphical-session.target active while
+# $SESSION is set.
 stub_gnome_session() {
     local state="$1" body
     mkdir -p "$state"
@@ -372,24 +435,91 @@ case "$*" in
 esac
 EOF
     stub busctl "$body"
+    stub_systemctl_units "$state" \
+        '[ "$*" != "--user is-active --quiet graphical-session.target" ] || { [ -n "${SESSION:-}" ]; exit; }'
+}
+
+# stub_systemctl_units <dir> [prefix-body]: a systemctl keeping each unit's state in <dir> as files
+# a test can create or remove: <unit>.enabled, .enabled-runtime, .active, .masked and .failed,
+# named user-<unit>.* for --user units. enable --now leaves a failed unit failed; start and restart
+# clear it. show answers LoadState (not-found while <unit>.not-found exists), NeedDaemonReload
+# (yes while <dir>/reload-needed exists), ActiveState and UnitFileState. daemon-reload fails while
+# <dir>/reload-fails exists, and else clears reload-needed and the not-found marks.
+# show-environment fails while <dir>/no-user-manager exists. The prefix body runs first, with the
+# args as "$@", and may handle a command and exit.
+stub_systemctl_units() {
+    local body
+    mkdir -p "$1"
     IFS= read -r -d '' body << 'EOF' || true
 user=""
-[ "$1" != --user ] || { user=user-; shift; }
-case "$1" in
-    show-environment | try-restart) ;;
-    daemon-reload) [ ! -e "$state/reload-fails" ] && touch "$state/loaded" ;;
-    show) if [ -e "$state/loaded" ]; then echo loaded; else echo not-found; fi ;;
-    is-enabled) [ -e "$state/$user${*: -1}.enabled" ] ;;
-    is-active)
-        case "${*: -1}" in
-            graphical-session.target) [ -n "${SESSION:-}" ] ;;
-            *) [ -e "$state/$user${*: -1}.active" ] ;;
-        esac ;;
-    enable) touch "$state/$user${*: -1}.enabled"; [ "$2" != --now ] || touch "$state/$user${*: -1}.active" ;;
-    start | restart) touch "$state/$user${*: -1}.active" ;;
+[ "${1:-}" != --user ] || { user=user-; shift; }
+cmd="${1:-}"
+shift
+now=false quiet=false value=false units=() props=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --now) now=true ;;
+        -q | --quiet) quiet=true ;;
+        --value) value=true ;;
+        -p | --property) props+=("$2"); shift ;;
+        --property=*) props+=("${1#*=}") ;;
+        -*) ;;
+        *) units+=("$1") ;;
+    esac
+    shift
+done
+say() { "$quiet" || echo "$1"; }
+found=1
+for unit in "${units[@]}"; do
+    f="$dir/$user$unit"
+    case "$cmd" in
+        is-enabled)
+            if [ -e "$f.masked" ]; then say masked
+            elif [ -e "$f.enabled" ]; then say enabled; found=0
+            elif [ -e "$f.enabled-runtime" ]; then say enabled-runtime; found=0
+            else say disabled; fi ;;
+        is-active) if [ -e "$f.active" ]; then say active; found=0; else say inactive; fi ;;
+        is-failed) if [ -e "$f.failed" ]; then say failed; found=0; else say inactive; fi ;;
+        enable)
+            [ ! -e "$f.masked" ] || { echo "Failed to enable unit: Unit $unit is masked." >&2; exit 1; }
+            touch "$f.enabled"
+            ! "$now" || [ -e "$f.failed" ] || touch "$f.active" ;;
+        disable) rm -f "$f.enabled"; ! "$now" || rm -f "$f.active" ;;
+        start | restart | reload-or-restart)
+            [ ! -e "$f.masked" ] || { echo "Failed to start $unit: Unit $unit is masked." >&2; exit 1; }
+            rm -f "$f.failed"
+            touch "$f.active" ;;
+        try-restart | try-reload-or-restart) ;;
+        stop) rm -f "$f.active" ;;
+        mask) rm -f "$f.enabled"; touch "$f.masked"; ! "$now" || rm -f "$f.active" ;;
+        unmask) rm -f "$f.masked" ;;
+        reset-failed) rm -f "$f.failed" ;;
+        show)
+            for prop in "${props[@]}"; do
+                case "$prop" in
+                    LoadState)
+                        if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.not-found" ]; then v=not-found; else v=loaded; fi ;;
+                    NeedDaemonReload) if [ -e "$dir/reload-needed" ]; then v=yes; else v=no; fi ;;
+                    ActiveState) if [ -e "$f.active" ]; then v=active; else v=inactive; fi ;;
+                    UnitFileState)
+                        if [ -e "$f.masked" ]; then v=masked; elif [ -e "$f.enabled" ]; then v=enabled; else v=disabled; fi ;;
+                    *) v="" ;;
+                esac
+                if "$value"; then echo "$v"; else echo "$prop=$v"; fi
+            done ;;
+        *) echo "stub_systemctl_units: no $cmd" >&2; exit 1 ;;
+    esac
+done
+case "$cmd" in
+    is-enabled | is-active | is-failed) exit "$found" ;;
+    show-environment) [ ! -e "$dir/no-user-manager" ] ;;
+    daemon-reload)
+        [ ! -e "$dir/reload-fails" ] || exit 1
+        rm -f "${dir:?}/reload-needed" "${dir:?}"/*.not-found ;;
 esac
 EOF
-    stub systemctl "$(printf 'state=%q' "$state")
+    stub systemctl "$(printf 'dir=%q' "$1")
+${2:-}
 $body"
 }
 
@@ -399,6 +529,11 @@ user_shortcut() {
     gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$dir/custom0/']"
     gsettings set "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$dir/custom0/" \
         binding "'<Super>Return'"
+}
+
+# fake_github_remotes <dir>: git fetches https://github.com/<owner>/<repo> from <dir>/<owner>/<repo>
+fake_github_remotes() {
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$1/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
 }
 
 git_commit() {
@@ -446,7 +581,7 @@ stub_uname() {
 
 # Usage: fake_step <name> [body]: a step in $SANDBOX/steps that logs "<name> <args>" to
 # $SANDBOX/ran, then runs the body. step_script then finds only fake steps; set STEPS for
-# run_steps. Call it after load_script lib/common.sh.
+# run_steps. Call it after load_script lib/common.sh and lib/runner.sh.
 fake_step() {
     mkdir -p "$SANDBOX/steps"
     printf '%s\n' '#!/bin/bash' "echo \"$1\${*:+ \$*}\" >> \"$SANDBOX/ran\"" "${2:-}" > "$SANDBOX/steps/$1.sh"
@@ -459,13 +594,53 @@ stub_dpkg_arch() {
     stub dpkg '[ "$1" != --print-architecture ] || echo '"${1:-amd64}"
 }
 
-# dpkg-query reports package $1 installed once apt-get's last argument named it. The marker file
-# $2, by default $SANDBOX/installed-$1, records that.
-stub_apt_package() {
-    local marker
-    marker="$(printf '%q' "${2:-$SANDBOX/installed-$1}")"
-    stub dpkg-query '[ "${*: -1}" == '"$1"' ] && [ -e '"$marker"' ] && printf "install ok installed"'
-    stub apt-get '[ "${*: -1}" != '"$1"' ] || touch '"$marker"
+# stub_apt_packages [--apt-get <body>] [package...]: dpkg-query reports installed the packages
+# listed in $SANDBOX/installed, which starts with these; a * line counts every package not listed
+# as !<package>. apt-get install adds its packages, purge and remove take them out, and -s prints
+# $SANDBOX/apt-upgrade. The body runs first in apt-get, with its args as "$@", and may exit.
+# shellcheck disable=SC2120 # with no packages, none are installed
+stub_apt_packages() {
+    local body="" list="$SANDBOX/installed"
+    if [ "${1:-}" == --apt-get ]; then
+        body="$2"
+        shift 2
+    fi
+    : > "$list"
+    [ $# -eq 0 ] || printf '%s\n' "$@" > "$list"
+    stub dpkg-query 'list="$SANDBOX/installed" status=0
+for p in "$@"; do
+    case "$p" in -*) continue ;; esac
+    if grep -qxF "$p" "$list" || { grep -qxF "*" "$list" && ! grep -qxF "!$p" "$list"; }; then
+        printf "install ok installed"
+    else
+        status=1
+    fi
+done
+exit "$status"'
+    stub apt-get "$body"'
+list="$SANDBOX/installed" cmd="" simulate=false packages=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o | -c | -t) shift ;;
+        -s | --simulate) simulate=true ;;
+        -*) ;;
+        *) if [ -z "$cmd" ]; then cmd="$1"; else packages+=("$1"); fi ;;
+    esac
+    shift
+done
+if "$simulate"; then
+    cat "$SANDBOX/apt-upgrade" 2> /dev/null || true
+    exit 0
+fi
+for p in ${packages[@]+"${packages[@]}"}; do
+    others="$(grep -vxF -e "$p" -e "!$p" "$list" || true)"
+    case "$cmd" in
+        install) { [ -z "$others" ] || echo "$others"; echo "$p"; } > "$list" ;;
+        purge | remove)
+            { [ -z "$others" ] || echo "$others"; } > "$list"
+            ! grep -qxF "*" "$list" || echo "!$p" >> "$list" ;;
+    esac
+done'
 }
 
 # A gpg listing a key with fingerprint $1, as --show-keys --with-colons does, and with $2 a subkey
@@ -481,15 +656,42 @@ printf 'sub:-\\nfpr:::::::::%s:\\n' $2"
 # to $1, by default 200
 stub_http_status() {
     echo "${1:-200}" > "$SANDBOX/http-status"
-    stub curl 'cat "'"$SANDBOX"'/http-status"'
+    stub curl 'cat "$SANDBOX/http-status"'
 }
 
-# Replace fetch: it logs "fetch <url>", fails while $SANDBOX/fetch-fails exists, and else writes
-# $1, by default "key", to the file
+# stub_fetch [content]: replaces fetch, which logs "fetch <url>", fails while $SANDBOX/fetch-fails
+# exists, and else writes the content, by default "key", to the file.
+# stub_fetch <url prefix>=<path>...: a curl, which a script run as its own process also gets,
+# serving a URL from the first prefix it starts with: the path plus the rest of the URL, to the
+# file -o names, or else to stdout. A URL no prefix maps to an existing file fails as a 404 does,
+# and every URL as an unreachable host does while $SANDBOX/fetch-fails exists.
 stub_fetch() {
-    replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
+    local map
+    case "${1:-}" in
+        *=*) ;;
+        *)
+            replace_fn fetch 'echo "fetch $1" >> "$STUB_LOG"
 [ ! -e "$SANDBOX/fetch-fails" ] || return 1
 echo '"$(printf '%q' "${1:-key}")"' > "$2"'
+            return 0
+            ;;
+    esac
+    : > "$SANDBOX/fetch-map"
+    for map; do
+        printf '%s\t%s\n' "${map%=*}" "${map##*=}" >> "$SANDBOX/fetch-map"
+    done
+    stub curl 'out="" file="" url="${!#}"
+while [ $# -gt 0 ]; do
+    [ "$1" != -o ] || { out="$2"; shift; }
+    shift
+done
+[ ! -e "$SANDBOX/fetch-fails" ] || { echo "curl: (6) Could not resolve host" >&2; exit 6; }
+tab="$(printf "\t")"
+while IFS="$tab" read -r prefix path; do
+    case "$url" in "$prefix"*) file="$path${url#"$prefix"}"; break ;; esac
+done < "$SANDBOX/fetch-map"
+[ -n "$file" ] && [ -f "$file" ] || { echo "curl: (22) The requested URL returned error: 404" >&2; exit 22; }
+if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi'
 }
 
 # Usage: jq_edit <file> <jq args>...: edits the file in place, as you would by hand
@@ -511,7 +713,7 @@ load_script() {
     done
     # lib/common.sh defines its default main only when none exists
     case "$script" in
-        "$REPO_DIR/lib/common.sh" | "$REPO_DIR/lib/system.sh") ;;
+        "$REPO_DIR"/lib/*.sh) ;;
         *) unset -f main ;;
     esac
     # Else an earlier step's values would gate this one
@@ -521,9 +723,58 @@ load_script() {
     _stubs_first
 }
 
-# Run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always succeeds
+# Usage: sandbox_paths [NAME=value]... <script>...: sets each NAME=value, then points every other
+# upper-case constant the scripts set whose value, or an element of it, starts with /etc, /var,
+# /usr, /run or /dev at the same path under $SANDBOX, as /etc/x becomes $SANDBOX/etc/x. Scripts are
+# repo-relative and may be globs. Call it after each load_script, which resets the constants. It
+# fails the test on any it couldn't move, such as a list in one string; set those.
+sandbox_paths() {
+    local arg name value values moved files=() set=" " left=""
+    for arg; do
+        case "$arg" in
+            [A-Z]*=*)
+                printf -v "${arg%%=*}" '%s' "${arg#*=}"
+                set="$set${arg%%=*} "
+                ;;
+            *)
+                # shellcheck disable=SC2206 # a glob
+                files+=("$REPO_DIR"/$arg)
+                ;;
+        esac
+    done
+    while IFS= read -r name; do
+        case "$set" in *" $name "*) continue ;; esac
+        eval "values=(\${${name}[@]+\"\${${name}[@]}\"})"
+        moved=()
+        for value in ${values[@]+"${values[@]}"}; do
+            case "$value" in
+                # A checkout under /var, as mktemp's dirs are on macOS
+                "$REPO_DIR"/*) ;;
+                /etc | /etc/* | /var | /var/* | /usr | /usr/* | /run | /run/* | /dev | /dev/*)
+                    case "$value" in
+                        # A list in one string
+                        *:* | *" "*) left="$left $name=$value" ;;
+                        *) value="$SANDBOX$value" ;;
+                    esac
+                    ;;
+            esac
+            moved+=("$value")
+        done
+        [ ${#moved[@]} -gt 0 ] || continue
+        if [[ "$(declare -p "$name")" == "declare -a"* ]]; then
+            eval "$name=(\"\${moved[@]}\")"
+        else
+            printf -v "$name" '%s' "${moved[0]}"
+        fi
+    done < <(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "${files[@]}" | sort -u)
+    [ -z "$left" ] || fail "sandbox_paths left these on the real machine:$left"
+}
+
+# Empty $STUB_LOG, then run under set -e in a subshell, setting RUN_OUTPUT and RUN_STATUS; always
+# succeeds. To check the log of two runs, save it before the second.
 run() {
     local errexit=false
+    : > "$STUB_LOG"
     case "$-" in *e*) errexit=true ;; esac
     set +e
     RUN_OUTPUT="$(
@@ -592,6 +843,12 @@ assert_file_not_contains() {
     return 0
 }
 
+# Usage: diag <check> [args]: one status check, such as status_smart, exiting as status does
+diag() {
+    "$@"
+    status_result
+}
+
 # Fails if $STUB_LOG has a sudo without -n, which could prompt. $1 says what ran it.
 assert_sudo_noninteractive() {
     local prompting
@@ -600,6 +857,134 @@ assert_sudo_noninteractive() {
     fail "${1:-status} ran sudo without -n:"
     _show "$prompting"
     return 0
+}
+
+# Commands that change the machine, as $STUB_LOG logs them, with or without sudo; apt-get -s only
+# simulates. A sudo running anything but SUDO_READS changes it too.
+CHANGES_MACHINE="systemctl ([^ ]+ )*(start|stop|restart|try-restart|reload|reload-or-restart|try-reload-or-restart|enable|disable|mask|unmask|daemon-reload|reset-failed|kill)
+fwupdmgr (refresh|update|install|upgrade)
+smartctl .* (-t|--test)
+docker ([^ ]+ )*(prune|stop|start|restart|rm|kill|run)
+apt-get ([^ ]+ )*(install|purge|remove|autoremove|update|upgrade|full-upgrade|dist-upgrade)
+apt-mark (hold|unhold)
+snap (install|remove|refresh)
+brew ([^ ]+ )*(install|reinstall|upgrade|uninstall|tap|untap)
+mas (install|get|upgrade|uninstall)
+softwareupdate .*(-i|--install)
+xcode-select --install
+mise (install|use|uninstall|upgrade|prune)
+uv tool (install|upgrade|uninstall)
+rustup (install|update|default|toolchain install|component add|target add|self update)
+pnpm (install|i|add|remove|update)
+npm (install|i|uninstall|update)
+pkill
+killall
+launchctl (bootstrap|bootout|kickstart|load|unload|enable|disable|kill)
+defaults (write|delete|import)
+osascript .*quit
+open
+xdg-open
+gsettings (set|reset)
+dconf (write|reset|load)
+gnome-extensions (enable|disable|install|uninstall)
+chsh
+usermod
+useradd
+userdel
+groupadd
+gpasswd
+passwd
+chpasswd
+loginctl (enable-linger|disable-linger|terminate-[a-z]+|kill-[a-z]+)
+locale-gen
+sysctl (--system|-w|-p|--load)
+ufw (allow|deny|reject|limit|prepend|insert|delete|default|enable|disable|reload|reset|route|--force)
+nmcli (connection|con|c) (modify|mod|up|down|add|delete|reload)
+tailscale (up|down|set|login|logout)"
+SUDO_READS="true|cat|test|sh -c|bash -c|sshd -T|ufw status|docker (system df|ps)|smartctl (-H|--scan)"
+
+# Usage: machine_changes <log>: prints the log's lines for commands that change the machine
+machine_changes() {
+    local changes
+    changes="^(sudo (-n )?)?([^ ]*/)?($(tr '\n' '|' <<< "$CHANGES_MACHINE" | sed 's/|$//'))( |$)"
+    {
+        grep -E "$changes" "$1" | grep -vE '^(sudo (-n )?)?([^ ]*/)?apt-get( [^ ]+)* (-s|--simulate)( |$)' || true
+        grep -E '^sudo ' "$1" | grep -vE "^sudo (-n )?([^ ]*/)?($SUDO_READS)( |$)" || true
+    } | awk '!seen[$0]++'
+}
+
+# Usage: assert_read_only <status> <cmd>...: assert_exit, and fails if the command ran a sudo that
+# could prompt, or changed the machine
+assert_read_only() {
+    local changes
+    assert_exit "$@"
+    shift
+    assert_sudo_noninteractive "'$*'"
+    changes="$(machine_changes "$STUB_LOG")"
+    [ -z "$changes" ] && return 0
+    fail "'$*' changed the machine:"
+    _show "$changes"
+    return 0
+}
+
+# Usage: assert_idempotent [--ignore <path>]... <cmd>...: runs the command twice, each run
+# succeeding, and fails if the second changed the sandbox (a path, mode, symlink target, or file's
+# content, but not a time) or the machine. --ignore leaves out a file the command rewrites on every
+# run, such as a log. Leaves the second run's $RUN_OUTPUT and $STUB_LOG, and the first's output and
+# log in $FIRST_OUTPUT and $FIRST_LOG.
+assert_idempotent() {
+    local ignores=() before after changes
+    while [ "${1:-}" == --ignore ]; do
+        case "$2" in
+            "$SANDBOX"/*) ignores+=("./${2#"$SANDBOX"/}") ;;
+            *)
+                fail "assert_idempotent: $2 isn't in the sandbox"
+                return 0
+                ;;
+        esac
+        shift 2
+    done
+    run "$@"
+    # shellcheck disable=SC2034 # tests read them
+    FIRST_OUTPUT="$RUN_OUTPUT" FIRST_LOG="$(cat "$STUB_LOG")"
+    if [ "$RUN_STATUS" != 0 ]; then
+        fail "'$*' exited $RUN_STATUS on its first run. Its output:"
+        _show "$RUN_OUTPUT"
+        return 0
+    fi
+    before="$(_sandbox_tree ${ignores[@]+"${ignores[@]}"})"
+    run "$@"
+    after="$(_sandbox_tree ${ignores[@]+"${ignores[@]}"})"
+    if [ "$RUN_STATUS" != 0 ]; then
+        fail "'$*' exited $RUN_STATUS on its second run. Its output:"
+        _show "$RUN_OUTPUT"
+    fi
+    if [ "$before" != "$after" ]; then
+        fail "'$*' changed the sandbox on its second run (< before, > after):"
+        _show "$(diff <(echo "$before") <(echo "$after") | grep '^[<>]')"
+    fi
+    changes="$(machine_changes "$STUB_LOG")"
+    if [ -n "$changes" ]; then
+        fail "'$*' changed the machine on its second run:"
+        _show "$changes"
+    fi
+    return 0
+}
+
+# Each path in the sandbox but $STUB_LOG and the given ./<path>s, sorted: its mode and path, with a
+# symlink's target, and each file's checksum, or why it can't be read
+_sandbox_tree() {
+    local prune=(-path "./${STUB_LOG#"$SANDBOX"/}") path
+    for path; do
+        prune+=(-o -path "$path")
+    done
+    (
+        cd "$SANDBOX" || exit 1
+        # ls -ln's fields up to the path: mode, links, user, group, size, and three for the time
+        LC_ALL=C find . \( "${prune[@]}" \) -prune -o -exec /bin/ls -ldn {} + 2>&1 |
+            awk '{ mode = $1; sub(/^[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +/, ""); print mode, $0 }'
+        find . \( "${prune[@]}" \) -prune -o -type f -exec cksum {} + 2>&1
+    ) | LC_ALL=C sort || true
 }
 
 # snapshot <file> saves a copy for assert_unchanged <file> <when>, which fails if it now differs
@@ -644,6 +1029,14 @@ wait_for() {
     done
 }
 
+# Succeeds once the process has exited. kill -0 still finds a zombie, so check ps.
+process_exited() {
+    case "$(ps -o stat= -p "$1" 2> /dev/null)" in
+        '' | Z*) return 0 ;;
+    esac
+    return 1
+}
+
 # Leaves $RUN_OUTPUT for further checks
 assert_exit() {
     local expected="$1"
@@ -654,3 +1047,5 @@ assert_exit() {
     _show "$RUN_OUTPUT"
     return 0
 }
+
+setup_sandbox

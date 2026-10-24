@@ -8,6 +8,8 @@ set -euo pipefail
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/system.sh
 source "$DOTFILES_DIR/lib/system.sh"
+# shellcheck source=../lib/systemd.sh
+source "$DOTFILES_DIR/lib/systemd.sh"
 
 STEP_OS=ubuntu
 # shellcheck disable=SC2034 # run_steps reads it
@@ -40,13 +42,12 @@ DOCKER_DAEMON_SETTINGS='
       )) else . end'
 
 docker_installed() {
-    [ "$(dpkg-query -W -f='${Status}\n' "${DOCKER_PACKAGES[@]}" 2>/dev/null | grep -c "install ok installed")" \
-        -eq "${#DOCKER_PACKAGES[@]}" ]
+    apt_installed "${DOCKER_PACKAGES[@]}"
 }
 
-# Cached through one status run, which declares DOCKER_ACTIVE_CACHE_STATUS
+# Cached through a memo scope, such as one status run
 docker_active() {
-    memo DOCKER_ACTIVE_CACHE systemctl is-active --quiet docker.service &>/dev/null
+    memo DOCKER_ACTIVE unit_active docker.service
 }
 
 docker_auto_updates_configured() {
@@ -77,46 +78,42 @@ install_docker() {
 
 # Reads the group database, not this process's groups, so it's true before a new login
 in_docker_group() {
-    case " $(id -nG "$(id -un)") " in *" docker "*) ;; *) return 1 ;; esac
+    case " $(id -nG "$CURRENT_USER") " in *" docker "*) ;; *) return 1 ;; esac
 }
 
 starts_at_boot() {
-    systemctl is-enabled --quiet docker.service 2>/dev/null
+    unit_enabled docker.service
 }
 
 socket_ready() {
-    systemctl is-enabled --quiet docker.socket 2>/dev/null &&
-        systemctl is-active --quiet docker.socket 2>/dev/null
+    unit_on docker.socket
 }
 
-enable_docker_service() {
-    sudo systemctl enable --now docker.service
-}
-
-enable_docker_socket() {
-    sudo systemctl enable --now docker.socket
-}
-
-write_docker_auto_updates() {
-    write_root_file "$DOCKER_UNATTENDED_CONF" "$DOCKER_UNATTENDED_CONTENT"
-}
-
-# Order matters: the daemon config goes before enabling the service, so it isn't restarted for it.
+# docker_items [repair]: repair adds apply's rewrite of Docker's apt source. Order matters: the
+# daemon config goes before enabling the service, so it isn't restarted for it.
 docker_items() {
     local daemon_pending="Rotate container logs, keep containers up across daemon restarts, publish ports on 127.0.0.1 unless given an address, and give new networks /24s outside 192.168.0.0/16: set $DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"
     daemon_config_unreadable && daemon_pending="Check $DOCKER_DAEMON_CONFIG and set $DOCKER_DAEMON_KEYS in it"
     items_reset
     item --sudo "Docker Engine from Docker's apt repo" "Install ${DOCKER_PACKAGES[*]} from Docker's apt repo" \
         docker_installed install_docker
-    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready enable_docker_socket
+    [ "${1:-}" != repair ] ||
+        item --sudo "" "Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES" \
+            docker_source_ok add_docker_repo
+    item --sudo "docker.socket enabled and listening" "Enable docker.socket" socket_ready "enable_units_now docker.socket"
     item --sudo "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "$daemon_pending$(daemon_restart_note)" \
-        daemon_configured configure_daemon
+        daemon_configured configure_installed_daemon
     item --sudo "Docker starts at boot (docker.service enabled)" \
         "Start Docker at boot, so containers with a restart policy come back: enable docker.service" \
-        starts_at_boot enable_docker_service
+        starts_at_boot "enable_units_now docker.service"
     item --sudo "Docker origins allowed in unattended-upgrades ($DOCKER_UNATTENDED_CONF)" \
         "Let unattended-upgrades install Docker updates: write $DOCKER_UNATTENDED_CONF" \
-        docker_auto_updates_configured write_docker_auto_updates
+        docker_auto_updates_configured "write_root_content DOCKER_UNATTENDED_CONF DOCKER_UNATTENDED_CONTENT"
+}
+
+# After a failed install there's no dockerd to check the config with
+configure_installed_daemon() {
+    docker_installed && configure_daemon
 }
 
 daemon_config_unreadable() {
@@ -143,7 +140,7 @@ docker_status_run() {
     DOCKER_STATUS=0
     if ! in_docker_group; then
         if ! sudo_ready; then
-            status_item unverified "$label: $(id -un) isn't in the docker group; run sudo -v, then status, to check it"
+            status_needs_root "$label:" "$CURRENT_USER isn't in the docker group"
             return 1
         fi
         docker=(sudo -n docker)
@@ -153,7 +150,7 @@ docker_status_run() {
     case "$DOCKER_OUT" in
         # Joined the group after this session started
         *"permission denied"*)
-            status_item unverified "$label: $(id -un) can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
+            status_item unverified "$label: $CURRENT_USER can't reach the daemon's socket yet; log out and back in, so the docker group applies, then check it"
             ;;
         *"Cannot connect to the Docker daemon"* | *"Is the docker daemon running"*)
             status_item info "$label: the daemon isn't running"
@@ -166,8 +163,8 @@ docker_status_run() {
 # Only asks a running daemon: docker.socket would start a stopped one.
 status_docker_usage() {
     local label="Docker disk usage" out status=0 type count size reclaimable summary="" DOCKER_OUT DOCKER_STATUS
-    if status_quick; then
-        status_item unverified "$label: skipped by --quick"
+    if status_for_alerts; then
+        status_item unverified "$label: skipped by --for-alerts"
         return 0
     fi
     if ! docker_active; then
@@ -240,11 +237,9 @@ status_docker_ports() {
 
 # Never asks for sudo; uses sudo -n only when credentials are cached.
 status() {
-    # shellcheck disable=SC2034 # memo reads the caches
-    local installed=false SUDO_CACHED_CACHE="" SUDO_CACHED_CACHE_STATUS="" DOCKER_ACTIVE_CACHE="" \
-        DOCKER_ACTIVE_CACHE_STATUS=""
+    local installed=false MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     sudo_ready || true
-    # Here, not first in docker_items' $( ), which would lose the cache
+    # Here, since docker_items first asks inside a $( ), which would keep the answer to itself
     docker_active || true
     docker_installed && installed=true
     docker_items
@@ -252,13 +247,13 @@ status() {
     ! "$installed" || status_apt_source Docker "$DOCKER_SOURCES" "$(docker_sources)" docker "$(apt_release_url "$DOCKER_REPO")"
     # Optional: apply asks once and a no lasts
     if in_docker_group; then
-        status_item ok "$(id -un) in the docker group"
+        status_item ok "$CURRENT_USER in the docker group"
     else
-        status_item info "$(id -un) not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $(id -un) adds you, and is root-equivalent"
+        status_item info "$CURRENT_USER not in the docker group, which is optional: sudo docker works without it; sudo usermod -aG docker $CURRENT_USER adds you, and is root-equivalent"
     fi
     items_status socket_ready starts_at_boot
     if daemon_config_unreadable && ! sudo_ready; then
-        status_item unverified "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG (only root can read it; run sudo -v, then status, to check it)"
+        status_needs_root "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG" "only root can read it"
     elif status_require_cmd jq "$DOCKER_DAEMON_KEYS in $DOCKER_DAEMON_CONFIG"; then
         items_status daemon_configured
     fi
@@ -303,7 +298,7 @@ configure_daemon() {
         return 1
     fi
     rm -f "$tmp"
-    systemctl is-active --quiet docker.service && running=true
+    unit_active docker.service && running=true
     sudo systemctl try-restart docker.service && return 0
     if "$exists"; then
         if ! write_root_file "$DOCKER_DAEMON_CONFIG" "$original"; then
@@ -332,45 +327,26 @@ apply() {
     require_cmd gpg || return 1
 
     # A release upgrade disables the source; rewrite it once Docker publishes for the new release.
-    local installed=false repair_source=false
+    # One scope, so a fresh install's two items_apply_confirmed calls ask once
+    local installed=false repair="" result=0 fresh=false MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     docker_installed && installed=true
     if ! "$installed" && ! apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
         return 0
     fi
     if "$installed" && ! docker_source_ok && apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
-        repair_source=true
+        repair=repair
     fi
-    local pending=()
-    docker_items
-    items_pending docker_installed
-    ! "$repair_source" ||
-        pending+=("Rewrite Docker's apt source for $(ubuntu_codename) ($(apt_source_state "$DOCKER_SOURCES" "$(docker_sources)")): write $DOCKER_SOURCES")
+    docker_items "$repair"
     if "$installed"; then
-        items_pending socket_ready daemon_configured starts_at_boot docker_auto_updates_configured
-    else
-        # Fresh packages enable and start both units
-        items_pending daemon_configured docker_auto_updates_configured
+        items_apply_confirmed --done "  Docker is already installed and set up." || result=1
+        return "$result"
     fi
-
-    local result=0 fresh=false
-    if [ ${#pending[@]} -eq 0 ]; then
-        echo "  Docker is already installed and set up."
-        return 0
-    elif confirm_sudo_changes "${pending[@]}"; then
-        if items_apply docker_installed; then
-            "$installed" || fresh=true
-            ! "$repair_source" || add_docker_repo || result=1
-            items_apply socket_ready daemon_configured starts_at_boot docker_auto_updates_configured || result=1
-        else
-            # Without the packages there are no units, dockerd, or docker group to set up
-            result=1
-            items_apply docker_auto_updates_configured || result=1
-        fi
-        if [ "$result" -ne 0 ]; then
-            echo "  Applied the rest. Some changes failed; see the errors above." >&2
-        else
-            echo "  Applied."
-        fi
+    # Fresh packages enable and start both units, so they're left out of the list, and checked only
+    # once the packages are in
+    items_apply_confirmed docker_installed daemon_configured docker_auto_updates_configured || result=1
+    if docker_installed; then
+        fresh=true
+        items_apply_confirmed socket_ready starts_at_boot || result=1
     fi
     # Asked only in the run that installs Docker, so a no lasts
     if "$fresh" && ! in_docker_group; then
@@ -384,11 +360,11 @@ add_to_docker_group() {
     echo "  The docker group lets docker run without sudo, for you and T3 Code's agents. It's"
     echo "  root-equivalent: anything running as you, agents included, can get root with"
     echo "  docker run -v /:/host. Without it, run sudo docker."
-    if ! confirm "  Add $(id -un) to the docker group, with sudo?"; then
-        echo "  Left $(id -un) out of the docker group."
+    if ! confirm "  Add $CURRENT_USER to the docker group, with sudo?"; then
+        echo "  Left $CURRENT_USER out of the docker group."
         return 0
     fi
-    sudo usermod -aG docker "$(id -un)" || return 1
+    sudo usermod -aG docker "$CURRENT_USER" || return 1
     echo "  Added you to the docker group. New logins get it, but your user services (the T3 Code"
     echo "  service and its agents) and a running tmux server keep their old groups until you"
     echo "  reboot, or run sudo systemctl restart user@\$(id -u), which stops them."

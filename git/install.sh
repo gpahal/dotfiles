@@ -40,9 +40,9 @@ github_auth_state() {
 
 # Asking GitHub can take 10 s
 status_github_login() {
-    if status_quick; then
+    if status_for_alerts; then
         if gh auth token --hostname github.com &>/dev/null; then
-            status_item unverified "Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --quick"
+            status_item unverified "Logged in to GitHub with gh: credentials are stored, but checking them was skipped by --for-alerts"
         else
             status_item missing "Logged in to GitHub with gh"
         fi

@@ -31,11 +31,31 @@ alias .....="cd ../../../.."
 alias lg="lazygit"
 alias ts='tmux-sessionizer'
 
+# The dotfiles checkout or worktree you're in, else the one the zsh step recorded, as
+# lib/checkout.sh's CHECKOUT_FILE
+_dotfiles_checkout() {
+    local dir file="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/checkout"
+    dir="$(git rev-parse --show-toplevel 2> /dev/null)"
+    if [[ -n $dir && -f $dir/scripts/upgrade.sh && -f $dir/lib/checkout.sh ]]; then
+        print -r -- "$dir"
+        return 0
+    fi
+    dir="$(head -n 1 "$file" 2> /dev/null)"
+    if [[ -n $dir && -f $dir/scripts/upgrade.sh ]]; then
+        print -r -- "$dir"
+        return 0
+    fi
+    print -u2 "No dotfiles checkout here, or recorded in $file. Run bash setup.sh zsh in the repo."
+    return 1
+}
+
 upgrade() {
-    bash "${DOTFILES_DIR:-$HOME/Dev/setup/dotfiles}/scripts/upgrade.sh" "$@"
+    local dir
+    dir="$(_dotfiles_checkout)" || return 1
+    bash "$dir/scripts/upgrade.sh" "$@"
 }
 upgrade-ai-tools() {
-    bash "${DOTFILES_DIR:-$HOME/Dev/setup/dotfiles}/scripts/upgrade.sh" ai-tools
+    upgrade ai-tools
 }
 
 alias bi="brew install"

@@ -44,7 +44,7 @@ ufw_status_listing() {
 install_health_alert() {
     mkdir -p "$1"
     cp "$REPO_DIR/ubuntu/health-alert.sh" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$REPO_DIR/ubuntu/lib/paths.sh" \
-        "$REPO_DIR/lib/status-format.sh" "$1/"
+        "$REPO_DIR/lib/status-format.sh" "$REPO_DIR/lib/checkout.sh" "$1/"
 }
 
 # Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and

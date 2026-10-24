@@ -107,6 +107,7 @@ assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): it's $(id
 chmod 640 "$NTFY_URL_FILE"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
+assert_contains "$RUN_OUTPUT" "ok         Checkout for the daily health alert, recorded in ~/.local/state/dotfiles/checkout"
 echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): its topic isn't 20 to 64 characters"
@@ -118,9 +119,21 @@ assert_contains "$RUN_OUTPUT" "missing    smartd's warnings pushed to ntfy ($SMA
 mv "$SMARTD_CONF.bak" "$SMARTD_CONF"
 
 # The units run a copy of the script, outside the repo
-for file in health-alert.sh ntfy.sh paths.sh status-format.sh; do
+for file in health-alert.sh ntfy.sh paths.sh status-format.sh checkout.sh; do
     [ -e "$HOME/.local/share/dotfiles/health-alert/$file" ] || fail "the health alert's $file wasn't copied"
 done
+
+# A failed run stays reported until the files change, as a run before that says nothing about them
+touch "$SANDBOX/units/user-dotfiles-health.service.failed"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Daily health alert's last run: its last run failed (exit-code)"
+assert_exit 0 main
+assert_file_not_contains "$STUB_LOG" "reset-failed"
+echo "# changed" >> "$HOME/.local/share/dotfiles/health-alert/health-alert.sh"
+assert_exit 0 main
+assert_file_contains "$STUB_LOG" "systemctl --user reset-failed dotfiles-health.service"
+assert_exit 0 main --status
+assert_not_contains "$RUN_OUTPUT" "last run"
 
 # After a failed daemon-reload, the next run reloads even though the files match
 echo "# changed" >> "$USER_UNITS/dotfiles-health.service"

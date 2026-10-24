@@ -10,9 +10,9 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ### macOS
 
-1. `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. If `git` asks to install the Command Line Tools, install them and clone again.
+1. Clone the repo anywhere, such as `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. If `git` asks to install the Command Line Tools, install them and clone again.
 2. Sign in to the App Store, so the `homebrew` step can install Amphetamine and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional; buy it there first if you want it.
-3. In `~/Dev/setup/dotfiles`, run `bash setup.sh`.
+3. In the repo, run `bash setup.sh`.
 4. Do the macOS [manual steps](#macos-1), starting with Ghostty's Full Disk Access.
 5. From Ghostty, do the AI tools' [First run](./ai_tools/README.md#first-run).
 6. Run the [checks](#check-it-works).
@@ -38,7 +38,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
 | `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login |
-| `zsh` | Copies the zsh and starship config, hooks it into the startup files, and offers zsh as the login shell |
+| `zsh` | Copies the zsh and starship config, hooks it into the startup files, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
 | `vim` | Copies the vim config and vim-plug, and moves installed plugins to their pins |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
 | `ghostty` | Copies the Ghostty config. On Ubuntu, installs the Ghostty snap and its terminfo, so SSH from Ghostty works |
@@ -65,6 +65,10 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 - The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
 - `just status` runs both scripts with `--status`.
 
+### Where the repo lives
+
+The repo can live anywhere, and setup and `just` run from any clone or worktree. Two things run outside the repo, `upgrade` and the daily health check, so the `zsh` and `ubuntu` steps record the checkout they run from in `~/.local/state/dotfiles/checkout`. From a worktree, they record its main checkout, so removing the worktree doesn't break them. After moving the repo, re-run `bash setup.sh zsh ubuntu` (`zsh` on the Mac) from its new place. `--status` reports a stale record.
+
 ## Ubuntu
 
 Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` naming every step except `ghostty`, `zed`, `stream-deck`, `logitech`, and `chrome`, and install `upower` for UPS detection.
@@ -81,7 +85,7 @@ The `ubuntu`, `docker`, and `chrome` steps keep the machine reachable:
 
 - Suspend is off, and a kernel panic reboots after 10 seconds.
 - With a USB UPS, the machine shuts down on low battery and starts when power returns.
-- smartd, a daily health check, and each boot push alerts to your phone. The health check reports on the checkout at `~/Dev/setup/dotfiles`, and alerts when it's missing.
+- smartd, a daily health check, and each boot push alerts to your phone. The health check reports on the [recorded checkout](#where-the-repo-lives), and alerts when it's gone.
 - Security, Chrome, and Docker updates install daily without rebooting.
 - User services, such as the T3 Code server and tmux, start at boot without a login.
 - sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.
@@ -140,7 +144,7 @@ Projects live at `~/Dev/<group>/<project>`, such as `~/Dev/go/envl`. Worktrees g
 
 Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Ghostty also notifies when a command of 10 seconds or more finishes in an unfocused window. To allow the notifications:
 
-1. Run `~/Dev/setup/dotfiles/scripts/test-notification.sh` in Ghostty and click **Allow**. In **System Settings → Notifications → Ghostty**, allow notifications with the **Persistent** style.
+1. Run `scripts/test-notification.sh` from the repo in Ghostty and click **Allow**. In **System Settings → Notifications → Ghostty**, allow notifications with the **Persistent** style.
 2. Add Ghostty to any Focus mode's **Allowed Apps**.
 
 ### Zed
@@ -236,7 +240,7 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 
 **Permissions**
 
-1. Give Ghostty Full Disk Access in **System Settings → Privacy & Security → Full Disk Access**, reopen it, and run `cd ~/Dev/setup/dotfiles && bash setup.sh macos` again. Do the rest from Ghostty.
+1. Give Ghostty Full Disk Access in **System Settings → Privacy & Security → Full Disk Access**, reopen it, and run `bash setup.sh macos` in the repo again. Do the rest from Ghostty.
 2. Turn on [Ghostty notifications](#ghostty-notifications).
 3. Add Ghostty in **System Settings → Privacy & Security → Accessibility**.
 
@@ -357,7 +361,7 @@ At the desktop, with the Stream Deck switched to it:
 
 ## Updating
 
-`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh), which updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh) from the dotfiles checkout or worktree you're in, else the [recorded checkout](#where-the-repo-lives). `just upgrade` uses the checkout that holds the justfile. Either updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.

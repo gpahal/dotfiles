@@ -9,6 +9,7 @@ health_alert_files() {
     "$1" "$DOTFILES_DIR/ubuntu/lib/ntfy.sh" "$HEALTH_ALERT_DIR/ntfy.sh" || status=1
     "$1" "$DOTFILES_DIR/ubuntu/lib/paths.sh" "$HEALTH_ALERT_DIR/paths.sh" || status=1
     "$1" "$DOTFILES_DIR/lib/status-format.sh" "$HEALTH_ALERT_DIR/status-format.sh" || status=1
+    "$1" "$DOTFILES_DIR/lib/checkout.sh" "$HEALTH_ALERT_DIR/checkout.sh" || status=1
     return "$status"
 }
 
@@ -39,19 +40,29 @@ boot_notice_on() {
     unit_enabled --user dotfiles-boot-notice.service
 }
 
+HEALTH_ALERT_LABEL="the daily health alert"
+
 # The boot notice is enabled, not started, so it first pushes at the next boot
 configure_health_alerts() {
-    local COPIED=false
+    local COPIED=false changed
+    apply_checkout "$HEALTH_ALERT_LABEL" || return 1
     health_alert_files copy_file || return 1
+    changed="$COPIED"
     COPIED=false
     health_unit_files copy_file || return 1
+    ! "$COPIED" || changed=true
     user_manager_reachable "the daily health alert and the boot notice aren't on" || return 0
-    if ! "$COPIED" && health_units_loaded && health_timer_on && boot_notice_on; then
+    if ! "$changed" && health_units_loaded && health_timer_on && boot_notice_on; then
         echo "  The daily health alert and the boot notice are already set up."
         return 0
     fi
     if "$COPIED" || ! health_units_loaded; then
         systemctl --user daemon-reload || return 1
+    fi
+    # A run that failed before the files changed says nothing about them, and status would report
+    # it until the next run
+    if "$changed"; then
+        systemctl --user reset-failed "${HEALTH_UNITS[@]}" || return 1
     fi
     health_timer_on || systemctl --user enable --now dotfiles-health.timer || return 1
     boot_notice_on || systemctl --user enable dotfiles-boot-notice.service || return 1
@@ -106,6 +117,7 @@ status_health_alerts() {
     local url_label="ntfy URL for the disk, UPS, health, and boot alerts" problem
     health_alert_files status_file
     health_unit_files status_file
+    status_checkout "$HEALTH_ALERT_LABEL"
     # systemd hasn't loaded a unit that was never installed, which the lines above report
     health_units_loaded || ! health_units_installed || ! systemctl --user show-environment &>/dev/null ||
         status_item missing "The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them (re-run the ubuntu step)"

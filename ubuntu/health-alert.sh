@@ -4,7 +4,7 @@ set -euo pipefail
 # Pushes health alerts to ntfy for the ubuntu step's user units; does nothing with no URL saved.
 # Fails when a runner couldn't run or a push failed, so the unit shows failed.
 
-# The ubuntu step copies this script beside its three libraries, outside the repo
+# The ubuntu step copies this script beside its four libraries, outside the repo
 HEALTH_ALERT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ntfy.sh
 source "$HEALTH_ALERT_DIR/ntfy.sh"
@@ -12,6 +12,8 @@ source "$HEALTH_ALERT_DIR/ntfy.sh"
 source "$HEALTH_ALERT_DIR/paths.sh"
 # shellcheck source=../lib/status-format.sh
 source "$HEALTH_ALERT_DIR/status-format.sh"
+# shellcheck source=../lib/checkout.sh
+source "$HEALTH_ALERT_DIR/checkout.sh"
 
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
 # ntfy turns a message over 4096 bytes into an attachment; leaves room for ROOT_ONLY_NOTE
@@ -29,9 +31,9 @@ BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
     echo "Usage: bash health-alert.sh status | boot"
-    echo "status pushes what setup.sh and ai_tools/setup.sh --status --for-alerts, run in $DOTFILES_REPO,"
-    echo "report needs attention to ntfy; boot pushes that this machine started. Both do nothing until just alerts"
-    echo "saves a URL."
+    echo "status pushes what setup.sh and ai_tools/setup.sh --status --for-alerts report needs attention"
+    echo "to ntfy, run in the checkout the ubuntu step recorded in $CHECKOUT_FILE; boot pushes that this"
+    echo "machine started. Both do nothing until just alerts saves a URL."
 }
 
 ntfy_url() {
@@ -94,18 +96,23 @@ save_push() {
 
 status_alert() {
     local url runner out status result=0 message="" details="" last now last_time="" last_hash="" hash
-    local root_only=false
+    local root_only=false repo problem=""
     url="$(ntfy_url)" || return 1
     [ -n "$url" ] || return 0
-    if [ ! -e "$DOTFILES_REPO/setup.sh" ]; then
-        echo "No repo at $DOTFILES_REPO, so the health check couldn't run." >&2
-        ntfy_push "$url" "Needs attention on $(hostname)" "Health check couldn't run: no repo at $DOTFILES_REPO" \
+    if ! repo="$(recorded_checkout)"; then
+        problem="no checkout recorded in $CHECKOUT_FILE; run bash setup.sh ubuntu in the repo"
+    elif [ ! -e "$repo/setup.sh" ]; then
+        problem="no repo at $repo; run bash setup.sh ubuntu where the repo is now"
+    fi
+    if [ -n "$problem" ]; then
+        echo "Health check couldn't run: $problem." >&2
+        ntfy_push "$url" "Needs attention on $(hostname)" "Health check couldn't run: $problem" \
             "Tags: warning" || echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi
     for runner in setup.sh ai_tools/setup.sh; do
         status=0
-        out="$("$BASH" "$DOTFILES_REPO/$runner" --status --for-alerts < /dev/null 2>&1)" || status=$?
+        out="$("$BASH" "$repo/$runner" --status --for-alerts < /dev/null 2>&1)" || status=$?
         ! has_root_only_items <<< "$out" || root_only=true
         case "$status" in
             0) ;;

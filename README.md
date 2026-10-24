@@ -153,7 +153,7 @@ The **Dotfiles** keys act on the folder of the app in front:
 
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
-- **Overview** shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
+- **Overview**, labeled MAC or UBUNTU for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 
 [`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
 

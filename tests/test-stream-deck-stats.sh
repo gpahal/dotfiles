@@ -142,6 +142,14 @@ const second = (await sampler.sample(['temperature'])).temperature;
 console.log(JSON.stringify([first, second]));")"
 assert_eq '[{"cpu":55.5,"gpu":41},{"cpu":55.5,"gpu":41}]' "$out" "a moved sensor"
 
+# The overview key names the OS it runs on
+for platform in darwin:MAC linux:UBUNTU; do
+    out="$(js "Object.defineProperty(process, 'platform', { value: '${platform%%:*}' });
+delete require.cache[process.argv[1]];
+console.log(require(process.argv[1]).placeholder('overview'))")"
+    assert_contains "$out" ">${platform#*:}</text>" "the overview label on ${platform%%:*}"
+done
+
 # keys.js: a key whose render throws shows its placeholder and logs once, and the others update
 out="$(node -e 'const keys = require(process.argv[1]);
 const logs = [];

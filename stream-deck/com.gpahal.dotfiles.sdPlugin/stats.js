@@ -590,6 +590,9 @@ const hint = (s, kind) => (s.macmonMissing ? "needs macmon" : (s.hints?.[kind] ?
 
 const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
 
+// The overview key names the OS, to tell which machine a deck shows
+const OS_LABEL = process.platform === "linux" ? "UBUNTU" : "MAC";
+
 const RENDER = {
   overview(s) {
     const row = (y, name, value, color) =>
@@ -599,7 +602,7 @@ const RENDER = {
     const mem = s.memory
       ? [formatPercent((s.memory.used / s.memory.total) * 100), PRESSURE[s.pressure] ?? COLORS.text]
       : ["—", COLORS.muted];
-    return frame("SYSTEM", row(78, "CPU", ...cpu), row(120, "MEM", ...mem));
+    return frame(OS_LABEL, row(78, "CPU", ...cpu), row(120, "MEM", ...mem));
   },
   cpu(s) {
     if (s.cpu == null) return empty("CPU");

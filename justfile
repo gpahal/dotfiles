@@ -111,6 +111,10 @@ status:
     for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done
     [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
 
+# Write the READMEs' Manual steps lists from manual-steps/steps.sh and ai_tools/manual-steps/steps.sh
+manual-steps-doc:
+    bash scripts/manual-steps-doc.sh
+
 # Sign git commits and tags with an SSH key
 git-signing:
     bash git/setup-signing.sh

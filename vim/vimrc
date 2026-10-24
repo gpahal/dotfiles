@@ -37,7 +37,7 @@ if filereadable(s:plug)
     Plug 'vim-airline/vim-airline', { 'commit': '8dc1bd0a116de527f6bc58c1d04386ba357c624f' }
     Plug 'vim-airline/vim-airline-themes', { 'commit': '77aab8c6cf7179ddb8a05741da7e358a86b2c3ab' }
 
-    " Run :GoInstallBinaries by hand; it takes minutes
+    " The vim step installs the tools :GoInstallBinaries would
     Plug 'fatih/vim-go', { 'commit': '47694979496d4bf2e90ce75d95f1dec3f41cbefb' }
     Plug 'rust-lang/rust.vim', { 'commit': '889b9a7515db477f4cb6808bef1769e53493c578' }
     call plug#end()

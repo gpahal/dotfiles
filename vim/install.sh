@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the vim config, install vim-plug, and move the plugins to their pins.
+# Copy the vim config, install vim-plug, pin the plugins, and install vim-go's Go tools.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -59,12 +59,63 @@ pin_vim_plugins() {
     return "$status"
 }
 
+# "<tool> <package>" for each tool the pinned vim-go's :GoInstallBinaries installs, which
+# just bump-plugins writes
+VIM_GO_TOOLS="$DOTFILES_DIR/vim/vim-go-tools"
+
+vim_go_packages() {
+    awk '!/^#/ && NF == 2' "$VIM_GO_TOOLS"
+}
+
+# Where go install puts tools, as vim-go does
+go_bin_dir() {
+    local dir
+    dir="$(go env GOBIN 2>/dev/null)" || return 1
+    [ -n "$dir" ] || dir="$(go env GOPATH 2>/dev/null | cut -d: -f1)/bin"
+    [ "$dir" != /bin ] && echo "$dir"
+}
+
+# Prints each tool that's neither in go's bin dir nor on PATH, as vim-go looks for them
+vim_go_tools_missing() {
+    local name package dir=""
+    ! command -v go &>/dev/null || dir="$(go_bin_dir)" || true
+    while read -r name package; do
+        { [ -n "$dir" ] && [ -x "$dir/$name" ]; } || command -v "$name" &>/dev/null || echo "$name $package"
+    done < <(vim_go_packages)
+}
+
+# Sets ITEM_DETAIL to the tools missing
+vim_go_tools_installed() {
+    local missing
+    missing="$(vim_go_tools_missing | awk '{ print $1 }')"
+    [ -n "$missing" ] || return 0
+    ITEM_DETAIL="$(join_lines ', ' <<< "$missing")"
+    command -v go &>/dev/null || ITEM_DETAIL="$ITEM_DETAIL; $(missing_cmd_hint go)"
+    return 1
+}
+
+# What :GoInstallBinaries does, outside vim, so a failure shows
+install_vim_go_tools() {
+    local name package status=0
+    require_cmd go || return 1
+    while read -r name package; do
+        echo "  Installing $name ($package), which vim-go uses..."
+        if ! go install "$package"; then
+            echo "  Couldn't install $name. Run go install $package to retry." >&2
+            status=1
+        fi
+    done < <(vim_go_tools_missing)
+    return "$status"
+}
+
 vim_items() {
     items_reset
     item "vim-plug at the pinned version (~/.vim/autoload/plug.vim)" "Install vim-plug" \
         plug_vim_pinned install_plug_vim
     item "vim plugins at their pinned commits (~/.vim/plugged)" "Move the vim plugins to their pins" \
         vim_plugins_pinned pin_vim_plugins
+    item "vim-go's Go tools, which :GoInstallBinaries installs" "Install vim-go's Go tools" \
+        vim_go_tools_installed install_vim_go_tools
 }
 
 status() {
@@ -78,7 +129,7 @@ apply() {
     require_cmd git || return 1
     copy_step "Copying vim config..." vim_files || status=1
     vim_items
-    items_apply_confirmed --done "  vim-plug and the vim plugins already at their pinned versions" || status=1
+    items_apply_confirmed --done "  vim-plug, the vim plugins' pins, and vim-go's tools already set up" || status=1
     return "$status"
 }
 

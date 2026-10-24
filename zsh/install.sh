@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy the zsh and starship config, source it at login, and offer zsh as the login shell.
+# Copy and hook in the zsh config, import history into atuin, and offer zsh as login shell.
 # A temp HOME doesn't isolate login-shell changes. Test with chsh and sudo stubbed.
 # Records the checkout, for upgrade and upgrade-ai-tools in aliases.zsh.
 
@@ -55,6 +55,24 @@ add_source_line() {
     echo "  Added the $2 source line to ~/$1"
 }
 
+ZSH_HISTORY="$HOME/.zsh_history"
+ATUIN_DB="${XDG_DATA_HOME:-$HOME/.local/share}/atuin/history.db"
+
+# atuin starts its database once its zsh hook first runs, so a database means the history went in,
+# or atuin has kept it since. A second import would add the history again.
+atuin_history_imported() {
+    [ -e "$ATUIN_DB" ] || [ ! -s "$ZSH_HISTORY" ]
+}
+
+import_atuin_history() {
+    require_cmd atuin || return 1
+    if ! HISTFILE="$ZSH_HISTORY" atuin import zsh < /dev/null > /dev/null; then
+        echo "  Couldn't import ~/.zsh_history into atuin. Run atuin import zsh to see why." >&2
+        return 1
+    fi
+    echo "  Imported ~/.zsh_history into atuin"
+}
+
 zsh_items() {
     local entry file what var os
     items_reset
@@ -67,6 +85,8 @@ zsh_items() {
         item "$what sourced in ~/$file" "Add the $what source line to ~/$file" \
             "has_source_line $file $var" "add_source_line $file $what $var"
     done
+    item "Shell history imported into atuin" "Import ~/.zsh_history into atuin" \
+        atuin_history_imported import_atuin_history
 }
 
 # Not Homebrew's zsh, so the login shell doesn't depend on Homebrew
@@ -164,7 +184,7 @@ apply() {
     apply_checkout "$UPGRADE_FUNCTIONS" || status=1
     echo "Setting up the startup files..."
     zsh_items
-    items_apply_confirmed --done "  The startup files already source the zsh config" || status=1
+    items_apply_confirmed --done "  The startup files already source the zsh config, and atuin has the history" || status=1
     set_login_shell || status=1
     return "$status"
 }

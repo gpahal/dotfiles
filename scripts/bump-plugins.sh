@@ -2,7 +2,8 @@
 # shellcheck disable=SC2016 # $ in awk programs
 set -euo pipefail
 
-# Bump the repo's vim and tmux plugin pins to HEAD and vim-plug to its latest release; $HOME is untouched.
+# Bump the repo's vim and tmux plugin pins to HEAD and vim-plug to its latest release, and list the
+# Go tools the pinned vim-go installs; $HOME is untouched.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -12,10 +13,13 @@ PLUGINS_LOCK="$DOTFILES_DIR/tmux/plugins.lock"
 PLUG_VIM="$DOTFILES_DIR/vim/plug.vim"
 PLUG_VIM_VERSION="$DOTFILES_DIR/vim/plug.vim.version"
 PLUG_REPO=junegunn/vim-plug
+VIM_GO_REPO=fatih/vim-go
+VIM_GO_TOOLS="$DOTFILES_DIR/vim/vim-go-tools"
 
 usage() {
     echo "Usage: bump-plugins.sh"
-    echo "Move the pinned vim and tmux plugins, and the vendored vim-plug, to their latest versions."
+    echo "Move the pinned vim and tmux plugins, and the vendored vim-plug, to their latest versions, and"
+    echo "list the Go tools the pinned vim-go installs in vim/vim-go-tools."
 }
 
 head_sha() {
@@ -82,6 +86,43 @@ bump_tmux_plugins() {
     return "$status"
 }
 
+# vim_go_tools_at <sha>: the file's header, then "<tool> <package>" for each tool in vim-go's
+# s:packages at that commit
+vim_go_tools_at() {
+    local dir status=0
+    dir="$(mktemp -d)" || return 1
+    {
+        echo "# The Go tools :GoInstallBinaries installs at vim-go's pin in vimrc, as \"<tool> <package>\"."
+        echo "# just bump-plugins rewrites it; the vim step installs them."
+        git init -q "$dir" &&
+            GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 "https://github.com/$VIM_GO_REPO" "$1" &&
+            git -C "$dir" show FETCH_HEAD:plugin/go.vim |
+            awk -F "'" '/^let s:packages = \{/ { on = 1; next } on && /^\\ *\}/ { exit }
+                on && NF >= 4 { print $2, $4; found = 1 } END { exit !found }'
+    } || status=1
+    rm -rf "$dir"
+    return "$status"
+}
+
+bump_vim_go_tools() {
+    local sha tmp
+    echo "vim-go's Go tools (vim/vim-go-tools):"
+    sha="$(vim_pins | awk -v repo="$VIM_GO_REPO" '$1 == repo { print $2 }')"
+    tmp="$(mktemp)" || return 1
+    if [ -z "$sha" ] || ! vim_go_tools_at "$sha" > "$tmp"; then
+        rm -f "$tmp"
+        echo "  Couldn't read the tools at vim-go's pin, so the list stays as it was." >&2
+        return 1
+    fi
+    if cmp -s "$tmp" "$VIM_GO_TOOLS"; then
+        rm -f "$tmp"
+        echo "  unchanged"
+        return 0
+    fi
+    diff "$VIM_GO_TOOLS" "$tmp" | sed -n 's/^\([<>]\) \([^#]\)/  \1 \2/p' | sed -e 's/^  </  removed:/' -e 's/^  >/  added:/' || true
+    write_back "$tmp" "$VIM_GO_TOOLS"
+}
+
 # Portable across BSD and GNU sort
 highest_version() {
     sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
@@ -137,9 +178,11 @@ main() {
     bump_vim_plugins 2>&1 || status=1
     bump_tmux_plugins 2>&1 || status=1
     bump_plug_vim 2>&1 || status=1
+    bump_vim_go_tools 2>&1 || status=1
     echo
     echo "Review the diffs (git diff, and the links above), run just check and just test, and commit."
-    echo "Then on each machine, re-run bash setup.sh vim tmux, which moves the installed plugins to their pins."
+    echo "Then on each machine, re-run bash setup.sh vim tmux, which moves the installed plugins to their pins"
+    echo "and installs any new Go tool."
     [ "$status" -eq 0 ] || echo "Some pins couldn't be checked; see above. Re-run just bump-plugins to retry them." >&2
     return "$status"
 }

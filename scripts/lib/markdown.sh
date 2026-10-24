@@ -1,4 +1,5 @@
-# Markdown sections and local links for the docs and skills checks. Source it; don't run it.
+# Markdown sections and local links for the docs and skills checks and the manual-steps steps.
+# Source it; don't run it.
 # shellcheck shell=bash
 
 # Code fence; every reader skips code blocks so a # line or link in one doesn't count.
@@ -28,15 +29,10 @@ md_section() {
     ' "$file"
 }
 
-# Print md_section indented for the terminal, with links as plain text.
-print_doc_section() {
-    local file="$1" text
-    shift
-    text="$(md_section "$file" "$@")" || {
-        echo "  Couldn't find \"$*\" in $file." >&2
-        return 1
-    }
-    printf '%s\n' "$text" | awk '{ print ($0 == "" ? "" : "  " $0) }' | doc_links "$file" | sed -E \
+# print_doc_text <doc the text comes from>: prints markdown on stdin indented for the terminal, with
+# links as plain text.
+print_doc_text() {
+    awk '{ print ($0 == "" ? "" : "  " $0) }' | doc_links "$1" | sed -E \
         -e 's/\[([^]]*)\]\((https?:[^)]*)\)/\1 (\2)/g' \
         -e 's/\*\*//g'
 }

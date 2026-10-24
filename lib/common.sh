@@ -234,7 +234,7 @@ check_args() {
 
 step_args() {
     local step_usage
-    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status] [--backup | --no-backup]"
+    step_usage="Usage: bash $(_repo_path "$_SOURCED_BY") [--status [--for-alerts]] [--backup | --no-backup]"
     check_args _step_usage no-words "$@"
 }
 
@@ -937,13 +937,6 @@ _item_ok() {
         skipped | info) return 0 ;;
     esac
     return 1
-}
-
-# Appends to the caller's pending array
-# shellcheck disable=SC2120 # with no check functions, it lists every sudo item
-items_pending() {
-    local others=false
-    _items_each _item_pending "$@"
 }
 
 # Appends a pending sudo item to the caller's pending, and sets the caller's others for one that

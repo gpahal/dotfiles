@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Health alert user units for the ubuntu step. ubuntu/install.sh sets the constants.
+# Health alert user units, and the ntfy topic and URL file rules setup-alerts.sh shares.
+# ubuntu/install.sh sets the constants.
 
 # The units run a copy of the script, so they don't depend on what the repo has checked out
 health_alert_files() {

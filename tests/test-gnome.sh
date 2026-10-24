@@ -1,8 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2329
 
-# The gnome step: GNOME settings that match the macos step, and gnome-sushi. stub_gsettings starts
-# from Ubuntu's defaults. Also lib/gnome.sh's shortcut clashes and extension states.
+# The gnome step: GNOME settings that match the macos step, and gnome-sushi, starting from Ubuntu's
+# defaults, which default sets. Also lib/gnome.sh's shortcut clashes and extension states.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

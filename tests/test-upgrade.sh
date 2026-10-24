@@ -118,7 +118,7 @@ upgrade_on Darwin
 assert_file_not_contains "$STUB_LOG" "rustup"
 mv "$STUB_DIR/rustup" "$HOME/.cargo/bin/rustup"
 
-# Ubuntu, where Claude Code doesn't update itself
+# Ubuntu, with a claude other than the native install, which upgrade doesn't update
 rm "$HOME/.local/bin/claude"
 mv "$HOME/.local/share/claude/versions/2.0.0" "$STUB_DIR/claude"
 stub brew 'case "$*" in

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # lib/system.sh's apt sources: status_apt_source, apt_repo_published, add_apt_repo's checks and
-# rollbacks, and apt_get_update's lock retries.
+# rollbacks, apt_install_fresh's one update per run, and apt_get_update's lock retries.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

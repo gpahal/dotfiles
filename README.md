@@ -47,7 +47,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `hammerspoon` | Copies the [Hammerspoon](#hammerspoon) config and the open-in script its hotkeys run. macOS only |
 | `hotkeys` | Adds GNOME shortcuts that match [Hammerspoon](#hammerspoon)'s. Ubuntu only |
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
-| `vicinae` | Installs the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu |
+| `vicinae` | Sets up the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu, where it also installs it |
 | `editorconfig` | Copies `~/.editorconfig` |
 | `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, frees `Cmd+Space` for Vicinae, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
@@ -59,7 +59,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
 - `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached.
-- Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines, and a merge offers a backup.
+- Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines added. A merge into an app's settings file, such as Vicinae's, offers a backup first, and `--backup` or `--no-backup` answers every such question.
 - Settings that are yours, such as mise's global versions and the AI tools' models, are set when unset. When yours differs, setup asks before replacing it, and keeps it without a terminal.
 - Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.
 - The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
@@ -100,7 +100,17 @@ Config in [`git/`](git/), copied to `~/.config/git/`. Per-machine settings go in
 
 - `git dft`, `git dd`, `git dlog`: difftastic diffs.
 - `git cob`, `git cobr`: pick a local or remote branch with fzf.
-- `git wt` manages worktrees under `~/.worktrees` ([Code layout](./AGENTS.md#code-layout)). `cd "$(git wt add <name> [<base>])"`; `git wt` alone prints usage.
+- `git wt` manages worktrees under `~/.worktrees`. `cd "$(git wt add <name> [<base>])"`; `git wt` alone prints usage.
+
+#### Code layout
+
+Projects live at `~/Dev/<group>/<project>`, such as `~/Dev/go/envl`. Worktrees go beside projects, not inside them:
+
+| Tool | Worktrees |
+| :- | :- |
+| `git wt`, the `implement` skill, and Claude Code's `--worktree`, subagents, and background sessions | `~/.worktrees/<group>/<project>/<name>`, or `~/.worktrees/_/<project>-<hash>/<name>` outside `~/Dev/<group>/<project>` |
+| T3 Code | `~/.t3/worktrees/<repo>/<worktree>` |
+| The Codex app | `~/.codex/worktrees` |
 
 #### Commit signing
 
@@ -156,6 +166,7 @@ Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user se
 - **Gmail** opens in its own Chrome window, and the stat keys open Resources.
 - **Power** shows the CPU package, its cores, and the GPU, with no figure for the whole machine.
 - Keys that open apps do nothing while the screen is locked.
+- Only the 15-key model works. The daemon leaves other decks blank and logs why.
 - The deck's brightness is 60%, set each time it connects.
 - `journalctl --user -u dotfiles-stream-deck` shows its log.
 

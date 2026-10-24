@@ -10,7 +10,7 @@ source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 [ -n "$REAL_SSHD" ] || skip "sshd isn't installed"
 
-# DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY count only in a VM
+# DOTFILES_SSH_KEY_ONLY counts only in a VM
 stub systemd-detect-virt
 load_script ubuntu/install.sh
 ubuntu_sandbox_paths

@@ -7,7 +7,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-# Lines written to files, expanded when zsh reads them. STARTUP_FILES names them.
+# Lines written to the startup files, expanded when the shell reads them. STARTUP_FILES names them.
 # shellcheck disable=SC2016,SC2034
 ZSHRC_LINE='source $HOME/.zsh/main.zsh'
 # shellcheck disable=SC2016,SC2034

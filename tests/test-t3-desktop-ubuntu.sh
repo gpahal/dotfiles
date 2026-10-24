@@ -45,6 +45,7 @@ cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_file_not_contains "$SANDBOX/both.log" "apt-get"
 assert_eq "false" "$(jq -r .localEnvironmentEnabled "$SETTINGS")" "the desktop app's own server, before the install"
 assert_eq "steer" "$(jq -r .followUpBehavior "$HOME/.t3/userdata/client-settings.json")" "the desktop app's follow-up behavior"
+assert_file_contains "$HOME/.config/environment.d/60-dotfiles-t3code.conf" "T3CODE_TELEMETRY_ENABLED=false"
 
 answer yes
 assert_exit 0 setup_t3_code_desktop_ubuntu

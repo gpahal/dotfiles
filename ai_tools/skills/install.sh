@@ -6,8 +6,7 @@ set -euo pipefail
 # Codex gets a copy of each skill in ~/.agents/skills, and Claude Code a link to that copy in
 # ~/.claude/skills. The repo owns both dirs: a run replaces a copy that differs from the repo, and
 # deletes every entry that isn't a repo skill, such as a skill installed from elsewhere or one the
-# repo no longer has. Claude Code's own entries in ~/.claude/skills, its dot-entries and synced,
-# stay.
+# repo no longer has. Dot-entries in either dir, and Claude Code's ~/.claude/skills/synced, stay.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"

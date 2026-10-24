@@ -29,8 +29,8 @@ BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
     echo "Usage: bash health-alert.sh status | boot"
-    echo "status pushes what setup's --status --for-alerts, run in $DOTFILES_REPO, reports needs"
-    echo "attention to ntfy; boot pushes that this machine started. Both do nothing until just alerts"
+    echo "status pushes what setup.sh and ai_tools/setup.sh --status --for-alerts, run in $DOTFILES_REPO,"
+    echo "report needs attention to ntfy; boot pushes that this machine started. Both do nothing until just alerts"
     echo "saves a URL."
 }
 

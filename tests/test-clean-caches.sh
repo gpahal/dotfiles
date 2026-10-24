@@ -32,7 +32,7 @@ load_script scripts/clean-caches.sh
 as_os macos
 fill
 
-# Leaves each cache's blob or checks it's gone
+# Checks a cache's blob is still there, or gone
 kept() {
     [ -f "$1/blob" ] || fail "$2 removed $1"
 }

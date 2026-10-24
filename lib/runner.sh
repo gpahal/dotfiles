@@ -93,7 +93,7 @@ runner_main() {
 
 _runner_usage() {
     local step
-    echo "Usage: bash $script [--status] [--backup | --no-backup] [step...]"
+    echo "Usage: bash $script [--status [--for-alerts]] [--backup | --no-backup] [step...]"
     echo "Steps, run in this order by default: ${STEPS[*]}"
     for step in "${STEPS[@]}"; do
         printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"

@@ -49,7 +49,7 @@ fake_step unknown '[ "${1:-}" != --status ] || { echo "  unknown    something"; 
 # A report set -e cut short at a command that exited 3, such as jq
 fake_step cut-short '[ "${1:-}" != --status ] || { echo "  ok         something"; echo "  missing in the text is not an item"; exit 3; }'
 fake_step sigpipe 'exit 141'
-# The step carries on after the runner's SIGINT, as brew does under `|| result=1`
+# The step carries on after the runner's SIGINT, as a step does when it runs a command under ||
 fake_step caught-INT 'kill -INT $PPID; echo "caught-INT carried on"; exit 1'
 
 # shellcheck disable=SC2034 # run_steps reads it

@@ -205,7 +205,7 @@ assert_file_not_contains "$STUB_LOG" "curl"
 # --- the ubuntu step's status: a failed last run of an installed alert service ---
 load_script ubuntu/install.sh
 
-# A failed copy fails the step though the copies after it succeed
+# A failed copy fails the files function, though the copies after it succeed
 fails_first_copy() { [ "$1" != "$DOTFILES_DIR/ubuntu/health-alert.sh" ] && [ "$1" != "$DOTFILES_DIR/ubuntu/systemd/${HEALTH_UNITS[0]}" ]; }
 copies_ok() { "$1" fails_first_copy || return 1; }
 assert_exit 1 copies_ok health_alert_files

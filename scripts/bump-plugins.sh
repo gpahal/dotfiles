@@ -139,8 +139,7 @@ main() {
     bump_plug_vim 2>&1 || status=1
     echo
     echo "Review the diffs (git diff, and the links above), run just check and just test, and commit."
-    echo "Then on each machine, re-run bash setup.sh vim tmux, and move the installed vim plugins with"
-    echo "upgrade, or only: vim -Nes -u ~/.vimrc -i NONE -c 'PlugUpdate --sync' -c qa"
+    echo "Then on each machine, re-run bash setup.sh vim tmux, which moves the installed plugins to their pins."
     [ "$status" -eq 0 ] || echo "Some pins couldn't be checked; see above. Re-run just bump-plugins to retry them." >&2
     return "$status"
 }

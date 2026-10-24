@@ -29,9 +29,10 @@ items() {
     item --sudo --hint "run make-b" "B is set up" "Set up B" b_done fix_b
     item "D is set up" "Set up D" d_done fix_d
 }
+# The sudo items pending, as items_apply_confirmed lists them
 pending_list() {
-    local pending=()
-    items_pending "$@"
+    local pending=() others=false
+    _items_each _item_pending "$@"
     printf '%s\n' ${pending[@]+"${pending[@]}"}
 }
 report() {

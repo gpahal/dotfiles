@@ -3,7 +3,8 @@
 // process that can reach your session bus, a sandboxed app given access included, can call it to:
 // - read the focused window's class, and the title of a Ghostty, Zed, or Files window;
 // - focus or launch one of the apps open-in opens, and have the shell focus the next window of a class;
-// - send Ctrl+T, Ctrl+V, or Ctrl+A to Google Chrome while it's focused and the screen is unlocked.
+// - send Ctrl+T, Ctrl+V, or Ctrl+A to Google Chrome while it's focused and the screen is unlocked;
+// - tell whether modifier keys are held, the clipboard has text, or the screen is locked.
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';

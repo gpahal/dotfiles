@@ -28,7 +28,7 @@ bash ai_tools/setup.sh --status     # report only
 
 The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`.
 
-It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. On macOS it asks to quit the Claude, ChatGPT, and T3 Code apps, which overwrite their settings, and skips their settings while they run. It adds no MCP servers.
+It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. It skips the Claude, ChatGPT, and T3 Code apps' settings while they run, since the apps overwrite them; on macOS it first asks to quit them. It adds no MCP servers.
 
 **(script)** marks what the script does.
 
@@ -72,7 +72,7 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 
 ### Desktop app
 
-The Claude app opens at login through a LaunchAgent **(script)**, with no menu bar icon, Option+Space quick entry, keep-awake while working, 30-day session archiving, and Cowork's browser tools and scheduled tasks on. To keep the Cowork ones off, set `coworkBrowserToolsEnabled` or `coworkScheduledTasksEnabled` to `false` in [`claude-desktop/install.sh`](./claude-desktop/install.sh).
+The Claude app opens at login through a LaunchAgent **(script)**, with no menu bar icon, Option+Space quick entry, keep-awake while working, 30-day session archiving, and Cowork's browser tools, web search, and scheduled tasks on. To keep the Cowork ones off, set `coworkBrowserToolsEnabled`, `coworkWebSearchEnabled`, or `coworkScheduledTasksEnabled` to `false` in [`claude-desktop/install.sh`](./claude-desktop/install.sh).
 
 On Ubuntu it installs from Anthropic's apt repo, so `apt upgrade` updates it, and its own **open at login** setting is on **(script)**. The settings are the same, without quick entry, since GNOME uses Alt+Space for the window menu. Computer use and dictation aren't on Linux.
 
@@ -125,7 +125,7 @@ Merged into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)
 - New threads use Claude Opus 5.5 at medium effort with a 1M context window, in auto mode, each in a worktree under `~/.t3/worktrees`. Your own model or effort is kept.
 - Worktree setup actions that existed when the script ran block the agent; a later one needs `"async": false`.
 - T3 removes its worktrees 30 days after last activity, 15 after settling, after merge, or when their last thread is deleted, skipping ones in use or with uncommitted or untracked files. Ignored files such as `.env` go too, unless **Settings → Storage → Keep worktrees with local changes** is **Any local files**.
-- Projects auto-pull, threads settle after 10 idle days, and PRs squash-merge.
+- Projects auto-pull, threads settle after 10 idle days, and PRs squash-merge with agent credits removed, concise titles, and bullet-point descriptions.
 
 ### Fresh checkouts
 
@@ -143,7 +143,7 @@ Turn off training by hand:
 - **ChatGPT and Codex.** **Settings → Data controls → Improve the model for everyone**, and **Include environments** on chatgpt.com/codex.
 - Don't rate replies: a rating sends the whole conversation.
 
-The script turns off Claude Code's error reporting, Codex's analytics, and T3 Code's telemetry **(script)**. Claude Code's usage telemetry stays on, since features need its [feature flags](https://code.claude.com/docs/en/env-vars#features-that-need-feature-flag-fetching).
+The script turns off Claude Code's error reporting, surveys, and feedback, Codex's analytics and feedback, and T3 Code's telemetry **(script)**. Claude Code's usage telemetry stays on, since features need its [feature flags](https://code.claude.com/docs/en/env-vars#features-that-need-feature-flag-fetching).
 
 ## User-level instructions
 
@@ -246,6 +246,6 @@ These apps don't document every key the steps write, so each was checked against
 | Claude Code | 2.1.296 | [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt), checked by `scripts/check-ai-settings.sh` |
 | Claude desktop app | 2.19675.0, and 2.42304.2 on Linux | Its `claude_desktop_config.json` |
 | ChatGPT app | 26.930.21537 | The `[desktop]` table it writes in `~/.codex/config.toml` |
-| T3 Code | 0.1.1 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.1/packages/contracts/src/settings.ts), checked by `scripts/check-t3-settings.sh` |
+| T3 Code | 0.1.1 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.1/packages/contracts/src/settings.ts), checked by `scripts/check-t3-settings.sh`; `localEnvironmentEnabled` in `desktop-settings.json` by hand |
 
 Then check the model shows in each app, notifications arrive, `pmset -g assertions` shows keep-awake during a task, and T3 Code starts at login (`launchctl getenv T3CODE_TELEMETRY_ENABLED` prints `false` on macOS; `systemctl --user is-enabled t3code` on Ubuntu).

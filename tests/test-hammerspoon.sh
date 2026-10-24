@@ -33,7 +33,7 @@ hs = {
         function t:setEnvironment(env) self.env = env end
         function t:start()
             if not state.taskStarts then return false end
-            -- task_count() counts open-in's tasks
+            -- task_count() counts open-in's tasks, so they aren't recorded
             if not self.env.OPEN_IN_CALLER then record("task " .. path .. " " .. table.concat(args, " ")) end
             self.running = true
             delayed[#delayed + 1] = function() self.running = false; fn(0, "", args[2] .. " from com.apple.finder: /tmp") end
@@ -75,7 +75,7 @@ function fire()
     end
 end
 
--- The number of open-in tasks the config keeps
+-- The number of tasks the config keeps
 function task_count()
     local n = 0
     for _ in pairs(dotfiles.tasks) do n = n + 1 end

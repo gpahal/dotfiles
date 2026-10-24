@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# The ssh step: keychain key loading on macOS (Host * block and LaunchAgent), parsed as ssh does.
+# The ssh step: keychain key loading on macOS (Host * block and LaunchAgent), parsed as ssh does,
+# and the modes of ~/.ssh and its config.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -139,7 +140,7 @@ done
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "/.ssh and its config are already private"
 
-# An unwritable config fails; main runs it under ||, which turns set -e off inside it
+# An unwritable config fails; apply runs it under ||, which turns set -e off inside it
 add_host_star_checked() {
     add_host_star || return 1
 }

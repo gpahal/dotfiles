@@ -356,6 +356,8 @@ status() {
         status_item missing "Tailscale"
     elif status_require_cmd jq "Tailscale's auto-update, operator, and connection"; then
         status_item ok "Tailscale"
+        # Its checks read it inside $( )
+        tailscale_prefs > /dev/null || true
         ! apt_installed tailscale ||
             status_apt_source Tailscale "$TAILSCALE_LIST" "$(tailscale_list_line)" ubuntu "$(apt_release_url "$TAILSCALE_REPO")"
         status_check "Tailscale auto-updates, with $CURRENT_USER as its operator" tailscale_configured

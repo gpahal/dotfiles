@@ -12,7 +12,6 @@ src="$SANDBOX/repo/config.yml"
 dest="$HOME/Library/Application Support/tool/config.yml"
 mkdir -p "$SANDBOX/repo"
 
-# read -p prints no question without a terminal, so confirm echoes it
 printf 'hello\n' > "$src"
 assert_exit 0 copy_file "$src" "$dest"
 assert_eq "hello" "$(cat "$dest")" "installed file"

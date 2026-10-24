@@ -130,8 +130,7 @@ assert_eq "e
 g
 h" "$(cat "$fixes")" "fixes run for items with states"
 
-# items_apply_confirmed: --done when nothing is pending; notes join the sudo list; a result line
-# follows a yes
+# items_apply_confirmed: --done when nothing is pending; a result line follows a yes
 rm -f "$SANDBOX"/[abcd]
 items
 touch "$SANDBOX/a" "$SANDBOX/b" "$SANDBOX/c" "$SANDBOX/d"
@@ -144,21 +143,12 @@ assert_eq "" "$(cat "$fixes")" "fixes run with nothing pending"
 
 answer yes
 rm -f "$SANDBOX/a"
-assert_exit 0 items_apply_confirmed --done "  Unused." --note "Set up E" --note "Set up F"
+assert_exit 0 items_apply_confirmed --done "  Unused."
 assert_eq "  These need sudo:
     - Set up A
-    - Set up E
-    - Set up F
   Apply them?
-  Applied." "$RUN_OUTPUT" "a yes with notes"
+  Applied." "$RUN_OUTPUT" "a yes"
 assert_eq "a" "$(cat "$fixes")" "fixes run after a yes"
-
-# A note alone asks too
-assert_exit 0 items_apply_confirmed --note "Set up E"
-assert_eq "  These need sudo:
-    - Set up E
-  Apply them?
-  Applied." "$RUN_OUTPUT" "a note alone"
 
 rm -f "$SANDBOX/c" "$SANDBOX/d"
 : > "$fixes"

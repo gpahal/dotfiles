@@ -89,18 +89,16 @@ t3_code_ubuntu_items() {
             "apt_installed t3code" install_t3_code_desktop
     fi
     if [ ! -x "$HOME/.local/bin/t3" ]; then
-        item --sudo "libatomic1, which the t3 CLI needs" "$T3_CODE_LIBATOMIC_PENDING" \
+        item --sudo "libatomic1, which the t3 CLI needs" "Install libatomic1, which the t3 CLI needs" \
             "apt_installed libatomic1" "apt_install_fresh libatomic1"
     fi
 }
-
-T3_CODE_LIBATOMIC_PENDING="Install libatomic1, which the t3 CLI needs"
 
 # The settings go first, so the app's first launch doesn't try to start a server; without them it
 # isn't installed
 setup_t3_code_desktop_ubuntu() {
     echo "Setting up the T3 Code desktop app..."
-    local result=0 merged=true notes=()
+    local result=0 merged=true
     skip_without_desktop && return 0
     t3_code_files copy_file || result=1
     if ! merge_app_json t3code \
@@ -118,9 +116,9 @@ setup_t3_code_desktop_ubuntu() {
         echo "  Not installing the T3 Code desktop app without its settings, as its own server would" >&2
         echo "  share the service's data." >&2
     else
-        # The question lists libatomic1 too, which install_t3_cli then installs on the same answer
-        [ -x "$HOME/.local/bin/t3" ] || apt_installed libatomic1 || notes=(--note "$T3_CODE_LIBATOMIC_PENDING")
-        items_apply_confirmed ${notes[@]+"${notes[@]}"} "apt_installed t3code" || result=1
+        # The question lists libatomic1 too, while the t3 CLI isn't installed, so install_t3_cli
+        # needn't ask again
+        items_apply_confirmed "apt_installed t3code" "apt_installed libatomic1" || result=1
     fi
     return "$result"
 }
@@ -315,9 +313,10 @@ t3_code_status_client_settings() {
 T3_CODE_APP_GLOB="T3 Code*.app"
 T3_CODE_NIGHTLY_GLOB="*(Nightly).app"
 
+# t3_code_app_path [app]: [app] is cask_state's, to skip asking brew again
 t3_code_app_path() {
-    local app
-    app="$(cask_app_path t3-code)"
+    local app="${1:-}"
+    [ $# -gt 0 ] || app="$(cask_app_path t3-code)"
     if [ -n "$app" ] && [ -d "$app" ]; then
         echo "$app"
         return 0
@@ -344,10 +343,11 @@ turn_off_t3_code_telemetry() {
     echo "  Turned off telemetry (restart T3 Code if it's running)"
 }
 
+# configure_t3_code [app]: [app] as t3_code_app_path takes it
 configure_t3_code() {
     echo "Configuring T3 Code..."
     local app_name
-    app_name="$(t3_code_app_path || true)"
+    app_name="$(t3_code_app_path "$@" || true)"
     app_name="${app_name##*/}"
     app_name="${app_name%.app}"
     local result=0
@@ -964,9 +964,10 @@ apply() {
         require_cmd curl || return 1
     fi
     if is_macos; then
-        local cask_failed=0
-        install_cask --renamed "$T3_CODE_APP_GLOB" --except "$T3_CODE_NIGHTLY_GLOB" t3-code || cask_failed=1
-        configure_t3_code || return 1
+        local cask_failed=0 state app opts=(--renamed "$T3_CODE_APP_GLOB" --except "$T3_CODE_NIGHTLY_GLOB")
+        IFS=$'\t' read -r state app <<< "$(cask_state "${opts[@]}" t3-code)"
+        install_cask "${opts[@]}" t3-code "$app" "$state" || cask_failed=1
+        configure_t3_code "$app" || return 1
         return "$cask_failed"
     else
         # One scope, so the desktop app and the t3 CLI share one sudo question

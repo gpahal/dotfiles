@@ -15,8 +15,8 @@ _cask_opts() {
     done
 }
 
-# install_cask [options] <cask> [app] [state]: [state] and [app] are cask_state's fields, if the
-# caller has them. Exits on interrupt: brew catches Ctrl-C and exits 130, which a caller's ||
+# install_cask [options] <cask> [app] [state]: with [state], [app] and [state] are cask_state's
+# fields, which the caller already has; without it, [app] is cask_state's [app]. Exits on interrupt: brew catches Ctrl-C and exits 130, which a caller's ||
 # would swallow.
 install_cask() {
     local opts=() _cask_shift

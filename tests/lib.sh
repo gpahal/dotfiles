@@ -435,8 +435,9 @@ EOF
 }
 
 # stub_systemctl_units <dir> [prefix-body]: a systemctl keeping each unit's state in <dir> as files
-# a test can create or remove: <unit>.enabled, .active, .masked and .failed, named user-<unit>.* for
-# --user units. enable --now leaves a failed unit failed; start and restart clear it. show answers LoadState (not-found while <unit>.not-found exists), NeedDaemonReload
+# a test can create or remove: <unit>.enabled, .enabled-runtime, .active, .masked and .failed,
+# named user-<unit>.* for --user units. enable --now leaves a failed unit failed; start and restart
+# clear it. show answers LoadState (not-found while <unit>.not-found exists), NeedDaemonReload
 # (yes while <dir>/reload-needed exists), ActiveState and UnitFileState. daemon-reload fails while
 # <dir>/reload-fails exists, and else clears reload-needed and the not-found marks.
 # show-environment fails while <dir>/no-user-manager exists. The prefix body runs first, with the
@@ -470,6 +471,7 @@ for unit in "${units[@]}"; do
         is-enabled)
             if [ -e "$f.masked" ]; then say masked
             elif [ -e "$f.enabled" ]; then say enabled; found=0
+            elif [ -e "$f.enabled-runtime" ]; then say enabled-runtime; found=0
             else say disabled; fi ;;
         is-active) if [ -e "$f.active" ]; then say active; found=0; else say inactive; fi ;;
         is-failed) if [ -e "$f.failed" ]; then say failed; found=0; else say inactive; fi ;;
@@ -720,7 +722,7 @@ load_script() {
 # upper-case constant the scripts set whose value, or an element of it, starts with /etc, /var,
 # /usr, /run or /dev at the same path under $SANDBOX, as /etc/x becomes $SANDBOX/etc/x. Scripts are
 # repo-relative and may be globs. Call it after each load_script, which resets the constants. It
-# fails the test on any it couldn't move, such as a colon list; set those.
+# fails the test on any it couldn't move, such as a list in one string; set those.
 sandbox_paths() {
     local arg name value values moved files=() set=" " left=""
     for arg; do
@@ -745,7 +747,8 @@ sandbox_paths() {
                 "$REPO_DIR"/*) ;;
                 /etc | /etc/* | /var | /var/* | /usr | /usr/* | /run | /run/* | /dev | /dev/*)
                     case "$value" in
-                        *:*) left="$left $name=$value" ;;
+                        # A list in one string
+                        *:* | *" "*) left="$left $name=$value" ;;
                         *) value="$SANDBOX$value" ;;
                     esac
                     ;;

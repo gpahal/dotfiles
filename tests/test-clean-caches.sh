@@ -86,8 +86,8 @@ clear_dir_guard() {
     for dir in "$HOME//" "$HOME/." "$SANDBOX/home-link" "$SANDBOX/home-link/" "$HOME/.." / //; do
         assert_exit 1 _clear_dir "$dir"
         assert_contains "$RUN_OUTPUT" "Not clearing $dir, which is / or holds your home folder."
+        assert_eq "" "$(grep '^rm' "$STUB_LOG" || true)" "rm runs for $dir"
     done
-    assert_eq "" "$(grep '^rm' "$STUB_LOG" || true)" "rm runs for HOME or a dir above it"
     /bin/rm -f "$STUB_DIR/rm" "$SANDBOX/home-link"
 }
 subtest clear_dir_guard

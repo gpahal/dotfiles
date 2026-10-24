@@ -10,23 +10,9 @@ source "$TESTS_DIR/ubuntu-step-fixture.sh"
 
 ubuntu_step_setup
 ubuntu_step_set_up
-unset DOTFILES_ASSUME_YES
-restore_fn ufw_enabled
-ufw_on() { echo ENABLED=yes > "$UFW_CONF"; }
-ufw_off() { echo ENABLED=no > "$UFW_CONF"; }
-ufw_defaults() { printf '%s\n' 'DEFAULT_INPUT_POLICY="DROP"' "IPV6=$1" > "$UFW_DEFAULTS"; }
-ufw_defaults yes
-# Linger stands in for the step's other changes
-replace_fn lingering '[ -e "$SANDBOX/linger" ]'
-touch "$SANDBOX/linger"
+ufw_step_setup
 # enable-linger turns linger on
 stub loginctl 'touch "$SANDBOX/linger"'
-rules_present() {
-    ufw_status_listing > "$SANDBOX/ufw-status"
-}
-rules_missing() {
-    { ufw_header; echo "Anywhere on tailscale0     ALLOW       Anywhere"; } > "$SANDBOX/ufw-status"
-}
 
 # Nothing else pending, credentials not cached: no prompt, only a hint
 rules_present

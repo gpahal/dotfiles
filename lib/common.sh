@@ -976,26 +976,20 @@ _item_apply() {
     fi
 }
 
-# items_apply_confirmed [--done <message>] [--note <line>]... [check...]: asks for the sudo items
-# pending, with each note as one more line, then applies them all, or after a no, only those that
-# need no sudo. A note is a change the step makes itself after a yes. It opens a memo scope unless
+# items_apply_confirmed [--done <message>] [check...]: asks for the sudo items pending, then applies
+# them all, or after a no, only those that need no sudo. It opens a memo scope unless
 # the caller has one, and asks once per scope: later calls reuse the answer. With nothing pending,
 # prints the --done message. Returns items_apply's status. A check that runs before the question
 # can read pending, the sudo changes listed so far.
 # shellcheck disable=SC2120 # with no check functions, it drives every item
 items_apply_confirmed() {
-    local done_message="" notes=() pending=() others=false result=0
+    local done_message="" pending=() others=false result=0
     local MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --done) done_message="$2" ;;
-            --note) notes+=("$2") ;;
-            *) break ;;
-        esac
+    if [ "${1:-}" == --done ]; then
+        done_message="$2"
         shift 2
-    done
+    fi
     _items_each _item_pending "$@"
-    pending+=(${notes[@]+"${notes[@]}"})
     if [ ${#pending[@]} -eq 0 ]; then
         if ! "$others"; then
             [ -z "$done_message" ] || printf '%s\n' "$done_message"

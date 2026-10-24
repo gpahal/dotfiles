@@ -3,8 +3,9 @@
 # lib/gnome.sh.
 # shellcheck shell=bash
 
-# unit_enabled [--user] <unit>...: each is enabled. Like unit_active and unit_on, it works as an
-# item check string, such as "unit_on docker.socket".
+# unit_enabled [--user] <unit>...: is-enabled prints enabled for each; enabled-runtime ends at the
+# next boot. Like unit_active and unit_on, it works as an item check string, such as
+# "unit_on docker.socket".
 unit_enabled() {
     _unit_is is-enabled "$@"
 }
@@ -24,7 +25,11 @@ _unit_is() {
     shift
     [ "${1:-}" != --user ] || { user=--user; shift; }
     for unit; do
-        systemctl ${user:+--user} "$query" --quiet "$unit" 2>/dev/null || return 1
+        if [ "$query" == is-enabled ]; then
+            [ "$(systemctl ${user:+--user} is-enabled "$unit" 2>/dev/null)" == enabled ] || return 1
+        else
+            systemctl ${user:+--user} "$query" --quiet "$unit" 2>/dev/null || return 1
+        fi
     done
 }
 

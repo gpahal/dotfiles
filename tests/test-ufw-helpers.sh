@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # The ubuntu step's ufw helpers: the SSH ports, which addresses count as outside, and when ufw counts
-# as on. test-ufw-recheck.sh covers the step around them.
+# as on. test-ufw-recheck.sh and test-ufw-sessions.sh cover the step around them.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -39,7 +39,7 @@ done
 
 # --- ufw_enabled: incoming denied by DROP or REJECT ---
 stub ufw
-stub systemctl
+stub systemctl '[ "$1" != is-enabled ] || echo enabled'
 mkdir -p "$(dirname "$UFW_CONF")" "$(dirname "$UFW_DEFAULTS")"
 echo ENABLED=yes > "$UFW_CONF"
 for policy in DROP REJECT; do

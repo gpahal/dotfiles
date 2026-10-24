@@ -118,13 +118,6 @@ gnome_step() {
     stub gnome-shell 'echo "GNOME Shell 50.1"'
     main "$@"
 }
-# Node comes from mise, not PATH, so this sandbox has none
-stream_deck_ubuntu() {
-    load_script stream-deck/install.sh
-    sandbox_paths RAPL_DIR="$SANDBOX/powercap" HIDRAW_DIR="$SANDBOX/hidraw" stream-deck/install.sh 'stream-deck/lib/*.sh'
-    as_os ubuntu
-    main "$@"
-}
 
 # The codex step checks for yq first
 command -v yq &>/dev/null || stub yq
@@ -134,7 +127,7 @@ for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq c
     "curl docker_step" "gpg ubuntu_no_tailscale" "gpg docker_step" "brew t3_code_macos" \
     "curl t3_code_ubuntu" "mise runtimes_no_mise" "curl runtimes_step" \
     "snap ghostty_ubuntu|unknown    Ghostty snap" "gpg logitech_step" \
-    "gsettings gnome_step|unknown    GNOME settings: gsettings" "node stream_deck_ubuntu"; do
+    "gsettings gnome_step|unknown    GNOME settings: gsettings"; do
     line=""
     case "$check" in *"|"*) line="${check#*|}" check="${check%%|*}" ;; esac
     cmd="${check% *}"
@@ -151,6 +144,21 @@ for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq c
         assert_contains "$RUN_OUTPUT" "$line"
     fi
 done
+
+# Stream Deck's Node comes from mise, not PATH, and this sandbox has none
+stream_deck_ubuntu() {
+    load_script stream-deck/install.sh
+    sandbox_paths RAPL_DIR="$SANDBOX/powercap" HIDRAW_DIR="$SANDBOX/hidraw" stream-deck/install.sh 'stream-deck/lib/*.sh'
+    as_os ubuntu
+    stub pnpm
+    stub gsettings
+    main "$@"
+}
+rm -rf "$HOME"
+mkdir -p "$HOME"
+assert_exit 1 stream_deck_ubuntu
+assert_contains "$RUN_OUTPUT" "Node LTS isn't at $HOME/.local/share/mise/installs/node/lts/bin/node. Run bash setup.sh runtimes first."
+check_untouched "stream-deck without Node"
 
 # The zsh step without the login zsh it needs
 for os in macos ubuntu; do

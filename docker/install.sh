@@ -327,7 +327,8 @@ apply() {
     require_cmd gpg || return 1
 
     # A release upgrade disables the source; rewrite it once Docker publishes for the new release.
-    local installed=false repair="" result=0 fresh=false
+    # One scope, so a fresh install's two items_apply_confirmed calls ask once
+    local installed=false repair="" result=0 fresh=false MEMO_SCOPE="${MEMO_SCOPE:-$((MEMO_SEQ += 1))}"
     docker_installed && installed=true
     if ! "$installed" && ! apt_repo_published Docker "$(apt_release_url "$DOCKER_REPO")"; then
         return 0

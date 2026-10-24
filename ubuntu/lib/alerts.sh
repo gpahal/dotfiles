@@ -23,6 +23,13 @@ health_units_loaded() {
     unit_loaded_current --user "${HEALTH_UNITS[@]}"
 }
 
+health_units_installed() {
+    local unit
+    for unit in "${HEALTH_UNITS[@]}"; do
+        [ -e "$HEALTH_UNIT_DIR/$unit" ] || return 1
+    done
+}
+
 health_timer_on() {
     unit_on --user dotfiles-health.timer
 }
@@ -98,7 +105,8 @@ status_health_alerts() {
     local url_label="ntfy URL for the disk, UPS, health, and boot alerts" problem
     health_alert_files status_file
     health_unit_files status_file
-    health_units_loaded || ! systemctl --user show-environment &>/dev/null ||
+    # systemd hasn't loaded a unit that was never installed, which the lines above report
+    health_units_loaded || ! health_units_installed || ! systemctl --user show-environment &>/dev/null ||
         status_item missing "The health alert's user units in ~/.config/systemd/user: changed since systemd loaded them (re-run the ubuntu step)"
     status_check "Daily health alert to ntfy (dotfiles-health.timer) enabled and active" health_timer_on
     status_check "Boot notice to ntfy (dotfiles-boot-notice.service) enabled" boot_notice_on

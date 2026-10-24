@@ -26,6 +26,9 @@ assert_exit 1 unit_on --user docker.socket
 touch "$STATE/user-tmux.service.enabled"
 assert_exit 0 unit_enabled --user tmux.service
 assert_exit 1 unit_enabled tmux.service
+# Enabled only until the next boot
+touch "$STATE/ssh.socket.enabled-runtime"
+assert_exit 1 unit_enabled ssh.socket
 # As an item check string
 items_reset
 item "docker.socket on" "Turn on docker.socket" "unit_on docker.socket" :
@@ -85,7 +88,7 @@ assert_file_not_contains "$STUB_LOG" "--user enable"
 assert_eq "  Started the Stream Deck daemon." "$RUN_OUTPUT" "start_user_service with the service stopped"
 assert_exit 0 start_user_service deck.service "the Stream Deck daemon" false
 assert_eq "  The Stream Deck daemon is already running." "$RUN_OUTPUT" "start_user_service with the service running"
-assert_eq "" "$(grep -v ' is-\| show' "$STUB_LOG")" "commands start_user_service ran with nothing to do"
+assert_eq "" "$(grep -vE ' is-| show' "$STUB_LOG")" "commands start_user_service ran with nothing to do"
 assert_exit 0 start_user_service deck.service Vicinae true
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 assert_file_contains "$STUB_LOG" "systemctl --user restart deck.service"

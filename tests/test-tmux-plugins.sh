@@ -60,6 +60,9 @@ assert_eq "$pinned" "$(installed)" "the plugins' checkouts"
 assert_exit 0 main
 assert_eq "" "$(printf '%s\n' "$RUN_OUTPUT" | grep -E 'Copied|Added|Installed' || true)" \
     "the second run's Copied, Added, and Installed lines"
+# Status reports what apply set
+assert_exit 0 main --status
+assert_not_contains "$RUN_OUTPUT" "missing"
 short="$(awk '$1 == "tmux-plugins/tmux-yank" { print substr($2, 1, 7) }' "$DOTFILES_TMUX_PLUGINS_LOCK")"
 
 # A plugin at another commit, as a bumped pin leaves it

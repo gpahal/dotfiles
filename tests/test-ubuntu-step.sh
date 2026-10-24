@@ -132,6 +132,14 @@ assert_contains "$RUN_OUTPUT" "missing    The health alert's user units in ~/.co
 assert_exit 0 main
 assert_file_contains "$STUB_LOG" "systemctl --user daemon-reload"
 [ ! -e "$SANDBOX/units/reload-needed" ] || fail "the units weren't reloaded"
+# A unit that isn't installed isn't loaded either; the missing file is the whole report
+mv "$USER_UNITS/dotfiles-health.service" "$SANDBOX/health.service"
+touch "$SANDBOX/units/user-dotfiles-health.service.not-found"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "dotfiles-health.service"
+assert_not_contains "$RUN_OUTPUT" "changed since systemd loaded them"
+mv "$SANDBOX/health.service" "$USER_UNITS/dotfiles-health.service"
+rm "$SANDBOX/units/user-dotfiles-health.service.not-found"
 
 # Status never prompts or changes anything, and checks what only root can read once sudo's
 # credentials are cached

@@ -156,7 +156,7 @@ Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Gho
 The **Dotfiles** keys act on the folder of the app in front:
 
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
-- **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** focuses or opens Gmail.
+- **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys. **Gmail** and **Agenda** focus or open Gmail and [the agenda](https://garvitpahal.com/x/agenda).
 - **Overview**, labeled MAC or UBUNTU for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 
 [`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
@@ -167,7 +167,7 @@ Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user se
 
 - The folder comes from a Ghostty tab, a Zed file, or a file manager window's folder, not its selected file. With T3 Code in front, the keys open a new window.
 - **Terminal** opens a Ghostty window, not a tab.
-- **Gmail** opens in its own Chrome window, and the stat keys open Resources.
+- **Gmail** and **Agenda** open in their own Chrome windows, and the stat keys open Resources.
 - **Power** shows the CPU package, its cores, and the GPU, with no figure for the whole machine.
 - Keys that open apps do nothing while the screen is locked.
 - Only the 15-key model works. The daemon leaves other decks blank and logs why.

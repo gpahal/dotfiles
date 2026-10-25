@@ -83,7 +83,7 @@ console.log([0, 1, 2, 3, 4, 5, 9, 10].map((i) => drawn(i) === BLANK ? 'blank' : 
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
 console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
 assert_eq '{"connected":true,"page":"main"} 0 60
-icon:overview icon:editor icon:terminal icon:files blank icon:chrome icon:claude blank
+icon:overview icon:editor icon:terminal icon:files icon:agenda icon:chrome icon:claude blank
 stat:overview:1 overview 1' "$out" "the main page"
 
 # Overview opens the System page and Back returns; stat keys open Resources

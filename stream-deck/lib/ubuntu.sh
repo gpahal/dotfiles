@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The stream-deck step on Ubuntu: the daemon (stream-deck/linux) as a user service, the GNOME
-# extension it needs, the Gmail and Agenda app windows, and the root helper the Power key reads.
+# extension it needs, the Agenda and Gmail app windows, and the root helper the Power key reads.
 
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DECK_DIR="$DATA_HOME/dotfiles/stream-deck"

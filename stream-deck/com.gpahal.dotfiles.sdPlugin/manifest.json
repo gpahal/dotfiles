@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Open the folder or file in front in Zed, Ghostty, or the file manager, open Chrome, a new Chrome tab, Gmail, the agenda, T3 Code, or Claude, and show live system stats",
+  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, and open the agenda, Chrome, a new Chrome tab, Gmail, T3 Code, or Claude",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -47,6 +47,14 @@
       "Controllers": ["Keypad"]
     },
     {
+      "Name": "Agenda",
+      "UUID": "com.gpahal.dotfiles.agenda",
+      "Tooltip": "Bring Chrome's agenda tab to the front, or open the agenda in a new tab",
+      "Icon": "images/agenda",
+      "States": [{ "Image": "images/key-agenda" }],
+      "Controllers": ["Keypad"]
+    },
+    {
       "Name": "Chrome",
       "UUID": "com.gpahal.dotfiles.chrome",
       "Tooltip": "Open Google Chrome, or bring it to the front",
@@ -71,14 +79,6 @@
       "Controllers": ["Keypad"]
     },
     {
-      "Name": "Agenda",
-      "UUID": "com.gpahal.dotfiles.agenda",
-      "Tooltip": "Bring Chrome's agenda tab to the front, or open the agenda in a new tab",
-      "Icon": "images/agenda",
-      "States": [{ "Image": "images/key-agenda" }],
-      "Controllers": ["Keypad"]
-    },
-    {
       "Name": "T3 Code",
       "UUID": "com.gpahal.dotfiles.t3-code",
       "Tooltip": "Open T3 Code, or bring it to the front",
@@ -93,6 +93,15 @@
       "Icon": "images/claude",
       "States": [{ "Image": "images/key-claude" }],
       "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Back",
+      "UUID": "com.gpahal.dotfiles.back",
+      "Tooltip": "Return to the main page",
+      "Icon": "images/back",
+      "States": [{ "Image": "images/key-back" }],
+      "Controllers": ["Keypad"],
+      "VisibleInActionsList": false
     },
     {
       "Name": "CPU",
@@ -116,6 +125,14 @@
       "Tooltip": "Swap used; press for Activity Monitor",
       "Icon": "images/swap",
       "States": [{ "Image": "images/key-swap" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Activity Monitor",
+      "UUID": "com.gpahal.dotfiles.activity-monitor",
+      "Tooltip": "Open Activity Monitor, or bring it to the front",
+      "Icon": "images/activity-monitor",
+      "States": [{ "Image": "images/key-activity-monitor" }],
       "Controllers": ["Keypad"]
     },
     {
@@ -165,23 +182,6 @@
       "Icon": "images/network",
       "States": [{ "Image": "images/key-network" }],
       "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Activity Monitor",
-      "UUID": "com.gpahal.dotfiles.activity-monitor",
-      "Tooltip": "Open Activity Monitor, or bring it to the front",
-      "Icon": "images/activity-monitor",
-      "States": [{ "Image": "images/key-activity-monitor" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Back",
-      "UUID": "com.gpahal.dotfiles.back",
-      "Tooltip": "Return to the main page",
-      "Icon": "images/back",
-      "States": [{ "Image": "images/key-back" }],
-      "Controllers": ["Keypad"],
-      "VisibleInActionsList": false
     }
   ],
   "Profiles": [

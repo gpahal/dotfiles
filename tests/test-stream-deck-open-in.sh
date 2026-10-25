@@ -60,7 +60,7 @@ check chrome-tab com.google.Chrome 0 ""
 assert_contains "$RUN_OUTPUT" "chrome-tab: another New Tab is still running, so this one did nothing"
 rm -r "$TMPDIR/dotfiles-new-tab.lock"
 
-# Gmail and Agenda bring their Chrome tab to the front, else open one
+# Agenda and Gmail bring their Chrome tab to the front, else open one
 ANSWER=found check gmail com.apple.finder 0 "open -b com.google.Chrome
   Chrome tab starting https://mail.google.com/, else a new one at https://mail.google.com/mail/u/0/#inbox"
 assert_contains "$RUN_OUTPUT" "gmail: brought the Gmail tab to the front"

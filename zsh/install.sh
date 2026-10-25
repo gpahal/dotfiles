@@ -56,7 +56,7 @@ add_source_line() {
 }
 
 ZSH_HISTORY="$HOME/.zsh_history"
-ATUIN_DB="${XDG_DATA_HOME:-$HOME/.local/share}/atuin/history.db"
+ATUIN_DB="${ATUIN_HOME:-$HOME/.atuin}/data/history.db"
 
 # atuin starts its database once its zsh hook first runs, so a database means the history went in,
 # or atuin has kept it since. A second import would add the history again.

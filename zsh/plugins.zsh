@@ -29,7 +29,7 @@ if [[ -n $TTY ]] && _cached_init fzf --zsh; then
 fi
 
 # --disable-ai: ? on an empty prompt stays a plain ?
-_cached_init -f ${ATUIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/atuin}/config.toml atuin init zsh --disable-ai
+_cached_init -f ${ATUIN_CONFIG_DIR:-${ATUIN_HOME:-$HOME/.atuin}}/config.toml atuin init zsh --disable-ai
 
 # Not cached: the output embeds the current PATH
 if command -v mise &>/dev/null; then

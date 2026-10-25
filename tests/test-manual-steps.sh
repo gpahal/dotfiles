@@ -369,14 +369,16 @@ display_scale() {
     }
     gdbus_state 1.5 > "$SANDBOX/gdbus"
     stub gdbus 'cat "$SANDBOX/gdbus"'
-    expect 1 display_scale_200
+    expect 1 display_scale_167
     assert_eq "scale 1.5" "$MANUAL_DETAIL" "the scale detail"
     gdbus_state 2.0 > "$SANDBOX/gdbus"
-    expect 0 display_scale_200
+    expect 1 display_scale_167
+    gdbus_state 1.6666666269302368 > "$SANDBOX/gdbus"
+    expect 0 display_scale_167
     stub gdbus 'exit 1'
-    expect 2 display_scale_200
+    expect 2 display_scale_167
     hide gnome-shell
-    expect 0 display_scale_200
+    expect 0 display_scale_167
 }
 subtest display_scale
 

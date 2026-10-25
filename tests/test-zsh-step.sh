@@ -103,10 +103,10 @@ assert_contains "$RUN_OUTPUT" "missing    /bin/zsh as the login shell: it's /opt
 # Shell history goes into atuin once, before atuin has a database; with no history there's
 # nothing to import
 atuin_import() {
-    local db="$HOME/.local/share/atuin/history.db"
+    local db="$HOME/.atuin/data/history.db"
     replace_fn current_login_shell 'echo /bin/zsh'
     stub atuin '[ "$*" == "import zsh" ] && [ "$HISTFILE" == "$HOME/.zsh_history" ] || exit 1
-mkdir -p "$HOME/.local/share/atuin" && touch "$HOME/.local/share/atuin/history.db"'
+mkdir -p "$HOME/.atuin/data" && touch "$HOME/.atuin/data/history.db"'
     rm -f "$HOME/.zsh_history"
     assert_exit 0 main
     assert_file_not_contains "$STUB_LOG" atuin

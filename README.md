@@ -316,7 +316,7 @@ Once:
 15. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, such as with Déjà Dup.
 16. **Restore.** Restore a few files from the backup once, to check it.
 17. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
-18. **Display scale.** In **Settings → Displays**, set **Scale** to **200%**. Whole-number scaling is sharper than 150% and lighter on the CPU's built-in GPU.
+18. **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 
 When needed:
 
@@ -359,7 +359,7 @@ At the desktop, with the Stream Deck switched to it:
 - Holding a key in a text field repeats it after about a quarter of a second.
 - Files lists folders in list view and shows hidden files, such as `.config` in your home folder. Selecting a file and pressing `Space` previews it, and `Space` again closes the preview.
 - The dock stays hidden until the pointer reaches the screen's left edge, also with no window open.
-- After the **Display scale** manual step, **Settings → Displays** shows **Scale** at **200%**, and text is sharp.
+- After the **Display scale** manual step, **Settings → Displays** shows **Scale** at **167%**.
 
 ## Updating
 

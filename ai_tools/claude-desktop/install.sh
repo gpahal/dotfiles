@@ -15,6 +15,8 @@ source "$DOTFILES_DIR/lib/system.sh"
 source "$DOTFILES_DIR/lib/gnome.sh"
 # shellcheck source=../lib/app-json.sh
 source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
+# shellcheck source=../lib/app-keys.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-keys.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -22,6 +24,7 @@ STEP_NEEDS="homebrew"
 CLAUDE_DESKTOP_MACOS_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 # Not XDG_CONFIG_HOME on Ubuntu: GNOME starts the app and its autostart without the shell's
 CLAUDE_DESKTOP_UBUNTU_CONFIG="$HOME/.config/Claude/claude_desktop_config.json"
+CLAUDE_DESKTOP_MACOS_BUNDLE=/Applications/Claude.app/Contents/Resources/app.asar
 # Opens Claude at login. Claude's own setting uses SMAppService, which no command can turn on.
 CLAUDE_DESKTOP_LOGIN_LABEL="dotfiles.claude-desktop"
 CLAUDE_DESKTOP_LOGIN_AGENT="$HOME/Library/LaunchAgents/$CLAUDE_DESKTOP_LOGIN_LABEL.plist"
@@ -105,6 +108,14 @@ tasks" \
     fi
 }
 
+claude_desktop_bundle() {
+    if is_macos; then
+        echo "$CLAUDE_DESKTOP_MACOS_BUNDLE"
+    else
+        deb_bundle claude-desktop
+    fi
+}
+
 claude_apt_installed() {
     apt_installed claude-desktop && file_is "$CLAUDE_APT_SOURCES" "$CLAUDE_APT_SOURCES_CONTENT"
 }
@@ -136,6 +147,9 @@ status() {
     if status_require_cmd jq "Claude desktop app settings"; then
         status_check "Claude desktop app settings" json_applied "$(claude_desktop_config)" "$(claude_desktop_settings)"
     fi
+    # shellcheck disable=SC2046 # a list of keys
+    status_app_keys "Claude desktop app knows every preference the step sets" \
+        "$(claude_desktop_bundle)" $(jq_filter_keys "$(claude_desktop_settings)")
 }
 
 apply() {

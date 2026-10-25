@@ -11,6 +11,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/keepable.sh
 source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
+# shellcheck source=../lib/app-keys.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-keys.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 
@@ -135,6 +137,19 @@ codex_settings() {
         codex_set '.desktop["enabled-reasoning-efforts"]' \
             '["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]'
     fi
+}
+
+CHATGPT_BUNDLE=/Applications/ChatGPT.app/Contents/Resources/app.asar
+
+# The ChatGPT app's keys in the [desktop] table, one per line
+codex_desktop_keys() {
+    local path
+    codex_settings
+    for path in "${CODEX_PATHS[@]}"; do
+        case "$path" in
+            '.desktop["'*'"]') path="${path#.desktop[\"}" && echo "${path%\"]}" ;;
+        esac
+    done
 }
 
 # Usage: codex_settings_joined <separator> set|path|value
@@ -376,6 +391,11 @@ status() {
         else
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             codex_status_custom_values
+            if is_macos; then
+                # shellcheck disable=SC2046 # a list of keys
+                status_app_keys "ChatGPT app knows every [desktop] key the step sets" "$CHATGPT_BUNDLE" \
+                    $(codex_desktop_keys)
+            fi
         fi
         user_instructions_files status_file
         codex_items

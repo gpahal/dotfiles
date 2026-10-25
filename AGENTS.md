@@ -39,7 +39,7 @@ A step that breaks a rule says why in its header, as `homebrew/install.sh` does.
 Docs change with the code, in the same commit, and `just check` catches most drift. By hand:
 
 - The Claude or Codex models in `claude-code` or `codex`: the reviewer table in `ai_tools/skills/engineering/interrogate/SKILL.md`.
-- An app's keys rechecked against a new version: the version table in `ai_tools/README.md` "Maintenance".
+- How an app's settings keys are checked: the table in `ai_tools/README.md` "Maintenance". Name no app version: the repo assumes the latest.
 - What an `ai_tools/setup.sh` step does: the **(script)** marks in `ai_tools/README.md`.
 - `scripts/upgrade.sh`: "Updating" in README for `upgrade`, and in `ai_tools/README.md` for `upgrade-ai-tools`.
 - A key added to `scripts/claude-settings-keys.txt`: check it against Claude Code first.

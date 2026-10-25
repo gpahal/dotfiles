@@ -114,6 +114,11 @@ mkdir -p "$chrome/Profile 1/Extensions/$CLAUDE_CHROME_EXTENSION_ID" "$chrome/Nat
 expect 1 claude_in_chrome
 touch "$chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json"
 expect 0 claude_in_chrome
+# A profile directory the terminal can't list can't tell
+chmod 000 "$chrome"
+expect 2 claude_in_chrome
+chmod 755 "$chrome"
+assert_eq "reading Chrome's profiles needs Full Disk Access for this terminal" "$MANUAL_DETAIL" "the detail for an unreadable profile directory"
 
 # T3 Code's sessions show a client paired, but sessions expire, so none can't tell
 stub_at "$HOME/.local/bin/t3" '[ "$*" == "auth session list --json" ] && cat "$SANDBOX/sessions.json"'

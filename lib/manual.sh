@@ -360,6 +360,11 @@ github_logged_in() {
 # native messaging host, which claude --chrome installs
 claude_in_chrome_done() {
     local missing=()
+    # macOS keeps other apps' data from a terminal without Full Disk Access
+    if [ -d "$1" ] && ! ls "$1" &>/dev/null; then
+        manual_unknown "reading Chrome's profiles needs Full Disk Access for this terminal"
+        return
+    fi
     compgen -G "$1/*/Extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn" > /dev/null ||
         missing+=("the extension isn't installed in Chrome")
     [ -e "$1/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json" ] ||

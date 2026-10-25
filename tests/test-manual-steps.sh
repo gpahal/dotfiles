@@ -301,6 +301,10 @@ privacy() {
     *kTCCServiceAccessibility*) echo 0 ;;
     *kTCCServiceAppleEvents*) [ -e "$SANDBOX/tcc-unreadable" ] && exit 1; printf "%s\n" "com.mitchellh.ghostty|2" "com.apple.finder|0" ;;
 esac'
+    # Full Disk Access is whether the system database opens, since macOS 27 has no per-user one
+    expect 1 terminal_has_full_disk_access
+    echo x > "$TCC_SYSTEM_DB"
+    expect 0 terminal_has_full_disk_access
     expect 2 tcc_allowed kTCCServiceAccessibility org.hammerspoon.Hammerspoon
     assert_contains "$MANUAL_DETAIL" "$ROOT_ONLY_TEXT"
     cache_sudo yes

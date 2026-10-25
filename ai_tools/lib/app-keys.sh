@@ -19,7 +19,7 @@ deb_bundle() {
 # status_app_keys <what> <bundle> <key>...: reports whether the bundle has every key. An empty or
 # missing bundle is unverified, as the app's own status item reports it missing.
 status_app_keys() {
-    local what="$1" bundle="$2" found key missing=""
+    local what="$1" bundle="$2" key missing=""
     shift 2
     if status_for_alerts; then
         return 0
@@ -28,15 +28,14 @@ status_app_keys() {
         status_item unverified "$what: couldn't find the installed app's app.asar"
         return 0
     fi
-    if ! found="$(printf '%s\n' "$@" "$APP_KEYS_MADE_UP" | LC_ALL=C grep -aoF -f /dev/stdin "$bundle" | sort -u)"; then
-        found=""
-    fi
-    if printf '%s\n' "$found" | grep -qxF "$APP_KEYS_MADE_UP"; then
+    if LC_ALL=C grep -qaF -- "$APP_KEYS_MADE_UP" "$bundle"; then
         status_item unknown "$what: the search for keys in $bundle found a made-up one, so it can't tell"
         return 0
     fi
+    # A grep per key: macOS's grep takes half a minute over an app.asar with -o and several -F
+    # patterns, and -q stops at the first match
     for key in "$@"; do
-        printf '%s\n' "$found" | grep -qxF -- "$key" || missing="$missing $key"
+        LC_ALL=C grep -qaF -- "$key" "$bundle" || missing="$missing $key"
     done
     if [ -n "$missing" ]; then
         status_item missing "$what: the installed app lacks$missing; it may have renamed them, so update the step"

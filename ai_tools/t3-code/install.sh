@@ -5,7 +5,7 @@ set -euo pipefail
 # Installs a cask and runs launchctl (macOS), or apt and systemctl --user (Ubuntu), whatever HOME
 # is; test in a macOS VM or spare Mac, and an Ubuntu VM with systemd such as an OrbStack machine.
 # On Ubuntu the desktop app connects to the service, with its own server off.
-# --status runs `t3 browser setup` without sudo, which changes nothing (T3 Code 0.1.1).
+# --status runs `t3 browser setup` without sudo, which changes nothing.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -19,6 +19,8 @@ source "$DOTFILES_DIR/lib/systemd.sh"
 source "$DOTFILES_DIR/lib/casks.sh"
 # shellcheck source=../lib/app-json.sh
 source "$DOTFILES_DIR/ai_tools/lib/app-json.sh"
+# shellcheck source=../lib/app-keys.sh
+source "$DOTFILES_DIR/ai_tools/lib/app-keys.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -367,7 +369,6 @@ configure_t3_code() {
 
 # A server started by hand, over SSH from the Mac via ~/.t3/ssh-launch and ~/.t3/runtime, or by the
 # desktop app, which runs its own Electron binary on app.asar's server entry with --bootstrap-fd
-# (T3 Code 0.1.1)
 T3_CODE_HOME_RE="$(regex_escape "$HOME")"
 T3_CODE_SSH_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/"
 T3_CODE_DESKTOP_SERVER_PATTERN="/app\.asar/apps/server/dist/bin\.mjs --bootstrap-fd( |\$)"
@@ -431,7 +432,7 @@ t3_code_main_pid() {
     echo "$pid"
 }
 
-# Active with no server: in 0.1.1 a server that finds ~/.t3/userdata locked exits, and the
+# Active with no server: a server that finds ~/.t3/userdata locked exits, and the
 # launcher idles until restarted. Checks 3 times a second apart (once under --for-alerts), since a swap
 # (update) briefly has none too.
 t3_code_service_serving_nothing() {
@@ -910,6 +911,9 @@ status() {
         if "$jq"; then
             status_check "Desktop app's own server off in ~/.t3/userdata/desktop-settings.json" \
                 json_applied "$T3_CODE_DESKTOP_SETTINGS" "$T3_CODE_DESKTOP_FILTER"
+            # shellcheck disable=SC2046 # a list of keys
+            status_app_keys "T3 Code desktop app knows the desktop-settings.json keys the step sets" \
+                "$(deb_bundle t3code)" $(jq_filter_keys "$T3_CODE_DESKTOP_FILTER")
             t3_code_status_client_settings
             if t3_code_desktop_server_pending; then
                 status_item missing "T3 Code server settings and service: pending while the desktop app runs with its own server on; quit T3 Code, then re-run the t3-code step"

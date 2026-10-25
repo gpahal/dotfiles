@@ -9,7 +9,7 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common
 
 GHOSTTY_DIR="$(app_config_dir ghostty)"
 
-# Not apt: 26.04's archive stays on 1.3.0
+# Not apt: 26.04's archive stays on the version it shipped with
 ghostty_snap_installed() {
     snap list ghostty &>/dev/null
 }

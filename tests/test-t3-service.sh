@@ -336,6 +336,8 @@ desktop_app() {
     replace_fn has_gnome_desktop 'true'
     replace_fn apt_installed '[ "$1" == t3code ]'
     replace_fn running_inside 'false'
+    echo localEnvironmentEnabled > "$SANDBOX/t3-app.asar"
+    replace_fn deb_bundle '[ "$1" == t3code ] && echo "$SANDBOX/t3-app.asar"'
 
     printf '%s\n' "400|t3code|/opt/T3 Code (Beta)/t3code" "401|t3code|$backend" > "$SANDBOX/procs"
     assert_eq "401 desktop" "$(t3_code_other_servers | cut -d' ' -f1-2)" "the desktop app's server"
@@ -350,6 +352,7 @@ desktop_app() {
     run main --status
     assert_eq 3 "$RUN_STATUS" "status while the server settings are pending"
     assert_contains "$RUN_OUTPUT" "missing    T3 Code server settings and service: pending while the desktop app runs with its own server on; quit T3 Code"
+    assert_contains "$RUN_OUTPUT" "ok         T3 Code desktop app knows the desktop-settings.json keys the step sets"
     rm -rf "$SANDBOX/procs" "$HOME/.t3/userdata" "$HOME/.config/environment.d"
 }
 reset

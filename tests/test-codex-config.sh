@@ -8,6 +8,8 @@
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 load_script ai_tools/codex/install.sh
+# Keep the real ChatGPT app out of status
+CHATGPT_BUNDLE="$SANDBOX/no-chatgpt-app.asar"
 stub pgrep 'exit 1'
 stub bwrap
 stub codex 'echo "Logged in using ChatGPT" >&2'
@@ -192,6 +194,9 @@ assert_contains "$RUN_OUTPUT" "Codex's status line (tui.status_line) is [\"model
 assert_eq "$repo_line" "$(get .tui.status_line)" "the status line after yes"
 load_script ai_tools/codex/install.sh
 as_os macos
+CHATGPT_BUNDLE="$SANDBOX/chatgpt-app.asar"
+codex_desktop_keys > "$CHATGPT_BUNDLE"
+[ -s "$CHATGPT_BUNDLE" ] || fail "no [desktop] keys found to check in the ChatGPT app"
 
 stub brew 'exit 1'
 replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
@@ -199,6 +204,7 @@ stub codex 'echo "Not logged in" >&2; exit 1'
 run main --status
 assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
+assert_contains "$RUN_OUTPUT" "ok         ChatGPT app knows every [desktop] key the step sets"
 
 # ChatGPT may rewrite the config as it quits, so the step reads it after
 printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"

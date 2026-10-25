@@ -4,7 +4,8 @@ set -euo pipefail
 # Check the claude-code and codex steps' settings, the reviewer flags, and Codex's sandbox against
 # the installed CLIs.
 # Each doctor must first reject a broken file, so a change in its output can't turn this into a pass.
-# claude doctor skips unknown keys; codex doctor skips unknown [desktop] keys (check those by hand).
+# claude doctor skips unknown keys, so each listed key is also looked for in the binary's schema.
+# codex doctor skips unknown [desktop] keys; the codex step's --status checks them in the ChatGPT app.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -33,6 +34,30 @@ codex_config_check() {
     jq -ce '.checks[] | select(.id == "config.load")' <<< "$report"
 }
 
+claude_binary() {
+    local path
+    path="$(command -v claude)"
+    while [ -L "$path" ]; do
+        case "$(readlink "$path")" in
+            /*) path="$(readlink "$path")" ;;
+            *) path="$(dirname "$path")/$(readlink "$path")" ;;
+        esac
+    done
+    echo "$path"
+}
+
+# The last part of each key in claude-settings-keys.txt, leaving out hook events and env names,
+# which aren't schema keys
+claude_schema_keys() {
+    grep -v '^#' "$REPO_DIR/scripts/claude-settings-keys.txt" | grep -vE '^(env|hooks)\.' |
+        awk -F . '$NF != "*" { print $NF }' | sort -u
+}
+
+# A schema key appears as key:z.type( or key:()=>z.type(
+claude_schema_has() {
+    grep -qE "[{,]$1:(\(\)=>)?[A-Za-z_\$]+\(" "$tmp/claude-strings"
+}
+
 # Each runs in its own subshell, since both steps define status, apply, and other names, and exits
 # with its own failure count
 check_claude_code() {
@@ -55,6 +80,15 @@ check_claude_code() {
         echo "  its keys are all in scripts/claude-settings-keys.txt"
     else
         fail "the claude-code step writes keys that scripts/claude-settings-keys.txt doesn't list"
+    fi
+    # claude doctor skips unknown keys, so look for each in the binary's settings schema
+    strings "$(claude_binary)" > "$tmp/claude-strings" || { fail "couldn't read Claude Code's binary"; return "$errors"; }
+    # shellcheck disable=SC2046 # a list of keys
+    missing_names "of Claude Code's binary" key dotfilesNoSuchClaudeSetting claude_schema_has $(claude_schema_keys)
+    if [ -n "$MISSING" ]; then
+        fail "Claude Code's settings schema lacks these keys from scripts/claude-settings-keys.txt:$MISSING"
+    else
+        echo "  its settings schema has every key in scripts/claude-settings-keys.txt"
     fi
     return "$errors"
 }

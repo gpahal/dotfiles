@@ -244,13 +244,15 @@ At the desktop, the T3 Code app shows the service's threads, and Claude opens si
 
 The `claude-code` and `codex` steps keep their settings in the tool config directories, `~/.claude` and `~/.codex`, and fail if `CLAUDE_CONFIG_DIR` or `CODEX_HOME` points elsewhere.
 
-These apps don't document every key the steps write, so each was checked against one version. After an update, recheck the keys, fix the step, and update the version:
+These apps don't document every key the steps write, and they update often, so the repo assumes the latest version of each and checks the keys instead:
 
-| App | Checked against | Key source |
-| :- | :- | :- |
-| Claude Code | 2.1.296 | [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt), checked by `scripts/check-ai-settings.sh` |
-| Claude desktop app | 2.19675.0, and 2.42304.2 on Linux | Its `claude_desktop_config.json` |
-| ChatGPT app | 26.930.21537 | The `[desktop]` table it writes in `~/.codex/config.toml` |
-| T3 Code | 0.1.1 | Its [settings schema](https://github.com/pingdotgg/t3code/blob/v0.1.1/packages/contracts/src/settings.ts), checked by `scripts/check-t3-settings.sh`; `localEnvironmentEnabled` in `desktop-settings.json` by hand |
+| App | Checked by |
+| :- | :- |
+| Claude Code | `scripts/check-ai-settings.sh`, which looks for each key in [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt) in the installed CLI |
+| Codex | `scripts/check-ai-settings.sh`, with `codex doctor` |
+| T3 Code | `scripts/check-t3-settings.sh`, against the latest release's settings schema |
+| Claude desktop app, ChatGPT app, and T3 Code app on Ubuntu | Each step's `--status`, which looks for the keys it sets in the installed app |
 
-Then check the model shows in each app, notifications arrive, `pmset -g assertions` shows keep-awake during a task, and T3 Code starts at login (`launchctl getenv T3CODE_TELEMETRY_ENABLED` prints `false` on macOS; `systemctl --user is-enabled t3code` on Ubuntu).
+CI runs both scripts weekly against the latest releases. When one fails or `--status` reports a missing key, fix the step.
+
+After a major update, check the model shows in each app, notifications arrive, `pmset -g assertions` shows keep-awake during a task, and T3 Code starts at login (`launchctl getenv T3CODE_TELEMETRY_ENABLED` prints `false` on macOS; `systemctl --user is-enabled t3code` on Ubuntu).

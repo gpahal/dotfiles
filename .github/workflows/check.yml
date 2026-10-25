@@ -156,8 +156,8 @@ jobs:
         if: runner.os == 'Linux'
         # sshd -T needs /run/sshd, which ssh.socket creates only on the first connection.
         env:
-          MISE_VERSION: v2026.10.5
-          MISE_SHA256_LINUX_X64: 8a223b5f8ca71100220a3e5bef259614c348e7b1d80e6b15c2a9c9aa3affe5e4
+          MISE_VERSION: v2026.10.19
+          MISE_SHA256_LINUX_X64: 3162760f40b6b5f706c60641e4ef5ee7322bc6c54f72fc26a7111b337aa18d9d
         run: |
           sudo apt-get update
           sudo apt-get install -y just jq zsh tmux vim fd-find lua5.4 openssh-server

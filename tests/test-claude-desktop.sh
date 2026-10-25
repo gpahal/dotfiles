@@ -16,6 +16,9 @@ APP="$HOME/Applications/Claude.app"
 replace_fn cask_app_path 'echo "$APP"'
 wrap_fn cask_state 'real_cask_state "$1" "$APP"'
 CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+# A stand-in for the app's code, holding the keys the step sets
+CLAUDE_DESKTOP_MACOS_BUNDLE="$SANDBOX/claude-app.asar"
+jq_filter_keys "$CLAUDE_DESKTOP_MACOS_SETTINGS | $CLAUDE_DESKTOP_SETTINGS" > "$CLAUDE_DESKTOP_MACOS_BUNDLE"
 
 # Ubuntu: Anthropic's apt repo, Claude's own autostart file, and the settings without the Mac's
 ubuntu_step() {
@@ -92,6 +95,13 @@ assert_eq 'y chat false Alt+Space true' "$(jq -r '[.mcpServers.x.command, .prefe
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         Claude desktop app settings"
 assert_contains "$RUN_OUTPUT" "ok         ~/Library/LaunchAgents/dotfiles.claude-desktop.plist"
+assert_contains "$RUN_OUTPUT" "ok         Claude desktop app knows every preference the step sets"
+# A release that renames a key
+grep -vxF menuBarEnabled "$CLAUDE_DESKTOP_MACOS_BUNDLE" > "$SANDBOX/renamed.asar"
+CLAUDE_DESKTOP_MACOS_BUNDLE="$SANDBOX/renamed.asar"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    Claude desktop app knows every preference the step sets: the installed app lacks menuBarEnabled;"
+CLAUDE_DESKTOP_MACOS_BUNDLE="$SANDBOX/claude-app.asar"
 
 # Nothing to change, so a running Claude doesn't matter
 before="$(/bin/ls -i "$CONFIG")"

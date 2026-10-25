@@ -415,7 +415,8 @@ display_scales() {
         grep -oE '\(-?[0-9]+, -?[0-9]+, [0-9.]+, uint32 [0-9]+, (true|false), \[' | awk -F ', ' '{ print $3 }'
 }
 
-display_scale_200() {
+# Mutter reports 5/3 as 1.6666666
+display_scale_167() {
     local scales
     if ! has_gnome_desktop; then
         MANUAL_DETAIL="no desktop"
@@ -423,7 +424,7 @@ display_scale_200() {
     fi
     scales="$(display_scales)" || true
     [ -n "$scales" ] || manual_unknown "GNOME isn't running, or its displays can't be read" || return
-    awk '$1 + 0 != 2 { off = 1 } END { exit off }' <<< "$scales" && return 0
+    awk '$1 + 0 < 1.66 || $1 + 0 > 1.67 { off = 1 } END { exit off }' <<< "$scales" && return 0
     MANUAL_DETAIL="scale $(join_lines ', ' <<< "$scales")"
     return 1
 }

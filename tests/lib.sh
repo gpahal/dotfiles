@@ -45,7 +45,7 @@ setup_sandbox() {
     done
     unset CDPATH BASH_ENV TMUX TMUX_PANE ZDOTDIR CODEX_HOME CLAUDE_CONFIG_DIR SSH_AUTH_SOCK \
         SSH_USER_AUTH SSH_CONNECTION SSH_CLIENT SSH_TTY MISE_DATA_DIR MISE_CONFIG_DIR \
-        MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR
+        MISE_GLOBAL_CONFIG_FILE MISE_STATE_DIR MISE_CACHE_DIR ATUIN_HOME ATUIN_CONFIG_DIR
     # A test that clones rewrites the url to a local repo, as test-tmux-plugins.sh does
     export GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=file
     # The sandbox has no git identity

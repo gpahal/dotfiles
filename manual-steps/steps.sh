@@ -187,8 +187,8 @@ MD
     manual_step ubuntu livepatch --optional --check livepatch_on "Livepatch on" <<'MD'
 **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 MD
-    manual_step ubuntu display-scale --check display_scale_200 "Display scale 200%" <<'MD'
-**Display scale.** In **Settings → Displays**, set **Scale** to **200%**. Whole-number scaling is sharper than 150% and lighter on the CPU's built-in GPU.
+    manual_step ubuntu display-scale --check display_scale_167 "Display scale 167%" <<'MD'
+**Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 MD
 
     manual_group ubuntu "When needed:"

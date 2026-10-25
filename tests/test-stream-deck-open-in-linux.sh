@@ -94,6 +94,10 @@ check chrome-tab 0 "shell ActivateApp ss google-chrome.desktop google-chrome
 shell SendKeys s ctrl+t"
 [ ! -e "$lock" ] || fail "the lock outlived its New Tab"
 
+# Gmail and Agenda focus their Chrome app window, else launch it
+check gmail 0 "shell ActivateApp ss dotfiles-gmail.desktop chrome-mail.google.com__mail_u_0_-Default"
+check agenda 0 "shell ActivateApp ss dotfiles-agenda.desktop chrome-garvitpahal.com__x_agenda-Default"
+
 # --- The extension missing, and the screen locked ---
 NO_EXTENSION=1 check chrome 1 "notify-send --app-name=Stream Deck Stream Deck The dotfiles GNOME extension isn't running. Log out and back in, or see: bash setup.sh --status stream-deck"
 LOCKED=true check editor 1 ""

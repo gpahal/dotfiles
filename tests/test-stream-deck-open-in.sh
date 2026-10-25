@@ -32,6 +32,7 @@ case "$script" in
     *"make new Finder window"*) echo "  new Finder window" >> "$STUB_LOG" ;;
     *"new surface configuration"*) echo "  new Ghostty $3 at $2" >> "$STUB_LOG" ;;
     *"display notification"*) echo "  notification from $3: $2" >> "$STUB_LOG" ;;
+    *"make new tab"*) echo "  Chrome tab starting $3, else a new one at $2" >> "$STUB_LOG"; printf "%s\n" "$ANSWER" ;;
     *)
         if [ -n "${ERROR:-}" ]; then echo "$ERROR" >&2; exit 1; fi
         printf "%s\n" "$ANSWER"
@@ -58,6 +59,14 @@ echo "$$" > "$TMPDIR/dotfiles-new-tab.lock/pid"
 check chrome-tab com.google.Chrome 0 ""
 assert_contains "$RUN_OUTPUT" "chrome-tab: another New Tab is still running, so this one did nothing"
 rm -r "$TMPDIR/dotfiles-new-tab.lock"
+
+# Gmail and Agenda bring their Chrome tab to the front, else open one
+ANSWER=found check gmail com.apple.finder 0 "open -b com.google.Chrome
+  Chrome tab starting https://mail.google.com/, else a new one at https://mail.google.com/mail/u/0/#inbox"
+assert_contains "$RUN_OUTPUT" "gmail: brought the Gmail tab to the front"
+ANSWER=opened check agenda com.apple.finder 0 "open -b com.google.Chrome
+  Chrome tab starting https://garvitpahal.com/x/agenda, else a new one at https://garvitpahal.com/x/agenda"
+assert_contains "$RUN_OUTPUT" "agenda: opened Agenda in a new tab"
 
 # <front app>|<its answer>|<target>|<the stub log>. A folder that isn't here, such as one over SSH,
 # opens a new window. Opening an app would launch it, so Finder shows it instead.

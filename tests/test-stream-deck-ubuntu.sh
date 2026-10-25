@@ -2,7 +2,7 @@
 # shellcheck disable=SC2329
 
 # The stream-deck step on Ubuntu: the daemon's files and packages, its user service, the GNOME
-# extension, the Gmail app window, Resources, and the root power helper. Stubs stand in for pnpm,
+# extension, the Gmail and Agenda app windows, Resources, and the root power helper. Stubs stand in for pnpm,
 # gsettings, busctl, systemctl, and apt; fake sysfs trees for RAPL and the deck's hidraw node.
 
 # shellcheck source=lib.sh
@@ -51,6 +51,8 @@ assert_contains "$RUN_OUTPUT" "No desktop session, so the Stream Deck daemon sta
 [ -e "$STATE/user-dotfiles-stream-deck.service.enabled" ] || fail "the daemon's service wasn't enabled"
 [ ! -e "$SANDBOX/usr/local/libexec/dotfiles-power" ] || fail "the power helper was installed though sudo was declined"
 assert_file_not_contains "$STUB_LOG" "apt-get"
+assert_file_contains "$HOME/.local/share/applications/dotfiles-gmail.desktop" "Exec=google-chrome --app=https://mail.google.com/mail/u/0/#inbox"
+assert_file_contains "$HOME/.local/share/applications/dotfiles-agenda.desktop" "StartupWMClass=chrome-garvitpahal.com__x_agenda-Default"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded: GNOME Shell isn't running"
 assert_contains "$RUN_OUTPUT" "unverified Stream Deck daemon running: no desktop session"

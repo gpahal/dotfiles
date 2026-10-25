@@ -22,9 +22,10 @@ in_ghostty() {
     [ -z "${SSH_CONNECTION:-}" ] && { [ "${TERM_PROGRAM:-}" == ghostty ] || [ -n "${GHOSTTY_RESOURCES_DIR:-}" ]; }
 }
 
-# Only an app with Full Disk Access, or what it runs, can read the per-user TCC database
+# Anyone may read the system TCC database's file, but macOS lets only an app with Full Disk Access,
+# or what it runs, open it
 terminal_has_full_disk_access() {
-    head -c 1 "$TCC_USER_DB" &>/dev/null
+    head -c 1 "$TCC_SYSTEM_DB" &>/dev/null
 }
 
 # tcc_query <system|user> <sql>: sets TCC_ROWS, or returns 2 when the database can't be read

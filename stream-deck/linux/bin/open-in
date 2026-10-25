@@ -1,10 +1,10 @@
 #!/bin/bash
 set -uo pipefail
 
-# Usage: open-in files|editor|terminal|claude|chrome|chrome-tab|gmail|agenda|t3-code|activity-monitor
+# Usage: open-in editor|terminal|files|agenda|chrome|chrome-tab|gmail|t3-code|claude|activity-monitor
 # The Ubuntu sibling of the Mac plugin's bin/open-in, run by the Stream Deck daemon and the hotkeys
-# step's shortcuts. files, editor, and terminal open the front app's path in Nautilus, Zed, or
-# Ghostty, else a new window; the others focus or launch an app. Wayland lets only the shell read and
+# step's shortcuts. editor, terminal, and files open the front app's path in Zed, Ghostty, or
+# Nautilus, else a new window; the others focus or launch an app. Wayland lets only the shell read and
 # focus windows, so this asks the dotfiles GNOME extension (gnome-extension/). Exits 1 and notifies
 # on failure.
 
@@ -268,7 +268,7 @@ open_target_app() {
 main() {
     local target="${1:-}"
     case "$target" in
-        files | editor | terminal | claude | chrome | chrome-tab | gmail | agenda | t3-code | activity-monitor) ;;
+        editor | terminal | files | agenda | chrome | chrome-tab | gmail | t3-code | claude | activity-monitor) ;;
         *)
             usage
             return 2

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2329
 
 # The stream-deck step on Ubuntu: the daemon's files and packages, its user service, the GNOME
-# extension, the Gmail and Agenda app windows, Resources, and the root power helper. Stubs stand in for pnpm,
+# extension, the Agenda and Gmail app windows, Resources, and the root power helper. Stubs stand in for pnpm,
 # gsettings, busctl, systemctl, and apt; fake sysfs trees for RAPL and the deck's hidraw node.
 
 # shellcheck source=lib.sh

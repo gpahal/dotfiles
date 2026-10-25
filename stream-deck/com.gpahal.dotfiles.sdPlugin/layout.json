@@ -11,12 +11,12 @@
       "1,0": "editor",
       "2,0": "terminal",
       "3,0": "files",
+      "4,0": "agenda",
       "0,1": "chrome",
       "1,1": "chrome-tab",
       "2,1": "gmail",
       "3,1": "t3-code",
-      "4,1": "claude",
-      "2,2": "agenda"
+      "4,1": "claude"
     },
     "system": {
       "0,0": "back",

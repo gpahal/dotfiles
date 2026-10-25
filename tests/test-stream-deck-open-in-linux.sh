@@ -94,7 +94,7 @@ check chrome-tab 0 "shell ActivateApp ss google-chrome.desktop google-chrome
 shell SendKeys s ctrl+t"
 [ ! -e "$lock" ] || fail "the lock outlived its New Tab"
 
-# Gmail and Agenda focus their Chrome app window, else launch it
+# Agenda and Gmail focus their Chrome app window, else launch it
 check gmail 0 "shell ActivateApp ss dotfiles-gmail.desktop chrome-mail.google.com__mail_u_0_-Default"
 check agenda 0 "shell ActivateApp ss dotfiles-agenda.desktop chrome-garvitpahal.com__x_agenda-Default"
 

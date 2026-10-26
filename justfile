@@ -135,3 +135,9 @@ alerts mode="":
 # Add an SSH host block to ~/.ssh/config
 ssh-host alias hostname="":
     bash ssh/add-host.sh {{quote(alias)}} {{quote(hostname)}}
+
+# Bring a GitHub repo's settings to the standard (default: this directory's repo; --check: report only)
+[no-cd]
+[positional-arguments]
+github-repo *args:
+    bash {{quote(justfile_directory() / "github/setup-repo.sh")}} "$@"

@@ -120,6 +120,21 @@ Projects live at `~/Dev/<group>/<project>`, such as `~/Dev/go/envl`. Worktrees g
 
 `just git-signing` signs commits and tags with an SSH key and prints the `gh` commands that add it to GitHub. macOS uses `~/.ssh/id_ed25519` from the keychain; Ubuntu uses `~/.ssh/id_ed25519_signing`, with no passphrase, since agents can't type one.
 
+### GitHub repos
+
+`just github-repo [owner/repo]` lists each of a repo's settings that differs from the standard and changes them once you confirm. With no repo, it uses the one you're in. `--check` only reports, and exits 3 if anything differs. You need admin on the repo.
+
+The standard:
+
+- Issues are on. Projects, wiki, and discussions are off.
+- Merges are squash only. A squash commit takes the PR's title and description. Auto-merge, the update branch button, and deleting merged branches are on.
+- A `main` ruleset that nobody can bypass. Every change goes through a PR, which needs no approval, passing required status checks, and a squash merge. `main` keeps a linear history of signed commits, and nobody can force-push to it or delete it.
+- Actions must be pinned to a commit SHA, and `GITHUB_TOKEN` is read-only by default. Actions can open and approve PRs. A PR from any outside contributor waits for your approval before its workflows run.
+- Secret scanning is on, with push protection. So are Dependabot alerts and security updates, private vulnerability reporting, CodeQL default setup, and immutable releases.
+- The repo has `.github/dependabot.yml`, a copy of [`github/dependabot.yml`](github/dependabot.yml), which bumps the pinned actions monthly after a week's cooldown. In a checkout of the repo, the recipe copies the file there for you to commit in a PR.
+
+For the required status checks, the recipe offers the ruleset's current ones for you to edit. A repo without a ruleset gets the checks that ran on its latest PR instead. `--checks check,lint` sets them without asking, and `--checks none` requires none.
+
 ### SSH
 
 `just ssh-host <alias> [hostname]` adds a `~/.ssh/config` block with keepalives and a shared connection. `ssh -O exit <alias>` closes it.

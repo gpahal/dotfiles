@@ -188,7 +188,7 @@ jobs:
           TEST_SHARD: ${{ matrix.shard }}
 
   # The one required check: lint and test pass, or the gate or a schedule run skipped them.
-  checks:
+  check:
     needs: [gate, lint, test]
     if: always()
     runs-on: ubuntu-26.04

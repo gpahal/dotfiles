@@ -87,7 +87,7 @@ output = { transport = "DisplayPort" }
 settings = {}
 
 -- m1ddc's volume commands on a monitor at state.level, or failing with state.m1ddcFails. Reads
--- answer state.junk's values first, as a Dell answers some reads with junk.
+-- answer state.junk's values first, as some monitors answer reads with junk.
 state.level, state.junk = 40, {}
 function fake_m1ddc(args)
     if state.m1ddcFails then return 1, "", "No external display" end

@@ -238,7 +238,7 @@ macOS can't set the volume of HDMI or DisplayPort audio, so while the monitor is
 
 Ubuntu sets the volume of HDMI audio itself, so its volume keys work as usual.
 
-Speakers plugged into a Dell monitor's audio line-out don't follow the monitor's volume, so on the Mac the keys don't reach them. To control them from the keyboard, plug them into the Mac over USB or Bluetooth, which macOS sets the volume of, or use an app that adds software volume to HDMI and DisplayPort outputs, such as SoundSource.
+Speakers plugged into a monitor's audio line-out may not follow the monitor's volume, so on the Mac the keys don't reach them. To control them from the keyboard, plug them into the Mac over USB or Bluetooth, which macOS sets the volume of, or use an app that adds software volume to HDMI and DisplayPort outputs.
 
 ### tmux
 

@@ -140,7 +140,7 @@ followMonitor()
 -- the volume of, as over HDMI or DisplayPort; other outputs keep macOS's keys. Many monitors have
 -- no DDC mute, so mute sets the volume to 0 and keeps the old one for unmute. Needs m1ddc, from the
 -- Brewfile; without it the keys stay macOS's. Speakers on a monitor's audio out may not follow its
--- volume: a Dell's line-out doesn't.
+-- volume, as a line-out often doesn't.
 local M1DDC = "/opt/homebrew/bin/m1ddc"
 -- macOS's steps are sixteenths, and Shift+Option's quarters of those
 local VOLUME_STEP, FINE_STEP = 6, 1
@@ -192,8 +192,9 @@ local function m1ddc(args, onDone)
     volume.task = task
 end
 
--- A Dell answers about a third of reads with junk, such as 110 or 128, so a read counts once two in
--- a row agree on a volume the monitor can have. m1ddc's chg trusts a single read, so isn't used.
+-- Some monitors answer about a third of reads with junk, such as 110 or 128, so a read counts once
+-- two in a row agree on a volume the monitor can have. m1ddc's chg trusts a single read, so isn't
+-- used.
 local function readVolume(onLevel, tries, last)
     tries = tries or READ_TRIES
     m1ddc({ "get", "volume" }, function(stdout)

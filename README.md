@@ -207,7 +207,7 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 
 - Keys repeat after 225 ms, then every 30 ms.
 - Files shows hidden files and opens folders in list view. File choosers show hidden files too.
-- The dock hides until the pointer reaches the screen's edge.
+- The dock sits on the left and hides until the pointer reaches the screen's left edge.
 - Space in Files previews the selected file, as Quick Look does (gnome-sushi).
 
 ### Vicinae

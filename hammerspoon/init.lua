@@ -139,14 +139,18 @@ followMonitor()
 -- The volume keys set the monitor's own volume over DDC/CI while the output is one macOS can't set
 -- the volume of, as over HDMI or DisplayPort; other outputs keep macOS's keys. Many monitors have
 -- no DDC mute, so mute sets the volume to 0 and keeps the old one for unmute. Needs m1ddc, from the
--- Brewfile; without it the keys stay macOS's.
+-- Brewfile; without it the keys stay macOS's. Speakers on a monitor's audio out may not follow its
+-- volume, as a line-out often doesn't.
 local M1DDC = "/opt/homebrew/bin/m1ddc"
 -- macOS's steps are sixteenths, and Shift+Option's quarters of those
 local VOLUME_STEP, FINE_STEP = 6, 1
+local MAX_VOLUME, READ_TRIES = 100, 8
 local MUTED_VOLUME = "dotfiles.monitorMutedVolume"
 local VOLUME_KEYS = { SOUND_UP = 1, SOUND_DOWN = -1, MUTE = 0 }
 
--- Presses while m1ddc runs add up, so holding a key doesn't queue a task per repeat
+-- Presses while m1ddc runs add up, so holding a key doesn't queue a task per repeat. level is the
+-- monitor's volume during a run of presses, forgotten once they stop, so a change in the
+-- monitor's menu counts.
 local volume = { pending = 0, mute = false }
 
 local function monitorOutput()
@@ -163,12 +167,13 @@ local function showVolume(text)
 end
 
 -- A failure drops the presses pending, so the next press starts afresh
+local function failed(message)
+    volume.task, volume.level, volume.pending, volume.mute = nil, nil, 0, false
+    hs.alert.show(message)
+end
+
 local function m1ddc(args, onDone)
     local task
-    local function failed(message)
-        volume.task, volume.pending, volume.mute = nil, 0, false
-        hs.alert.show(message)
-    end
     task = hs.task.new(M1DDC, function(exitCode, stdout, stderr)
         dotfiles.tasks[task] = nil
         if exitCode ~= 0 then
@@ -187,46 +192,58 @@ local function m1ddc(args, onDone)
     volume.task = task
 end
 
+-- Some monitors answer about a third of reads with junk, such as 110 or 128, so a read counts once
+-- two in a row agree on a volume the monitor can have. m1ddc's chg trusts a single read, so isn't
+-- used.
+local function readVolume(onLevel, tries, last)
+    tries = tries or READ_TRIES
+    m1ddc({ "get", "volume" }, function(stdout)
+        local level = tonumber(stdout:match("^%s*(%d+)%s*$"))
+        if level and level > MAX_VOLUME then level = nil end
+        if level and level == last then return onLevel(level) end
+        if tries <= 1 then return failed("Couldn't read the monitor's volume") end
+        readVolume(onLevel, tries - 1, level)
+    end)
+end
+
 local runVolume
 
--- set and chg print "Writing <value>"
-local function written(stdout)
-    local level = stdout:match("Writing (%d+)")
-    if level then showVolume(level) end
-    runVolume()
+local function setVolume(level, text)
+    m1ddc({ "set", "volume", tostring(level) }, function()
+        volume.level = level
+        showVolume(text or tostring(level))
+        runVolume()
+    end)
 end
 
 runVolume = function()
     if volume.task then return end
     local muted = hs.settings.get(MUTED_VOLUME)
-    if volume.mute then
+    if not volume.mute and volume.pending == 0 then
+        volume.level = nil
+    elseif not muted and not volume.level then
+        readVolume(function(level)
+            volume.level = level
+            runVolume()
+        end)
+    elseif volume.mute then
         volume.mute = false
         if muted then
             hs.settings.clear(MUTED_VOLUME)
-            m1ddc({ "set", "volume", tostring(muted) }, written)
+            setVolume(muted)
         else
-            m1ddc({ "get", "volume" }, function(stdout)
-                local level = tonumber(stdout:match("%d+"))
-                if not level then
-                    hs.alert.show("Couldn't read the monitor's volume")
-                    return runVolume()
-                end
-                hs.settings.set(MUTED_VOLUME, level)
-                m1ddc({ "set", "volume", "0" }, function()
-                    showVolume("muted")
-                    runVolume()
-                end)
-            end)
+            hs.settings.set(MUTED_VOLUME, volume.level)
+            setVolume(0, "muted")
         end
-    elseif volume.pending ~= 0 then
+    else
         local delta = volume.pending
         volume.pending = 0
         if not muted then
-            m1ddc({ "chg", "volume", tostring(delta) }, written)
+            setVolume(math.max(0, math.min(MAX_VOLUME, volume.level + delta)))
         elseif delta > 0 then
             -- Up unmutes, as macOS's does
             hs.settings.clear(MUTED_VOLUME)
-            m1ddc({ "set", "volume", tostring(math.min(100, muted + delta)) }, written)
+            setVolume(math.min(MAX_VOLUME, muted + delta))
         else
             showVolume("muted")
         end

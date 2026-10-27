@@ -86,15 +86,16 @@ hs = {
 output = { transport = "DisplayPort" }
 settings = {}
 
--- m1ddc's volume commands on a monitor at state.level, or failing with state.m1ddcFails
-state.level = 40
+-- m1ddc's volume commands on a monitor at state.level, or failing with state.m1ddcFails. Reads
+-- answer state.junk's values first, as some monitors answer reads with junk.
+state.level, state.junk = 40, {}
 function fake_m1ddc(args)
     if state.m1ddcFails then return 1, "", "No external display" end
-    local cmd, value = args[1], tonumber(args[3])
-    if cmd == "get" then return 0, state.level .. "\n", "" end
-    if cmd == "chg" then value = state.level + value end
-    state.level = math.max(0, math.min(100, value))
-    return 0, "Writing " .. state.level .. "\n", ""
+    if args[1] == "get" then
+        return 0, (table.remove(state.junk, 1) or state.level) .. "\n", ""
+    end
+    state.level = tonumber(args[3])
+    return 0, state.level .. "\n", ""
 end
 
 -- Presses a system key, recording it, then what it started, then whether the config swallowed its
@@ -193,33 +194,65 @@ usb.watcher($DONGLE); fire(); usb.wake('didWake'); fire(); usb.wake('willSleep')
 assert_eq "autoLaunch true
 after 1
 after 3" "$RUN_OUTPUT" "the device leaving, and a wake without it"
-# The volume keys while the monitor is the output: presses while m1ddc runs add up into one change
-run_lua 'press("SOUND_UP"); press("SOUND_UP"); press("SOUND_UP"); flush(); flush()
-press("SOUND_DOWN", { shift = true, alt = true }); flush()
+# The volume keys while the monitor is the output: presses while m1ddc runs add up into one change,
+# from a level read at the start of the run of presses and read again at the next
+run_lua 'press("SOUND_UP"); press("SOUND_UP"); flush(); press("SOUND_UP"); flush(); flush(); flush()
+press("SOUND_DOWN", { shift = true, alt = true }); flush(); flush(); flush()
 record("level " .. state.level .. ", tasks " .. task_count())'
 assert_eq "autoLaunch true
 SOUND_UP
-task /opt/homebrew/bin/m1ddc chg volume 6
+task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
 SOUND_UP
   swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
 SOUND_UP
   swallowed true true
-alert Monitor volume 46
-task /opt/homebrew/bin/m1ddc chg volume 12
+task /opt/homebrew/bin/m1ddc set volume 58
 alert Monitor volume 58
 SOUND_DOWN
-task /opt/homebrew/bin/m1ddc chg volume -1
+task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc set volume 57
 alert Monitor volume 57
 level 57, tasks 0" "$RUN_OUTPUT" "volume up and down on the monitor"
 
+# Junk reads, and reads that never agree twice in a row, don't set the volume
+run_lua 'state.junk = { 110, 128, 128 }; press("SOUND_DOWN"); for _ = 1, 6 do flush() end
+record("level " .. state.level)
+state.junk = { 110, 40, 128, 110, 40, 128, 110, 40 }; press("SOUND_DOWN"); for _ = 1, 9 do flush() end
+record("level " .. state.level .. ", tasks " .. task_count())'
+assert_eq "autoLaunch true
+SOUND_DOWN
+task /opt/homebrew/bin/m1ddc get volume
+  swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc set volume 34
+alert Monitor volume 34
+level 34
+SOUND_DOWN
+task /opt/homebrew/bin/m1ddc get volume
+  swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc get volume
+alert Couldn't read the monitor's volume
+level 34, tasks 0" "$RUN_OUTPUT" "junk reads of the monitor's volume"
+
 # Mute keeps the volume for unmute; a held mute key's repeats don't toggle it back; down while
 # muted stays muted, and up unmutes
-run_lua 'press("MUTE"); press("MUTE", nil, true); flush(); flush()
+run_lua 'press("MUTE"); press("MUTE", nil, true); flush(); flush(); flush()
 record("level " .. state.level .. ", kept " .. settings["dotfiles.monitorMutedVolume"])
 press("SOUND_DOWN"); press("MUTE"); flush(); record("level " .. state.level)
-press("MUTE"); flush(); flush(); press("SOUND_UP"); flush()
+press("MUTE"); flush(); flush(); flush(); press("SOUND_UP"); flush()
 record("level " .. state.level .. ", kept " .. tostring(settings["dotfiles.monitorMutedVolume"]))'
 assert_eq "autoLaunch true
 MUTE
@@ -227,6 +260,7 @@ task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
 MUTE
   swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
 task /opt/homebrew/bin/m1ddc set volume 0
 alert Monitor volume muted
 level 0, kept 40
@@ -241,6 +275,7 @@ level 40
 MUTE
 task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
 task /opt/homebrew/bin/m1ddc set volume 0
 alert Monitor volume muted
 SOUND_UP
@@ -251,18 +286,20 @@ level 46, kept nil" "$RUN_OUTPUT" "mute and unmute on the monitor"
 
 # A failed m1ddc drops what's pending, so the next press starts afresh
 run_lua 'state.m1ddcFails = true; press("SOUND_UP"); press("SOUND_UP"); print_calls(); flush()
-state.m1ddcFails = false; press("SOUND_UP"); flush()'
+state.m1ddcFails = false; press("SOUND_UP"); flush(); flush(); flush()'
 assert_eq "autoLaunch true
 SOUND_UP
-task /opt/homebrew/bin/m1ddc chg volume 6
+task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
 SOUND_UP
   swallowed true true
 m1ddc: No external display
 alert Couldn't set the monitor's volume; see Hammerspoon's console
 SOUND_UP
-task /opt/homebrew/bin/m1ddc chg volume 6
+task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
+task /opt/homebrew/bin/m1ddc get volume
+task /opt/homebrew/bin/m1ddc set volume 46
 alert Monitor volume 46" "$RUN_OUTPUT" "a failed m1ddc"
 
 # macOS keeps the keys for an output it can set, for HDMI it can set, without m1ddc, and for other
@@ -283,7 +320,7 @@ SOUND_UP
 PLAY
   swallowed false false
 SOUND_DOWN
-task /opt/homebrew/bin/m1ddc chg volume -6
+task /opt/homebrew/bin/m1ddc get volume
   swallowed true true
 tasks 1" "$RUN_OUTPUT" "outputs macOS can set, and other keys"
 test_done

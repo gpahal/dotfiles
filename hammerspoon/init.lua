@@ -68,6 +68,8 @@ hs.hotkey.bind(MODS, "n", newTab)
 hs.hotkey.bind(MODS, "t", function() openIn("terminal") end)
 hs.hotkey.bind(MODS, "c", function() open(T3_CODE, "T3 Code") end)
 hs.hotkey.bind(MODS, "e", function() openIn("editor") end)
+hs.hotkey.bind(MODS, "a", function() openIn("agenda") end)
+hs.hotkey.bind(MODS, "m", function() openIn("gmail") end)
 
 -- Switches the monitor to this Mac once the switch's devices settle here, and after a wake that
 -- finds them here. It never switches away: the Ubuntu machine hands the monitor back, so the two

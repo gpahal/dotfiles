@@ -144,16 +144,19 @@ run_lua() {
 
 # Each task is kept until it exits, so a second press doesn't drop the first
 run_lua 'hotkeys["ctrl+alt+cmd+t"](); hotkeys["ctrl+alt+cmd+e"](); hotkeys["ctrl+alt+cmd+n"]()
+hotkeys["ctrl+alt+cmd+a"](); hotkeys["ctrl+alt+cmd+m"]()
 print("tasks " .. task_count()); flush()
 print("tasks " .. task_count())
 state.taskStarts = false; hotkeys["ctrl+alt+cmd+e"]()'
 assert_eq "autoLaunch true
-tasks 3
+tasks 5
 open-in: terminal from com.apple.finder: /tmp
 open-in: editor from com.apple.finder: /tmp
 open-in: chrome-tab from com.apple.finder: /tmp
+open-in: agenda from com.apple.finder: /tmp
+open-in: gmail from com.apple.finder: /tmp
 tasks 0
-alert Couldn't run /home/.hammerspoon/bin/open-in" "$RUN_OUTPUT" "the terminal, the editor, and the new tab"
+alert Couldn't run /home/.hammerspoon/bin/open-in" "$RUN_OUTPUT" "the terminal, the editor, the new tab, the agenda, and Gmail"
 
 # A second new-tab press while the first runs is dropped, so there's one tab and one paste
 run_lua 'hotkeys["ctrl+alt+cmd+n"](); hotkeys["ctrl+alt+cmd+n"](); print("tasks " .. task_count()); flush()

@@ -25,6 +25,8 @@ HOTKEYS=(
     "t terminal Terminal"
     "e editor Editor"
     "n chrome-tab New_Tab"
+    "a agenda Agenda"
+    "m gmail Gmail"
 )
 
 # As README's Hammerspoon section writes them: Space, B

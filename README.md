@@ -174,6 +174,7 @@ The **Dotfiles** keys act on the folder of the app in front:
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Agenda** and **Gmail** focus or open [the agenda](https://garvitpahal.com/x/agenda) and Gmail.
 - **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys.
+- **Sound**, below **Chrome**, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile.
 
 [`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
 

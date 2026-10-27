@@ -13,6 +13,7 @@ function createStatKeys({ stats, sampler, log, draw, ready = () => true, interva
   let timer = null;
   let firstUpdate = null;
   let busy = false;
+  let again = false;
 
   // A placeholder on error, so one bad stat leaves the other keys updating
   function render(kind, sample) {
@@ -37,7 +38,17 @@ function createStatKeys({ stats, sampler, log, draw, ready = () => true, interva
       log(`ERROR couldn't update the stat keys: ${error.message}`);
     } finally {
       busy = false;
+      if (again) {
+        again = false;
+        update();
+      }
     }
+  }
+
+  // Now rather than at the next tick, as after a press changes what a key shows
+  function refresh() {
+    if (busy) again = true;
+    else update();
   }
 
   // CPU, network, and Linux's top are rates, so the first sample waits a moment
@@ -55,7 +66,7 @@ function createStatKeys({ stats, sampler, log, draw, ready = () => true, interva
     sampler.stop();
   }
 
-  return { keys, start, stop };
+  return { keys, start, stop, refresh };
 }
 
 // runOpenIn(target, done) runs bin/open-in, and done(error, output) gets its log lines. A key

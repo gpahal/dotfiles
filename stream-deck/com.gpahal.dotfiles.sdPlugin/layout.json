@@ -16,7 +16,8 @@
       "1,1": "chrome-tab",
       "2,1": "gmail",
       "3,1": "t3-code",
-      "4,1": "claude"
+      "4,1": "claude",
+      "0,2": "sound"
     },
     "system": {
       "0,0": "back",

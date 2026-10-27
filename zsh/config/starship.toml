@@ -1,4 +1,6 @@
 add_newline = true
+# The 500 ms default times out git status in large repos or under load
+command_timeout = 2500
 
 [username]
 show_always = false

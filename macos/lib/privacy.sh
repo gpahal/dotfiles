@@ -58,6 +58,14 @@ tcc_allowed() {
     grep -qx "$TCC_ALLOWED" <<< "$TCC_ROWS"
 }
 
+# tcc_user_allowed <service> <bundle id>: the app has the per-user permission, such as
+# kTCCServiceMicrophone
+tcc_user_allowed() {
+    tcc_id_ok "$2" || return 1
+    tcc_query user "SELECT auth_value FROM access WHERE service = '$1' AND client = '$2';" || return 2
+    grep -qx "$TCC_ALLOWED" <<< "$TCC_ROWS"
+}
+
 # tcc_automation_allowed <bundle id> <target bundle id>...: the app may control each target with
 # Apple events, which macOS asks about the first time it tries. Sets MANUAL_DETAIL to the others.
 tcc_automation_allowed() {

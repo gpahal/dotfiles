@@ -190,7 +190,7 @@ doc_sync() {
     assert_unchanged "$copy/README.md" "after --check"
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: wrote Manual steps from manual-steps/steps.sh"
-    assert_file_contains "$copy/README.md" "21. Turn on FileVault now."
+    assert_file_contains "$copy/README.md" "22. Turn on FileVault now."
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh" --check
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: Manual steps already match manual-steps/steps.sh"
@@ -299,6 +299,8 @@ privacy() {
     stub sqlite3 'case "$*" in
     *kTCCServiceAccessibility*org.hammerspoon.Hammerspoon*) echo 2 ;;
     *kTCCServiceAccessibility*) echo 0 ;;
+    *kTCCServiceMicrophone*com.electron.wispr-flow*) [ -e "$SANDBOX/tcc-unreadable" ] && exit 1; echo 2 ;;
+    *kTCCServiceMicrophone*) echo 0 ;;
     *kTCCServiceAppleEvents*) [ -e "$SANDBOX/tcc-unreadable" ] && exit 1; printf "%s\n" "com.mitchellh.ghostty|2" "com.apple.finder|0" ;;
 esac'
     # Full Disk Access is whether the system database opens, since macOS 27 has no per-user one
@@ -314,7 +316,18 @@ esac'
     expect 1 tcc_automation_allowed org.hammerspoon.Hammerspoon "${OPEN_IN_TARGETS[@]}"
     assert_eq "com.apple.finder, com.apple.systemevents, com.google.Chrome" "$MANUAL_DETAIL" "the targets not allowed"
     expect 0 tcc_automation_allowed org.hammerspoon.Hammerspoon com.mitchellh.ghostty
+    expect 0 tcc_user_allowed kTCCServiceMicrophone com.electron.wispr-flow
+    expect 1 tcc_user_allowed kTCCServiceMicrophone com.knollsoft.Rectangle
+    # Wispr Flow has the microphone but not Accessibility, which the stub gives only Hammerspoon
+    WISPR_FLOW_APP="$SANDBOX/Wispr Flow.app"
+    expect 1 wispr_flow_set_up
+    assert_contains "$MANUAL_DETAIL" "isn't installed"
+    mkdir -p "$WISPR_FLOW_APP/Contents"
+    stub plutil 'echo com.electron.wispr-flow'
+    expect 1 wispr_flow_set_up
+    assert_eq "Accessibility off" "$MANUAL_DETAIL" "what Wispr Flow lacks"
     touch "$SANDBOX/tcc-unreadable"
+    expect 2 tcc_user_allowed kTCCServiceMicrophone com.electron.wispr-flow
     expect 2 tcc_automation_allowed org.hammerspoon.Hammerspoon com.mitchellh.ghostty
     assert_eq "$TCC_NEEDS_ACCESS" "$MANUAL_DETAIL" "the detail without Full Disk Access"
 }

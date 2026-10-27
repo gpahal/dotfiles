@@ -41,6 +41,9 @@ MD
     manual_step macos rectangle --check rectangle_set_up "Rectangle has Accessibility" <<'MD'
 Open Rectangle, grant accessibility, and set your shortcuts.
 MD
+    manual_step macos wispr-flow --check wispr_flow_set_up "Wispr Flow has Microphone and Accessibility" <<'MD'
+Open Wispr Flow, sign in, and finish its onboarding. Grant Microphone and Accessibility, which typing into other apps needs.
+MD
     manual_step macos login-items \
         --check login_items_on "Rectangle, Amphetamine, Tailscale, and Dato open at login" <<'MD'
 Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.

@@ -277,33 +277,34 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 7. Open OrbStack once and finish its setup.
 8. Open Vicinae and finish its onboarding. Grant Accessibility, which paste and snippets need, and keep Launch at login on. Full Disk Access is optional; file search needs it to cover every folder.
 9. Open Rectangle, grant accessibility, and set your shortcuts.
-10. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
-11. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
-12. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
-13. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
-14. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
+10. Open Wispr Flow, sign in, and finish its onboarding. Grant Microphone and Accessibility, which typing into other apps needs.
+11. Turn on Launch at login in Rectangle, Amphetamine, Tailscale, and Dato.
+12. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
+13. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
+14. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
+15. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
 
 **Accounts and keys**
 
-15. Sign in to Tailscale with the account your Ubuntu machine and phone use.
-16. Add your Google account to Calendar and Contacts.
-17. In Chrome, sign in to the sites you want agents to use.
-18. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
-19. Run `just git-signing` and the `gh` commands it prints.
+16. Sign in to Tailscale with the account your Ubuntu machine and phone use.
+17. Add your Google account to Calendar and Contacts.
+18. In Chrome, sign in to the sites you want agents to use.
+19. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
+20. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
 
-20. Optional: `just touch-id`.
-21. Turn on FileVault.
-22. Back up off the Mac, such as with Time Machine.
-23. Restore a file from the backup once, to check it.
+21. Optional: `just touch-id`.
+22. Turn on FileVault.
+23. Back up off the Mac, such as with Time Machine.
+24. Restore a file from the backup once, to check it.
 
 **Performance and privacy**
 
-24. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
-25. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
-26. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
-27. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
+25. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
+26. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+27. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
+28. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
 ### Ubuntu
 

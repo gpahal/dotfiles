@@ -4,6 +4,7 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const keys = require("./keys.js");
 const layout = require("./layout.json");
+const { createSound } = require("./sound.js");
 const stats = require("./stats.js");
 
 const arg = (name) => {
@@ -23,7 +24,8 @@ const run = keys.createRunner({
 
 // shown holds each key's last image, so an unchanged one isn't sent again
 const shown = new Map();
-const sampler = stats.createSampler({ log });
+const sound = createSound({ log });
+const sampler = stats.createSampler({ log, sound });
 const statKeys = keys.createStatKeys({
   stats,
   sampler,
@@ -80,6 +82,8 @@ socket.onmessage = ({ data }) => {
       send({ event: "showAlert", context });
     } else if (target in layout.links) {
       switchTo(device, layout.links[target]);
+    } else if (target === "sound") {
+      sound.cycle().then((switched) => (switched ? statKeys.refresh() : send({ event: "showAlert", context })));
     } else if (stats.isStat(target)) {
       run("activity-monitor", () => send({ event: "showAlert", context }));
     } else {

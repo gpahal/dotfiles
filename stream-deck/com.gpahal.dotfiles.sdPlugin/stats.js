@@ -1,9 +1,11 @@
 // Commands run by full path, since Stream Deck starts plugins with a minimal PATH; GPU,
 // temperature, and power come from macmon. Linux reads /proc and /sys instead, for the Ubuntu
-// daemon in stream-deck/linux, with the sensors of an AMD CPU and GPU.
+// daemon in stream-deck/linux, with the sensors of an AMD CPU and GPU. The Sound key's output comes
+// from sound.js.
 const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
+const { createSound } = require("./sound.js");
 
 const MACMON = "/opt/homebrew/bin/macmon";
 const HISTORY = 30;
@@ -119,6 +121,7 @@ const NEEDS = {
   power: ["macmon"],
   disk: ["disk"],
   network: ["network"],
+  sound: ["sound"],
 };
 
 // Linux reads each from /sys or the power helper, so needs no macmon
@@ -144,6 +147,7 @@ function createSampler({
   procRoot = "/proc",
   sysRoot = "/sys",
   powerFile = POWER_FILE,
+  sound = createSound({ log, platform }),
 } = {}) {
   const linux = platform === "linux";
   const needs = linux ? LINUX_NEEDS : NEEDS;
@@ -482,7 +486,9 @@ function createSampler({
       }
       netPrev = now;
     };
-    await Promise.all((linux ? linuxJobs : macJobs)(needed, s, setNetwork));
+    const jobs = (linux ? linuxJobs : macJobs)(needed, s, setNetwork);
+    if (needed.has("sound")) jobs.push(sound.read().then((state) => (s.sound = state)));
+    await Promise.all(jobs);
     if (linux) {
       s.hints = { gpu: "no GPU data", temperature: "no sensors", power: "needs helper" };
     } else if (needed.has("macmon")) {
@@ -564,7 +570,8 @@ function frame(label, ...parts) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">`,
     `<rect width="144" height="144" fill="${COLORS.background}"/>`,
-    text(72, 30, 19, COLORS.label, label),
+    // Smaller for a label as long as HEADPHONES
+    text(72, 30, label.length > 8 ? 17 : 19, COLORS.label, label),
     ...parts,
     `</svg>`,
   ].join("");
@@ -592,6 +599,22 @@ const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
 
 // The overview key names the OS, to tell which machine a deck shows
 const OS_LABEL = process.platform === "linux" ? "UBUNTU" : "MAC";
+
+// Drawn in the key's middle for each of sound.js's kinds of output
+const SOUND_ICONS = {
+  speakers: `<path d="M40 64h12l18-16v54L52 86H40z" fill="${COLORS.text}"/><path d="M84 62a18 18 0 0 1 0 26M96 52a32 32 0 0 1 0 46"/>`,
+  headphones: `<path d="M44 92V78a28 28 0 0 1 56 0v14"/><rect x="38" y="80" width="16" height="24" rx="6" fill="${COLORS.text}"/><rect x="90" y="80" width="16" height="24" rx="6" fill="${COLORS.text}"/>`,
+  monitor: `<rect x="34" y="46" width="76" height="46" rx="5"/><path d="M60 106h24M72 92v14"/>`,
+  mac: `<rect x="44" y="50" width="56" height="38" rx="4"/><path d="M32 100h80"/>`,
+};
+
+// A dot for each output the key cycles through, the one in use filled
+function soundDots(outputs, current) {
+  const left = 72 - ((outputs.length - 1) * 16) / 2;
+  return outputs
+    .map((o, i) => `<circle cx="${left + i * 16}" cy="128" r="5" fill="${o.id === current ? COLORS.ok : COLORS.track}"/>`)
+    .join("");
+}
 
 const RENDER = {
   overview(s) {
@@ -669,6 +692,20 @@ const RENDER = {
       text(72, 78, 22, COLORS.download, `↓ ${rate(s.network.rx)}`, { weight: 700 }),
       text(72, 116, 22, COLORS.upload, `↑ ${rate(s.network.tx)}`, { weight: 700 }),
     );
+  },
+  // Labeled with the output in use, or its device's name when the key doesn't cycle through it
+  sound(s) {
+    if (!s.sound) return empty("SOUND");
+    if (s.sound.missing) return empty("SOUND", "not installed");
+    const { outputs, current, name } = s.sound;
+    const output = outputs.find((o) => o.id === current);
+    const dots = soundDots(outputs, current);
+    if (!output) {
+      const shown = !name ? "None" : name.length > 11 ? `${name.slice(0, 10)}…` : name;
+      return frame("SOUND", text(72, 82, 18, COLORS.text, shown, { weight: 700 }), dots);
+    }
+    const icon = `<g fill="none" stroke="${COLORS.text}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${SOUND_ICONS[output.kind]}</g>`;
+    return frame(output.label, icon, dots);
   },
 };
 

@@ -13,7 +13,8 @@ PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"
 # Runs $1 with: d (the daemon), decks (what listDecks finds), deck(columns, rows) (a fake deck, by
 # default 5×3), opened (the decks opened), press(i), drawn(i) (key i's last image on the last deck
 # opened), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
-# taken), logs, and until(what, test). stats.render throws for the disk key.
+# taken), sound (its cycles count, and switches says whether they succeed), logs, and until(what,
+# test). stats.render throws for the disk key.
 daemon_js() {
     node -e "(async () => {
 const { EventEmitter } = require('node:events');
@@ -31,6 +32,7 @@ const sampler = { resets: 0, stops: 0, kinds: [], reset() { this.resets++; }, st
   async sample(kinds) { this.kinds = kinds; return { n: ++n }; } };
 const stats = { isStat: realStats.isStat, placeholder: (k) => 'placeholder:' + k,
   render: (k, s) => { if (k === 'disk') throw new Error('broken'); return 'stat:' + k + ':' + s.n; } };
+const sound = { cycles: 0, switches: true, async cycle() { this.cycles++; return this.switches; } };
 const fills = [];
 const deck = (columns = 5, rows = 3) => {
   const d = new EventEmitter();
@@ -66,7 +68,7 @@ const d = createDaemon({
   listDecks: async () => decks.map((x, i) => ({ path: '/dev/hidraw' + i })),
   openDeck: async (p) => { const x = decks[Number(p.slice(11))]; opened.push(x); return x; },
   runOpenIn: (target, done) => { runs.push(target); pending.push(done); if (target !== 'chrome-tab') done(target === 'files' ? new Error('exit 1') : null, target + ' ran\n'); },
-  log: (m) => logs.push(m),
+  sound, log: (m) => logs.push(m),
   intervalMs: 40, firstUpdateMs: 10, reconnectMs: 20, alertMs: 30,
 });
 $1
@@ -75,16 +77,16 @@ process.exit(0);
 }
 
 # The main page at 60% brightness: icons where layout.json puts actions, blank keys elsewhere, then
-# Overview's stats
+# Overview's and Sound's stats
 out="$(daemon_js "decks = [deck()];
 await d.start();
 console.log(JSON.stringify(d.state()), opened[0].log.length, opened[0].brightness);
-console.log([0, 1, 2, 3, 4, 5, 9, 10].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
+console.log([0, 1, 2, 3, 4, 5, 9, 10, 11].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
 console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
 assert_eq '{"connected":true,"page":"main"} 0 60
-icon:overview icon:editor icon:terminal icon:files icon:agenda icon:chrome icon:claude blank
-stat:overview:1 overview 1' "$out" "the main page"
+icon:overview icon:editor icon:terminal icon:files icon:agenda icon:chrome icon:claude icon:sound blank
+stat:overview:1 overview,sound 1' "$out" "the main page"
 
 # Overview opens the System page and Back returns; stat keys open Resources
 out="$(daemon_js "decks = [deck()];
@@ -101,7 +103,7 @@ await until('the main page', () => drawn(0)?.startsWith('stat:overview'));
 console.log(d.state().page, drawn(1), sampler.kinds.join());")"
 assert_eq "system icon:back stat:top:1 true cpu,memory,swap,top,gpu,temperature,power,disk,network
 activity-monitor,activity-monitor
-main icon:editor overview" "$out" "page switching and stat keys"
+main icon:editor overview,sound" "$out" "page switching and stat keys"
 
 # A press runs open-in once at a time for New Tab only, logs its output, and a failure alerts
 out="$(daemon_js "decks = [deck()];
@@ -115,6 +117,21 @@ press(6);
 console.log(runs.join());")"
 assert_eq "chrome-tab,files files ran
 chrome-tab,files,chrome-tab" "$out" "key presses"
+
+# Sound switches the output and redraws without running open-in; a failed switch alerts
+out="$(daemon_js "decks = [deck()];
+await d.start();
+await until('Sound stats', () => drawn(10)?.startsWith('stat:sound'));
+const before = n;
+press(10);
+await until('the redraw', () => n > before);
+console.log(sound.cycles, runs.length, drawn(10) === 'stat:sound:' + n);
+sound.switches = false;
+press(10);
+await until('the alert', () => drawn(10) === ALERT);
+console.log(sound.cycles);")"
+assert_eq "1 0 true
+2" "$out" "the Sound key"
 
 # A failed write or error event drops the deck and stops sampling; it reconnects when it's back
 out="$(daemon_js "const first = deck();

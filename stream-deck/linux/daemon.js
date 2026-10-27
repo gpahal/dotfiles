@@ -1,6 +1,6 @@
 // Drives the Stream Deck on Ubuntu with the Mac plugin's keys. The dotfiles-stream-deck user
 // service runs it from the copy the stream-deck step installs, beside bin/open-in and the plugin's
-// keys.js, stats.js, layout.json, manifest.json, and images/. layout.json places the keys, and its
+// keys.js, sound.js, stats.js, layout.json, manifest.json, and images/. layout.json places the keys, and its
 // links are the keys that switch pages. It logs to the journal.
 const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -19,8 +19,8 @@ const ALERT = [
 // otherwise shows whatever it was left at, which looks dull.
 const BRIGHTNESS = 60;
 
-// The options are test seams; main() passes the real ones. actions are the manifest's, and keys is
-// keys.js.
+// The options are test seams; main() passes the real ones. actions are the manifest's, keys is
+// keys.js, and sound is sound.js's createSound().
 function createDaemon({
   layout,
   actions,
@@ -32,6 +32,7 @@ function createDaemon({
   listDecks,
   openDeck,
   runOpenIn,
+  sound,
   log = console.log,
   intervalMs = 2000,
   firstUpdateMs = 500,
@@ -135,6 +136,8 @@ function createDaemon({
     if (!action) return;
     if (action in layout.links) {
       showPage(layout.links[action]);
+    } else if (action === "sound") {
+      sound.cycle().then((switched) => (switched ? statKeys.refresh() : alert(control.index)));
     } else {
       run(stats.isStat(action) ? "activity-monitor" : action, () => alert(control.index));
     }
@@ -261,18 +264,21 @@ function main() {
   const { listStreamDecks, openStreamDeck } = require("@elgato-stream-deck/node");
   const { Resvg } = require("@resvg/resvg-js");
   const keys = require("./keys.js");
+  const { createSound } = require("./sound.js");
   const stats = require("./stats.js");
   const read = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8"));
   const manifest = read("manifest.json");
   const openIn = path.join(__dirname, "bin", "open-in");
   const log = (message) => console.log(message);
   const font = fontOptions();
+  const sound = createSound({ log });
   const daemon = createDaemon({
     layout: read("layout.json"),
     actions: new Set(manifest.Actions.map((action) => action.UUID.slice(manifest.UUID.length + 1))),
     keys,
     stats,
-    sampler: stats.createSampler({ log }),
+    sampler: stats.createSampler({ log, sound }),
+    sound,
     keyImage: imageLoader(path.join(__dirname, "images")),
     rasterize: (svg, size) => new Resvg(svg, { fitTo: { mode: "width", value: size }, font }).render().pixels,
     listDecks: listStreamDecks,

@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, and open the agenda, Chrome, a new Chrome tab, Gmail, T3 Code, or Claude",
+  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, open the agenda, Chrome, a new Chrome tab, Gmail, T3 Code, or Claude, and switch the sound output",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -92,6 +92,14 @@
       "Tooltip": "Open Claude, or bring it to the front",
       "Icon": "images/claude",
       "States": [{ "Image": "images/key-claude" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Sound Output",
+      "UUID": "com.gpahal.dotfiles.sound",
+      "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and Mac",
+      "Icon": "images/sound",
+      "States": [{ "Image": "images/key-sound" }],
       "Controllers": ["Keypad"]
     },
     {

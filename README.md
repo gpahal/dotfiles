@@ -55,6 +55,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
 | `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
+| `monitor-volume` | Installs ddcutil and the service that gives the volume keys to the [monitor's speakers](#monitor-volume). Ubuntu only |
 | `manual-steps` | Prints this OS's [manual steps](#manual-steps) that aren't done yet |
 
 - `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
@@ -231,6 +232,15 @@ A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the 
 4. In the monitor's menu, turn off its automatic input selection, so it wakes from sleep on the input it showed rather than the one it prefers. On a Dell, under **Input Source**, set **Auto Select for USB-C** to **No**, then **Auto Select** to **Off**.
 
 `just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the Mac shows failures in Hammerspoon's console.
+
+### Monitor volume
+
+macOS and Ubuntu can't set the volume of HDMI or DisplayPort audio, so while the monitor is the sound output, the volume keys set the monitor's own volume over DDC/CI. This also covers speakers plugged into its audio out, if the monitor's volume reaches that jack. Other outputs, such as headphones, keep the usual keys.
+
+- On the Mac, Hammerspoon catches the keys and runs m1ddc, from the Brewfile. Mute sets the monitor's volume to 0 and unmute brings it back, and `Shift+Opt` makes finer steps.
+- On Ubuntu, the `monitor-volume` step's service gives volume up and down to the monitor while the HDMI output is the default, and gives them back to GNOME when another output is. Mute stays GNOME's. `Ctrl` with a volume key still sets GNOME's software volume. A notification shows the monitor's volume, and `journalctl --user -u dotfiles-monitor-volume -t dotfiles-monitor-volume` shows the log.
+
+The monitor answers only while it shows the machine asking, and only with DDC/CI on in its menu. When it doesn't answer, the Ubuntu keys fall back to software volume. With GNOME's volume at 100%, the monitor's own volume does all the work.
 
 ### tmux
 

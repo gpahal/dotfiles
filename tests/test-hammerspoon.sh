@@ -11,7 +11,7 @@ LUA="$(command -v lua || command -v lua5.4 || true)"
 # A task's exit runs only when the test calls flush()
 cat > "$SANDBOX/fake-hs.lua" <<'EOF'
 calls = {}
-local function record(s) calls[#calls + 1] = s end
+function record(s) calls[#calls + 1] = s end
 function print_calls()
     for _, s in ipairs(calls) do print(s) end
     calls = {}
@@ -25,7 +25,10 @@ local function watcher(fn) return { start = function(self) fn(); return self end
 hs = {
     configdir = os.getenv("HS_CONFIGDIR") or "/home/.hammerspoon",
     autoLaunch = function(on) record("autoLaunch " .. tostring(on)) end,
-    alert = { show = function(s) record("alert " .. s) end },
+    alert = {
+        show = function(s) record("alert " .. s); return s end,
+        closeSpecific = function() end,
+    },
     task = { new = function(path, fn, args)
         local t = { env = {} }
         function t:isRunning() return self.running == true end
@@ -36,7 +39,11 @@ hs = {
             -- task_count() counts open-in's tasks, so they aren't recorded
             if not self.env.OPEN_IN_CALLER then record("task " .. path .. " " .. table.concat(args, " ")) end
             self.running = true
-            delayed[#delayed + 1] = function() self.running = false; fn(0, "", args[2] .. " from com.apple.finder: /tmp") end
+            delayed[#delayed + 1] = function()
+                self.running = false
+                if path:match("/m1ddc$") then return fn(fake_m1ddc(args)) end
+                fn(0, "", args[2] .. " from com.apple.finder: /tmp")
+            end
             return self
         end
         return t
@@ -57,7 +64,52 @@ hs = {
         new = function(fn) return watcher(function() usb.wake = fn end) end,
     } },
     hotkey = { bind = function(mods, key, fn) hotkeys[table.concat(mods, "+") .. "+" .. key] = fn end },
+    fs = { attributes = function(path) if not (path:match("/m1ddc$") and state.noM1ddc) then return {} end end },
+    audiodevice = { defaultOutputDevice = function()
+        return {
+            transportType = function() return output.transport end,
+            outputVolume = function() return output.volume end,
+        }
+    end },
+    settings = {
+        get = function(k) return settings[k] end,
+        set = function(k, v) settings[k] = v end,
+        clear = function(k) settings[k] = nil end,
+    },
+    eventtap = {
+        event = { types = { systemDefined = 14 } },
+        new = function(_, fn) volumeTap = fn; return { start = function(self) return self end } end,
+    },
 }
+
+-- The default output: a display over DisplayPort, which macOS can't set the volume of
+output = { transport = "DisplayPort" }
+settings = {}
+
+-- m1ddc's volume commands on a monitor at state.level, or failing with state.m1ddcFails
+state.level = 40
+function fake_m1ddc(args)
+    if state.m1ddcFails then return 1, "", "No external display" end
+    local cmd, value = args[1], tonumber(args[3])
+    if cmd == "get" then return 0, state.level .. "\n", "" end
+    if cmd == "chg" then value = state.level + value end
+    state.level = math.max(0, math.min(100, value))
+    return 0, "Writing " .. state.level .. "\n", ""
+end
+
+-- Presses a system key, recording it, then what it started, then whether the config swallowed its
+-- down and up
+function press(key, flags, rep)
+    local swallowed = {}
+    record(key)
+    for _, down in ipairs({ true, false }) do
+        swallowed[#swallowed + 1] = tostring(volumeTap({
+            systemKey = function() return { key = key, down = down, ["repeat"] = rep } end,
+            getFlags = function() return flags or {} end,
+        }))
+    end
+    record("  swallowed " .. table.concat(swallowed, " "))
+end
 
 -- Run the task exits
 function flush()
@@ -141,4 +193,97 @@ usb.watcher($DONGLE); fire(); usb.wake('didWake'); fire(); usb.wake('willSleep')
 assert_eq "autoLaunch true
 after 1
 after 3" "$RUN_OUTPUT" "the device leaving, and a wake without it"
+# The volume keys while the monitor is the output: presses while m1ddc runs add up into one change
+run_lua 'press("SOUND_UP"); press("SOUND_UP"); press("SOUND_UP"); flush(); flush()
+press("SOUND_DOWN", { shift = true, alt = true }); flush()
+record("level " .. state.level .. ", tasks " .. task_count())'
+assert_eq "autoLaunch true
+SOUND_UP
+task /opt/homebrew/bin/m1ddc chg volume 6
+  swallowed true true
+SOUND_UP
+  swallowed true true
+SOUND_UP
+  swallowed true true
+alert Monitor volume 46
+task /opt/homebrew/bin/m1ddc chg volume 12
+alert Monitor volume 58
+SOUND_DOWN
+task /opt/homebrew/bin/m1ddc chg volume -1
+  swallowed true true
+alert Monitor volume 57
+level 57, tasks 0" "$RUN_OUTPUT" "volume up and down on the monitor"
+
+# Mute keeps the volume for unmute; a held mute key's repeats don't toggle it back; down while
+# muted stays muted, and up unmutes
+run_lua 'press("MUTE"); press("MUTE", nil, true); flush(); flush()
+record("level " .. state.level .. ", kept " .. settings["dotfiles.monitorMutedVolume"])
+press("SOUND_DOWN"); press("MUTE"); flush(); record("level " .. state.level)
+press("MUTE"); flush(); flush(); press("SOUND_UP"); flush()
+record("level " .. state.level .. ", kept " .. tostring(settings["dotfiles.monitorMutedVolume"]))'
+assert_eq "autoLaunch true
+MUTE
+task /opt/homebrew/bin/m1ddc get volume
+  swallowed true true
+MUTE
+  swallowed true true
+task /opt/homebrew/bin/m1ddc set volume 0
+alert Monitor volume muted
+level 0, kept 40
+SOUND_DOWN
+alert Monitor volume muted
+  swallowed true true
+MUTE
+task /opt/homebrew/bin/m1ddc set volume 40
+  swallowed true true
+alert Monitor volume 40
+level 40
+MUTE
+task /opt/homebrew/bin/m1ddc get volume
+  swallowed true true
+task /opt/homebrew/bin/m1ddc set volume 0
+alert Monitor volume muted
+SOUND_UP
+task /opt/homebrew/bin/m1ddc set volume 46
+  swallowed true true
+alert Monitor volume 46
+level 46, kept nil" "$RUN_OUTPUT" "mute and unmute on the monitor"
+
+# A failed m1ddc drops what's pending, so the next press starts afresh
+run_lua 'state.m1ddcFails = true; press("SOUND_UP"); press("SOUND_UP"); print_calls(); flush()
+state.m1ddcFails = false; press("SOUND_UP"); flush()'
+assert_eq "autoLaunch true
+SOUND_UP
+task /opt/homebrew/bin/m1ddc chg volume 6
+  swallowed true true
+SOUND_UP
+  swallowed true true
+m1ddc: No external display
+alert Couldn't set the monitor's volume; see Hammerspoon's console
+SOUND_UP
+task /opt/homebrew/bin/m1ddc chg volume 6
+  swallowed true true
+alert Monitor volume 46" "$RUN_OUTPUT" "a failed m1ddc"
+
+# macOS keeps the keys for an output it can set, for HDMI it can set, without m1ddc, and for other
+# system keys
+run_lua 'output = { transport = "USB", volume = 50 }; press("SOUND_UP"); press("MUTE")
+output = { transport = "HDMI", volume = 50 }; press("SOUND_UP")
+output = { transport = "HDMI" }; state.noM1ddc = true; press("SOUND_UP")
+state.noM1ddc = false; press("PLAY"); press("SOUND_DOWN"); record("tasks " .. task_count())'
+assert_eq "autoLaunch true
+SOUND_UP
+  swallowed false false
+MUTE
+  swallowed false false
+SOUND_UP
+  swallowed false false
+SOUND_UP
+  swallowed false false
+PLAY
+  swallowed false false
+SOUND_DOWN
+task /opt/homebrew/bin/m1ddc chg volume -6
+  swallowed true true
+tasks 1" "$RUN_OUTPUT" "outputs macOS can set, and other keys"
 test_done

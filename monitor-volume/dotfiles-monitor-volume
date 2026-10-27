@@ -1,0 +1,210 @@
+#!/bin/bash
+set -uo pipefail
+
+# The volume keys for the monitor's speakers. While the default output is HDMI or DisplayPort,
+# `watch` hands GNOME's volume up and down keys to `up` and `down`, which set the monitor's own
+# volume over DDC/CI (VCP 0x62). Other outputs get the keys back, with GNOME's OSD. Mute stays
+# GNOME's: the S2722QC has no DDC mute, and software mute also silences its line-out.
+# dotfiles-monitor-volume.service runs `watch`, and `release` when it stops, so the keys don't
+# stay handed over. `up` and `down` fall back to software volume when the monitor doesn't answer,
+# as while it shows another input.
+
+MEDIA=org.gnome.settings-daemon.plugins.media-keys
+KEYBINDING_DIR=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
+STATE_DIR="${MONITOR_VOLUME_STATE_DIR:-${XDG_RUNTIME_DIR:-/tmp}/dotfiles-monitor-volume}"
+PENDING="$STATE_DIR/pending"
+SELF="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
+VOLUME_VCP=62
+
+# key_sym <up|down>: the key, which GNOME's volume-<up|down>-static binds by default
+key_sym() {
+    if [ "$1" == up ]; then echo XF86AudioRaiseVolume; else echo XF86AudioLowerVolume; fi
+}
+
+keybinding_path() {
+    echo "$KEYBINDING_DIR/dotfiles-monitor-volume-$1/"
+}
+
+# gsettings prints a list as @as [] or ['a', 'b']
+list_get() {
+    local value
+    value="$(gsettings get "$1" "$2")" || return 1
+    printf '%s\n' "$value" | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' |
+        tr ',' '\n' | sed -e "s/^ *'//" -e "s/' *$//" | grep -v '^$' || true
+}
+
+list_set() {
+    local list
+    list="$({ grep -v '^$' || true; } | sed "s/.*/'&'/" | paste -sd, - | sed 's/,/, /g')"
+    if [ -n "$list" ]; then list="[$list]"; else list="@as []"; fi
+    gsettings set "$1" "$2" "$list"
+}
+
+# set_if <schema> <key> <value as gsettings prints it>
+set_if() {
+    [ "$(gsettings get "$1" "$2")" == "$3" ] || gsettings set "$1" "$2" "$3"
+}
+
+# set_static <up|down>: writes GNOME's static binding from stdin. GNOME re-reads it only when
+# volume-<up|down> changes, so this rewrites that as it is. The pause lets GNOME let go of a key
+# before a shortcut takes it, or take it back after one lets go.
+set_static() {
+    local keys
+    list_set "$MEDIA" "volume-$1-static" &&
+        keys="$(gsettings get "$MEDIA" "volume-$1")" && gsettings set "$MEDIA" "volume-$1" "$keys" || return 1
+    sleep "${MONITOR_VOLUME_SETTLE:-0.5}"
+}
+
+monitor_output() {
+    wpctl inspect @DEFAULT_AUDIO_SINK@ 2> /dev/null | grep -E '^\s*\*?\s*node\.name = ' | grep -qiE 'hdmi|displayport'
+}
+
+hand_over() {
+    local dir sym static path paths
+    paths="$(list_get "$MEDIA" custom-keybindings)" || return 1
+    for dir in up down; do
+        sym="$(key_sym "$dir")"
+        static="$(list_get "$MEDIA" "volume-$dir-static")" || return 1
+        if grep -qxF "$sym" <<< "$static"; then
+            { grep -vxF "$sym" <<< "$static" || true; } | set_static "$dir" || return 1
+        fi
+        path="$(keybinding_path "$dir")"
+        set_if "$MEDIA.custom-keybinding:$path" name "'Monitor volume $dir'" &&
+            set_if "$MEDIA.custom-keybinding:$path" command "\"systemd-cat -t dotfiles-monitor-volume '$SELF' $dir\"" &&
+            set_if "$MEDIA.custom-keybinding:$path" binding "'$sym'" || return 1
+        if ! grep -qxF "$path" <<< "$paths"; then
+            paths="$(printf '%s\n' "$paths" "$path")"
+            printf '%s\n' "$paths" | list_set "$MEDIA" custom-keybindings || return 1
+        fi
+    done
+}
+
+# Clears the shortcuts before GNOME gets the keys back, so the two never hold them at once
+release() {
+    local dir sym static path result=0
+    for dir in up down; do
+        sym="$(key_sym "$dir")"
+        path="$(keybinding_path "$dir")"
+        if [ "$(gsettings get "$MEDIA.custom-keybinding:$path" binding)" != "''" ]; then
+            gsettings set "$MEDIA.custom-keybinding:$path" binding "''" || result=1
+        fi
+        if ! static="$(list_get "$MEDIA" "volume-$dir-static")"; then
+            result=1
+        elif ! grep -qxF "$sym" <<< "$static"; then
+            printf '%s\n' "$sym" "$static" | set_static "$dir" || result=1
+        fi
+    done
+    return "$result"
+}
+
+sync() {
+    if monitor_output; then
+        hand_over && echo "The monitor is the sound output, so the volume keys set its volume."
+    else
+        release && echo "The sound output isn't the monitor, so GNOME has the volume keys."
+    fi
+}
+
+# GNOME's own step, a percentage
+volume_step() {
+    local step
+    step="$(gsettings get "$MEDIA" volume-step 2> /dev/null)"
+    [[ "$step" =~ ^[0-9]+$ ]] && [ "$step" -gt 0 ] || step=6
+    echo "$step"
+}
+
+# Volume up unmutes, as GNOME's does
+software_volume() {
+    local delta="$1"
+    if [ "$delta" -gt 0 ]; then
+        wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
+        wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${delta}%+"
+    else
+        wpctl set-volume @DEFAULT_AUDIO_SINK@ "${delta#-}%-"
+    fi
+}
+
+# Replaces its last notification, so presses don't stack up
+notify() {
+    local id_file="$STATE_DIR/notification" id
+    command -v notify-send &> /dev/null || return 0
+    id="$(cat "$id_file" 2> /dev/null)"
+    [[ "$id" =~ ^[0-9]+$ ]] || id=0
+    notify-send --transient --print-id --replace-id="$id" --app-name="Monitor volume" \
+        --icon=audio-volume-high-symbolic "Monitor volume $1" > "$id_file" 2> /dev/null || true
+}
+
+# VCP 62 C 65 100: the current value, then the maximum
+apply_delta() {
+    local delta="$1" out level
+    if monitor_output && out="$(ddcutil getvcp "$VOLUME_VCP" --brief 2> /dev/null)" &&
+        [[ "$out" =~ ^VCP\ $VOLUME_VCP\ C\ ([0-9]+)\ ([0-9]+)$ ]]; then
+        level=$((BASH_REMATCH[1] + delta))
+        [ "$level" -ge 0 ] || level=0
+        [ "$level" -le "${BASH_REMATCH[2]}" ] || level="${BASH_REMATCH[2]}"
+        if ddcutil --noverify setvcp "$VOLUME_VCP" "$level"; then
+            [ "$delta" -le 0 ] || wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
+            notify "$level"
+            return 0
+        fi
+    fi
+    echo "The monitor didn't answer over DDC/CI, so the keys set the software volume."
+    software_volume "$delta"
+}
+
+# Sums and empties what presses have added
+take_pending() {
+    local sum=0 line
+    {
+        flock 8
+        while IFS= read -r line; do
+            [[ "$line" =~ ^-?[0-9]+$ ]] && sum=$((sum + line))
+        done < "$PENDING"
+        : > "$PENDING"
+    } 8> "$STATE_DIR/pending.lock"
+    echo "$sum"
+}
+
+# Each press adds to what's pending, and whichever press holds the worker lock applies the sum, so
+# presses during a slow DDC/CI write land in one write. One that finds the lock held leaves its
+# press to the holder, which checks for more after letting go.
+change() {
+    local delta
+    mkdir -p "$STATE_DIR" || return 1
+    { flock 8; echo "$1" >> "$PENDING"; } 8> "$STATE_DIR/pending.lock"
+    while :; do
+        {
+            flock -n 9 || return 0
+            while delta="$(take_pending)" && [ "$delta" -ne 0 ]; do
+                apply_delta "$delta"
+            done
+        } 9> "$STATE_DIR/worker.lock"
+        [ -s "$PENDING" ] || return 0
+    done
+}
+
+# pw-metadata prints each change to the defaults, the current ones first. It ends when PipeWire
+# restarts, and the service restarts this.
+watch() {
+    local line
+    sync
+    while IFS= read -r line; do
+        case "$line" in
+            *"key:'default.audio.sink'"*) sync ;;
+        esac
+    done < <(stdbuf -oL pw-metadata -m -n default)
+    echo "pw-metadata stopped." >&2
+    return 1
+}
+
+case "${1:-}" in
+    up) change "$(volume_step)" ;;
+    down) change "-$(volume_step)" ;;
+    watch) watch ;;
+    sync) sync ;;
+    release) release ;;
+    *)
+        echo "Usage: ${0##*/} up|down|watch|sync|release" >&2
+        exit 2
+        ;;
+esac

@@ -62,5 +62,5 @@ if OS.mac?
   brew "pam-reattach"  # The PAM module Touch ID for sudo needs inside tmux (macos/setup-touch-id-sudo.sh)
   brew "mas"  # Mac App Store CLI, which installs the homebrew step's MAS_APPS
   brew "macmon"  # Apple Silicon power, temperature, and memory monitor, which the Stream Deck stat keys read
-  brew "m1ddc"  # Sets the monitor's input over DDC/CI, for Hammerspoon's monitor input switching
+  brew "m1ddc"  # Sets the monitor's input and volume over DDC/CI, for Hammerspoon
 end

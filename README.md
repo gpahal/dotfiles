@@ -173,7 +173,7 @@ The **Dotfiles** keys act on the folder of the app in front:
 - **Overview**, labeled MAC or UBUNTU for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 - **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
 - **Agenda** and **Gmail** focus or open [the agenda](https://garvitpahal.com/x/agenda) and Gmail.
-- **Chrome**, **New Tab**, **T3 Code**, and **Claude** match the Hammerspoon hotkeys.
+- **Chrome**, **New Tab**, **T3 Code**, **Claude**, **Agenda**, and **Gmail** match the Hammerspoon hotkeys.
 - **Sound**, below **Chrome**, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile.
 
 [`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
@@ -198,6 +198,7 @@ macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 - `Space` Claude, `B` Chrome, `C` T3 Code.
 - `T` Ghostty and `E` Zed, at the folder in front.
 - `N` a new Chrome tab, with the clipboard's text pasted and selected.
+- `A` the agenda and `M` Gmail, as the Stream Deck's keys open them.
 
 On Ubuntu, the `hotkeys` step adds the same shortcuts on `Ctrl+Alt+Super`, which run the [Stream Deck](#stream-deck)'s actions. A shortcut of yours on the same keys keeps them, and `--status` names it. `journalctl --user -t dotfiles-hotkeys` shows their log.
 

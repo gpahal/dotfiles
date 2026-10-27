@@ -31,7 +31,9 @@ chmod +x "$open_in"
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+Space opens Claude"
 assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+N opens New Tab"
-assert_eq "['$DIR/custom0/', '$DIR/dotfiles-claude/', '$DIR/dotfiles-chrome/', '$DIR/dotfiles-t3-code/', '$DIR/dotfiles-terminal/', '$DIR/dotfiles-editor/', '$DIR/dotfiles-chrome-tab/']" \
+assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+A opens Agenda"
+assert_contains "$RUN_OUTPUT" "Ctrl+Alt+Super+M opens Gmail"
+assert_eq "['$DIR/custom0/', '$DIR/dotfiles-claude/', '$DIR/dotfiles-chrome/', '$DIR/dotfiles-t3-code/', '$DIR/dotfiles-terminal/', '$DIR/dotfiles-editor/', '$DIR/dotfiles-chrome-tab/', '$DIR/dotfiles-agenda/', '$DIR/dotfiles-gmail/']" \
     "$(gsettings get "$MEDIA" custom-keybindings)" "the shortcut list, with yours kept"
 
 # The command splits as a shell would, and runs open-in with its target

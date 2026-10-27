@@ -37,6 +37,7 @@ MAC_TAILSCALE=/Applications/Tailscale.app/Contents/MacOS/Tailscale
 # "<name>|<app>|optional", the apps the README turns Launch at login on for
 LOGIN_APPS=("Rectangle|/Applications/Rectangle.app|" "Amphetamine|/Applications/Amphetamine.app|"
     "Tailscale|/Applications/Tailscale.app|" "Dato|/Applications/Dato.app|optional")
+WISPR_FLOW_APP="/Applications/Wispr Flow.app"
 STREAM_DECK_APP="/Applications/Elgato Stream Deck.app"
 GDM_CONF=/etc/gdm3/custom.conf
 # GNOME's Remote Login, a system RDP server
@@ -114,6 +115,17 @@ vicinae_set_up() {
 rectangle_set_up() {
     app_installed /Applications/Rectangle.app || return
     app_has_accessibility /Applications/Rectangle.app
+}
+
+# Flow asks for both after its sign-in, so they also show the sign-in is done
+wispr_flow_set_up() {
+    local id
+    app_installed "$WISPR_FLOW_APP" || return
+    id="$(mac_app_id "$WISPR_FLOW_APP")" || return 1
+    manual_parts_start
+    manual_part "Microphone off" tcc_user_allowed kTCCServiceMicrophone "$id"
+    manual_part "Accessibility off" app_has_accessibility "$WISPR_FLOW_APP"
+    manual_parts_result
 }
 
 login_items_on() {

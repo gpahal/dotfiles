@@ -50,6 +50,7 @@ CASKS=(
     logi-options+       # Logitech device settings; Ubuntu gets Solaar from the logitech step
     elgato-stream-deck  # Stream Deck keys, with the stream-deck step's plugin
     hammerspoon         # The hotkeys the hammerspoon step sets
+    wispr-flow          # Voice dictation into any app; no Linux build
 )
 
 UBUNTU_CASKS=(

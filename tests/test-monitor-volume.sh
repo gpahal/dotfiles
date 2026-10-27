@@ -25,7 +25,7 @@ esac'
 stub notify-send 'echo 7'
 stub pw-metadata
 HDMI=alsa_output.pci-0000_0c_00.1.hdmi-stereo
-USB=alsa_output.usb-CrinEar_Protocol_Micro-00.analog-stereo
+USB=alsa_output.usb-Generic_USB_DAC-00.analog-stereo
 echo "$HDMI" > "$SANDBOX/sink"
 echo 40 > "$SANDBOX/level"
 

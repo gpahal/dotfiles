@@ -37,7 +37,7 @@ usb_device() {
 }
 unplug() { rm -f "$SANDBOX/udev/$1" "$SANDBOX/udev/$1-hiddev"; }
 usb_device usb1 1d6b 0002
-usb_device 1-2 046d c52b
+usb_device 1-2 abcd ef02
 
 stub_sudo_cacheable
 cache_sudo yes

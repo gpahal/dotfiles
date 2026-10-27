@@ -136,7 +136,7 @@ touch "$STATE/user-dotfiles-stream-deck.service.active"
 # The deck attached: its hidraw node must be readable and writable
 mkdir -p "$SANDBOX/hidraw/hidraw3/device" "$SANDBOX/hidraw/hidraw1/device"
 echo "HID_ID=0003:00000FD9:00000080" > "$SANDBOX/hidraw/hidraw3/device/uevent"
-echo "HID_ID=0003:0000046D:0000C52B" > "$SANDBOX/hidraw/hidraw1/device/uevent"
+echo "HID_ID=0003:0000ABCD:0000EF02" > "$SANDBOX/hidraw/hidraw1/device/uevent"
 touch "$SANDBOX/dev/hidraw3"
 chmod 000 "$SANDBOX/dev/hidraw3"
 assert_exit 3 main --status

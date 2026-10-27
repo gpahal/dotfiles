@@ -170,11 +170,11 @@ run_monitor() {
 }
 
 CONF="# From just monitor-input
-device=19f5:2620
+device=1234:5678
 input=27
 m1ddc=/opt/homebrew/bin/m1ddc"
-DONGLE='{ vendorID = 0x19f5, productID = 0x2620, productName = "Air75 V3 Dongle" }'
-MOUSE='{ vendorID = 0x046d, productID = 0xc548 }'
+DONGLE='{ vendorID = 0x1234, productID = 0x5678, productName = "Keyboard Receiver" }'
+MOUSE='{ vendorID = 0x0abc, productID = 0xef01 }'
 
 # A burst of events switches once, after the last; a device that isn't the trigger does nothing
 run_monitor "$CONF" "usb.attached = { $MOUSE, $DONGLE }

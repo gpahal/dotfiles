@@ -227,9 +227,9 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the Ubuntu desktop, and the monitor's input follows them over DDC/CI. Each machine switches the monitor to itself when the devices arrive. Ubuntu also hands the monitor back to the Mac when the devices leave it, so switching works while the Mac sleeps.
 
 1. Pick a device the switch moves, such as the keyboard's receiver. `just monitor-input` lists the attached devices' `vendor:product` IDs, and the common input codes.
-2. On the Mac: `just monitor-input <vendor:product> <Mac's input>`, such as `just monitor-input 19f5:2620 27` for USB-C.
-3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <Mac's input>`, such as `just monitor-input 19f5:2620 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
-4. In the monitor's menu, turn off its automatic input selection, so it wakes from sleep on the input it showed rather than the one it prefers. On a Dell, under **Input Source**, set **Auto Select for USB-C** to **No**, then **Auto Select** to **Off**.
+2. On the Mac: `just monitor-input <vendor:product> <Mac's input>`, such as `just monitor-input 1234:5678 27` for USB-C.
+3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <Mac's input>`, such as `just monitor-input 1234:5678 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
+4. In the monitor's menu, turn off its automatic input selection, so it wakes from sleep on the input it showed rather than the one it prefers. Some monitors have a separate setting for USB-C, which needs turning off too.
 
 `just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the Mac shows failures in Hammerspoon's console.
 

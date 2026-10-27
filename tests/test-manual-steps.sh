@@ -444,7 +444,7 @@ solaar() {
     as_os ubuntu
     expect 1 solaar_paired
     mkdir -p "$(dirname "$SOLAAR_CONFIG")"
-    printf '%s\n' "- 1.1.20" "- _NAME: MX Master 4" "  _modelId: x" > "$SOLAAR_CONFIG"
+    printf '%s\n' "- 1.1.20" "- _NAME: Wireless Mouse" "  _modelId: x" > "$SOLAAR_CONFIG"
     expect 0 solaar_paired
 }
 subtest solaar

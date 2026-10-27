@@ -137,8 +137,8 @@ end
 followMonitor()
 
 -- The volume keys set the monitor's own volume over DDC/CI while the output is one macOS can't set
--- the volume of, as over HDMI or DisplayPort; other outputs keep macOS's keys. The S2722QC has no
--- DDC mute, so mute sets its volume to 0 and keeps the old one for unmute. Needs m1ddc, from the
+-- the volume of, as over HDMI or DisplayPort; other outputs keep macOS's keys. Many monitors have
+-- no DDC mute, so mute sets the volume to 0 and keeps the old one for unmute. Needs m1ddc, from the
 -- Brewfile; without it the keys stay macOS's.
 local M1DDC = "/opt/homebrew/bin/m1ddc"
 -- macOS's steps are sixteenths, and Shift+Option's quarters of those

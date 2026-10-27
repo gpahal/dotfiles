@@ -6,7 +6,7 @@
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-stub scutil 'echo Garvits-MacBook-Pro'
+stub scutil 'echo Garvits-Mac'
 
 load_script macos/install.sh
 as_os macos

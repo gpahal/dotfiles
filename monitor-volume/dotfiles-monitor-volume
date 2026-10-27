@@ -4,7 +4,7 @@ set -uo pipefail
 # The volume keys for the monitor's speakers. While the default output is HDMI or DisplayPort,
 # `watch` hands GNOME's volume up and down keys to `up` and `down`, which set the monitor's own
 # volume over DDC/CI (VCP 0x62). Other outputs get the keys back, with GNOME's OSD. Mute stays
-# GNOME's: the S2722QC has no DDC mute, and software mute also silences its line-out.
+# GNOME's: many monitors have no DDC mute, and software mute also silences their audio out.
 # dotfiles-monitor-volume.service runs `watch`, and `release` when it stops, so the keys don't
 # stay handed over. `up` and `down` fall back to software volume when the monitor doesn't answer,
 # as while it shows another input.

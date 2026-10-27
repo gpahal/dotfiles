@@ -666,6 +666,14 @@ write_back() {
     rm -f "$new"
 }
 
+# write_content <dest> <text>: write_back of the text and a newline
+write_content() {
+    local tmp
+    tmp="$(mktemp)" || return 1
+    printf '%s\n' "$2" > "$tmp" || { rm -f "$tmp"; return 1; }
+    write_back "$tmp" "$1"
+}
+
 # file_contents <file>: prints the file, or nothing when it's missing; fails, saying so, when it
 # can't be read, such as a dangling symlink, rather than start afresh and lose data
 file_contents() {

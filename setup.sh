@@ -12,7 +12,7 @@ source "$DOTFILES_DIR/lib/runner.sh"
 MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon vicinae
     editorconfig macos manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hotkeys gnome vicinae
-    editorconfig ubuntu docker chrome logitech monitor-input manual-steps)
+    editorconfig ubuntu docker chrome logitech monitor-input monitor-volume manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR"
 

@@ -1,5 +1,6 @@
 -- Needs Accessibility (a manual step) and Automation of Ghostty, Finder, System Events, and Chrome.
 -- With monitor-input.conf (just monitor-input), the monitor follows the USB switch to this Mac.
+-- With m1ddc, the volume keys set the monitor's volume while it's the sound output.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
 local CHROME = "com.google.Chrome"
@@ -134,3 +135,118 @@ local function followMonitor()
 end
 
 followMonitor()
+
+-- The volume keys set the monitor's own volume over DDC/CI while the output is one macOS can't set
+-- the volume of, as over HDMI or DisplayPort; other outputs keep macOS's keys. Many monitors have
+-- no DDC mute, so mute sets the volume to 0 and keeps the old one for unmute. Needs m1ddc, from the
+-- Brewfile; without it the keys stay macOS's.
+local M1DDC = "/opt/homebrew/bin/m1ddc"
+-- macOS's steps are sixteenths, and Shift+Option's quarters of those
+local VOLUME_STEP, FINE_STEP = 6, 1
+local MUTED_VOLUME = "dotfiles.monitorMutedVolume"
+local VOLUME_KEYS = { SOUND_UP = 1, SOUND_DOWN = -1, MUTE = 0 }
+
+-- Presses while m1ddc runs add up, so holding a key doesn't queue a task per repeat
+local volume = { pending = 0, mute = false }
+
+local function monitorOutput()
+    if not hs.fs.attributes(M1DDC) then return false end
+    local device = hs.audiodevice.defaultOutputDevice()
+    if not device or device:outputVolume() ~= nil then return false end
+    local transport = device:transportType()
+    return transport == "HDMI" or transport == "DisplayPort"
+end
+
+local function showVolume(text)
+    if volume.alert then hs.alert.closeSpecific(volume.alert) end
+    volume.alert = hs.alert.show("Monitor volume " .. text, 0.8)
+end
+
+-- A failure drops the presses pending, so the next press starts afresh
+local function m1ddc(args, onDone)
+    local task
+    local function failed(message)
+        volume.task, volume.pending, volume.mute = nil, 0, false
+        hs.alert.show(message)
+    end
+    task = hs.task.new(M1DDC, function(exitCode, stdout, stderr)
+        dotfiles.tasks[task] = nil
+        if exitCode ~= 0 then
+            print("m1ddc: " .. stdout .. stderr)
+            failed("Couldn't set the monitor's volume; see Hammerspoon's console")
+            return
+        end
+        volume.task = nil
+        onDone(stdout)
+    end, args)
+    if not (task and task:start()) then
+        failed("Couldn't run " .. M1DDC .. "; re-run the homebrew step")
+        return
+    end
+    dotfiles.tasks[task] = true
+    volume.task = task
+end
+
+local runVolume
+
+-- set and chg print "Writing <value>"
+local function written(stdout)
+    local level = stdout:match("Writing (%d+)")
+    if level then showVolume(level) end
+    runVolume()
+end
+
+runVolume = function()
+    if volume.task then return end
+    local muted = hs.settings.get(MUTED_VOLUME)
+    if volume.mute then
+        volume.mute = false
+        if muted then
+            hs.settings.clear(MUTED_VOLUME)
+            m1ddc({ "set", "volume", tostring(muted) }, written)
+        else
+            m1ddc({ "get", "volume" }, function(stdout)
+                local level = tonumber(stdout:match("%d+"))
+                if not level then
+                    hs.alert.show("Couldn't read the monitor's volume")
+                    return runVolume()
+                end
+                hs.settings.set(MUTED_VOLUME, level)
+                m1ddc({ "set", "volume", "0" }, function()
+                    showVolume("muted")
+                    runVolume()
+                end)
+            end)
+        end
+    elseif volume.pending ~= 0 then
+        local delta = volume.pending
+        volume.pending = 0
+        if not muted then
+            m1ddc({ "chg", "volume", tostring(delta) }, written)
+        elseif delta > 0 then
+            -- Up unmutes, as macOS's does
+            hs.settings.clear(MUTED_VOLUME)
+            m1ddc({ "set", "volume", tostring(math.min(100, muted + delta)) }, written)
+        else
+            showVolume("muted")
+        end
+    end
+end
+
+-- Each key sends a down and an up; both are swallowed so macOS doesn't show its "can't" sign
+dotfiles.volumeTap = hs.eventtap.new({ hs.eventtap.event.types.systemDefined }, function(event)
+    local key = event:systemKey()
+    local direction = VOLUME_KEYS[key.key or ""]
+    if not direction or not monitorOutput() then return false end
+    if key.down then
+        if direction == 0 then
+            if not key["repeat"] then volume.mute = not volume.mute end
+        else
+            local flags = event:getFlags()
+            local step = (flags.shift and flags.alt) and FINE_STEP or VOLUME_STEP
+            volume.pending = volume.pending + direction * step
+        end
+        runVolume()
+    end
+    return true
+end):start()

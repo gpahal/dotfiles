@@ -21,7 +21,7 @@ esac'
 stub scutil 'state="'"$STATE"'"
 case "$1 $2" in
     "--get HostName") cat "$state/hostname" 2> /dev/null ;;
-    "--get LocalHostName") echo Garvits-MacBook-Pro ;;
+    "--get LocalHostName") echo Garvits-Mac ;;
     "--set HostName") echo "$3" > "$state/hostname" ;;
     *) exit 1 ;;
 esac'
@@ -90,7 +90,7 @@ security_on() {
 
 defaults_items() {
     local show_category="$DEFAULTS_DIR/com.apple.ActivityMonitor.ShowCategory"
-    echo Garvits-MacBook-Pro > "$STATE/hostname"
+    echo Garvits-Mac > "$STATE/hostname"
     security_on
 
     touch "$SANDBOX/running"
@@ -190,7 +190,7 @@ real_confirm "$@"'
     assert_exit 0 main
     assert_eq 1 "$(wc -l < "$SANDBOX/confirms" | tr -d ' ')" "confirms for four sudo items"
     restore_fn confirm
-    assert_eq Garvits-MacBook-Pro "$(cat "$STATE/hostname")" "hostname"
+    assert_eq Garvits-Mac "$(cat "$STATE/hostname")" "hostname"
     assert_exit 0 main --status
     assert_contains "$RUN_OUTPUT" "ok         Hostname set"
     assert_contains "$RUN_OUTPUT" "ok         Application firewall on"

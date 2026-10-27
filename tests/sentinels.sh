@@ -13,4 +13,4 @@ orb nut-scanner upsc udevadm activateSettings apt-mark lsblk lsappinfo pgrep scu
 dpkg-query ip bwrap systemd-detect-virt mdls m1ddc ddcutil ioreg busctl gdbus gsettings gnome-extensions
 systemd-run gnome-shell NetworkManager iw qrencode useradd userdel usermod groupadd groupdel groupmod
 gpasswd passwd chpasswd adduser deluser addgroup delgroup dscl getent sqlite3 plutil sfltool tmutil
-pro go"
+pro go wpctl pw-metadata"

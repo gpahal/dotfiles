@@ -34,7 +34,7 @@ const stats = { isStat: realStats.isStat, placeholder: (k) => 'placeholder:' + k
 const fills = [];
 const deck = (columns = 5, rows = 3) => {
   const d = new EventEmitter();
-  d.PRODUCT_NAME = 'Stream Deck MK.2';
+  d.PRODUCT_NAME = 'Stream Deck';
   d.CONTROLS = [];
   for (let row = 0; row < rows; row++)
     for (let column = 0; column < columns; column++)
@@ -136,7 +136,7 @@ await until('the second disconnect', () => !d.state().connected);
 console.log(opened.length, logs.filter((l) => l.startsWith('Stream Deck')).join('|'));")"
 assert_eq "close Stream Deck disconnected: write failed
 true 1
-2 Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: write failed|Stream Deck connected: Stream Deck MK.2|Stream Deck disconnected: unplugged" \
+2 Stream Deck connected: Stream Deck|Stream Deck disconnected: write failed|Stream Deck connected: Stream Deck|Stream Deck disconnected: unplugged" \
     "$out" "a deck that goes away and comes back"
 
 # A deck of another size is left alone; stop leaves the deck on its logo
@@ -149,7 +149,7 @@ decks = [xl, deck()];
 await until('the 15-key deck', () => d.state().connected);
 await d.stop();
 console.log(opened.at(-1).log.join());")"
-assert_eq "false 1 close The Stream Deck MK.2 has 8×4 keys; layout.json is for 5×3
+assert_eq "false 1 close The Stream Deck has 8×4 keys; layout.json is for 5×3
 logo,close" "$out" "another model, then stop"
 
 # resvg gets the matched family's OpenType files only, not every system font, with the family

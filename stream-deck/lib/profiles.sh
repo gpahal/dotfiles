@@ -8,7 +8,7 @@ DECK_LAYOUT="$DECK_SRC/com.gpahal.dotfiles.sdPlugin/layout.json"
 # shellcheck disable=SC2034 # build-profile.sh reads it
 DECK_MANIFEST="$DECK_SRC/com.gpahal.dotfiles.sdPlugin/manifest.json"
 DECK_PLUGIN_UUID=com.gpahal.dotfiles
-# The Stream Deck MK.2's model code, as Stream Deck writes it in a profile
+# The model code of the 15-key deck the profiles are for, as Stream Deck writes it in a profile
 DECK_MODEL=20GBA9901
 PROFILES_DIR="$HOME/Library/Application Support/com.elgato.StreamDeck/ProfilesV3"
 # Separates fields: a tab would merge empty ones under read

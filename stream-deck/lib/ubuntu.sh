@@ -49,19 +49,6 @@ stream_deck_ubuntu_files() {
     return "$status"
 }
 
-# A path for a unit's ExecStart, which expands % and $
-systemd_quote() {
-    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
-}
-
-# write_content <dest> <text>: write_back of the text and a newline
-write_content() {
-    local tmp
-    tmp="$(mktemp)" || return 1
-    printf '%s\n' "$2" > "$tmp" || { rm -f "$tmp"; return 1; }
-    write_back "$tmp" "$1"
-}
-
 gmail_desktop() {
     printf '%s\n' "# From the dotfiles stream-deck step: Gmail in its own window, for the Stream Deck's Gmail key" \
         "[Desktop Entry]" "Type=Application" "Name=Gmail" "Comment=Gmail in a Google Chrome app window" \

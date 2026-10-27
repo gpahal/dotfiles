@@ -34,7 +34,7 @@ monitor_input_paths() {
 }
 
 usb_device 1-1 05e3:0610 "USB2.1 Hub"
-usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+usb_device 1-2 1234:5678 "Keyboard Receiver"
 output card1-HDMI-A-1 connected 4
 output card1-DP-1 disconnected 5
 output card1-Writeback-1 unknown
@@ -72,13 +72,13 @@ the_step() {
     assert_exit 0 main --status
 
     mkdir -p "$(dirname "$MONITOR_INPUT_CONF")"
-    printf '%s\n' device=19f5:2620 input=17 other=27 connector=HDMI-A-1 > "$MONITOR_INPUT_CONF"
+    printf '%s\n' device=1234:5678 input=17 other=27 connector=HDMI-A-1 > "$MONITOR_INPUT_CONF"
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    Monitor input switching: $MONITOR_INPUT_RULE is missing"
     mkdir -p "$(dirname "$MONITOR_INPUT_RULE")"
     : > "$MONITOR_INPUT_RULE"
     assert_exit 0 main --status
-    assert_contains "$RUN_OUTPUT" "ok         Monitor input switching on HDMI-A-1, for USB device 19f5:2620"
+    assert_contains "$RUN_OUTPUT" "ok         Monitor input switching on HDMI-A-1, for USB device 1234:5678"
     rm "$DRM/card1-HDMI-A-1/ddc"
     assert_exit 3 main --status
     assert_contains "$RUN_OUTPUT" "the HDMI-A-1 connector has no DDC bus"
@@ -97,39 +97,39 @@ setup_on_ubuntu() {
     : > "$MONITOR_INPUT_SCRIPT"
     chmod +x "$MONITOR_INPUT_SCRIPT"
 
-    assert_exit 2 main 19f5:2620 17
+    assert_exit 2 main 1234:5678 17
     assert_contains "$RUN_OUTPUT" "Give the Mac's input too"
-    assert_exit 2 main 19f5 17 27
-    assert_exit 2 main 19f5:2620 17 0x11
+    assert_exit 2 main 1234 17 27
+    assert_exit 2 main 1234:5678 17 0x11
     assert_contains "$RUN_OUTPUT" "both 17"
-    assert_exit 1 main 19f5:2620 17 27 DP-1
+    assert_exit 1 main 1234:5678 17 27 DP-1
     assert_contains "$RUN_OUTPUT" "DP-1 isn't a connected output with DDC"
     [ ! -e "$MONITOR_INPUT_CONF" ] || fail "a rejected run saved the settings"
 
-    assert_exit 0 main 19F5:2620 0x11 27
-    assert_contains "$RUN_OUTPUT" "Saved. With 19f5:2620 here the monitor shows input 17 on HDMI-A-1; without it, input 27."
+    assert_exit 0 main 1234:5678 0x11 27
+    assert_contains "$RUN_OUTPUT" "Saved. With 1234:5678 here the monitor shows input 17 on HDMI-A-1; without it, input 27."
     assert_eq "# From just monitor-input. dotfiles-monitor-input reads it.
-device=19f5:2620
+device=1234:5678
 input=17
 other=27
 connector=HDMI-A-1" "$(cat "$MONITOR_INPUT_CONF")" "the settings"
-    assert_file_contains "$MONITOR_INPUT_RULE" 'ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="19f5/2620/*", RUN+="/usr/bin/systemctl --no-block restart dotfiles-monitor-input.service"'
+    assert_file_contains "$MONITOR_INPUT_RULE" 'ACTION=="add|remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="1234/5678/*", RUN+="/usr/bin/systemctl --no-block restart dotfiles-monitor-input.service"'
     assert_file_contains "$STUB_LOG" "udevadm control --reload"
 
-    assert_exit 0 main 19f5:2620 17 27 HDMI-A-1
+    assert_exit 0 main 1234:5678 17 27 HDMI-A-1
     assert_contains "$RUN_OUTPUT" "Already set."
     assert_file_not_contains "$STUB_LOG" "sudo"
 
     # Away from this machine the device isn't attached, which is fine
     rm -rf "$USB/1-2"
-    assert_exit 0 main 046d:c548 17 27
-    assert_contains "$RUN_OUTPUT" "046d:c548 isn't attached now"
+    assert_exit 0 main 0abc:ef01 17 27
+    assert_contains "$RUN_OUTPUT" "0abc:ef01 isn't attached now"
     # The kernel's PRODUCT drops leading zeros
-    assert_file_contains "$MONITOR_INPUT_RULE" 'ENV{PRODUCT}=="46d/c548/*"'
-    usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+    assert_file_contains "$MONITOR_INPUT_RULE" 'ENV{PRODUCT}=="abc/ef01/*"'
+    usb_device 1-2 1234:5678 "Keyboard Receiver"
 
     output card2-HDMI-A-2 connected 7
-    assert_exit 1 main 19f5:2620 17 27
+    assert_exit 1 main 1234:5678 17 27
     assert_contains "$RUN_OUTPUT" "Name the connector the monitor is on, one of: HDMI-A-1, HDMI-A-2."
     rm -rf "$DRM/card2-HDMI-A-2"
 
@@ -149,39 +149,39 @@ setup_on_mac() {
     stub ioreg 'cat <<"EOF"
 +-o Root  <class IORegistryEntry, id 0x100000100, retain 25>
   +-o AppleT8132USBXHCI@01000000  <class AppleT8132USBXHCI>
-    | +-o Air75 V3 Dongle@01120000  <class IOUSBHostDevice>
+    | +-o Keyboard Receiver@01120000  <class IOUSBHostDevice>
     |   {
-    |     "idProduct" = 9760
-    |     "USB Product Name" = "Air75 V3 Dongle"
-    |     "idVendor" = 6645
+    |     "idProduct" = 22136
+    |     "USB Product Name" = "Keyboard Receiver"
+    |     "idVendor" = 4660
     |   }
     | +-o Unnamed@01130000  <class IOUSBHostDevice>
     |   {
-    |     "idVendor" = 1133
-    |     "idProduct" = 50504
+    |     "idVendor" = 2748
+    |     "idProduct" = 61185
     |   }
 EOF'
 
     hide m1ddc
-    assert_exit 1 main 19f5:2620 27
+    assert_exit 1 main 1234:5678 27
     assert_contains "$RUN_OUTPUT" "m1ddc isn't installed"
     # Many lines, as a grep -q reading them would leave m1ddc writing to a closed pipe
-    stub m1ddc '[ "$*" != "display list" ] || [ -e "$SANDBOX/no-display" ] || for i in $(seq 5000); do echo "[$i] DELL S2722QC (57670C1C)"; done'
+    stub m1ddc '[ "$*" != "display list" ] || [ -e "$SANDBOX/no-display" ] || for i in $(seq 5000); do echo "[$i] Monitor (57670C1C)"; done'
 
     touch "$SANDBOX/no-display"
-    assert_exit 1 main 19f5:2620 27
+    assert_exit 1 main 1234:5678 27
     assert_contains "$RUN_OUTPUT" "m1ddc finds no external display"
     rm "$SANDBOX/no-display"
 
-    assert_exit 0 main 19f5:2620 0x1b
+    assert_exit 0 main 1234:5678 0x1b
     assert_not_contains "$RUN_OUTPUT" "isn't attached now"
     assert_eq "# From just monitor-input. Hammerspoon reloads when this changes.
-device=19f5:2620
+device=1234:5678
 input=27
 m1ddc=$STUB_DIR/m1ddc" "$(cat "$MONITOR_INPUT_MAC_CONF")" "the Mac's settings"
     assert_file_not_contains "$STUB_LOG" "sudo"
     assert_file_not_contains "$STUB_LOG" "set input"
-    assert_exit 0 main 19f5:2620 27
+    assert_exit 0 main 1234:5678 27
     assert_contains "$RUN_OUTPUT" "Already set."
 
     # The hammerspoon step reports switching only once it's on, and fails when m1ddc goes
@@ -263,12 +263,12 @@ the_switcher() {
     switcher 0
     assert_file_not_contains "$STUB_LOG" "ddcutil"
 
-    printf '%s\n' device=19f5:2620 input=17 connector=HDMI-A-1 > "$SANDBOX/switcher.conf"
+    printf '%s\n' device=1234:5678 input=17 connector=HDMI-A-1 > "$SANDBOX/switcher.conf"
     switcher 1
     assert_contains "$RUN_OUTPUT" "needs device, input, other, and connector"
     assert_file_not_contains "$STUB_LOG" "ddcutil"
 
-    printf '%s\n' "# a comment" device=19f5:2620 input=17 other=27 connector=HDMI-A-1 > "$SANDBOX/switcher.conf"
+    printf '%s\n' "# a comment" device=1234:5678 input=17 other=27 connector=HDMI-A-1 > "$SANDBOX/switcher.conf"
     switcher 0
     assert_eq "ddcutil --bus 4 --noverify setvcp 60 17
 ddcutil --bus 4 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device here"
@@ -283,7 +283,7 @@ ddcutil --bus 9 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device
     assert_eq 27 "$(cat "$SANDBOX/monitor-shows")" "the input with the device away"
 
     # A command the monitor misses is sent again
-    usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+    usb_device 1-2 1234:5678 "Keyboard Receiver"
     echo 2 > "$SANDBOX/monitor-drops"
     switcher 0
     assert_contains "$RUN_OUTPUT" "The monitor shows input 27; trying again (3 of 5)."
@@ -307,7 +307,7 @@ ddcutil --bus 9 getvcp 60 --brief" "$(cat "$STUB_LOG")" "ddcutil with the device
     assert_eq 27 "$(cat "$SANDBOX/monitor-shows")" "the input away from a monitor that stops answering"
 
     # Switching here, though, an unreadable input means the monitor missed the command
-    usb_device 1-2 19f5:2620 "Air75 V3 Dongle"
+    usb_device 1-2 1234:5678 "Keyboard Receiver"
     echo 1 > "$SANDBOX/monitor-drops"
     switcher 0
     assert_contains "$RUN_OUTPUT" "The monitor shows input (unreadable); trying again (2 of 5)."

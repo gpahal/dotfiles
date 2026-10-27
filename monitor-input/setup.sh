@@ -26,7 +26,7 @@ usage() {
 }
 
 INPUT_CODES="Common input codes (DDC/CI VCP 0x60): 15 DisplayPort 1, 16 DisplayPort 2, 17 HDMI 1,
-18 HDMI 2, 27 USB-C (Dell). Check one by switching to it and back:
+18 HDMI 2, and on some monitors 27 USB-C. Check one by switching to it and back:
   Mac:    m1ddc set input <code>
   Ubuntu: ddcutil --bus <n> setvcp 60 <code>   (ddcutil detect shows <n>)"
 
@@ -212,7 +212,7 @@ main() {
     fi
     device="$(tr '[:upper:]' '[:lower:]' <<< "$1")"
     if ! [[ "$device" =~ ^[0-9a-f]{4}:[0-9a-f]{4}$ ]]; then
-        echo "$1 isn't a USB vendor:product ID, such as 046d:c548. Run this with no arguments to list them." >&2
+        echo "$1 isn't a USB vendor:product ID, such as 1234:5678. Run this with no arguments to list them." >&2
         return 2
     fi
     if ! input="$(input_code "$2")"; then

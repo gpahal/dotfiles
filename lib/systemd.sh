@@ -3,6 +3,11 @@
 # lib/gnome.sh.
 # shellcheck shell=bash
 
+# A path for a unit's ExecStart, which expands % and $
+systemd_quote() {
+    printf '"%s"\n' "$(printf '%s' "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"
+}
+
 # unit_enabled [--user] <unit>...: is-enabled prints enabled for each; enabled-runtime ends at the
 # next boot. Like unit_active and unit_on, it works as an item check string, such as
 # "unit_on docker.socket".

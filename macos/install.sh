@@ -133,6 +133,7 @@ each_default() {
     # On the left, the Dock stays on the outer edge of the leftmost display, so the pointer crossing
     # between displays never shows it
     "$apply" com.apple.dock orientation -string left
+    "$apply" com.apple.dock tilesize -int 46
     "$apply" com.apple.dock autohide -bool true
     "$apply" com.apple.dock autohide-delay -float 0
     "$apply" com.apple.dock autohide-time-modifier -float 0.4

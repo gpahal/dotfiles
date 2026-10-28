@@ -142,7 +142,7 @@ defaults_items() {
     assert_exit 1 main
     assert_eq 1 "$(cat "$DEFAULTS_DIR/com.apple.dock.autohide")" "dock autohide after a failed Finder write"
     assert_eq left "$(cat "$DEFAULTS_DIR/com.apple.dock.orientation")" "dock orientation"
-    assert_eq 46 "$(cat "$DEFAULTS_DIR/com.apple.dock.tilesize")" "dock icon size"
+    assert_eq 48 "$(cat "$DEFAULTS_DIR/com.apple.dock.tilesize")" "dock icon size"
     assert_file_contains "$STUB_LOG" "killall Dock"
 
     # A sandboxed app's domain needs Full Disk Access, which doesn't fail the step, and status can't

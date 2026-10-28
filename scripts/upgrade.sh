@@ -259,8 +259,9 @@ upgrade() {
         # brew upgrade skips Zed, and its own updater is off
         _upgrade_self_updating_casks upgrade zed:zed-editor || _stage_failed "self-updating casks" "$?"
     else
-        # brew upgrade skips these; Zed's updater is off and the others rarely run.
-        _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ || _stage_failed "self-updating casks" "$?"
+        # brew upgrade skips these; Zed's updater is off, the others rarely run, and Ghostty only
+        # offers its update. Ghostty upgrades when upgrade runs from another terminal or over SSH.
+        _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ ghostty || _stage_failed "self-updating casks" "$?"
         if command -v mas &>/dev/null; then
             mas upgrade || _stage_failed mas "$?"
         fi

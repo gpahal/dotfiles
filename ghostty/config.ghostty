@@ -4,9 +4,7 @@ font-size = 14
 
 window-padding-x = 8
 window-padding-y = 4
-# Not tabs: stable Ghostty on macOS 27 puts them where they can't be clicked (ghostty#14244, fixed in
-# tip builds). Switch back once a stable release has the fix.
-macos-titlebar-style = native
+macos-titlebar-style = tabs
 
 cursor-style-blink = false
 

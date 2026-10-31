@@ -384,7 +384,9 @@ subtest tailscale_checks
 # ntfy: just ntfy-user and just ntfy-device save a mode 600 client config holding a token, and just
 # alerts sends the alerts to this machine's server with one
 ntfy_checks() {
-    local client="$HOME/.config/ntfy/client.yml"
+    local client="$HOME/.config/ntfy/client.yml" mac_client="$HOME/Library/Application Support/ntfy/client.yml"
+    # uname too, since the client checks load lib/common.sh again
+    stub_uname Linux
     as_os ubuntu
     NTFY_URL_FILE="$SANDBOX/ntfy-url" NTFY_TOKEN_FILE="$SANDBOX/ntfy-token"
     expect 1 ntfy_user_done
@@ -400,6 +402,14 @@ ntfy_checks() {
     expect 1 phone_alerts_set
     echo "http://127.0.0.1:2586/alerts" > "$NTFY_URL_FILE"
     expect 0 phone_alerts_set
+    # The Mac's client config is in Application Support, where ntfy's client reads it
+    stub_uname Darwin
+    as_os macos
+    expect 1 ntfy_device_done
+    mkdir -p "$(dirname "$mac_client")"
+    cp -p "$client" "$mac_client"
+    expect 0 ntfy_device_done
+    rm -f "$STUB_DIR/uname"
 }
 subtest ntfy_checks
 

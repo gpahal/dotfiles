@@ -4,7 +4,7 @@
 # The ntfy step. On Ubuntu: Tailscale's prerequisites failing before any change, ntfy from its apt
 # repo with its config and drop-in written before it starts, a restart only for a changed config,
 # the Funnel published only with the tailnet's capabilities, and status probing the access policy
-# without a POST. On macOS: only the notifier, which a temp HOME doesn't load.
+# without a POST, and Ubuntu Pro's older ntfy replaced through the pin. On macOS: only the notifier, which a temp HOME doesn't load.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -64,7 +64,23 @@ case "$url" in
     https://cloudflare-dns.com/*) echo "{\"Answer\":[{\"data\":\"203.0.113.1\"}]}" ;;
     *) exit 6 ;;
 esac'
-    stub_apt_packages
+    # ntfy-origin is where the installed ntfy came from: apt takes ntfy's repo's only once the pin
+    # is in place, since Ubuntu Pro's esm-apps repo, at 510, outranks it
+    stub_apt_packages --apt-get "case \" \$* \" in *\" install \"*ntfy*)
+    if [ -e $(printf %q "$NTFY_PIN") ]; then echo repo; else echo esm; fi > \"\$SANDBOX/ntfy-origin\" ;;
+esac"
+    stub apt-cache 'grep -qxF ntfy "$SANDBOX/installed" || { echo "ntfy:"; exit 0; }
+printf "%s\n" "ntfy:" "  Version table:"
+if [ "$(cat "$SANDBOX/ntfy-origin")" == repo ]; then
+    printf "%s\n" " *** 2.35.0 600" "        500 https://archive.ntfy.sh/apt stable/main amd64 Packages" \
+        "        100 /var/lib/dpkg/status" "     2.11.0-3ubuntu0.26.04.1~esm1 510" \
+        "        510 https://esm.ubuntu.com/apps/ubuntu resolute-apps-security/main amd64 Packages"
+else
+    printf "%s\n" "     2.35.0 500" "        500 https://archive.ntfy.sh/apt stable/main amd64 Packages" \
+        " *** 2.11.0-3ubuntu0.26.04.1~esm1 510" \
+        "        510 https://esm.ubuntu.com/apps/ubuntu resolute-apps-security/main amd64 Packages" \
+        "        100 /var/lib/dpkg/status"
+fi'
 }
 
 client_config() {
@@ -114,12 +130,24 @@ assert_file_not_contains "$STUB_LOG" "tailscale funnel --bg"
 answer yes
 assert_exit 0 main
 assert_file_contains "$SANDBOX/installed" "ntfy"
+assert_eq repo "$(cat "$SANDBOX/ntfy-origin")" "where the installed ntfy came from"
+assert_file_contains "$NTFY_PIN" "Pin: origin archive.ntfy.sh"
+pin_at="$(log_line "preferences.d/dotfiles-ntfy")"
+install_at="$(log_line "install -y ntfy")"
+[ -n "$pin_at" ] && [ -n "$install_at" ] && [ "$pin_at" -lt "$install_at" ] ||
+    fail "ntfy was installed before the pin was written (lines $pin_at, $install_at)"
 assert_eq "$(printf '%s\n' "Types: deb" "URIs: https://archive.ntfy.sh/apt" "Suites: stable" "Components: main" \
     "Architectures: amd64" "Signed-By: $NTFY_KEYRING")" "$(cat "$NTFY_SOURCES")" "ntfy's apt source"
 cmp -s "$REPO_DIR/ntfy/server.yml" "$NTFY_CONFIG" || fail "the server config isn't the repo's"
 assert_eq 644 "$(file_mode "$NTFY_CONFIG")" "the server config's mode"
 assert_file_contains "$NTFY_DROP_IN" "Environment=NTFY_BASE_URL=$PUBLIC_URL"
 assert_file_contains "$NTFY_DROP_IN" "ProtectSystem=strict"
+# systemd creates the directories Ubuntu's package leaves out, private since they hold the tokens
+assert_file_contains "$NTFY_DROP_IN" "StateDirectory=ntfy"
+assert_file_contains "$NTFY_DROP_IN" "StateDirectoryMode=0700"
+assert_file_contains "$NTFY_DROP_IN" "CacheDirectory=ntfy"
+assert_file_contains "$NTFY_DROP_IN" "CacheDirectoryMode=0700"
+assert_file_not_contains "$NTFY_DROP_IN" "ReadWritePaths"
 assert_file_contains "$NTFY_UNATTENDED_CONF" '"site=archive.ntfy.sh";'
 config_at="$(log_line "etc/ntfy/server.yml")"
 drop_in_at="$(log_line "ntfy.service.d/dotfiles.conf")"
@@ -195,6 +223,20 @@ rm "$HOME/.config/ntfy/client.yml"
 assert_exit 0 main
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "missing    ntfy's users and this machine's token: run just ntfy-user"
+
+# Ubuntu Pro's older ntfy, installed before the pin, counts as missing and is replaced
+ubuntu_pro_ntfy() {
+    rm "$NTFY_PIN"
+    echo esm > "$SANDBOX/ntfy-origin"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "missing    ntfy taken from ntfy's apt repo"
+    assert_contains "$RUN_OUTPUT" "missing    ntfy from ntfy's apt repo"
+    assert_exit 0 main
+    assert_eq repo "$(cat "$SANDBOX/ntfy-origin")" "where the installed ntfy came from"
+    assert_exit 3 main --status
+    assert_contains "$RUN_OUTPUT" "ok         ntfy from ntfy's apt repo"
+}
+subtest ubuntu_pro_ntfy
 
 # --- macOS: only the notifier ---
 macos() {

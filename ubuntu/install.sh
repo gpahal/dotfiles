@@ -184,9 +184,6 @@ ubuntu_items() {
     fi
     item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
         locale_installed install_locale
-    item --sudo "qrencode, which just alerts shows the ntfy subscribe links with" \
-        "Install qrencode, which just alerts uses to show the ntfy subscribe links as QR codes" \
-        "apt_installed qrencode" "apt_install_fresh qrencode"
     item --sudo "unattended-upgrades runs daily" \
         "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \
         "unattended_upgrades_checked ${auto_upgrades_unchecked:-false}" turn_on_unattended_upgrades
@@ -341,7 +338,7 @@ status() {
     status_smartd_hook
     status_health_alerts
     status_ups
-    items_status locale_installed "apt_installed qrencode"
+    items_status locale_installed
     status_unattended_upgrades
     items_status keep_conffiles_written
     status_held_back

@@ -11,6 +11,6 @@ locale-gen sysctl apparmor_parser rustup ssh-add xcode-select mise claude codex 
 smartctl fwupdmgr fdesetup socketfilterfw notify-send runuser logger nmcli apt-config journalctl
 orb nut-scanner upsc udevadm activateSettings apt-mark lsblk lsappinfo pgrep scutil pbpaste dpkg
 dpkg-query ip bwrap systemd-detect-virt mdls m1ddc ddcutil ioreg busctl gdbus gsettings gnome-extensions
-systemd-run gnome-shell NetworkManager iw qrencode useradd userdel usermod groupadd groupdel groupmod
+systemd-run gnome-shell NetworkManager iw useradd userdel usermod groupadd groupdel groupmod
 gpasswd passwd chpasswd adduser deluser addgroup delgroup dscl getent sqlite3 plutil sfltool tmutil
 pro go ntfy terminal-notifier"

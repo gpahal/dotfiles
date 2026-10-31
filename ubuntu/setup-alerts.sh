@@ -47,21 +47,18 @@ save() {
         write_root_file "$NTFY_TOKEN_FILE" "$1" 0640 "$(ntfy_url_group)" "$CURRENT_USER"
 }
 
-# The Android app opens only ntfy:// links. It keeps the port and defaults to https, but a link has
-# no password, and the app matches users by the exact server URL, so the user goes in first.
-show_subscribe_links() {
-    local base="$1" topic display
-    echo "  To subscribe on Android, first add your user for $base in the ntfy app (Settings →"
-    echo "  Manage users), then scan each code, or add the topic with \"Use another server\":"
+# The app subscribes from a link only through ntfy:// links, which a phone's camera and Google Lens
+# show as text, so the topics go in by hand. The app matches users by the exact server URL, so the
+# user goes in first; with the server as the default, a new topic needs only its name.
+show_subscribe_steps() {
+    local base="$1" topic step=2
+    echo "  To subscribe on Android, in the ntfy app:"
+    echo "    1. In Settings → Manage users, add your user and password for $base"
+    echo "    2. In Settings → Default server, enter $base"
     for topic in "${NTFY_TOPICS[@]}"; do
-        display="$(tr '[:lower:]' '[:upper:]' <<< "${topic:0:1}")${topic:1}"
-        echo "  $display: $base/$topic"
-        if command -v qrencode &> /dev/null; then
-            qrencode -t ANSIUTF8 "ntfy://${base#https://}/$topic?display=$display"
-        fi
+        step=$((step + 1))
+        echo "    $step. Tap +, enter $topic, and tap Subscribe"
     done
-    command -v qrencode &> /dev/null ||
-        echo "  bash setup.sh ubuntu installs qrencode, which shows these as QR codes to scan."
 }
 
 send_test_push() {
@@ -140,7 +137,7 @@ main() {
     echo "Disk, UPS, health, and boot alerts ($NTFY_URL_FILE and $NTFY_TOKEN_FILE):"
     if saved "$token"; then
         echo "  Already sent to $NTFY_ALERTS_URL. just alerts test sends test events."
-        [ -z "$base" ] || show_subscribe_links "$base"
+        [ -z "$base" ] || show_subscribe_steps "$base"
         return 0
     fi
     if ! confirm "  Send them to $NTFY_ALERTS_URL with this machine's token, saved with sudo?"; then
@@ -152,7 +149,7 @@ main() {
         return 1
     fi
     echo "  Saved."
-    [ -z "$base" ] || show_subscribe_links "$base"
+    [ -z "$base" ] || show_subscribe_steps "$base"
     if send_test_push; then
         echo "  Sent a test push to the alerts topic. Check that it reached your phone."
     else

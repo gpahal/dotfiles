@@ -141,7 +141,8 @@ print_tokens() {
     echo
     echo "ntfy's server: $url"
     echo "  Android: in the ntfy app, add $NTFY_ADMIN and your password for $url (Settings → Manage"
-    echo "  users), then subscribe to alerts and agenda; just alerts shows QR codes for them."
+    echo "  users), make it the default server, then subscribe to alerts and agenda; just alerts shows"
+    echo "  the steps."
     echo
     echo "  macbook token, for just ntfy-device on the Mac:"
     echo "    $TOKEN_macbook"

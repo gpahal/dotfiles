@@ -185,7 +185,7 @@ MD
 **ntfy.** Run `just ntfy-user`. Choose a password for the Android app and the web app. Keep it, and the two tokens the script prints, in your password manager.
 MD
     manual_step ubuntu phone-alerts --elsewhere --check phone_alerts_set "Alerts sent to this machine's ntfy server" <<'MD'
-**Phone.** Install the ntfy app on Android. In **Settings → Manage users**, add your user and password for `https://<machine>.<tailnet>.ts.net:8443`, port included. Then scan the QR codes `just alerts` shows, to subscribe to `alerts` and `agenda`. Allow the app's permanent notification, turn off battery optimization for it, and run `just alerts test`. Unsubscribe from any old ntfy.sh topic.
+**Phone.** Install the ntfy app on Android. In **Settings → Manage users**, add your user and password for `https://<machine>.<tailnet>.ts.net:8443`, port included. Set the same URL as **Settings → Default server**. Then, for `alerts` and `agenda`, tap **+**, enter the topic, and tap **Subscribe**. Allow the app's permanent notification, turn off battery optimization for it, and run `just alerts test`. Unsubscribe from any old ntfy.sh topic.
 MD
     manual_step ubuntu ntfy-public <<'MD'
 **ntfy from the internet.** On the phone, with Tailscale off and on mobile data, open `https://<machine>.<tailnet>.ts.net:8443/v1/health`. It shows `{"healthy":true}` within about 10 minutes of the first `bash setup.sh ntfy`.

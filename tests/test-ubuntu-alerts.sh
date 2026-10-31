@@ -128,14 +128,14 @@ assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
 ! saved_files || fail "the files were saved without a yes"
 assert_file_not_contains "$STUB_LOG" "Authorization"
 
-# Only you, nut (the files' group), and root read them. The QR codes open the Android app.
+# Only you, nut (the files' group), and root read them. The Android steps give the public URL, port
+# included, for the user first and then each topic.
 answer yes
-stub qrencode 'echo "[QR $3]"'
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Saved."
-assert_contains "$RUN_OUTPUT" "[QR ntfy://box.example.ts.net:8443/alerts?display=Alerts]"
-assert_contains "$RUN_OUTPUT" "[QR ntfy://box.example.ts.net:8443/agenda?display=Agenda]"
-assert_contains "$RUN_OUTPUT" "first add your user for https://box.example.ts.net:8443"
+assert_contains "$RUN_OUTPUT" "1. In Settings → Manage users, add your user and password for https://box.example.ts.net:8443"
+assert_contains "$RUN_OUTPUT" "2. Tap +, enter alerts, tick \"Use another server\", enter https://box.example.ts.net:8443, and tap Subscribe"
+assert_contains "$RUN_OUTPUT" "3. Tap +, enter agenda, tick \"Use another server\", enter https://box.example.ts.net:8443, and tap Subscribe"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
 assert_not_contains "$RUN_OUTPUT" "$TOKEN"
 assert_eq "http://127.0.0.1:2586/alerts" "$(cat "$NTFY_URL_FILE")" "the saved URL"

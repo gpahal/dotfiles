@@ -49,14 +49,15 @@ save() {
 
 # The app subscribes from a link only through ntfy:// links, which a phone's camera and Google Lens
 # show as text, so the topics go in by hand. The app matches users by the exact server URL, so the
-# user goes in first.
+# user goes in first; with the server as the default, a new topic needs only its name.
 show_subscribe_steps() {
-    local base="$1" topic step=1
+    local base="$1" topic step=2
     echo "  To subscribe on Android, in the ntfy app:"
-    echo "    $step. In Settings → Manage users, add your user and password for $base"
+    echo "    1. In Settings → Manage users, add your user and password for $base"
+    echo "    2. In Settings → Default server, enter $base"
     for topic in "${NTFY_TOPICS[@]}"; do
         step=$((step + 1))
-        echo "    $step. Tap +, enter $topic, tick \"Use another server\", enter $base, and tap Subscribe"
+        echo "    $step. Tap +, enter $topic, and tap Subscribe"
     done
 }
 

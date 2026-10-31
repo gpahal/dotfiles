@@ -129,13 +129,14 @@ assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
 assert_file_not_contains "$STUB_LOG" "Authorization"
 
 # Only you, nut (the files' group), and root read them. The Android steps give the public URL, port
-# included, for the user first and then each topic.
+# included, for the user and the default server, before the topics.
 answer yes
 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Saved."
 assert_contains "$RUN_OUTPUT" "1. In Settings → Manage users, add your user and password for https://box.example.ts.net:8443"
-assert_contains "$RUN_OUTPUT" "2. Tap +, enter alerts, tick \"Use another server\", enter https://box.example.ts.net:8443, and tap Subscribe"
-assert_contains "$RUN_OUTPUT" "3. Tap +, enter agenda, tick \"Use another server\", enter https://box.example.ts.net:8443, and tap Subscribe"
+assert_contains "$RUN_OUTPUT" "2. In Settings → Default server, enter https://box.example.ts.net:8443"
+assert_contains "$RUN_OUTPUT" "3. Tap +, enter alerts, and tap Subscribe"
+assert_contains "$RUN_OUTPUT" "4. Tap +, enter agenda, and tap Subscribe"
 assert_contains "$RUN_OUTPUT" "Sent a test push"
 assert_not_contains "$RUN_OUTPUT" "$TOKEN"
 assert_eq "http://127.0.0.1:2586/alerts" "$(cat "$NTFY_URL_FILE")" "the saved URL"

@@ -319,6 +319,11 @@ is_interactive() {
     [ -t 0 ]
 }
 
+# macOS: launchctl loads into the real session whatever HOME is, so a temp HOME mustn't load an agent
+home_is_real() {
+    [ "$HOME" == "$(dscl . -read "/Users/$CURRENT_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')" ]
+}
+
 # DOTFILES_ASSUME_YES and DOTFILES_SSH_KEY_ONLY are for throwaway test machines, so they count only
 # in a VM or container, and a stray export can't approve changes on a real machine
 on_test_machine() {
@@ -352,6 +357,14 @@ missing_cmd_hint() {
         gsettings | gnome-extensions) echo "$1 isn't installed. It needs the GNOME desktop: ubuntu-desktop." ;;
         snap) echo "snap isn't installed. Install it with: sudo apt install snapd" ;;
         go) echo "go isn't installed. Run bash setup.sh runtimes first." ;;
+        tailscale) echo "tailscale isn't installed. Run bash setup.sh ubuntu first, which installs it." ;;
+        ntfy)
+            if is_ubuntu; then
+                echo "ntfy isn't installed. Run bash setup.sh ntfy first."
+            else
+                echo "ntfy isn't installed. Run bash setup.sh homebrew first."
+            fi
+            ;;
         *)
             if is_ubuntu && [[ " ${UBUNTU_COMMANDS[*]} " == *" $1 "* ]]; then
                 echo "$1 isn't installed. Run bash setup.sh homebrew first, which installs it with apt."

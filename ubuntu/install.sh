@@ -176,7 +176,7 @@ ubuntu_items() {
         ! smartd_enabled || text="Watch disk health: start smartd, which is enabled but not running"
         item --sudo "" "$text" smartd_ready install_smartd
     fi
-    item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once a URL is set: install $SMARTD_HOOK and $NTFY_LIB" \
+    item --sudo "smartd's warnings pushed to ntfy ($SMARTD_HOOK)" "Push smartd's warnings to ntfy once just alerts has run: install $SMARTD_HOOK and $NTFY_LIB" \
         smartd_hook_ready install_smartd_hook
     if "$apply"; then
         text="$(ups_todo)"
@@ -184,8 +184,8 @@ ubuntu_items() {
     fi
     item --sudo "en_US.UTF-8 locale" "Add the en_US.UTF-8 locale that zsh sets LANG to: locale-gen en_US.UTF-8" \
         locale_installed install_locale
-    item --sudo "qrencode, which just alerts shows the ntfy topic with" \
-        "Install qrencode, which just alerts uses to show the ntfy topic as QR codes" \
+    item --sudo "qrencode, which just alerts shows the ntfy subscribe links with" \
+        "Install qrencode, which just alerts uses to show the ntfy subscribe links as QR codes" \
         "apt_installed qrencode" "apt_install_fresh qrencode"
     item --sudo "unattended-upgrades runs daily" \
         "Install security updates daily: turn on unattended-upgrades in $AUTO_UPGRADES_CONF" \

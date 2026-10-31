@@ -190,7 +190,7 @@ doc_sync() {
     assert_unchanged "$copy/README.md" "after --check"
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: wrote Manual steps from manual-steps/steps.sh"
-    assert_file_contains "$copy/README.md" "22. Turn on FileVault now."
+    assert_file_contains "$copy/README.md" "24. Turn on FileVault now."
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh" --check
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: Manual steps already match manual-steps/steps.sh"
@@ -353,7 +353,8 @@ spotlight() {
 }
 subtest spotlight
 
-# Tailscale: key expiry shows in Self.KeyExpiry, and the funnel attribute is fine while a funnel is up
+# Tailscale: key expiry shows in Self.KeyExpiry; the funnel attribute and HTTPS certificates show in
+# Self.CapMap, and HTTPS needs MagicDNS's name
 tailscale_checks() {
     as_os ubuntu
     stub tailscale 'case "$*" in
@@ -365,17 +366,52 @@ esac'
     echo '{}' > "$SANDBOX/funnel.json"
     expect 1 tailscale_key_never_expires
     assert_eq "the machine's key expires 2027-01-01T00:00:00Z" "$MANUAL_DETAIL" "the key expiry detail"
-    expect 1 tailscale_funnel_attr_gone
-    echo '{"AllowFunnel":{"host:443":true}}' > "$SANDBOX/funnel.json"
-    expect 0 tailscale_funnel_attr_gone
-    echo '{"BackendState":"Running","Self":{"KeyExpiry":null,"CapMap":{}}}' > "$SANDBOX/ts.json"
+    expect 0 tailscale_funnel_attr_granted
+    expect 1 magicdns_https_on
+    assert_eq "MagicDNS is off" "$MANUAL_DETAIL" "the HTTPS detail without MagicDNS"
+    echo '{"BackendState":"Running","Self":{"DNSName":"m.ts.net.","KeyExpiry":null,"CapMap":{"https":null}}}' > "$SANDBOX/ts.json"
     expect 0 tailscale_key_never_expires
-    expect 0 tailscale_funnel_attr_gone
+    expect 1 tailscale_funnel_attr_granted
+    expect 0 magicdns_https_on
     echo '{"BackendState":"NeedsLogin"}' > "$SANDBOX/ts.json"
     expect 2 tailscale_key_never_expires
+    expect 2 tailscale_funnel_attr_granted
+    expect 2 magicdns_https_on
     expect 1 tailscale_connected
 }
 subtest tailscale_checks
+
+# ntfy: just ntfy-user and just ntfy-device save a mode 600 client config holding a token, and just
+# alerts sends the alerts to this machine's server with one
+ntfy_checks() {
+    local client="$HOME/.config/ntfy/client.yml" mac_client="$HOME/Library/Application Support/ntfy/client.yml"
+    # uname too, since the client checks load lib/common.sh again
+    stub_uname Linux
+    as_os ubuntu
+    NTFY_URL_FILE="$SANDBOX/ntfy-url" NTFY_TOKEN_FILE="$SANDBOX/ntfy-token"
+    expect 1 ntfy_user_done
+    mkdir -p "$(dirname "$client")"
+    printf '%s\n' "default-host: http://127.0.0.1:2586" "default-token: tk_0123456789abcdefghijklmnopqrs" > "$client"
+    chmod 644 "$client"
+    expect 1 ntfy_user_done
+    chmod 600 "$client"
+    expect 0 ntfy_user_done
+    expect 1 phone_alerts_set
+    echo "https://ntfy.sh/old-topic-0123456789" > "$NTFY_URL_FILE"
+    echo tk_0123456789abcdefghijklmnopqrs > "$NTFY_TOKEN_FILE"
+    expect 1 phone_alerts_set
+    echo "http://127.0.0.1:2586/alerts" > "$NTFY_URL_FILE"
+    expect 0 phone_alerts_set
+    # The Mac's client config is in Application Support, where ntfy's client reads it
+    stub_uname Darwin
+    as_os macos
+    expect 1 ntfy_device_done
+    mkdir -p "$(dirname "$mac_client")"
+    cp -p "$client" "$mac_client"
+    expect 0 ntfy_device_done
+    rm -f "$STUB_DIR/uname"
+}
+subtest ntfy_checks
 
 # The display scale comes from Mutter's logical monitors
 display_scale() {

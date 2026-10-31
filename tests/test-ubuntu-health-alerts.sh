@@ -10,6 +10,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 source "$TESTS_DIR/ubuntu-sandbox.sh"
 
 export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBOX/boot_id"
+export DOTFILES_NTFY_TOKEN_FILE="$SANDBOX/ntfy-token"
+TOKEN=tk_0123456789abcdefghijklmnopqrs
 
 # Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>, in the recorded checkout
 REPO="$SANDBOX/repo"
@@ -58,15 +60,32 @@ claude-code:
 EOF
 
 echo 3 > "$SANDBOX/exit/setup"
-assert_exit 0 "$BASH" "$ALERT" status
+# Not set up: both fail, so the units show failed, and nothing is pushed
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "The alerts aren't set up, so nothing was pushed. Run just ntfy-user"
+assert_exit 1 "$BASH" "$ALERT" boot
+assert_contains "$RUN_OUTPUT" "The alerts aren't set up"
 assert_file_not_contains "$STUB_LOG" "curl"
 assert_file_not_contains "$STUB_LOG" "setup"
 
+# An older ntfy.sh URL is never pushed to; the push fails, naming only the host
 echo "https://ntfy.sh/secret-topic" > "$DOTFILES_NTFY_URL_FILE"
+echo "$TOKEN" > "$DOTFILES_NTFY_TOKEN_FILE"
+assert_exit 1 "$BASH" "$ALERT" status
+assert_contains "$RUN_OUTPUT" "won't push to ntfy.sh"
+assert_contains "$RUN_OUTPUT" "Couldn't push the health alert to ntfy."
+assert_not_contains "$RUN_OUTPUT" "secret-topic"
+assert_file_not_contains "$STUB_LOG" "curl"
+rm -f "$STATE"
+
+# This machine's server gets the push, with the token on stdin
+echo "http://127.0.0.1:2586/alerts" > "$DOTFILES_NTFY_URL_FILE"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "setup --status --for-alerts"
 assert_file_contains "$STUB_LOG" "ai_tools --status --for-alerts"
-assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: Needs attention on $(hostname)"
+assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/alerts"'
+assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "Needs attention: ubuntu. Run: bash setup.sh ubuntu"
 assert_file_contains "$STUB_LOG" "ubuntu: Tailscale connected (run sudo tailscale up)"
@@ -208,7 +227,8 @@ assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
 
 rm "$DOTFILES_NTFY_URL_FILE"
-assert_exit 0 "$BASH" "$ALERT" boot
+assert_exit 1 "$BASH" "$ALERT" boot
+assert_contains "$RUN_OUTPUT" "The alerts aren't set up"
 assert_file_not_contains "$STUB_LOG" "curl"
 
 # --- the ubuntu step's status: a failed last run of an installed alert service ---

@@ -48,21 +48,36 @@ install_health_alert() {
 }
 
 # Usage: ntfy_hook_copy <hook> <url-file> <lib> <dest>. Root's hooks hard-code their paths and
-# PATH, so the copy points them at the sandbox.
+# PATH, so the copy points them at the sandbox. The token file goes beside the URL file, as ntfy-token.
 ntfy_hook_copy() {
-    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" \
-        -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
-    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_LIB=\"$3\"" "$4" ||
-        ! grep -qxF "PATH=\"$PATH\"" "$4"; then
-        fail "$1 has no NTFY_URL_FILE=, NTFY_LIB=, or PATH= line to point at the sandbox"
+    local token="${2%/*}/ntfy-token"
+    sed -e "s|^NTFY_URL_FILE=.*|NTFY_URL_FILE=\"$2\"|" -e "s|^NTFY_TOKEN_FILE=.*|NTFY_TOKEN_FILE=\"$token\"|" \
+        -e "s|^NTFY_LIB=.*|NTFY_LIB=\"$3\"|" -e "s|^PATH=.*|PATH=\"$PATH\"|" "$REPO_DIR/$1" > "$4"
+    if ! grep -qxF "NTFY_URL_FILE=\"$2\"" "$4" || ! grep -qxF "NTFY_TOKEN_FILE=\"$token\"" "$4" ||
+        ! grep -qxF "NTFY_LIB=\"$3\"" "$4" || ! grep -qxF "PATH=\"$PATH\"" "$4"; then
+        fail "$1 has no NTFY_URL_FILE=, NTFY_TOKEN_FILE=, NTFY_LIB=, or PATH= line to point at the sandbox"
     fi
 }
 
-# A curl for ntfy pushes. It logs the config it reads on stdin (-K -), which holds the topic, as
-# "curl config: <line>", and fails while $SANDBOX/curl-fails exists.
+# A curl for ntfy. A -K - config on stdin goes to the log as "curl config: <line>". It fails as an
+# unreachable server while $SANDBOX/curl-fails exists, and a push does while $SANDBOX/push-fails
+# does. The local server's /v1/health answers healthy
+# unless $SANDBOX/ntfy-down exists, and -w prints the HTTP status in $SANDBOX/ntfy-http-status, 200
+# by default, or 000 while the server is down.
 stub_ntfy_curl() {
     stub curl 'case " $* " in *" -K - "*) sed "s/^/curl config: /" >> "$STUB_LOG" ;; esac
-[ ! -e "$SANDBOX/curl-fails" ] || { echo "curl: (6) Could not resolve host: ntfy.sh" >&2; exit 6; }'
+[ ! -e "$SANDBOX/curl-fails" ] || { echo "curl: (7) Failed to connect to 127.0.0.1 port 2586" >&2; exit 7; }
+case " $* " in
+    *" --data-raw "*) [ ! -e "$SANDBOX/push-fails" ] || { echo "curl: (22) The requested URL returned error: 500" >&2; exit 22; } ;;
+    *"/v1/health "*)
+        [ ! -e "$SANDBOX/ntfy-down" ] || exit 7
+        echo "{\"healthy\":true}"
+        ;;
+    *" -w "*)
+        if [ -e "$SANDBOX/ntfy-down" ]; then echo 000; exit 7; fi
+        cat "$SANDBOX/ntfy-http-status" 2> /dev/null || echo 200
+        ;;
+esac'
 }
 
 ufw_on() { echo ENABLED=yes > "$UFW_CONF"; }

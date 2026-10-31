@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pushes health alerts to ntfy for the ubuntu step's user units; does nothing with no URL saved.
-# Fails when a runner couldn't run or a push failed, so the unit shows failed.
+# Pushes health alerts to ntfy for the ubuntu step's user units. Fails when the alerts aren't set
+# up, a runner couldn't run, or a push failed, so the unit shows failed.
 
 # The ubuntu step copies this script beside its four libraries, outside the repo
 HEALTH_ALERT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +16,7 @@ source "$HEALTH_ALERT_DIR/status-format.sh"
 source "$HEALTH_ALERT_DIR/checkout.sh"
 
 NTFY_URL_FILE="${DOTFILES_NTFY_URL_FILE:-$NTFY_URL_FILE}"
+NTFY_TOKEN_FILE="${DOTFILES_NTFY_TOKEN_FILE:-$NTFY_TOKEN_FILE}"
 # ntfy turns a message over 4096 bytes into an attachment; leaves room for ROOT_ONLY_NOTE
 MESSAGE_MAX_BYTES=3500
 ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effective settings, SMART health, NUT's and Docker's config files, and unattended-upgrades' settings when only root can read them. Run sudo -v, then just status, to check them."
@@ -33,11 +34,14 @@ usage() {
     echo "Usage: bash health-alert.sh status | boot"
     echo "status pushes what setup.sh and ai_tools/setup.sh --status --for-alerts report needs attention"
     echo "to ntfy, run in the checkout the ubuntu step recorded in $CHECKOUT_FILE; boot pushes that this"
-    echo "machine started. Both do nothing until just alerts saves a URL."
+    echo "machine started. Both fail until just alerts has run."
 }
 
 ntfy_url() {
-    [ -e "$NTFY_URL_FILE" ] || return 0
+    if [ ! -e "$NTFY_URL_FILE" ]; then
+        echo "The alerts aren't set up, so nothing was pushed. Run just ntfy-user, which runs just alerts." >&2
+        return 1
+    fi
     if [ ! -r "$NTFY_URL_FILE" ]; then
         echo "Can't read $NTFY_URL_FILE. Save the URL again with just alerts." >&2
         return 1
@@ -98,7 +102,6 @@ status_alert() {
     local url runner out status result=0 message="" details="" last now last_time="" last_hash="" hash
     local root_only=false repo problem=""
     url="$(ntfy_url)" || return 1
-    [ -n "$url" ] || return 0
     if ! repo="$(recorded_checkout)"; then
         problem="no checkout recorded in $CHECKOUT_FILE; run bash setup.sh ubuntu in the repo"
     elif [ ! -e "$repo/setup.sh" ]; then
@@ -166,7 +169,6 @@ status_alert() {
 boot_notice() {
     local url attempt=1 host boot_id="" last=""
     url="$(ntfy_url)" || return 1
-    [ -n "$url" ] || return 0
     # The user manager can restart within a boot; without a boot ID, every start pushes
     boot_id="$(cat "$BOOT_ID_FILE" 2>/dev/null)" || boot_id=""
     last="$(cat "$BOOT_STATE_FILE" 2>/dev/null)" || last=""

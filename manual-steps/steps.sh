@@ -67,6 +67,12 @@ MD
     manual_step macos tailscale-login --check mac_tailscale_signed_in "Signed in to Tailscale" <<'MD'
 Sign in to Tailscale with the account your Ubuntu machine and phone use.
 MD
+    manual_step macos ntfy-device --check ntfy_device_done "This Mac's ntfy token saved" <<'MD'
+Run `just ntfy-device` and paste the `macbook` token that `just ntfy-user` printed on Ubuntu.
+MD
+    manual_step macos ntfy-notifications <<'MD'
+Run `ntfy publish alerts test` on Ubuntu. When macOS asks, allow terminal-notifier's notifications. Choose the **Persistent** style if alerts should stay until you dismiss them.
+MD
     manual_step macos google-account \
         --check google_account_added "A Google account in Internet Accounts, for Calendar and Contacts" <<'MD'
 Add your Google account to Calendar and Contacts.
@@ -135,12 +141,16 @@ MD
         --check tailscale_key_never_expires "Tailscale key expiry off for this machine" <<'MD'
 In the admin console, disable key expiry for the machine.
 MD
+    manual_step ubuntu tailscale-https --parent tailscale --bullet \
+        --check magicdns_https_on "MagicDNS and HTTPS certificates on for this machine" <<'MD'
+In the admin console's **DNS** page, turn on MagicDNS and **HTTPS Certificates**, which ntfy's Funnel needs.
+MD
     manual_step ubuntu tailscale-policy --parent tailscale --bullet <<'MD'
 Limit the access policy, and remove `root` from `users` in its `ssh` rules.
 MD
-    manual_step ubuntu tailscale-funnel --parent tailscale --bullet --optional \
-        --check tailscale_funnel_attr_gone "No funnel nodeAttr for this machine, unless you use funnels" <<'MD'
-Remove the `funnel` nodeAttr, unless you use it.
+    manual_step ubuntu tailscale-funnel --parent tailscale --bullet \
+        --check tailscale_funnel_attr_granted "The funnel nodeAttr granted to this machine" <<'MD'
+Keep the `funnel` nodeAttr for this machine in the access policy. The `ntfy` step publishes ntfy with it.
 MD
     manual_step ubuntu ssh-key --elsewhere --check ssh_key_only "SSH password logins off, after a key login" <<'MD'
 **SSH key.** On the Mac:
@@ -171,8 +181,17 @@ MD
         "A desktop session after a reboot, through GDM's automatic login or Remote Login" <<'MD'
 **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
 MD
-    manual_step ubuntu phone-alerts --elsewhere --check phone_alerts_set "ntfy URL for phone alerts set" <<'MD'
-**Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
+    manual_step ubuntu ntfy-user --check ntfy_user_done "ntfy's users and this machine's token" <<'MD'
+**ntfy.** Run `just ntfy-user`. Choose a password for the Android app and the web app. Keep it, and the two tokens the script prints, in your password manager.
+MD
+    manual_step ubuntu phone-alerts --elsewhere --check phone_alerts_set "Alerts sent to this machine's ntfy server" <<'MD'
+**Phone.** Install the ntfy app on Android. In **Settings → Manage users**, add your user and password for `https://<machine>.<tailnet>.ts.net:8443`, port included. Then scan the QR codes `just alerts` shows, to subscribe to `alerts` and `agenda`. Allow the app's permanent notification, turn off battery optimization for it, and run `just alerts test`. Unsubscribe from any old ntfy.sh topic.
+MD
+    manual_step ubuntu ntfy-public <<'MD'
+**ntfy from the internet.** On the phone, with Tailscale off and on mobile data, open `https://<machine>.<tailnet>.ts.net:8443/v1/health`. It shows `{"healthy":true}` within about 10 minutes of the first `bash setup.sh ntfy`.
+MD
+    manual_step ubuntu web-service <<'MD'
+**Web service (optional).** Give your web service the server's URL and the `web-service` token, then send a test. [Notifications](#notifications) shows how.
 MD
     manual_step ubuntu power-cuts <<'MD'
 **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:

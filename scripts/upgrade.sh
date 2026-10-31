@@ -53,12 +53,20 @@ _capture() {
     return "$_capture_rc"
 }
 
-# Upgrade outdated casks, skipping running apps, which replacing would break.
-# Usage: _upgrade_self_updating_casks <command to re-run> <cask>[:<process>]...
+# Casks whose running app upgrade never quits: Ghostty is likely the terminal it runs in
+KEEP_RUNNING_CASKS=(ghostty)
+# How long a running app gets to quit before it's left alone, as when it asks to save
+APP_QUIT_SECONDS=20
+
+# Upgrade outdated casks. Replacing a running app's files would break it, so a running app is
+# skipped, or with --replace-running, on macOS, quit, upgraded, and opened again in the background,
+# unless it's in KEEP_RUNNING_CASKS. The ones left running are named in one line at the end.
+# Usage: _upgrade_self_updating_casks <command to re-run> [--replace-running] <cask>[:<process>]...
 _upgrade_self_updating_casks() {
-    local rerun="$1" entry cask process path app running installed outdated one
-    local exit_status=0 listed=() names=()
+    local rerun="$1" entry cask process path app running installed outdated one pattern rc replace=false
+    local exit_status=0 listed=() names=() skipped=()
     shift
+    [ "${1:-}" != --replace-running ] || { replace=true; shift; }
     if ! _capture installed _installed_casks; then
         echo "Couldn't list the installed casks: brew list --cask failed." >&2
         return 1
@@ -106,18 +114,76 @@ _upgrade_self_updating_casks() {
             fi
             # An app's name can gain or lose a " (...)" suffix between releases, so match up to " ("
             app="${app%% (*}"
+            pattern="^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/"
             # -a: macOS pgrep otherwise skips its own ancestors, such as the app this shell runs in
-            if [ -n "$app" ] && pgrep -af "^$(regex_escape "${path%/*}/$app")[^/]*\.app/Contents/MacOS/" &>/dev/null; then
+            if [ -n "$app" ] && pgrep -af "$pattern" &>/dev/null; then
                 running=true
             fi
         fi
-        if "$running"; then
-            echo "$app is running; quit it and run $rerun again to update it."
-        else
+        if ! "$running"; then
             _run brew upgrade --cask --greedy "$cask" || exit_status=1
+        elif "$replace" && [ -z "$process" ] && is_macos && [[ " ${KEEP_RUNNING_CASKS[*]} " != *" $cask "* ]]; then
+            rc=0
+            _replace_running_app "$cask" "$path" "$app" "$pattern" || rc=$?
+            case "$rc" in
+                0) ;;
+                2) skipped+=("$app") ;;
+                *) exit_status=1 ;;
+            esac
+        else
+            skipped+=("$app")
         fi
     done
+    if [ ${#skipped[@]} -gt 0 ]; then
+        one="$(printf '%s, ' "${skipped[@]}")"
+        echo "Running, so not updated: ${one%, }. Quit them and run $rerun again."
+    fi
     return "$exit_status"
+}
+
+# _replace_running_app <cask> <app path> <app name> <pgrep pattern>: quits the app, upgrades its
+# cask, and opens it again, by bundle ID, in case the upgrade renamed it. Returns 2 when the app
+# doesn't quit, leaving it running and the cask as it was.
+_replace_running_app() {
+    local cask="$1" id waited=0 status=0
+    id="$(defaults read "$2/Contents/Info" CFBundleIdentifier 2>/dev/null)" || return 2
+    [ -n "$id" ] || return 2
+    echo "Quitting $3 to update it; it opens again after."
+    osascript -e "with timeout of $APP_QUIT_SECONDS seconds" -e "quit app id \"$id\"" -e "end timeout" \
+        &>/dev/null || return 2
+    while pgrep -af "$4" &>/dev/null; do
+        [ "$waited" -lt "$APP_QUIT_SECONDS" ] || return 2
+        sleep 1
+        waited=$((waited + 1))
+    done
+    _run brew upgrade --cask --greedy "$cask" || status=$?
+    open -g -b "$id" || echo "Couldn't open $3 again; open it yourself." >&2
+    return "$status"
+}
+
+# Casks upgrade-ai-tools updates, which upgrade's general pass leaves to it
+AI_CASKS=(claude chatgpt t3-code codex)
+
+# Every installed cask but the AI ones, which can include the app running this session (T3 Code).
+# brew upgrade skips the ones marked auto_updates, nearly all of them; this quits a running one,
+# upgrades it, and opens it again.
+_upgrade_installed_casks() {
+    local installed cask entries=()
+    if ! _capture installed _installed_casks; then
+        echo "Couldn't list the installed casks: brew list --cask failed." >&2
+        return 1
+    fi
+    while IFS= read -r cask; do
+        [ -n "$cask" ] || continue
+        [[ " ${AI_CASKS[*]} " != *" $cask "* ]] || continue
+        # Zed's Linux process isn't named after its app
+        if [ "$cask" == zed ] && ! is_macos; then
+            cask=zed:zed-editor
+        fi
+        entries+=("$cask")
+    done <<< "$installed"
+    [ ${#entries[@]} -gt 0 ] || return 0
+    _upgrade_self_updating_casks upgrade --replace-running "${entries[@]}"
 }
 
 # The app renamed itself as it updated (T3 Code can). Only for casks whose uninstall just removes the app,
@@ -198,7 +264,7 @@ _upgrade_ai_tools_stages() {
     fi
 
     # codex has no app, so it upgrades even while running
-    _upgrade_self_updating_casks upgrade-ai-tools claude chatgpt t3-code codex || _stage_failed "AI casks" "$?"
+    _upgrade_self_updating_casks upgrade-ai-tools "${AI_CASKS[@]}" || _stage_failed "AI casks" "$?"
 
     # Plugins can add hooks that run as you, so show versions before and after for review.
     if command -v claude &>/dev/null; then
@@ -256,16 +322,15 @@ upgrade() {
         if command -v fc-cache &>/dev/null; then
             fc-cache -f "${XDG_DATA_HOME:-$HOME/.local/share}/fonts" || _stage_failed fc-cache "$?"
         fi
-        # brew upgrade skips Zed, and its own updater is off
-        _upgrade_self_updating_casks upgrade zed:zed-editor || _stage_failed "self-updating casks" "$?"
-    else
-        # brew upgrade skips these; Zed's updater is off, the others rarely run, and Ghostty only
-        # offers its update. Ghostty upgrades when upgrade runs from another terminal or over SSH.
-        _upgrade_self_updating_casks upgrade zed appcleaner the-unarchiver logi-options+ ghostty || _stage_failed "self-updating casks" "$?"
-        if command -v mas &>/dev/null; then
-            mas upgrade || _stage_failed mas "$?"
-        fi
     fi
+    # Ghostty updates only when it isn't running, as when upgrade runs over SSH with it closed
+    _upgrade_installed_casks || _stage_failed "self-updating casks" "$?"
+    if is_macos && command -v mas &>/dev/null; then
+        mas upgrade || _stage_failed mas "$?"
+    fi
+
+    # After apt and brew, which upgrade ntfy. apt's own scripts restart the server.
+    _step_fn ntfy restart_ntfy_notifier || _stage_failed "ntfy notifier" "$?"
 
     # -u alone turns on 'compatible', breaking line continuations, hence -N. vim -es exits
     # mid-update on stdin EOF, so keep stdin on the terminal.

@@ -1,0 +1,23 @@
+# From the dotfiles ntfy step, which replaces it whole. The base URL, which is per machine, comes
+# from NTFY_BASE_URL in the systemd drop-in.
+
+# Loopback only: Tailscale Funnel is the way in, and ufw lets the tailnet reach every port
+listen-http: "127.0.0.1:2586"
+# Funnel sets X-Forwarded-For to the visitor's real IP, so rate limits apply per visitor
+behind-proxy: true
+
+# Kept on disk for 72 hours, so a device that was offline catches up after a restart too
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "72h"
+
+# Private: nobody without your password or a token can read or send. Each access setting is spelled
+# out, even where it matches ntfy's default, so a changed default can't open the server.
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+enable-signup: false
+enable-reservations: false
+enable-login: true
+require-login: true
+
+# Under the Android app's 77 s timeout
+keepalive-interval: "45s"

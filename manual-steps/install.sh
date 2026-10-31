@@ -315,20 +315,32 @@ tailscale_key_never_expires() {
     return 1
 }
 
-# The funnel node attribute shows in the machine's capabilities. With a funnel up, you use it.
-tailscale_funnel_attr_gone() {
-    local funnels
+# tailscale_cap_granted <cap>: the tailnet grants this machine the capability, as Self.CapMap shows
+tailscale_cap_granted() {
     ubuntu_tailscale_json || return
-    jq -e '(.Self.CapMap // {} | has("funnel")) or ((.Self.Capabilities // []) | index("funnel"))' \
-        <<< "$TAILSCALE_STATUS_JSON" &>/dev/null || return 0
-    # shellcheck source=../ubuntu/lib/tailscale.sh
-    funnels="$(source "$DOTFILES_DIR/ubuntu/lib/tailscale.sh" && tailscale_funnels)" || true
-    if [ -n "$funnels" ]; then
-        MANUAL_DETAIL="a funnel is up, so you use it"
-        return 0
-    fi
-    MANUAL_DETAIL="the tailnet policy grants it, and no funnel is up"
-    return 1
+    jq -e --arg cap "$1" '(.Self.CapMap // {} | has($cap)) or ((.Self.Capabilities // []) | index($cap))' \
+        <<< "$TAILSCALE_STATUS_JSON" &>/dev/null
+}
+
+# HTTPS certificates need MagicDNS, which gives the machine its name. Named apart from the AI tools'
+# tailscale_https_on, which tests load beside it.
+magicdns_https_on() {
+    ubuntu_tailscale_json || return
+    [ -n "$(jq -r '.Self.DNSName // empty' <<< "$TAILSCALE_STATUS_JSON")" ] || {
+        MANUAL_DETAIL="MagicDNS is off"
+        return 1
+    }
+    tailscale_cap_granted https
+}
+
+# The ntfy step's Funnel needs the funnel node attribute
+tailscale_funnel_attr_granted() {
+    tailscale_cap_granted funnel
+}
+
+# just ntfy-user saves this machine's token in ntfy's client config
+ntfy_user_done() {
+    step_check ntfy/install.sh ntfy_client_ready
 }
 
 # Runs inside the ubuntu step, for its sshd drop-in
@@ -398,8 +410,14 @@ desktop_session_after_reboot() {
     fi
 }
 
+# just alerts, which just ntfy-user runs, points the alerts at this machine's server with its token
 phone_alerts_set() {
-    [ -e "$NTFY_URL_FILE" ]
+    [ "$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)" == "$NTFY_ALERTS_URL" ] && [ -s "$NTFY_TOKEN_FILE" ]
+}
+
+# just ntfy-device saves the Mac's token
+ntfy_device_done() {
+    step_check ntfy/install.sh ntfy_client_ready
 }
 
 # Déjà Dup, Ubuntu's Backups app, records its last backup; other tools can't be checked

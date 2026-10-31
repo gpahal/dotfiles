@@ -3,11 +3,15 @@
 
 # Fixed paths, since it runs as root. Tests rewrite these lines (tests/ubuntu-sandbox.sh).
 NTFY_URL_FILE="/etc/dotfiles/ntfy-url"
+NTFY_TOKEN_FILE="/etc/dotfiles/ntfy-token"
 NTFY_LIB="/usr/local/lib/dotfiles/ntfy.sh"
 # smartd's PATH starts with /usr/local; use the system's curl and logger
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-[ -s "$NTFY_URL_FILE" ] || exit 0
+if [ ! -s "$NTFY_URL_FILE" ]; then
+    logger -t dotfiles-smartd -- "couldn't push the warning to ntfy: the alerts aren't set up; run just ntfy-user" 2> /dev/null
+    exit 0
+fi
 if [ ! -r "$NTFY_LIB" ]; then
     logger -t dotfiles-smartd -- "couldn't push the warning to ntfy: $NTFY_LIB is missing" 2> /dev/null
     exit 0

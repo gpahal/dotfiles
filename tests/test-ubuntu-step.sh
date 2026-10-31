@@ -96,22 +96,38 @@ mv "$SMARTD_HOOK.gone" "$SMARTD_HOOK"
 stub systemd-detect-virt 'exit 1'
 
 mkdir -p "$(dirname "$NTFY_URL_FILE")"
-url_label="ntfy URL for the disk, UPS, health, and boot alerts"
-# Only you, nut, and root may read the topic, and it must be long enough not to be guessed
-echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
+url_label="Disk, UPS, health, and boot alerts sent to this machine's ntfy server"
+# The token check asks the local server
+stub_ntfy_curl
+# Only you, nut, and root may read the URL and the token
+echo http://127.0.0.1:2586/alerts > "$NTFY_URL_FILE"
+echo tk_0123456789abcdefghijklmnopqrs > "$NTFY_TOKEN_FILE"
 # macOS gives a new file its directory's group, wheel under /tmp
-chgrp "$(id -gn)" "$NTFY_URL_FILE"
-chmod 644 "$NTFY_URL_FILE"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): it's $(id -un) $(id -gn) 644 (owner, group, mode), not $(id -un) $(id -gn) 640"
+chgrp "$(id -gn)" "$NTFY_URL_FILE" "$NTFY_TOKEN_FILE"
 chmod 640 "$NTFY_URL_FILE"
+chmod 644 "$NTFY_TOKEN_FILE"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    $url_label: $NTFY_TOKEN_FILE: it's $(id -un) $(id -gn) 644 (owner, group, mode), not $(id -un) $(id -gn) 640"
+chmod 640 "$NTFY_TOKEN_FILE"
 assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         $url_label ($NTFY_URL_FILE, $NTFY_TOKEN_FILE)"
 assert_contains "$RUN_OUTPUT" "ok         smartd's warnings pushed to ntfy"
 assert_contains "$RUN_OUTPUT" "ok         Checkout for the daily health alert, recorded in ~/.local/state/dotfiles/checkout"
-echo https://ntfy.sh/topic > "$NTFY_URL_FILE"
-assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    $url_label ($NTFY_URL_FILE): its topic isn't 20 to 64 characters"
+# An older ntfy.sh URL's topic was its secret, so status names only the host
 echo https://ntfy.sh/0123456789abcdef0123 > "$NTFY_URL_FILE"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    $url_label: the URL saved points at ntfy.sh, not this machine's ntfy server, so they fail; run just alerts"
+assert_not_contains "$RUN_OUTPUT" 0123456789abcdef0123
+echo http://127.0.0.1:2586/alerts > "$NTFY_URL_FILE"
+echo 401 > "$SANDBOX/ntfy-http-status"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    $url_label: this machine's ntfy server rejects the token in $NTFY_TOKEN_FILE (HTTP 401)"
+rm "$SANDBOX/ntfy-http-status"
+echo not-a-token > "$NTFY_TOKEN_FILE"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    $url_label: $NTFY_TOKEN_FILE doesn't hold an ntfy token"
+assert_not_contains "$RUN_OUTPUT" not-a-token
+echo tk_0123456789abcdefghijklmnopqrs > "$NTFY_TOKEN_FILE"
 # smartd runs the hook only through smartd-runner, which smartd.conf names
 sed -i.bak 's/^DEVICESCAN/#DEVICESCAN/' "$SMARTD_CONF"
 assert_exit 3 main --status

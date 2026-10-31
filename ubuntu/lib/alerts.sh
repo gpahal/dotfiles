@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Health alert user units, and the ntfy topic and URL file rules setup-alerts.sh shares.
+# Health alert user units, and the rules for the alerts' URL and token files setup-alerts.sh shares.
 # ubuntu/install.sh sets the constants.
 
 # The units run a copy of the script, so they don't depend on what the repo has checked out
@@ -66,20 +66,13 @@ configure_health_alerts() {
     fi
     health_timer_on || systemctl --user enable --now dotfiles-health.timer || return 1
     boot_notice_on || systemctl --user enable dotfiles-boot-notice.service || return 1
-    echo "  Turned on the daily health alert and the boot notice ($HEALTH_UNIT_DIR). They push to"
-    echo "  ntfy once just alerts saves a URL."
+    echo "  Turned on the daily health alert and the boot notice ($HEALTH_UNIT_DIR). They fail until"
+    echo "  just ntfy-user, through just alerts, points them at this machine's ntfy server."
 }
 
-NTFY_TOPIC_MIN=20
-
-# ntfy.sh topics are public by name, so a short one can be guessed
-ntfy_topic_ok() {
-    [ "${#1}" -ge "$NTFY_TOPIC_MIN" ] && [ "${#1}" -le 64 ]
-}
-
-# The URL file is yours, group nut, mode 0640, so the health alerts (you), the UPS notifier (nut),
-# and the smartd hook (root) can all read it without an ACL. Before NUT adds nut, it's in your
-# group, and status asks to save it again.
+# The URL and token files are yours, group nut, mode 0640, so the health alerts (you), the UPS
+# notifier (nut), and the smartd hook (root) can all read them without an ACL. Before NUT adds nut,
+# they're in your group, and status asks to save them again.
 ntfy_url_group() {
     if id nut &>/dev/null; then
         echo nut
@@ -88,17 +81,59 @@ ntfy_url_group() {
     fi
 }
 
-# Prints what's wrong with the saved URL file, or nothing
-ntfy_url_file_problem() {
-    local meta want topic
-    meta="$(owner_group_mode "$NTFY_URL_FILE" 2>/dev/null)" || meta=""
+# alerts_file_problem <file>: what's wrong with its owner, group, and mode, or nothing
+alerts_file_problem() {
+    local meta want
+    meta="$(owner_group_mode "$1" 2>/dev/null)" || meta=""
     want="$CURRENT_USER $(ntfy_url_group) 640"
-    if [ "$meta" != "$want" ]; then
-        echo "it's ${meta:-unreadable} (owner, group, mode), not $want"
-    elif ! topic="$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)"; then
-        echo "it can't be read"
-    elif ! ntfy_topic_ok "${topic##*/}"; then
-        echo "its topic isn't $NTFY_TOPIC_MIN to 64 characters, so it can be guessed"
+    [ "$meta" == "$want" ] || echo "it's ${meta:-unreadable} (owner, group, mode), not $want"
+}
+
+# ntfy_token_accepted <token>: the server takes it; also when it can't be asked, which the ntfy
+# step's status reports. The token goes through stdin config, out of ps.
+ntfy_token_accepted() {
+    local code
+    code="$(printf 'url = "%s"\nheader = "Authorization: Bearer %s"\n' "$NTFY_LOCAL_URL/v1/account" "$1" |
+        curl -q -s -o /dev/null -w '%{http_code}' --max-time 5 -K - 2>/dev/null)" || true
+    case "$code" in
+        200 | 000 | '') return 0 ;;
+    esac
+    NTFY_TOKEN_STATUS="$code"
+    return 1
+}
+
+# Prints what's wrong with the saved URL and token, or nothing. Never the URL's path or the token:
+# an older ntfy.sh URL's topic was its secret.
+ntfy_alerts_problem() {
+    local problem url host token re='^tk_[-_A-Za-z0-9]{29}$' NTFY_TOKEN_STATUS=""
+    problem="$(alerts_file_problem "$NTFY_URL_FILE")"
+    if [ -n "$problem" ]; then
+        echo "$NTFY_URL_FILE: $problem"
+        return 0
+    fi
+    if ! url="$(head -n 1 "$NTFY_URL_FILE" 2>/dev/null)"; then
+        echo "$NTFY_URL_FILE can't be read"
+        return 0
+    fi
+    if [ "$url" != "$NTFY_ALERTS_URL" ]; then
+        host="${url#*://}"
+        echo "the URL saved points at ${host%%/*}, not this machine's ntfy server, so they fail"
+        return 0
+    fi
+    if [ ! -e "$NTFY_TOKEN_FILE" ]; then
+        echo "$NTFY_TOKEN_FILE is missing"
+        return 0
+    fi
+    problem="$(alerts_file_problem "$NTFY_TOKEN_FILE")"
+    if [ -n "$problem" ]; then
+        echo "$NTFY_TOKEN_FILE: $problem"
+        return 0
+    fi
+    token="$(head -n 1 "$NTFY_TOKEN_FILE" 2>/dev/null)" || token=""
+    if ! [[ "$token" =~ $re ]]; then
+        echo "$NTFY_TOKEN_FILE doesn't hold an ntfy token"
+    elif ! ntfy_token_accepted "$token"; then
+        echo "this machine's ntfy server rejects the token in $NTFY_TOKEN_FILE (HTTP $NTFY_TOKEN_STATUS)"
     fi
 }
 
@@ -114,7 +149,7 @@ status_last_run() {
 }
 
 status_health_alerts() {
-    local url_label="ntfy URL for the disk, UPS, health, and boot alerts" problem
+    local url_label="Disk, UPS, health, and boot alerts sent to this machine's ntfy server" problem
     health_alert_files status_file
     health_unit_files status_file
     status_checkout "$HEALTH_ALERT_LABEL"
@@ -126,10 +161,10 @@ status_health_alerts() {
     status_last_run "Daily health alert's last run" dotfiles-health.service
     status_last_run "Boot notice's last run" dotfiles-boot-notice.service
     if [ ! -e "$NTFY_URL_FILE" ]; then
-        status_item info "$url_label not set; just alerts sets it"
-    elif problem="$(ntfy_url_file_problem)" && [ -n "$problem" ]; then
-        status_item missing "$url_label ($NTFY_URL_FILE): $problem; run just alerts to save it again"
+        status_item info "$url_label: not set up, so they fail and log why; run just ntfy-user, which runs just alerts"
+    elif problem="$(ntfy_alerts_problem)" && [ -n "$problem" ]; then
+        status_item missing "$url_label: $problem; run just alerts to save them again"
     else
-        status_item info "$url_label set ($NTFY_URL_FILE)"
+        status_item ok "$url_label ($NTFY_URL_FILE, $NTFY_TOKEN_FILE)"
     fi
 }

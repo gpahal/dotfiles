@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # The ntfy alerts: smartd's hook, just alerts (ubuntu/setup-alerts.sh), and the ubuntu step's hook
-# installs, with the topic kept out of curl's arguments and logs. The hook runs as root and reads
-# only installed paths, so a copy points them into the sandbox.
+# installs, with the URL and the token kept out of curl's arguments and logs, and the token sent
+# only to the local server. The hook runs as root and reads only installed paths, so a copy points
+# them into the sandbox.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -22,36 +23,65 @@ run_hook() {
         SMARTD_DEVICE=/dev/sda SMARTD_FAILTYPE=FailedHealthCheck "$BASH" "$HOOK"
 }
 
+# Not set up: no push, and the journal says why
 run_hook
 assert_file_not_contains "$STUB_LOG" "curl"
-assert_file_not_contains "$STUB_LOG" "logger"
+assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: the alerts aren't set up; run just ntfy-user"
 
-# The URL goes to curl on stdin, since any user can read a process's arguments
-echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
+# This machine's server: plain http over loopback, with the URL and token on stdin, since any user
+# can read a process's arguments
+TOKEN_FILE="$SANDBOX/ntfy-token"
+TOKEN=tk_0123456789abcdefghijklmnopqrs
+echo "$TOKEN" > "$TOKEN_FILE"
+echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
 run_hook
-# Root's curl speaks only https (--proto =https)
-assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =https --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
-assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/secret-topic"'
-if grep '^curl -' "$STUB_LOG" | grep -q secret-topic; then
-    fail "curl's arguments name the ntfy topic"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/alerts"'
+assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
+assert_file_not_contains "$STUB_LOG" "logger"
+if grep '^curl -' "$STUB_LOG" | grep -q "$TOKEN"; then
+    fail "curl's arguments hold the token"
 fi
+# The paths.sh copy the step's other scripts read names the same server
+assert_eq "$(sed -n 's/^NTFY_LOCAL_URL=//p' "$REPO_DIR/ubuntu/lib/paths.sh")" \
+    "$(sed -n 's/^NTFY_PUSH_SERVER=//p' "$REPO_DIR/ubuntu/lib/ntfy.sh")" "the server in paths.sh and lib/ntfy.sh"
 
 touch "$SANDBOX/curl-fails"
 run_hook
-assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: curl: (6) Could not resolve host: ntfy.sh"
-if grep '^logger' "$STUB_LOG" | grep -q secret-topic; then
-    fail "the log names the ntfy topic"
-fi
+assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: curl: (7) Failed to connect to 127.0.0.1 port 2586"
 rm "$SANDBOX/curl-fails"
 
-printf '%s\n' 'https://ntfy.sh/a"b\c' > "$URL_FILE"
+printf '%s\n' 'http://127.0.0.1:2586/a"b\c' > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" 'curl config: url = "https://ntfy.sh/a\"b\\c"'
-echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
+assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/a\"b\\c"'
+echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
 
 # A message starting with @ must go as text, not a file for curl to read
 assert_exit 0 env SMARTD_MESSAGE=@/etc/passwd "$BASH" "$HOOK"
 assert_file_contains "$STUB_LOG" "--data-raw @/etc/passwd -K -"
+
+# Anything else, such as an older ntfy.sh topic, is refused without a request, and the journal
+# names only the host, since such a topic was its secret
+echo "https://ntfy.sh/secret-topic" > "$URL_FILE"
+run_hook
+assert_file_not_contains "$STUB_LOG" "curl"
+assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: won't push to ntfy.sh: the alerts only go to this machine's ntfy server; run just alerts"
+if grep '^logger' "$STUB_LOG" | grep -q secret-topic; then
+    fail "the log names the ntfy topic"
+fi
+for url in http://127.0.0.1:2586.example.com/alerts http://127.0.0.1:2586@example.com/alerts http://127.0.0.1:80/alerts; do
+    echo "$url" > "$URL_FILE"
+    run_hook
+    assert_file_not_contains "$STUB_LOG" "curl"
+done
+
+# No token, no push
+echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
+rm "$TOKEN_FILE"
+run_hook
+assert_file_not_contains "$STUB_LOG" "curl"
+assert_file_contains "$STUB_LOG" "logger -t dotfiles-smartd -- couldn't push the warning to ntfy: no token in $TOKEN_FILE, or it can't be read; run just alerts"
+echo "$TOKEN" > "$TOKEN_FILE"
 
 ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$SANDBOX/no-ntfy.sh" "$HOOK"
 run_hook
@@ -62,73 +92,80 @@ ntfy_hook_copy ubuntu/smartd-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh
 # --- setup-alerts.sh ---
 load_script ubuntu/setup-alerts.sh
 # Before anything runs, so a notifier installed on this machine never is
-sandbox_paths ubuntu/setup-alerts.sh 'ubuntu/lib/*.sh'
+sandbox_paths ubuntu/setup-alerts.sh 'ubuntu/lib/*.sh' 'ntfy/lib/*.sh'
 as_os ubuntu
 stub_sudo_exec
+stub_ntfy_curl
 # No nut group in a test
 replace_fn ntfy_url_group 'id -gn'
-TOPIC=my-topic-0123456789abc
-URL="https://ntfy.sh/$TOPIC"
+replace_fn ntfy_public_url 'echo https://box.example.ts.net:8443'
+CLIENT="$HOME/.config/ntfy/client.yml"
+saved_files() {
+    [ -e "$NTFY_URL_FILE" ] || [ -e "$NTFY_TOKEN_FILE" ]
+}
 
-# The topic comes on stdin, never as an argument, which any user could read
-assert_exit 2 main "$URL"
+assert_exit 2 main extra
 assert_exit 2 main --test extra
-assert_exit 2 main <<< "not a topic"
-assert_contains "$RUN_OUTPUT" "Not a ntfy topic name or https topic URL."
-assert_not_contains "$RUN_OUTPUT" "not a topic"
-assert_exit 2 main <<< "https://ntfy.sh/"
-# Empty, and generating one declined
-assert_exit 2 main <<< ""
-assert_exit 2 main <<< "$(printf 'x%.0s' $(seq 1 65))"
-# Anyone who guesses a short topic reads the alerts
-for short in my-topic https://ntfy.sh/my-topic "$(printf 'x%.0s' $(seq 1 19))"; do
-    assert_exit 2 main <<< "$short"
-    assert_contains "$RUN_OUTPUT" "A topic needs 20 to 64 characters, since anyone who knows it can read and send"
-done
-# The topic is a secret, so never over http
-assert_exit 2 main <<< "http://ntfy.sh/$TOPIC"
-assert_not_contains "$RUN_OUTPUT" "$TOPIC"
-[ ! -e "$NTFY_URL_FILE" ] || fail "an invalid value was saved"
+assert_exit 1 main --test
+assert_contains "$RUN_OUTPUT" "The alerts aren't set up, so a test would only fail. Run just ntfy-user first."
+assert_file_not_contains "$STUB_LOG" "sudo"
 
-assert_exit 0 main <<< "$TOPIC"
+# The server and just ntfy-user's token come first, and nothing changes without them
+touch "$SANDBOX/ntfy-down"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Run bash setup.sh ntfy first."
+rm "$SANDBOX/ntfy-down"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Run just ntfy-user first"
+assert_file_not_contains "$STUB_LOG" "sudo"
+! saved_files || fail "files were saved without a token"
+mkdir -p "$(dirname "$CLIENT")"
+printf '%s\n' "default-host: http://127.0.0.1:2586" "default-token: $TOKEN" > "$CLIENT"
+
+assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Left unchanged"
 assert_contains "$RUN_OUTPUT" "bash setup.sh ubuntu installs it"
-[ ! -e "$NTFY_URL_FILE" ] || fail "the URL was saved without a yes"
-assert_file_not_contains "$STUB_LOG" "curl"
+! saved_files || fail "the files were saved without a yes"
+assert_file_not_contains "$STUB_LOG" "Authorization"
 
-# Only you, nut (the file's group), and root read the URL file
+# Only you, nut (the files' group), and root read them. The QR codes open the Android app.
 answer yes
-assert_exit 0 main <<< "  $TOPIC "
-assert_contains "$RUN_OUTPUT" "ntfy URL for the disk, UPS, health, and boot alerts ($NTFY_URL_FILE):"
-assert_contains "$RUN_OUTPUT" "Sent a test push"
-assert_not_contains "$RUN_OUTPUT" "$TOPIC"
-assert_eq "$URL" "$(cat "$NTFY_URL_FILE")" "the saved URL"
-assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file's owner, group, and mode"
-assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =https --max-time 10"
-assert_file_contains "$STUB_LOG" "curl config: url = \"$URL\""
-
-assert_exit 0 main <<< "$URL"
-assert_contains "$RUN_OUTPUT" "Already set"
-assert_not_contains "$RUN_OUTPUT" "$TOPIC"
-assert_file_not_contains "$STUB_LOG" "curl"
-# Saved again when only the mode is wrong
-chmod 644 "$NTFY_URL_FILE"
-assert_exit 0 main <<< "$URL"
-assert_contains "$RUN_OUTPUT" "Saved."
-assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file after saving it again"
-
-touch "$SANDBOX/curl-fails"
-assert_exit 1 main <<< "other-$TOPIC"
-assert_contains "$RUN_OUTPUT" "The test push failed. Check the topic, then run just alerts test."
-assert_eq "https://ntfy.sh/other-$TOPIC" "$(cat "$NTFY_URL_FILE")" "the saved URL"
-rm "$SANDBOX/curl-fails"
-
-# Left empty: a random topic, shown as QR codes for the Android app and for iPhone or a browser
 stub qrencode 'echo "[QR $3]"'
-assert_exit 0 main <<< ""
-generated="$(head -n 1 "$NTFY_URL_FILE")"
-generated="${generated#https://ntfy.sh/}"
-[[ "$generated" =~ ^[0-9a-f]{32}$ ]] || fail "the generated topic isn't 32 hex characters: $generated"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Saved."
+assert_contains "$RUN_OUTPUT" "[QR ntfy://box.example.ts.net:8443/alerts?display=Alerts]"
+assert_contains "$RUN_OUTPUT" "[QR ntfy://box.example.ts.net:8443/agenda?display=Agenda]"
+assert_contains "$RUN_OUTPUT" "first add your user for https://box.example.ts.net:8443"
+assert_contains "$RUN_OUTPUT" "Sent a test push"
+assert_not_contains "$RUN_OUTPUT" "$TOKEN"
+assert_eq "http://127.0.0.1:2586/alerts" "$(cat "$NTFY_URL_FILE")" "the saved URL"
+assert_eq "$TOKEN" "$(cat "$NTFY_TOKEN_FILE")" "the saved token"
+assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_URL_FILE")" "the URL file's owner, group, and mode"
+assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_TOKEN_FILE")" "the token file's owner, group, and mode"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: Alerts from"
+assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
+if grep -vE '^curl config: ' "$STUB_LOG" | grep -q "$TOKEN"; then
+    fail "the token was an argument"
+fi
+
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Already sent to http://127.0.0.1:2586/alerts"
+assert_file_not_contains "$STUB_LOG" "sudo"
+assert_file_not_contains "$STUB_LOG" "Authorization"
+# Saved again when only a mode is wrong
+chmod 644 "$NTFY_TOKEN_FILE"
+assert_exit 0 main
+assert_contains "$RUN_OUTPUT" "Saved."
+assert_eq "$(id -un) $(id -gn) 640" "$(owner_group_mode "$NTFY_TOKEN_FILE")" "the token file after saving it again"
+
+# A new token from just ntfy-user --rotate desktop replaces the saved one
+TOKEN2=tk_zyxwvutsrqponmlkjihgfedcba987
+printf '%s\n' "default-host: http://127.0.0.1:2586" "default-token: $TOKEN2" > "$CLIENT"
+touch "$SANDBOX/push-fails"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "The test push failed."
+assert_eq "$TOKEN2" "$(cat "$NTFY_TOKEN_FILE")" "the saved token after a rotation"
+rm "$SANDBOX/push-fails"
 
 assert_exit 1 main --test
 assert_contains "$RUN_OUTPUT" "isn't installed"

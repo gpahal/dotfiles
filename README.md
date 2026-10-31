@@ -52,6 +52,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, frees `Cmd+Space` for Vicinae, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
+| `ntfy` | Runs a private [ntfy](#notifications) server on Ubuntu, published with Tailscale Funnel, and shows its messages as desktop notifications on both OSes |
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
 | `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
@@ -81,15 +82,15 @@ Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` nami
 
 ### Running around the clock
 
-The `ubuntu`, `docker`, and `chrome` steps keep the machine reachable:
+The `ubuntu`, `docker`, `ntfy`, and `chrome` steps keep the machine reachable:
 
 - Suspend is off, and a kernel panic reboots after 10 seconds.
 - With a USB UPS, the machine shuts down on low battery and starts when power returns.
-- smartd, a daily health check, and each boot push alerts to your phone. The health check reports on the [recorded checkout](#where-the-repo-lives), and alerts when it's gone.
-- Security, Chrome, and Docker updates install daily without rebooting.
+- smartd, a daily health check, and each boot push alerts to your phone through the machine's own [ntfy server](#notifications). The health check reports on the [recorded checkout](#where-the-repo-lives), and alerts when it's gone.
+- Security, Chrome, Docker, and ntfy updates install daily without rebooting.
 - User services, such as the T3 Code server and tmux, start at boot without a login.
 - sshd lets only you in, and turns off passwords once you've used a key. Use OpenSSH over the tailnet, not Tailscale SSH, which drops sessions when tailscaled restarts.
-- You can run `tailscale serve` and `funnel` without `sudo`. `--status` flags an active funnel, and Tailscale SSH being on.
+- You can run `tailscale serve` and `funnel` without `sudo`. `--status` flags any funnel but ntfy's, and Tailscale SSH being on.
 - ufw lets SSH in only from private ranges, and lets the tailnet reach every port. The tailnet's access rules are what protect the machine, so keep them tight.
 - Docker's published ports listen on `127.0.0.1` unless given an address. Joining the `docker` group is root-equivalent, so the step asks.
 - Wired connections wake on LAN, with the BIOS setting on.
@@ -242,6 +243,28 @@ Ubuntu sets the volume of HDMI audio itself, so its volume keys work as usual.
 
 Speakers on the monitor's audio line-out may not follow the monitor's volume, so the Mac's keys don't reach them. Ubuntu's keys still do. USB speakers on the USB switch work with both machines. They follow the keyboard, and the machine they're on sets their volume itself.
 
+### Notifications
+
+Ubuntu runs a private [ntfy](https://ntfy.sh) server. Tailscale Funnel publishes it at `https://<machine>.<tailnet>.ts.net:8443`, the machine's one port open to the internet. Nobody without your password or a token can read or send. The server keeps messages for 72 hours, so a device that was offline catches up.
+
+- **Topics.** `alerts` gets the disk, UPS, health, and boot alerts, and `agenda` is for your web service. Any other topic works too.
+- **Users.** You sign in with a password in the Android app and the web app. The `machine` user reads and sends on every topic, with a token for each place that uses it: `desktop`, `macbook`, and `web-service`.
+- **Desktop notifications.** The Mac and Ubuntu show `alerts` and `agenda` as notifications, and catch up on what arrived while they were asleep or off.
+- **Restarts and updates.** The server starts at boot, and the funnel comes back with Tailscale. The notifier starts when you log in: on Ubuntu with the desktop session, on the Mac as a login item under **Allow in the Background** in **System Settings → General → Login Items & Extensions**. The daily security updates install new ntfy versions on Ubuntu and restart the server. `upgrade` updates ntfy on both machines and restarts the notifiers.
+- **Alerts only go to this server.** Until `just ntfy-user` sets them up, the alerts fail and log why (`journalctl -t dotfiles-smartd`, `journalctl --user -u dotfiles-health`), and `--status` reports it. They never send to ntfy.sh, even with an older ntfy.sh URL saved; `just alerts` replaces it.
+- **Sending.** `ntfy publish alerts "Backup done"` works on both machines. From anywhere else, such as your web service:
+
+  ```sh
+  curl -H "Authorization: Bearer <token>" -H "Title: Standup" -d "In 10 minutes" \
+      https://<machine>.<tailnet>.ts.net:8443/agenda
+  ```
+
+  `Priority`, `Tags`, and `Click` headers set the priority, the icons, and a link to open. `At: tomorrow, 9am` or `Delay: 30m` sends it later, up to 3 days ahead. To read a topic's last 72 hours, send `GET /agenda/json?poll=1&since=72h` with the same header.
+- **Tokens.** `just ntfy-user` prints the `macbook` and `web-service` tokens again. `just ntfy-user --rotate <label>` replaces one, and the old one stops working.
+- **Password.** ntfy keeps only its hash, so it can't be shown again. `just ntfy-user --change-pass` sets a new one and signs out the web app; then change it in the Android app too.
+- **After a lost disk.** ntfy's data isn't backed up. Run setup, then `just ntfy-user`, which makes new tokens; you can reuse your password. Then run `just ntfy-device` on the Mac with the new `macbook` token, give your web service its new token, and re-enter your password in the Android app.
+- **Funnels.** Never run `tailscale serve reset` or `tailscale funnel reset`, which also remove T3 Code's serve. Turn off one port with `tailscale funnel --https=<port> off`.
+
 ### tmux
 
 Prefix `Ctrl+a`. `|` and `-` split, `hjkl` move, `HJKL` resize, `Ctrl+h` and `Ctrl+l` switch windows, `v` copy mode, `S` new session, `X` kill session, `f` `tmux-sessionizer`. vim-tmux-navigator takes `Ctrl+hjkl`, so clear the screen with `prefix+Ctrl+k`.
@@ -288,24 +311,26 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 **Accounts and keys**
 
 16. Sign in to Tailscale with the account your Ubuntu machine and phone use.
-17. Add your Google account to Calendar and Contacts.
-18. In Chrome, sign in to the sites you want agents to use.
-19. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
-20. Run `just git-signing` and the `gh` commands it prints.
+17. Run `just ntfy-device` and paste the `macbook` token that `just ntfy-user` printed on Ubuntu.
+18. Run `ntfy publish alerts test` on Ubuntu. When macOS asks, allow terminal-notifier's notifications. Choose the **Persistent** style if alerts should stay until you dismiss them.
+19. Add your Google account to Calendar and Contacts.
+20. In Chrome, sign in to the sites you want agents to use.
+21. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
+22. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
 
-21. Optional: `just touch-id`.
-22. Turn on FileVault.
-23. Back up off the Mac, such as with Time Machine.
-24. Restore a file from the backup once, to check it.
+23. Optional: `just touch-id`.
+24. Turn on FileVault.
+25. Back up off the Mac, such as with Time Machine.
+26. Restore a file from the backup once, to check it.
 
 **Performance and privacy**
 
-25. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
-26. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
-27. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
-28. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
+27. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
+28. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+29. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
+30. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
 ### Ubuntu
 
@@ -318,8 +343,9 @@ Once:
 5. **Tailscale.**
    - Run `sudo tailscale up`.
    - In the admin console, disable key expiry for the machine.
+   - In the admin console's **DNS** page, turn on MagicDNS and **HTTPS Certificates**, which ntfy's Funnel needs.
    - Limit the access policy, and remove `root` from `users` in its `ssh` rules.
-   - Remove the `funnel` nodeAttr, unless you use it.
+   - Keep the `funnel` nodeAttr for this machine in the access policy. The `ntfy` step publishes ntfy with it.
 6. **SSH key.** On the Mac:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
@@ -333,16 +359,19 @@ Once:
 10. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
 11. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
-13. **Phone alerts.** Run `just alerts` and leave the topic empty to generate one. On Android, scan the first QR code it shows, which the ntfy app opens; on an iPhone, scan the second. Then run `just alerts test`. To use your own topic of 20 or more characters, paste it or its `https://` URL instead.
-14. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
+13. **ntfy.** Run `just ntfy-user`. Choose a password for the Android app and the web app. Keep it, and the two tokens the script prints, in your password manager.
+14. **Phone.** Install the ntfy app on Android. In **Settings → Manage users**, add your user and password for `https://<machine>.<tailnet>.ts.net:8443`, port included. Then scan the QR codes `just alerts` shows, to subscribe to `alerts` and `agenda`. Allow the app's permanent notification, turn off battery optimization for it, and run `just alerts test`. Unsubscribe from any old ntfy.sh topic.
+15. **ntfy from the internet.** On the phone, with Tailscale off and on mobile data, open `https://<machine>.<tailnet>.ts.net:8443/v1/health`. It shows `{"healthy":true}` within about 10 minutes of the first `bash setup.sh ntfy`.
+16. **Web service (optional).** Give your web service the server's URL and the `web-service` token, then send a test. [Notifications](#notifications) shows how.
+17. **Power cuts.** Plug in the UPS over USB and re-run `bash setup.sh ubuntu`. Then:
     1. Unplug the UPS from the wall and wait for the push, the shutdown, and the UPS cutting its output (`sudo upsmon -c fsd` shuts down at once). If the output stays on, find the UPS setting that cuts it on shutdown.
     2. Plug it back in, and check the machine starts and `just status` shows the UPS on mains.
     3. At the machine, `sudo rtcwake -m off -s 120` starts it 2 minutes later. If it doesn't, only the BIOS setting brings it back.
     4. Run `just alerts test` again.
-15. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, such as with Déjà Dup.
-16. **Restore.** Restore a few files from the backup once, to check it.
-17. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
-18. **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
+18. **Backups.** Back up `~` and `/var/lib/docker/volumes` off the machine on a schedule, such as with Déjà Dup.
+19. **Restore.** Restore a few files from the backup once, to check it.
+20. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
+21. **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 
 When needed:
 
@@ -363,6 +392,7 @@ The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 - After `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, in tmux too.
 - With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
 - `Cmd+Space` opens Vicinae, and `Cmd+Space` again closes it.
+- After `just ntfy-device`, `ntfy publish alerts test` on Ubuntu shows a notification on the Mac.
 
 ### Ubuntu
 
@@ -371,6 +401,7 @@ Over SSH from the Mac:
 - `sudo -v && just status` prints no **Needs attention** line.
 - `command -v brew mise node` prints three paths, and a test commit is signed.
 - After a reboot, `ssh <alias>` connects, `docker ps` works without `sudo`, `tmux ls` lists the old sessions, and the phone gets the boot notice.
+- `curl -s http://127.0.0.1:2586/v1/health` prints `{"healthy":true}`, and `ntfy publish alerts test` reaches the phone.
 - `iw dev <device> get power_save` prints `Power save: off` for the Wi-Fi device `nmcli device` lists, also after a reboot.
 - `systemctl is-enabled cups-browsed` prints `masked`, and `cloud-init status` prints `status: disabled` after a reboot.
 - `snap list firefox` and `dpkg -s firefox` both say Firefox isn't installed, and `xdg-settings get default-web-browser` prints `google-chrome.desktop`.
@@ -389,7 +420,9 @@ At the desktop, with the Stream Deck switched to it:
 
 ## Updating
 
-`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh) from the dotfiles checkout or worktree you're in, else the [recorded checkout](#where-the-repo-lives). `just upgrade` uses the checkout that holds the justfile. Either updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)). It lists failed stages and returns 1.
+`upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh) from the dotfiles checkout or worktree you're in, else the [recorded checkout](#where-the-repo-lives). `just upgrade` uses the checkout that holds the justfile. Either updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)), and restarts ntfy's notifier on the new version. It lists failed stages and returns 1.
+
+It updates every app Homebrew installed, including the ones that update themselves. On the Mac, it quits a running app, updates it, and opens it again in the background. Chrome reopens with its **On startup** setting, so set it to **Continue where you left off** to keep your tabs, and OrbStack stops its containers and machines while it restarts. Ghostty, likely the terminal `upgrade` runs in, is never quit, and neither is an app that doesn't quit within 20 seconds, such as one asking to save: `upgrade` names those in one line, such as `Running, so not updated: Ghostty.`, so quit them and run it again. The AI tools' apps update only when closed, since T3 Code may be running the session you're in.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.

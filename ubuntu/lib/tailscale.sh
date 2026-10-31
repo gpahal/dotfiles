@@ -2,8 +2,9 @@
 # ubuntu/install.sh sets the constants, except TAILSCALE_KEY_FPR.
 
 # unattended-upgrades doesn't cover Tailscale's repo, so it updates itself. Operator lets
-# `t3 pair --tailscale` run `tailscale serve` without sudo; anything running as you can then also
-# run funnel or `set --ssh`, which bypasses sshd, so status reports both.
+# `t3 pair --tailscale` run `tailscale serve`, and the ntfy step `tailscale funnel`, without sudo;
+# anything running as you can then also run funnel or `set --ssh`, which bypasses sshd, so status
+# reports both, apart from the ntfy step's own funnel.
 tailscale_configured() {
     local prefs
     prefs="$(tailscale_prefs)" || return 1
@@ -50,11 +51,19 @@ set_up_tailscale() {
     sudo tailscale set --auto-update --operator="$CURRENT_USER"
 }
 
-# Prints the host:port of each funnel, including a foreground one, or fails when it can't ask
-tailscale_funnels() {
-    local config
+# Prints the host:port of each funnel, including a foreground one, but the ntfy step's: this
+# machine's name on NTFY_FUNNEL_PORT, proxied to NTFY_LOCAL_URL in the background config. Fails
+# when it can't ask.
+tailscale_unexpected_funnels() {
+    local config host
     config="$(tailscale funnel status --json 2>/dev/null)" || return 1
-    jq -r '[.. | objects | .AllowFunnel? // empty | to_entries[] | select(.value) | .key] | unique[]' \
+    host="$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' 2>/dev/null)" ||
+        host=""
+    jq -r --arg ntfy "$host:$NTFY_FUNNEL_PORT" --arg target "$NTFY_LOCAL_URL" '
+        [.. | objects | .AllowFunnel? // empty | to_entries[] | select(.value) | .key] as $all
+        | [(.Foreground // {})[] | .. | objects | .AllowFunnel? // empty | to_entries[] | select(.value) | .key] as $fg
+        | (((.AllowFunnel // {})[$ntfy] == true) and ((.Web // {})[$ntfy].Handlers["/"].Proxy == $target)) as $ntfy_ok
+        | $all | unique[] | . as $k | select($k != $ntfy or ($ntfy_ok | not) or ($fg | index([$k]) != null))' \
         <<< "$config" 2>/dev/null
 }
 
@@ -65,8 +74,8 @@ tailscale_ssh_off() {
 }
 
 status_tailscale_exposure() {
-    local label="No Tailscale funnel publishing a port to the internet" funnels
-    if ! funnels="$(tailscale_funnels)"; then
+    local label="No Tailscale funnel publishing a port to the internet, apart from ntfy's" funnels
+    if ! funnels="$(tailscale_unexpected_funnels)"; then
         status_item unknown "$label: tailscale funnel status --json failed"
     elif [ -z "$funnels" ]; then
         status_item ok "$label"

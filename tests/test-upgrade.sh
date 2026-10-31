@@ -56,6 +56,9 @@ stub_at "$HOME/.local/share/claude/versions/2.0.0" '[ "$*" != "plugin list --jso
     {\"id\": \"d@m\", \"scope\": \"managed\"}
 ]"'
 stub codex
+# ntfy's notifier: the LaunchAgent loaded, or the user unit active, while these files exist
+stub launchctl '[ "$1" != print ] || [ -e "$SANDBOX/agent-loaded" ]'
+stub systemctl '[ "$2" != is-active ] || [ -e "$SANDBOX/notifier-active" ]'
 mkdir -p "$HOME/.vim/autoload"
 touch "$HOME/.vimrc" "$HOME/.vim/autoload/plug.vim"
 # Darwin unless a case says Linux, and it doesn't log
@@ -106,6 +109,15 @@ mise hook-env --force -s bash
 new-node npm update -g" "$(grep -E '^(mise|npm|new-node npm) ' "$STUB_LOG")" "mise and npm commands upgrade runs"
 assert_file_not_contains "$STUB_LOG" "mise ran in"
 assert_eq "brew cleanup" "$(tail -n 1 "$STUB_LOG")" "upgrade's last command"
+assert_file_not_contains "$STUB_LOG" "launchctl kickstart"
+
+# The notifier restarts on the upgraded ntfy, after brew upgrades it
+touch "$SANDBOX/agent-loaded"
+upgrade_on Darwin
+assert_file_contains "$STUB_LOG" "launchctl kickstart -k gui/$(id -u)/dotfiles.ntfy-subscribe"
+[ "$(grep -n 'launchctl kickstart' "$STUB_LOG" | cut -d: -f1)" -gt "$(grep -n '^brew upgrade' "$STUB_LOG" | head -n 1 | cut -d: -f1)" ] ||
+    fail "the notifier restarted before brew upgrade"
+rm "$SANDBOX/agent-loaded"
 
 # HOME through a symlink
 ln -s "$HOME" "$SANDBOX/home-link"
@@ -123,7 +135,7 @@ rm "$HOME/.local/bin/claude"
 mv "$HOME/.local/share/claude/versions/2.0.0" "$STUB_DIR/claude"
 stub brew 'case "$*" in
     "list --cask -1") printf "font-monaspace\nzed\n" ;;
-    "outdated --cask --greedy --quiet zed") echo zed; exit 1 ;;
+    "outdated --cask --greedy --quiet "*" zed"*) echo zed; exit 1 ;;
     "bundle check"*) exit 1 ;;
 esac'
 stub pgrep 'exit 1'
@@ -133,6 +145,11 @@ apt upgrade" "$(sed -nE 's/^sudo .*(apt-get|apt) .* (update|upgrade)$/\1 \2/p' "
     "apt commands upgrade runs"
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy zed"
 assert_file_not_contains "$STUB_LOG" "claude update"
+assert_file_not_contains "$STUB_LOG" "systemctl --user restart"
+touch "$SANDBOX/notifier-active"
+upgrade_on Linux
+assert_file_contains "$STUB_LOG" "systemctl --user restart dotfiles-ntfy-notify.service"
+rm "$SANDBOX/notifier-active"
 
 # Replacing a running Zed would break it
 stub pgrep '[ "$*" == "-x zed-editor" ]'
@@ -202,6 +219,36 @@ assert_exit 0 upgrade_run upgrade_ai_tools
 assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy codex"
 stub pgrep 'exit 1'
 
+# upgrade's pass covers every installed cask but the AI ones. A running app is quit, upgraded, and
+# opened again by bundle ID, but never Ghostty, the terminal upgrade likely runs in.
+stub_brew_casks "google-chrome rectangle ghostty claude"
+stub defaults 'echo "com.example.$(basename "$(dirname "$(dirname "$2")")" .app)"'
+stub osascript 'touch "$SANDBOX/quit"'
+stub open
+stub sleep
+stub pgrep 'case "$*" in *ghostty*) ;; *google-chrome*) [ ! -e "$SANDBOX/quit" ] ;; *) exit 1 ;; esac'
+assert_exit 0 upgrade_run _upgrade_installed_casks
+assert_file_contains "$STUB_LOG" "brew upgrade --cask --greedy rectangle"
+assert_eq "osascript -e with timeout of 20 seconds -e quit app id \"com.example.google-chrome\" -e end timeout
+brew upgrade --cask --greedy google-chrome
+open -g -b com.example.google-chrome" "$(grep -E '^(osascript|brew upgrade --cask --greedy google-chrome|open)' "$STUB_LOG")" \
+    "quitting, upgrading, and reopening a running app, in order"
+assert_contains "$RUN_OUTPUT" "Quitting google-chrome to update it; it opens again after."
+assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy ghostty"
+assert_file_not_contains "$STUB_LOG" "com.example.ghostty"
+assert_file_not_contains "$STUB_LOG" "claude"
+assert_contains "$RUN_OUTPUT" "Running, so not updated: ghostty. Quit them and run upgrade again."
+# An app that won't quit, as one asking to save, is left running and as it was
+rm "$SANDBOX/quit"
+for quit in 'exit 1' ':'; do
+    stub osascript "$quit"
+    assert_exit 0 upgrade_run _upgrade_installed_casks
+    assert_file_not_contains "$STUB_LOG" "brew upgrade --cask --greedy google-chrome"
+    assert_file_not_contains "$STUB_LOG" "open -g"
+    assert_contains "$RUN_OUTPUT" "Running, so not updated: google-chrome, ghostty."
+done
+stub pgrep 'exit 1'
+
 # A cask with no app artifact (Logi Options+) quits its own app, so no running check
 stub_brew_casks logi-options+ \
     '"info --json=v2 --cask logi-options+") echo "{\"casks\": [{\"artifacts\": [{\"installer\": [{\"manual\": \"x\"}]}, {\"uninstall\": []}, {\"zap\": []}]}]}" ;;'
@@ -246,7 +293,7 @@ for artifacts in '[{"app": ["T3 Code (Alpha).app"]}, {"quit": ["com.t3tools.t3co
     receipt "$artifacts"
     assert_exit 0 upgrade_run _upgrade_self_updating_casks upgrade-ai-tools t3-code
     assert_file_not_contains "$STUB_LOG" "brew uninstall"
-    assert_contains "$RUN_OUTPUT" "T3 Code is running"
+    assert_contains "$RUN_OUTPUT" "Running, so not updated: T3 Code. Quit them and run upgrade-ai-tools again."
 done
 stub pgrep 'exit 1'
 receipt '[{"app": ["T3 Code (Alpha).app"]}]'

@@ -128,9 +128,19 @@ touch-id:
 monitor-input *args:
     bash monitor-input/setup.sh "$@"
 
-# Set up Ubuntu ntfy health alerts (test: fire test events)
+# Send the Ubuntu alerts to this machine's ntfy server (test: fire test events)
 alerts mode="":
     @case {{quote(mode)}} in "") bash ubuntu/setup-alerts.sh ;; test) bash ubuntu/setup-alerts.sh --test ;; *) echo "Usage: just alerts [test]" >&2; exit 2 ;; esac
+
+# Create ntfy's users and tokens on Ubuntu, and print the tokens (--rotate <label>, --change-pass)
+[positional-arguments]
+ntfy-user *args:
+    bash ntfy/setup-user.sh "$@"
+
+# Save this Mac's ntfy token, so it shows the desktop server's notifications (default server: desktop)
+[positional-arguments]
+ntfy-device *args:
+    bash ntfy/setup-device.sh "$@"
 
 # Add an SSH host block to ~/.ssh/config
 ssh-host alias hostname="":

@@ -28,16 +28,35 @@ assert_file_contains "$STUB_LOG" "sudo tailscale set --auto-update --operator=$(
 rm "$SANDBOX/tailscale-reset"
 
 # Operator mode lets anything running as you publish a funnel or turn on Tailscale SSH
+label="No Tailscale funnel publishing a port to the internet, apart from ntfy's"
 run status_tailscale_exposure
-assert_contains "$RUN_OUTPUT" "ok         No Tailscale funnel publishing a port to the internet"
+assert_contains "$RUN_OUTPUT" "ok         $label"
 assert_contains "$RUN_OUTPUT" "ok         Tailscale SSH off"
 echo '{"AllowFunnel": {"m.ts.net:443": true, "m.ts.net:10000": false}, "Foreground": {"s": {"AllowFunnel": {"m.ts.net:8443": true}}}}' \
     > "$SANDBOX/tailscale-serve"
 touch "$SANDBOX/tailscale-ssh"
 run status_tailscale_exposure
-assert_contains "$RUN_OUTPUT" "missing    No Tailscale funnel publishing a port to the internet: m.ts.net:443, m.ts.net:8443 is published"
+assert_contains "$RUN_OUTPUT" "missing    $label: m.ts.net:443, m.ts.net:8443 is published"
 assert_contains "$RUN_OUTPUT" "missing    Tailscale SSH off"
-rm "$SANDBOX/tailscale-serve" "$SANDBOX/tailscale-ssh"
+rm "$SANDBOX/tailscale-ssh"
+# The ntfy step's funnel is this machine's name on 8443, proxied to ntfy on loopback, in the
+# background; anything else on that port, or a foreground funnel there, still shows
+ntfy_funnel='"TCP": {"8443": {"HTTPS": true}}, "Web": {"m.ts.net:8443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:2586"}}}}'
+echo "{$ntfy_funnel, \"AllowFunnel\": {\"m.ts.net:8443\": true}}" > "$SANDBOX/tailscale-serve"
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "ok         $label"
+echo "{$ntfy_funnel, \"AllowFunnel\": {\"m.ts.net:8443\": true, \"m.ts.net:443\": true}}" > "$SANDBOX/tailscale-serve"
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "missing    $label: m.ts.net:443 is published"
+echo "{\"Web\": {\"m.ts.net:8443\": {\"Handlers\": {\"/\": {\"Proxy\": \"http://127.0.0.1:9999\"}}}}, \"AllowFunnel\": {\"m.ts.net:8443\": true}}" \
+    > "$SANDBOX/tailscale-serve"
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "missing    $label: m.ts.net:8443 is published"
+echo "{$ntfy_funnel, \"AllowFunnel\": {\"m.ts.net:8443\": true}, \"Foreground\": {\"s\": {\"AllowFunnel\": {\"m.ts.net:8443\": true}}}}" \
+    > "$SANDBOX/tailscale-serve"
+run status_tailscale_exposure
+assert_contains "$RUN_OUTPUT" "missing    $label: m.ts.net:8443 is published"
+rm "$SANDBOX/tailscale-serve"
 
 # Tailscale's apt source; test-apt-sources.sh covers its states
 mkdir -p "$(dirname "$TAILSCALE_KEYRING")"

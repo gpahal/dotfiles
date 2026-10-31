@@ -10,9 +10,9 @@ source "$DOTFILES_DIR/lib/runner.sh"
 
 # On the Mac, OrbStack provides Docker, and the homebrew step installs Chrome and Logi Options+
 MACOS_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hammerspoon vicinae
-    editorconfig macos manual-steps)
+    editorconfig macos ntfy manual-steps)
 UBUNTU_STEPS=(homebrew runtimes git lazygit ssh zsh vim tmux ghostty zed stream-deck hotkeys gnome vicinae
-    editorconfig ubuntu docker chrome logitech monitor-input manual-steps)
+    editorconfig ubuntu docker ntfy chrome logitech monitor-input manual-steps)
 # shellcheck disable=SC2034 # runner_main reads it
 STEPS_DIR="$DOTFILES_DIR"
 

@@ -60,11 +60,11 @@ ubuntu_step_setup() {
     stub loginctl
     stub lsblk
     # tailscale-reset: as after Tailscale's first login. tailscale-ssh turns Tailscale SSH on, and
-    # tailscale-serve holds the serve and funnel config.
+    # tailscale-serve holds the serve and funnel config. The machine's name is m.ts.net.
     stub tailscale 'case "$1" in
         debug) if [ -e "$SANDBOX/tailscale-reset" ]; then echo "{}"
             else echo "{\"AutoUpdate\": {\"Apply\": true}, \"OperatorUser\": \"$(id -un)\", \"RunSSH\": $([ -e "$SANDBOX/tailscale-ssh" ] && echo true || echo false)}"; fi ;;
-        status) echo "{\"BackendState\": \"$(cat "$SANDBOX/tailscale-state")\"}" ;;
+        status) echo "{\"BackendState\": \"$(cat "$SANDBOX/tailscale-state")\", \"Self\": {\"DNSName\": \"m.ts.net.\"}}" ;;
         funnel) cat "$SANDBOX/tailscale-serve" 2> /dev/null || echo "{}" ;;
     esac'
     echo Running > "$SANDBOX/tailscale-state"

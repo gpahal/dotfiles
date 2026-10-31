@@ -134,6 +134,14 @@ The standard:
 - Secret scanning is on, with push protection. So are Dependabot alerts and security updates, private vulnerability reporting, CodeQL default setup, and immutable releases.
 - The repo has `.github/dependabot.yml`, a copy of [`github/dependabot.yml`](github/dependabot.yml), which bumps the pinned actions monthly after a week's cooldown. In a checkout of the repo, the recipe copies the file there for you to commit in a PR.
 
+A private repo on GitHub Free can't have some of these, and the recipe lists them as `n/a` without counting them as differences:
+
+- The ruleset and auto-merge, which need GitHub Pro, or Team for an org. Nothing stops a direct push or a force push to `main`.
+- Secret scanning, push protection, and CodeQL, which need GitHub Secret Protection or Code Security.
+- Private vulnerability reporting, which only public repos have.
+
+A private repo's fork PRs run workflows only once you approve, with a read-only token and no secrets.
+
 For the required status checks, the recipe offers the ruleset's current ones for you to edit. A repo without a ruleset gets the checks that ran on its latest PR instead. `--checks check,lint` sets them without asking, and `--checks none` requires none.
 
 ### SSH

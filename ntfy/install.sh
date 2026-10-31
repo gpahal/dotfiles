@@ -32,6 +32,13 @@ NTFY_KEYRING=/etc/apt/keyrings/ntfy.gpg
 # Published in ntfy's install docs; the key's UID: "ntfy LLC <ntfy@heckel.io>"
 NTFY_KEY_FPR=55BA774A6F5EE67431E4B6B7CFDB962D4F1EC4AF
 NTFY_SOURCES=/etc/apt/sources.list.d/ntfy.sources
+NTFY_PIN=/etc/apt/preferences.d/dotfiles-ntfy
+# Ubuntu Pro pins its esm-apps repo, which carries Ubuntu's older ntfy, at 510, above every other
+# repo. The pin matches the repo's host, since its Release file names no origin.
+NTFY_PIN_CONTENT='Explanation: From the dotfiles ntfy step: take ntfy from ntfy'"'"'s repo, not Ubuntu'"'"'s older one
+Package: ntfy
+Pin: origin archive.ntfy.sh
+Pin-Priority: 600'
 # The Release file's origin and label are aptly's placeholders, so this matches the site
 NTFY_UNATTENDED_CONF=/etc/apt/apt.conf.d/52dotfiles-ntfy
 NTFY_UNATTENDED_CONTENT='// From the dotfiles ntfy step: install ntfy updates with the daily security updates
@@ -53,12 +60,25 @@ ntfy_source_ok() {
     file_is "$NTFY_SOURCES" "$(ntfy_sources)"
 }
 
-ntfy_installed() {
-    apt_installed ntfy && ntfy_source_ok
+ntfy_pinned() {
+    file_is "$NTFY_PIN" "$NTFY_PIN_CONTENT"
 }
 
-# Ubuntu's universe has an older ntfy; with ntfy's repo added, apt picks the newer one. Runs where
-# set -e is off: each command checks its own failure.
+# apt-cache policy marks the installed version with ***, and lists the repos that carry it below it
+ntfy_from_repo() {
+    apt-cache policy ntfy 2>/dev/null | awk -v repo="$NTFY_REPO" '
+        $1 == "***" { installed = 1; next }
+        NF == 2 && $2 ~ /^-?[0-9]+$/ { installed = 0; next }
+        installed && $2 == repo { found = 1 }
+        END { exit !found }'
+}
+
+ntfy_installed() {
+    apt_installed ntfy && ntfy_source_ok && ntfy_from_repo
+}
+
+# The pin makes apt replace Ubuntu's ntfy with this repo's. Runs where set -e is off: each command
+# checks its own failure.
 install_ntfy() {
     add_apt_repo ntfy "$NTFY_SOURCES" "$(ntfy_sources)" "$NTFY_KEY_URL" "$NTFY_KEYRING" "$NTFY_KEY_FPR" ||
         return 1
@@ -79,13 +99,14 @@ install_ntfy_config() {
 }
 
 # ProtectSystem and PrivateTmp are what ntfy's unit leaves for later; the server writes only its
-# cache and user database
+# cache and user database. systemd creates those directories if the package didn't, and keeps them
+# private, since the user database holds the tokens.
 ntfy_drop_in() {
     local url
     url="$(ntfy_public_url)" || return 1
     printf '%s\n' "# From the dotfiles ntfy step: this machine's public URL, and sandboxing ntfy's unit leaves out" \
         "[Service]" "Environment=NTFY_BASE_URL=$url" "ProtectSystem=strict" \
-        "ReadWritePaths=/var/cache/ntfy /var/lib/ntfy" "PrivateTmp=true" "NoNewPrivileges=true"
+        "StateDirectory=ntfy" "StateDirectoryMode=0700" "CacheDirectory=ntfy" "CacheDirectoryMode=0700" "PrivateTmp=true" "NoNewPrivileges=true"
 }
 
 ntfy_drop_in_current() {
@@ -133,6 +154,8 @@ ntfy_capabilities() {
 
 ntfy_items() {
     items_reset
+    item --sudo "ntfy taken from ntfy's apt repo ($NTFY_PIN)" "Let apt take ntfy from ntfy's apt repo: write $NTFY_PIN" \
+        ntfy_pinned "write_root_content NTFY_PIN NTFY_PIN_CONTENT 0644"
     item --sudo "ntfy from ntfy's apt repo" "Install ntfy from ntfy's apt repo ($NTFY_REPO)" \
         ntfy_installed install_ntfy
     item --sudo "ntfy's server config ($NTFY_CONFIG)" "Write ntfy's server config, private and on loopback only: $NTFY_CONFIG" \

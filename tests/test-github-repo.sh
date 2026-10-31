@@ -14,6 +14,7 @@ mkdir -p "$api"
 # Each path is a file named after it, without its query. A write merges its body into the file; a
 # body-less PUT turns the setting on. A path listed in $SANDBOX/gh/fail fails its writes, and one in
 # $SANDBOX/gh/ignore accepts them and changes nothing, as GitHub does with a setting the plan lacks.
+# One in $SANDBOX/gh/forbidden answers 403, as a private repo does for a feature its plan lacks.
 stub gh "$(printf 'dir=%q' "$SANDBOX/gh")"'
 if [ "$1" == repo ]; then
     cat "$dir/here" 2> /dev/null || { echo "no git remotes found" >&2; exit 1; }
@@ -29,6 +30,10 @@ path="${1%%\?*}"
 file="$dir/api/$(printf "%s" "$path" | tr / _)"
 input=""
 [ "${2:-}" != --input ] || input="$(cat)"
+if grep -qxF "$path" "$dir/forbidden" 2> /dev/null; then
+    echo "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)" >&2
+    exit 1
+fi
 if [ "$method" != GET ] && grep -qxF "$path" "$dir/fail" 2> /dev/null; then
     echo "gh: Server Error (HTTP 500)" >&2
     exit 1
@@ -65,7 +70,7 @@ put() {
 
 # A repo set up the way the existing ones were
 fresh_repo() {
-    rm -rf "$api" "$SANDBOX/gh/fail" "$SANDBOX/gh/ignore" "$SANDBOX/gh/here"
+    rm -rf "$api" "$SANDBOX/gh/fail" "$SANDBOX/gh/ignore" "$SANDBOX/gh/forbidden" "$SANDBOX/gh/here"
     mkdir -p "$api"
     put repos/o/r '{"permissions": {"admin": true}, "has_issues": false, "has_projects": false,
         "has_wiki": false, "has_discussions": false, "allow_merge_commit": false,
@@ -89,6 +94,19 @@ fresh_repo() {
     put repos/o/r/private-vulnerability-reporting '{"enabled": false}'
     put repos/o/r/immutable-releases '{"enabled": false, "enforced_by_owner": false}'
     put repos/o/r/code-scanning/default-setup '{"state": "not-configured"}'
+}
+
+# A private repo on GitHub Free, which answers 422 for the public repo's fork PR approval and 404 for
+# private vulnerability reporting; the stub's 404 for both fails the run if it reads either
+private_repo() {
+    fresh_repo
+    put repos/o/r "$(api_json repos/o/r '. + {private: true, allow_auto_merge: false, security_and_analysis: null}')"
+    rm "$api/repos_o_r_actions_permissions_fork-pr-contributor-approval" \
+        "$api/repos_o_r_private-vulnerability-reporting"
+    put repos/o/r/actions/permissions/fork-pr-workflows-private-repos \
+        '{"run_workflows_from_fork_pull_requests": false, "send_write_tokens_to_workflows": false,
+        "send_secrets_and_variables": false, "require_approval_for_fork_pr_workflows": false}'
+    printf '%s\n' repos/o/r/rulesets repos/o/r/code-scanning/default-setup > "$SANDBOX/gh/forbidden"
 }
 
 api_json() {
@@ -211,6 +229,37 @@ assert_exit 0 main o/r <<< ''
 assert_eq '["check"]' "$(api_json repos/o/r/rulesets_1 '[.rules[] | select(.type == "required_status_checks")
     | .parameters.required_status_checks[].context]')" "the suggested checks"
 restore_fn is_interactive
+
+# A private repo on GitHub Free shows what its plan rules out as n/a, sets the rest, and matches
+# the standard apart from those
+private_repo
+assert_read_only 3 main --check o/r
+assert_contains "$RUN_OUTPUT" "n/a     Auto-merge allowed: private repos need GitHub Pro, or Team for an org"
+assert_contains "$RUN_OUTPUT" "n/a     Main ruleset: PRs, squash only, signed linear history, no force pushes, the checks: private repos need GitHub Pro"
+assert_contains "$RUN_OUTPUT" "n/a     Secret scanning push protection: private repos need GitHub Secret Protection"
+assert_contains "$RUN_OUTPUT" "n/a     Private vulnerability reporting: public repos only"
+assert_contains "$RUN_OUTPUT" "n/a     CodeQL default setup: private repos need GitHub Code Security"
+assert_contains "$RUN_OUTPUT" "change  Fork PR workflows run once you approve, with no write token or secrets"
+assert_contains "$RUN_OUTPUT" "9 settings differ from the standard."
+assert_not_contains "$RUN_OUTPUT" "Required status checks"
+put repos/o/r/contents/.github/dependabot.yml '{}'
+assert_idempotent main --checks check o/r
+assert_contains "$FIRST_OUTPUT" "Set: Immutable releases"
+assert_no_writes
+assert_file_not_contains "$FIRST_LOG" "security_and_analysis"
+assert_eq '[true,true,false,false]' "$(api_json repos/o/r/actions/permissions/fork-pr-workflows-private-repos \
+    '[.run_workflows_from_fork_pull_requests, .require_approval_for_fork_pr_workflows,
+        .send_write_tokens_to_workflows, .send_secrets_and_variables]')" "the private fork PR settings"
+assert_eq false "$(api_json repos/o/r .allow_auto_merge)" "auto-merge on a private repo"
+assert_read_only 0 main --check o/r
+assert_contains "$RUN_OUTPUT" "o/r matches the standard, apart from the 6 settings it can't have."
+
+# A 403 from a public repo is an error, not a feature its plan lacks
+fresh_repo
+echo repos/o/r/code-scanning/default-setup > "$SANDBOX/gh/forbidden"
+assert_exit 1 main --check o/r
+assert_contains "$RUN_OUTPUT" "Upgrade to GitHub Pro"
+assert_contains "$RUN_OUTPUT" "nothing was changed"
 
 # A failed change fails the run after the rest are applied
 fresh_repo

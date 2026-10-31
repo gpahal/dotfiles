@@ -6,7 +6,9 @@ set -euo pipefail
 # The repo defaults to the current directory's. --check only reports, and exits 3 when anything
 # differs. The required status checks default to the main ruleset's, or else to the check runs on
 # the latest PR, which it offers to edit. .github/dependabot.yml is a file in the repo, so it only
-# copies github/dependabot.yml into a checkout of the repo for you to commit.
+# copies github/dependabot.yml into a checkout of the repo for you to commit. A setting the repo's
+# visibility or plan rules out, as several are for a private repo on GitHub Free, shows as n/a and
+# isn't a difference.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -15,9 +17,11 @@ USAGE="Usage: bash github/setup-repo.sh [--check] [--checks <a,b>|none] [owner/r
 # GitHub Actions' app ID: a required check only a workflow can satisfy
 ACTIONS_APP_ID=15368
 DEPENDABOT_FILE=.github/dependabot.yml
+RULESET_LABEL="Main ruleset: PRs, squash only, signed linear history, no force pushes, the checks"
 
 # Set by main
 REPO=""
+PRIVATE=false
 CHECK_ONLY=false
 CHECKS_GIVEN=false
 # Newline-separated
@@ -27,8 +31,11 @@ LABELS=()
 METHODS=()
 PATHS=()
 BODIES=()
+# Set by plan: how many settings showed as n/a
+UNAVAILABLE=0
 
-# api_get <path>: prints the response; returns 4 on a 404, which some endpoints answer for "off"
+# api_get <path> [gated]: prints the response; returns 4 on a 404, which some endpoints answer for
+# "off". With gated, returns 3 on a 403, which some answer for a feature the repo's plan lacks.
 api_get() {
     local err status=0
     err="$(mktemp)"
@@ -36,8 +43,12 @@ api_get() {
     if [ "$status" -ne 0 ]; then
         if grep -q 'HTTP 404' "$err"; then
             status=4
+        elif [ "${2:-}" == gated ] && grep -q 'HTTP 403' "$err"; then
+            status=3
         else
             cat "$err" >&2
+            # gh's own exit codes would read as the ones above
+            status=1
         fi
     fi
     rm -f "$err"
@@ -68,6 +79,12 @@ want() {
     fi
 }
 
+# <label> <reason>: a setting the repo's visibility or plan rules out, which isn't a difference
+unavailable() {
+    printf '  n/a     %s: %s\n' "$1" "$2"
+    UNAVAILABLE=$((UNAVAILABLE + 1))
+}
+
 # <label> <api path> <jq filter> <wanted JSON>, for an endpoint that reads and writes one object
 want_json() {
     local now
@@ -87,6 +104,12 @@ want_repo() {
 }
 
 want_security() {
+    # GitHub leaves the object out for a private repo without GitHub Secret Protection, which only
+    # orgs on Team or Enterprise can buy
+    if [ "$(jq -c .security_and_analysis <<< "$REPO_JSON")" == null ]; then
+        unavailable "$1" "private repos need GitHub Secret Protection"
+        return 0
+    fi
     want "$1" "$(jq -r ".security_and_analysis.$2.status // \"unavailable\"" <<< "$REPO_JSON")" \
         enabled PATCH "repos/$REPO" \
         "$(jq -cn --arg k "$2" '{security_and_analysis: {($k): {status: "enabled"}}}')"
@@ -116,6 +139,17 @@ want_actions() {
         .default_workflow_permissions '"read"' PUT "$body" || return 1
     want_json "Actions can create and approve PRs" "repos/$REPO/actions/permissions/workflow" \
         .can_approve_pull_request_reviews true PUT "$body" || return 1
+    # A private repo has its own fork PR settings, and answers 422 for the public repo's
+    if [ "$PRIVATE" == true ]; then
+        body='{"run_workflows_from_fork_pull_requests":true,"require_approval_for_fork_pr_workflows":true,'
+        body+='"send_write_tokens_to_workflows":false,"send_secrets_and_variables":false}'
+        want_json "Fork PR workflows run once you approve, with no write token or secrets" \
+            "repos/$REPO/actions/permissions/fork-pr-workflows-private-repos" \
+            '[.run_workflows_from_fork_pull_requests, .require_approval_for_fork_pr_workflows,
+                .send_write_tokens_to_workflows, .send_secrets_and_variables]' \
+            '[true,true,false,false]' PUT "$body"
+        return
+    fi
     want_json "Fork PRs from all outside contributors wait for approval" \
         "repos/$REPO/actions/permissions/fork-pr-contributor-approval" .approval_policy \
         '"all_external_contributors"' PUT '{"approval_policy":"all_external_contributors"}'
@@ -219,10 +253,10 @@ parse_checks() {
     tr ',' '\n' <<< "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | { grep -v '^$' || true; }
 }
 
+# <the repo's rulesets>
 want_ruleset() {
-    local list id="" existing="" current="" wanted now=missing method=POST path
-    list="$(api_get "repos/$REPO/rulesets?includes_parents=false")" || return 1
-    id="$(jq -r '[.[] | select(.name == "main" and .target == "branch")][0].id // empty' <<< "$list")"
+    local id="" existing="" current="" wanted now=missing method=POST path
+    id="$(jq -r '[.[] | select(.name == "main" and .target == "branch")][0].id // empty' <<< "$1")"
     if [ -n "$id" ]; then
         existing="$(api_get "repos/$REPO/rulesets/$id")" || return 1
         current="$(jq -r '.rules[] | select(.type == "required_status_checks")
@@ -242,8 +276,21 @@ want_ruleset() {
     else
         echo "  Required status checks: none"
     fi
-    want "Main ruleset: PRs, squash only, signed linear history, no force pushes, the checks" \
-        "$now" standard "$method" "$path" "$wanted"
+    want "$RULESET_LABEL" "$now" standard "$method" "$path" "$wanted"
+}
+
+# <gated or empty>
+want_codeql() {
+    local label="CodeQL default setup" now status=0
+    now="$(api_get "repos/$REPO/code-scanning/default-setup" "$1" | jq -c .state)" || status=$?
+    case "$status" in
+        0)
+            want "$label" "$now" '"configured"' PATCH "repos/$REPO/code-scanning/default-setup" \
+                '{"state":"configured","query_suite":"default"}'
+            ;;
+        3) unavailable "$label" "private repos need GitHub Code Security" ;;
+        *) return 1 ;;
+    esac
 }
 
 # A file in the repo, so it isn't an API change: apply copies it into a checkout to commit
@@ -282,6 +329,15 @@ apply_dependabot() {
 
 # Reads every setting, printing each and queueing the changes
 plan() {
+    local gate="" rulesets status=0 pro="private repos need GitHub Pro, or Team for an org"
+    UNAVAILABLE=0
+    [ "$PRIVATE" != true ] || gate=gated
+    # Rulesets and auto-merge come together: every plan has them for public repos
+    rulesets="$(api_get "repos/$REPO/rulesets?includes_parents=false" "$gate")" || status=$?
+    case "$status" in
+        0 | 3) ;;
+        *) return 1 ;;
+    esac
     want_repo "Issues on" has_issues true
     want_repo "Projects off" has_projects false
     want_repo "Wiki off" has_wiki false
@@ -294,10 +350,18 @@ plan() {
         "$(jq -r '"\(.squash_merge_commit_title) and \(.squash_merge_commit_message)"' <<< "$REPO_JSON")" \
         "PR_TITLE and PR_BODY" PATCH "repos/$REPO" \
         '{"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"PR_BODY"}'
-    want_repo "Auto-merge allowed" allow_auto_merge true
+    if [ "$status" -eq 0 ]; then
+        want_repo "Auto-merge allowed" allow_auto_merge true
+    else
+        unavailable "Auto-merge allowed" "$pro"
+    fi
     want_repo "Head branches deleted after merge" delete_branch_on_merge true
     want_repo "Update branch suggested" allow_update_branch true
-    want_ruleset || return 1
+    if [ "$status" -eq 0 ]; then
+        want_ruleset "$rulesets" || return 1
+    else
+        unavailable "$RULESET_LABEL" "$pro"
+    fi
     want_actions || return 1
     want_security "Secret scanning" secret_scanning
     want_security "Secret scanning push protection" secret_scanning_push_protection
@@ -306,10 +370,13 @@ plan() {
     # Dependabot security updates need alerts on first
     want_alerts || return 1
     want_enabled "Dependabot security updates" "repos/$REPO/automated-security-fixes" || return 1
-    want_enabled "Private vulnerability reporting" "repos/$REPO/private-vulnerability-reporting" ||
-        return 1
-    want_json "CodeQL default setup" "repos/$REPO/code-scanning/default-setup" .state \
-        '"configured"' PATCH '{"state":"configured","query_suite":"default"}' || return 1
+    if [ "$PRIVATE" == true ]; then
+        unavailable "Private vulnerability reporting" "public repos only"
+    else
+        want_enabled "Private vulnerability reporting" "repos/$REPO/private-vulnerability-reporting" ||
+            return 1
+    fi
+    want_codeql "$gate" || return 1
     want_enabled "Immutable releases" "repos/$REPO/immutable-releases" || return 1
     want_dependabot
 }
@@ -346,7 +413,7 @@ apply() {
 
 main() {
     LABELS=() METHODS=() PATHS=() BODIES=()
-    CHECK_ONLY=false CHECKS_GIVEN=false CHECKS="" REPO=""
+    CHECK_ONLY=false CHECKS_GIVEN=false CHECKS="" REPO="" PRIVATE=false
     while [ $# -gt 0 ]; do
         case "$1" in
             --check) CHECK_ONLY=true ;;
@@ -387,13 +454,18 @@ main() {
         echo "Changing $REPO's settings needs admin on it." >&2
         return 1
     fi
+    PRIVATE="$(jq -r .private <<< "$REPO_JSON")"
     echo "$REPO:"
     plan || {
         echo "Couldn't read all of $REPO's settings, so nothing was changed." >&2
         return 1
     }
     if [ ${#LABELS[@]} -eq 0 ]; then
-        echo "$REPO matches the standard."
+        if [ "$UNAVAILABLE" -gt 0 ]; then
+            echo "$REPO matches the standard, apart from the $UNAVAILABLE settings it can't have."
+        else
+            echo "$REPO matches the standard."
+        fi
         return 0
     fi
     if "$CHECK_ONLY"; then

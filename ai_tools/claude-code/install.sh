@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install Claude Code and set its settings, status line, worktree hook, and instructions.
+# Install Claude Code and set both accounts' settings, status line, hooks, and instructions.
+#
+# The main account uses Claude Code's default home, ~/.claude, and the backup account ~/.claude-backup,
+# which gets the same settings and instructions. claude-use, copied to ~/.local/bin, picks the one
+# that `claude` (zsh/functions.zsh) and new T3 Code threads use.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -13,30 +17,51 @@ source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
 
-CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
-CLAUDE_CODE_STATUSLINE="$HOME/.claude/statusline.sh"
-CLAUDE_CODE_WORKTREE_HOOK="$HOME/.claude/hooks/worktree-hook.sh"
-CLAUDE_CODE_INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
+CLAUDE_CODE_HOME="$HOME/.claude"
+CLAUDE_CODE_BACKUP_HOME="$HOME/.claude-backup"
+# The account's settings and instructions, which claude_code_in_backup switches. Both accounts'
+# settings name the status line and hook in ~/.claude.
+CLAUDE_CODE_NAME="Claude Code"
+CLAUDE_CODE_SETTINGS="$CLAUDE_CODE_HOME/settings.json"
+CLAUDE_CODE_INSTRUCTIONS="$CLAUDE_CODE_HOME/CLAUDE.md"
+CLAUDE_CODE_STATUSLINE="$CLAUDE_CODE_HOME/statusline.sh"
+CLAUDE_CODE_WORKTREE_HOOK="$CLAUDE_CODE_HOME/hooks/worktree-hook.sh"
+CLAUDE_CODE_USE="$HOME/.local/bin/claude-use"
 # Registered without git wt, every `claude -w` and isolated subagent would fail.
 CLAUDE_CODE_NO_GIT_WT="git wt isn't installed, so the step didn't register the worktree hook. Run bash setup.sh git, then re-run this step."
 
 # Values of your own are kept (keepable.sh). Built when used, since tests switch the OS after loading.
 claude_code_keep_list() {
     CLAUDE_CODE_KEEP=(
-        .model '"claude-opus-5-5"' "Claude Code's model (model)"
+        .model '"claude-opus-5-5"' "$CLAUDE_CODE_NAME's model (model)"
         '.modelSettings["claude-opus-5-5"].effortLevel' '"medium"'
-        "Claude Code's claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"
+        "$CLAUDE_CODE_NAME's claude-opus-5-5 effort (modelSettings.claude-opus-5-5.effortLevel)"
         '.modelSettings["claude-sonnet-5-5"].effortLevel' '"high"'
-        "Claude Code's claude-sonnet-5-5 effort (modelSettings.claude-sonnet-5-5.effortLevel)"
-        .statusLine.type '"command"' "Claude Code's status line type (statusLine.type)"
-        .statusLine.command '"~/.claude/statusline.sh"' "Claude Code's status line command (statusLine.command)"
-        .statusLine.refreshInterval 5 "Claude Code's status line refresh interval (statusLine.refreshInterval)"
+        "$CLAUDE_CODE_NAME's claude-sonnet-5-5 effort (modelSettings.claude-sonnet-5-5.effortLevel)"
+        .statusLine.type '"command"' "$CLAUDE_CODE_NAME's status line type (statusLine.type)"
+        .statusLine.command '"~/.claude/statusline.sh"' "$CLAUDE_CODE_NAME's status line command (statusLine.command)"
+        .statusLine.refreshInterval 5 "$CLAUDE_CODE_NAME's status line refresh interval (statusLine.refreshInterval)"
     )
     # Over SSH, `auto` notifies nothing when TERM_PROGRAM didn't reach the tmux pane; ghostty's
     # OSC 777 reaches the Mac either way.
     if is_ubuntu; then
-        CLAUDE_CODE_KEEP+=(.preferredNotifChannel '"ghostty"' "Claude Code's notification channel (preferredNotifChannel)")
+        CLAUDE_CODE_KEEP+=(.preferredNotifChannel '"ghostty"' "$CLAUDE_CODE_NAME's notification channel (preferredNotifChannel)")
     fi
+}
+
+# claude_code_in_backup <command...>: runs the command on the backup account's settings and
+# instructions
+claude_code_in_backup() {
+    local CLAUDE_CODE_NAME="Claude Code backup" CLAUDE_CODE_SETTINGS="$CLAUDE_CODE_BACKUP_HOME/settings.json" \
+        CLAUDE_CODE_INSTRUCTIONS="$CLAUDE_CODE_BACKUP_HOME/CLAUDE.md"
+    "$@"
+}
+
+# Succeeds when CLAUDE_CONFIG_DIR is unset or either account's home, as in a session claude-use
+# started on the backup account
+claude_code_home_ok() {
+    tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$CLAUDE_CODE_HOME" ||
+        tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$CLAUDE_CODE_BACKUP_HOME"
 }
 
 claude_code_read_custom_values() {
@@ -95,10 +120,27 @@ claude_code_path() {
     [ -x "$HOME/.local/bin/claude" ] && echo "$HOME/.local/bin/claude"
 }
 
-# Print true, false, or nothing when unknown. auth status exits 1 when logged out.
+# claude_code_signed_in <claude> [<config dir>]: prints true, false, or nothing when unknown. auth
+# status exits 1 when logged out. Without a dir it checks ~/.claude with CLAUDE_CONFIG_DIR unset,
+# since Claude Code keys macOS's Keychain entry to the variable.
 claude_code_signed_in() {
-    "$1" auth status --json 2>/dev/null |
-        jq -r 'if .loggedIn == true or .loggedIn == false then .loggedIn else empty end' 2>/dev/null || true
+    (
+        if [ -n "${2:-}" ]; then
+            export CLAUDE_CONFIG_DIR="$2"
+        else
+            unset CLAUDE_CONFIG_DIR
+        fi
+        "$1" auth status --json 2>/dev/null
+    ) | jq -r 'if .loggedIn == true or .loggedIn == false then .loggedIn else empty end' 2>/dev/null || true
+}
+
+# status_claude_code_signed_in <claude> <what> <login command> [<config dir>]
+status_claude_code_signed_in() {
+    case "$(claude_code_signed_in "$1" "${4:-}")" in
+        true) status_item ok "$2" ;;
+        false) status_item missing "$2: run $3" ;;
+        *) status_item unknown "$2: claude auth status didn't say; run it to see why" ;;
+    esac
 }
 
 install_claude_code() {
@@ -183,7 +225,7 @@ claude_code_settings() {
 
 # Usage: configure_claude_code [<register the worktree hook: true|false>]
 configure_claude_code() {
-    echo "Configuring Claude Code..."
+    echo "Configuring $CLAUDE_CODE_NAME..."
     local settings
     claude_code_choose_custom_values
     settings="$(claude_code_settings "${1:-true}")"
@@ -202,6 +244,7 @@ script_files() {
     local status=0
     "$1" "$DOTFILES_DIR/ai_tools/claude-code/statusline.sh" "$CLAUDE_CODE_STATUSLINE" || status=1
     "$1" "$DOTFILES_DIR/ai_tools/claude-code/worktree-hook.sh" "$CLAUDE_CODE_WORKTREE_HOOK" || status=1
+    "$1" "$DOTFILES_DIR/ai_tools/claude-code/claude-use.sh" "$CLAUDE_CODE_USE" || status=1
     return "$status"
 }
 
@@ -210,44 +253,50 @@ user_instructions_files() {
 }
 
 install_scripts() {
-    echo "  Status line script and worktree hook:"
+    echo "  Status line script, worktree hook, and claude-use:"
     script_files copy_file
 }
 
+# One account's settings, its worktree hook's registration, and its instructions
+claude_code_status_account() {
+    local line shown
+    shown="$(shown_path "$CLAUDE_CODE_SETTINGS")"
+    if status_require_cmd jq "Settings in $shown"; then
+        status_check "Settings in $shown" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
+        claude_code_status_custom_values
+    fi
+    while IFS= read -r line; do
+        [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered in $shown; remove it and re-run the step"
+    done <<< "$(claude_code_other_worktree_hooks)"
+    user_instructions_files status_file
+}
+
 status() {
-    local line claude
+    local claude
     if claude="$(claude_code_path)"; then
         status_item ok "Claude Code"
         if status_require_cmd jq "Signed in to Claude Code"; then
-            case "$(claude_code_signed_in "$claude")" in
-                true) status_item ok "Signed in to Claude Code" ;;
-                false) status_item missing "Signed in to Claude Code: run claude auth login" ;;
-                *) status_item unknown "Signed in to Claude Code: claude auth status didn't say; run it to see why" ;;
-            esac
+            status_claude_code_signed_in "$claude" "Signed in to Claude Code" "claude-main auth login"
+            status_claude_code_signed_in "$claude" "Signed in to Claude Code's backup account" \
+                "claude-backup auth login" "$CLAUDE_CODE_BACKUP_HOME"
         fi
     else
         status_item missing "Claude Code"
         status_item unknown "Signed in to Claude Code: Claude Code isn't installed"
     fi
-    if ! tool_home_guard --status "Claude Code settings, status line, and instructions" \
-        "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude"; then
+    if ! claude_code_home_ok && ! tool_home_guard --status "Claude Code settings, status line, and instructions" \
+        "Claude Code" CLAUDE_CONFIG_DIR "$CLAUDE_CODE_HOME"; then
         return 0
     fi
-    if status_require_cmd jq "Settings in ~/.claude/settings.json"; then
-        status_check "Settings in ~/.claude/settings.json" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
-        claude_code_status_custom_values
-    fi
+    claude_code_status_account
+    claude_code_in_backup claude_code_status_account
     claude_code_have_git_wt || status_item missing "Worktree hook: $CLAUDE_CODE_NO_GIT_WT"
-    while IFS= read -r line; do
-        [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered; remove it from ~/.claude/settings.json and re-run the step"
-    done <<< "$(claude_code_other_worktree_hooks)"
     script_files status_file
-    user_instructions_files status_file
 }
 
 apply() {
     echo "Claude Code:"
-    tool_home_guard "Claude Code" CLAUDE_CONFIG_DIR "$HOME/.claude" || return 1
+    claude_code_home_ok || tool_home_guard "Claude Code" CLAUDE_CONFIG_DIR "$CLAUDE_CODE_HOME" || return 1
     require_cmd jq || return 1
     if ! claude_code_path > /dev/null; then
         require_cmd curl || return 1
@@ -258,21 +307,29 @@ apply() {
     # Register the hook only if its copy is executable; otherwise worktree creation would fail.
     local register_hook=true
     [ -x "$CLAUDE_CODE_WORKTREE_HOOK" ] || register_hook=false
-    configure_claude_code "$register_hook" || status=1
-    echo "  User-level instructions:"
-    user_instructions_files copy_file || status=1
+    claude_code_apply_account "$register_hook" || status=1
+    claude_code_in_backup claude_code_apply_account "$register_hook" || status=1
     if ! claude_code_have_git_wt; then
         echo "  $CLAUDE_CODE_NO_GIT_WT" >&2
         return 1
     fi
-    local others line
+    return "$status"
+}
+
+# claude_code_apply_account <register the worktree hook: true|false>: one account's settings and
+# instructions. Fails when another worktree hook kept ours out.
+claude_code_apply_account() {
+    local status=0 others line
+    configure_claude_code "$1" || status=1
+    echo "  User-level instructions:"
+    user_instructions_files copy_file || status=1
     others="$(claude_code_other_worktree_hooks)"
     if [ -n "$others" ]; then
         while IFS= read -r line; do
             echo "  $line, so the step didn't register the worktree hook: Claude Code would run both," >&2
         done <<< "$others"
         echo "  and each create hook makes its own worktree. Remove the other hook from" >&2
-        echo "  ~/.claude/settings.json, then re-run this step." >&2
+        echo "  $(shown_path "$CLAUDE_CODE_SETTINGS"), then re-run this step." >&2
         return 1
     fi
     return "$status"

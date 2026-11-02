@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# A CODEX_HOME or CLAUDE_CONFIG_DIR away from the default fails its step before any change.
+# A CODEX_HOME or CLAUDE_CONFIG_DIR away from the default fails its step before any change. A
+# CLAUDE_CONFIG_DIR on the backup account's home doesn't, as test-claude-settings.sh shows.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -18,6 +19,7 @@ for tool in "codex|CODEX_HOME|.codex|Codex|Codex settings and instructions" \
     assert_exit 1 main
     assert_contains "$RUN_OUTPUT" "setup assumes $app's default home (~/$home); unset $var or move it"
     [ ! -e "$HOME/$home" ] || fail "the $step step wrote ~/$home"
+    [ ! -e "$HOME/.claude-backup" ] || fail "the $step step wrote the backup account's ~/.claude-backup"
     [ ! -e "$SANDBOX/$var" ] || fail "the $step step wrote $var"
     assert_eq "" "$(cat "$STUB_LOG")" "commands the $step step ran"
     run main --status

@@ -1,13 +1,15 @@
 #!/bin/bash
 
 # The skills step: it copies the repo's skills to ~/.agents/skills, links them from
-# ~/.claude/skills, and removes what it didn't install, but never through shared or linked dirs.
+# ~/.claude/skills and the backup account's ~/.claude-backup/skills, and removes what it didn't install,
+# but never through shared or linked dirs.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 AGENTS_DIR="$HOME/.agents/skills"
 CLAUDE_DIR="$HOME/.claude/skills"
+BACKUP_DIR="$HOME/.claude-backup/skills"
 # A copy of the repo with made-up skills, so renaming a real one changes nothing here. The space in
 # "dot files" catches unquoted paths.
 FIXTURE="$SANDBOX/dot files"
@@ -37,6 +39,7 @@ assert_eq 0 "$RUN_STATUS" "first run's status"
 for name in alpha beta gamma; do
     [ -f "$AGENTS_DIR/$name/SKILL.md" ] || fail "the first run didn't copy $name"
     assert_eq "$AGENTS_DIR/$name" "$(readlink "$CLAUDE_DIR/$name")" "the link to $name"
+    assert_eq "$AGENTS_DIR/$name" "$(readlink "$BACKUP_DIR/$name")" "the backup account's link to $name"
 done
 assert_contains "$RUN_OUTPUT" "Copied the alpha skill to ~/.agents/skills/alpha"
 assert_contains "$RUN_OUTPUT" "Linked ~/.claude/skills/alpha to the alpha skill"
@@ -168,6 +171,35 @@ assert_eq 3 "$RUN_STATUS" "status with ~/.claude/skills linked elsewhere"
 assert_contains "$RUN_OUTPUT" "skills is a symlink, and the step removes what it didn't install there"
 rm "$CLAUDE_DIR"
 mv "$SANDBOX/claude-skills" "$CLAUDE_DIR"
+
+# The backup account's dir gets its links back and loses its extra entries, but keeps its synced,
+# also from a session on the backup account
+mkdir -p "$BACKUP_DIR/synced/x"
+ln -s "$AGENTS_DIR/gone" "$BACKUP_DIR/gone"
+rm "$BACKUP_DIR/alpha"
+step_status
+assert_eq 3 "$RUN_STATUS" "status with the backup account's dir out of date"
+assert_contains "$RUN_OUTPUT" "missing    alpha skill, not linked from ~/.claude-backup/skills"
+assert_contains "$RUN_OUTPUT" "missing    ~/.claude-backup/skills/gone, which isn't a skill in ai_tools/skills"
+assert_not_contains "$RUN_OUTPUT" "synced"
+export CLAUDE_CONFIG_DIR="$HOME/.claude-backup"
+step
+unset CLAUDE_CONFIG_DIR
+assert_eq 0 "$RUN_STATUS" "a run from a session on the backup account"
+assert_contains "$RUN_OUTPUT" "Linked ~/.claude-backup/skills/alpha to the alpha skill"
+assert_eq "$AGENTS_DIR/alpha" "$(readlink "$BACKUP_DIR/alpha")" "the backup account's link to alpha after a fix"
+[ ! -L "$BACKUP_DIR/gone" ] || fail "the backup account's extra entry is still there"
+[ -d "$BACKUP_DIR/synced/x" ] || fail "the step removed the backup account's synced"
+rm -rf "$BACKUP_DIR/synced"
+
+# The backup account's dir, linked to the Codex one, fails before any change too
+mv "$BACKUP_DIR" "$SANDBOX/backup-skills"
+ln -s "$AGENTS_DIR" "$BACKUP_DIR"
+step
+assert_eq 1 "$RUN_STATUS" "a run with ~/.claude-backup/skills linked to ~/.agents/skills"
+assert_contains "$RUN_OUTPUT" "agents/skills and ~/.claude-backup/skills are one dir"
+rm "$BACKUP_DIR"
+mv "$SANDBOX/backup-skills" "$BACKUP_DIR"
 
 # With CLAUDE_CONFIG_DIR elsewhere, ~/.claude/skills is left alone
 rm -rf "$AGENTS_DIR" "$CLAUDE_DIR"

@@ -14,8 +14,8 @@ manual_steps() {
 **Logins.**
 MD
     manual_step macos claude-login --parent logins --bullet --elsewhere \
-        --check claude_signed_in "Signed in to Claude Code" <<'MD'
-Run `claude auth login`.
+        --check claude_signed_in "Signed in to both Claude Code accounts" <<'MD'
+Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](#two-accounts).
 MD
     manual_step macos app-logins --parent logins --bullet <<'MD'
 Sign in to the Claude and ChatGPT apps, and open T3 Code once.
@@ -65,8 +65,8 @@ MD
     manual_step ubuntu sudo-work --check ai_sudo_work_done "The AI tools' sudo changes made" <<'MD'
 **Sudo work.** If setup ran without a terminal, run `bash ai_tools/setup.sh claude-desktop codex t3-code` from one.
 MD
-    manual_step ubuntu claude-login --elsewhere --check claude_signed_in "Signed in to Claude Code" <<'MD'
-**Claude Code.** `claude auth login`.
+    manual_step ubuntu claude-login --elsewhere --check claude_signed_in "Signed in to both Claude Code accounts" <<'MD'
+**Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
 MD
     manual_step ubuntu codex-login --elsewhere --check codex_signed_in "Signed in to Codex" <<'MD'
 **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.

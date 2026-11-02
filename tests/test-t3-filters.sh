@@ -91,6 +91,20 @@ choose '{"defaultModelSelection": {"instanceId": "claudeAgent", "model": "claude
 assert_eq "$ours" "$(selection)" "the model selection after replacing your model"
 answer no
 
+# The backup account's provider, set key by key, so a key T3 Code or you add stays
+merge_fixture '{"providerInstances": {"codex_work": {"driver": "codex"}, "claudeBackup": {"enabled": false, "accentColor": "red", "displayName": "Old"}}}'
+assert_eq '{"claudeBackup":{"accentColor":"red","config":{"homePath":"~/.claude-backup"},"displayName":"Claude Backup","driver":"claudeAgent","enabled":false},"codex_work":{"driver":"codex"}}' \
+    "$(jq -cS '.providerInstances' "$settings")" "the provider instances after a merge"
+
+# claude-use's choice of the backup account stays, with your options, even when your model is replaced
+backup='{"instanceId":"claudeBackup","model":"claude-opus-5-5","options":[{"id":"effort","value":"medium"},{"id":"contextWindow","value":"1m"}]}'
+choose "{\"defaultModelSelection\": $backup}"
+assert_eq "$backup" "$(selection)" "the backup account's model selection"
+answer yes
+choose '{"defaultModelSelection": {"instanceId": "claudeBackup", "model": "claude-sonnet-5", "options": [{"id": "effort", "value": "medium"}]}}'
+assert_eq "$backup" "$(selection)" "the backup account's model selection after replacing your model"
+answer no
+
 # Worktrees from origin's tip and auto-pull are reported when off, never set: T3 drops the default
 fresh_bases() {
     printf '%s\n' "$1" > "$settings"

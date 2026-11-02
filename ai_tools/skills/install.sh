@@ -4,20 +4,30 @@ set -euo pipefail
 # Install the repo's skills for Codex and Claude Code.
 #
 # Codex gets a copy of each skill in ~/.agents/skills, and Claude Code a link to that copy in
-# ~/.claude/skills. The repo owns both dirs: a run replaces a copy that differs from the repo, and
-# deletes every entry that isn't a repo skill, such as a skill installed from elsewhere or one the
-# repo no longer has. Dot-entries in either dir, and Claude Code's ~/.claude/skills/synced, stay.
+# ~/.claude/skills and in the backup account's ~/.claude-backup/skills. The repo owns these dirs: a run
+# replaces a copy that differs from the repo, and deletes every entry that isn't a repo skill, such
+# as a skill installed from elsewhere or one the repo no longer has. Dot-entries, and Claude Code's
+# synced in each account's skills dir, stay.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
 
 AGENTS_SKILLS="$HOME/.agents/skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
+CLAUDE_BACKUP_SKILLS="$HOME/.claude-backup/skills"
 
-# Succeeds when Claude Code reads ~/.claude. With CLAUDE_CONFIG_DIR elsewhere, the step installs
-# the skills for Codex only, and leaves ~/.claude/skills alone, as the claude-code step does ~/.claude.
+# Succeeds when Claude Code reads ~/.claude or ~/.claude-backup. With CLAUDE_CONFIG_DIR elsewhere, the
+# step installs the skills for Codex only, and leaves both accounts' skills alone, as the
+# claude-code step does their homes.
 claude_skills_on() {
-    tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude"
+    tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude" || tool_home_is "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude-backup"
+}
+
+# The skills dirs Claude Code reads, one per account, when it reads them
+claude_skill_dirs() {
+    claude_skills_on || return 0
+    echo "$CLAUDE_SKILLS"
+    echo "$CLAUDE_BACKUP_SKILLS"
 }
 
 # Succeeds when a name is safe to use as a directory name under the skills dirs, which the step
@@ -82,23 +92,28 @@ skill_current() {
         [ "$(skill_executables "$src")" == "$(skill_executables "$dest")" ]
 }
 
+# skill_linked <Claude Code skills dir> <name>
 skill_linked() {
-    [ -L "$CLAUDE_SKILLS/$1" ] && [ "$(readlink "$CLAUDE_SKILLS/$1")" == "$AGENTS_SKILLS/$1" ]
+    [ -L "$1/$2" ] && [ "$(readlink "$1/$2")" == "$AGENTS_SKILLS/$2" ]
 }
 
 skill_dirs() {
     echo "$AGENTS_SKILLS"
-    ! claude_skills_on || echo "$CLAUDE_SKILLS"
+    claude_skill_dirs
 }
 
-# Succeeds when both skills dirs exist and are one dir, or one is inside the other, through a
-# symlink. Installing there would replace the copy with the link to itself.
-skill_dirs_shared() {
-    local agents claude
-    claude_skills_on && [ -d "$AGENTS_SKILLS" ] && [ -d "$CLAUDE_SKILLS" ] || return 1
-    agents="$(cd -P "$AGENTS_SKILLS" && pwd -P)" && claude="$(cd -P "$CLAUDE_SKILLS" && pwd -P)" || return 1
-    case "$agents/" in "$claude/"*) return 0 ;; esac
-    case "$claude/" in "$agents/"*) return 0 ;; esac
+# Prints the first Claude Code skills dir that exists and is ~/.agents/skills, or one is inside the
+# other, through a symlink. Installing there would replace the copy with the link to itself.
+shared_skill_dir() {
+    local agents claude dir
+    [ -d "$AGENTS_SKILLS" ] || return 1
+    agents="$(cd -P "$AGENTS_SKILLS" && pwd -P)" || return 1
+    while IFS= read -r dir; do
+        [ -d "$dir" ] || continue
+        claude="$(cd -P "$dir" && pwd -P)" || continue
+        case "$agents/" in "$claude/"*) echo "$dir" && return 0 ;; esac
+        case "$claude/" in "$agents/"*) echo "$dir" && return 0 ;; esac
+    done < <(claude_skill_dirs)
     return 1
 }
 
@@ -114,14 +129,14 @@ linked_skill_dir() {
 
 # Print the path of each entry in the skills dirs that isn't a repo skill, one per line.
 # Dot-entries, such as Claude Code's .trash or Finder's .DS_Store, aren't extra, and neither is
-# ~/.claude/skills/synced, where Claude Code keeps the skills claude.ai syncs.
+# synced in either account's skills dir, where Claude Code keeps the skills claude.ai syncs.
 extra_skill_entries() {
     local dir entry
     while IFS= read -r dir; do
         [ -d "$dir" ] || continue
         while IFS= read -r entry; do
             case "$entry" in '' | .*) continue ;; esac
-            if [ "$dir" == "$CLAUDE_SKILLS" ] && [ "$entry" == synced ]; then
+            if [ "$dir" != "$AGENTS_SKILLS" ] && [ "$entry" == synced ]; then
                 continue
             fi
             case " ${SKILL_NAMES[*]-} " in
@@ -139,22 +154,22 @@ shown() {
 
 install_skills() {
     echo "Installing skills..."
-    local result=0 changed=false i name dir path linked
+    local result=0 changed=false i name dir path linked shared
     load_repo_skills || result=1
     # Every entry would count as extra
     if [ ${#SKILL_NAMES[@]} -eq 0 ]; then
         echo "  Found no skills in ai_tools/skills, so left the skills dirs alone." >&2
         return 1
     fi
-    if skill_dirs_shared; then
-        echo "  ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink, so left them alone. Make them separate dirs." >&2
+    if shared="$(shared_skill_dir)"; then
+        echo "  ~/.agents/skills and $(shown "$shared") are one dir, or one is inside the other, through a symlink, so left them alone. Make them separate dirs." >&2
         return 1
     fi
     if linked="$(linked_skill_dir)"; then
         echo "  $(shown "$linked") is a symlink, so left the skills dirs alone, since the step removes what it didn't install there. Make it a real dir." >&2
         return 1
     fi
-    claude_skills_on || echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude, so the skills are for Codex only."
+    claude_skills_on || echo "  CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude or ~/.claude-backup, so the skills are for Codex only."
     while IFS= read -r dir; do
         mkdir -p "$dir" || return 1
     done < <(skill_dirs)
@@ -169,16 +184,17 @@ install_skills() {
             fi
             echo "  Copied the $name skill to $(shown "$AGENTS_SKILLS/$name")"
         fi
-        if claude_skills_on && ! skill_linked "$name"; then
+        while IFS= read -r dir; do
+            skill_linked "$dir" "$name" && continue
             changed=true
             # ln -sfn would put the link inside a real directory there, rather than replace it
-            if ! rm -rf "${CLAUDE_SKILLS:?}/$name" || ! ln -sfn "$AGENTS_SKILLS/$name" "$CLAUDE_SKILLS/$name"; then
-                echo "  Couldn't link $(shown "$CLAUDE_SKILLS/$name") to the $name skill." >&2
+            if ! rm -rf "${dir:?}/$name" || ! ln -sfn "$AGENTS_SKILLS/$name" "$dir/$name"; then
+                echo "  Couldn't link $(shown "$dir/$name") to the $name skill." >&2
                 result=1
                 continue
             fi
-            echo "  Linked $(shown "$CLAUDE_SKILLS/$name") to the $name skill"
-        fi
+            echo "  Linked $(shown "$dir/$name") to the $name skill"
+        done < <(claude_skill_dirs)
     done
     while IFS= read -r path; do
         [ -n "$path" ] || continue
@@ -196,8 +212,8 @@ install_skills() {
 
 # Report each repo skill's copy and link, and each extra entry, for status
 status_skills() {
-    local i name problem path problems=false
-    claude_skills_on || status_item skipped "Skills for Claude Code: CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude"
+    local i name problem path dir problems=false
+    claude_skills_on || status_item skipped "Skills for Claude Code: CLAUDE_CONFIG_DIR is $CLAUDE_CONFIG_DIR, but setup assumes ~/.claude or ~/.claude-backup"
     for i in ${SKILL_NAMES[@]+"${!SKILL_NAMES[@]}"}; do
         name="${SKILL_NAMES[i]}"
         problem=""
@@ -205,8 +221,13 @@ status_skills() {
             problem="not installed"
         elif ! skill_current "$i"; then
             problem="differs from the repo"
-        elif claude_skills_on && ! skill_linked "$name"; then
-            problem="not linked from ~/.claude/skills"
+        else
+            while IFS= read -r dir; do
+                if ! skill_linked "$dir" "$name"; then
+                    problem="not linked from $(shown "$dir")"
+                    break
+                fi
+            done < <(claude_skill_dirs)
         fi
         if [ -n "$problem" ]; then
             status_item missing "$name skill, $problem"
@@ -221,14 +242,14 @@ status_skills() {
 }
 
 status() {
-    local linked
+    local linked shared
     load_repo_skills 2>/dev/null ||
         status_item missing "Skill names in ai_tools/skills: one isn't lowercase letters, digits, and dashes, or two skills share one; run the step to see which"
     # As in install_skills, where every entry would count as extra
     if [ ${#SKILL_NAMES[@]} -eq 0 ]; then
         status_item missing "Skills in ai_tools/skills: found none, so the step leaves the skills dirs alone"
-    elif skill_dirs_shared; then
-        status_item missing "Skills dirs: ~/.agents/skills and ~/.claude/skills are one dir, or one is inside the other, through a symlink; make them separate dirs"
+    elif shared="$(shared_skill_dir)"; then
+        status_item missing "Skills dirs: ~/.agents/skills and $(shown "$shared") are one dir, or one is inside the other, through a symlink; make them separate dirs"
     elif linked="$(linked_skill_dir)"; then
         status_item missing "Skills dirs: $(shown "$linked") is a symlink, and the step removes what it didn't install there; make it a real dir"
     else

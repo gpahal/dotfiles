@@ -108,3 +108,26 @@ scratch() {
     (cd "$dir" && "$SHELL")
     /bin/rm -rf "$dir"
 }
+
+# claude runs the account claude-use chose, and claude-main and claude-backup run one for a session.
+# Main runs with CLAUDE_CONFIG_DIR unset, since Claude Code keys macOS's Keychain entry to it. A
+# CLAUDE_CONFIG_DIR of your own, for neither account, wins.
+claude-main() {
+    ( unset CLAUDE_CONFIG_DIR; command claude "$@" )
+}
+
+claude-backup() {
+    CLAUDE_CONFIG_DIR=$HOME/.claude-backup command claude "$@"
+}
+alias claude-b=claude-backup
+
+claude() {
+    local dir=${CLAUDE_CONFIG_DIR:+${CLAUDE_CONFIG_DIR:A}}
+    if [[ -n $dir && $dir != ${HOME:A}/.claude && $dir != ${HOME:A}/.claude-backup ]]; then
+        command claude "$@"
+    elif [[ $(claude-use --current 2>/dev/null) == backup ]]; then
+        claude-backup "$@"
+    else
+        claude-main "$@"
+    fi
+}

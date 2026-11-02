@@ -5,7 +5,8 @@ set -euo pipefail
 # the installed CLIs.
 # Each doctor must first reject a broken file, so a change in its output can't turn this into a pass.
 # claude doctor skips unknown keys, so each listed key is also looked for in the binary's schema.
-# codex doctor skips unknown [desktop] keys; the codex step's --status checks them in the ChatGPT app.
+# codex doctor skips unknown [desktop] keys; the codex step's --status checks them in the ChatGPT
+# app, when it's installed.
 
 REPO_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

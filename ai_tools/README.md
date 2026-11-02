@@ -1,6 +1,6 @@
 # AI tools
 
-Setup for [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) (CLI and ChatGPT app), and [T3 Code](#t3-code), on macOS and [Ubuntu](#ubuntu-1), with their [privacy](#privacy) settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
+Setup for [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) CLI, and [T3 Code](#t3-code), on macOS and [Ubuntu](#ubuntu-1), with their [privacy](#privacy) settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
 
 ## First run
 
@@ -28,7 +28,7 @@ bash ai_tools/setup.sh --status     # report only
 
 The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`.
 
-It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. It skips the Claude, ChatGPT, and T3 Code apps' settings while they run, since the apps overwrite them; on macOS it first asks to quit them. It adds no MCP servers.
+It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. It skips the Claude and T3 Code apps' settings while they run, since the apps overwrite them; on macOS it first asks to quit them. It adds no MCP servers.
 
 **(script)** marks what the script does.
 
@@ -37,7 +37,7 @@ It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effo
 `upgrade-ai-tools` (or `just upgrade-ai-tools`), which `upgrade` runs, updates what's installed and lists failed stages. It picks the checkout as [`upgrade` does](../README.md#updating).
 
 - `claude update`.
-- The Claude, ChatGPT, and T3 Code casks unless running, and the Codex CLI.
+- The Claude and T3 Code casks unless running, and the Codex CLI.
 - Claude Code plugins, printing each marketplace commit and plugin version before and after for review, since plugins can add hooks.
 - `t3 update` on Ubuntu, asking before restarting the service.
 - `codex plugin marketplace upgrade`.
@@ -97,19 +97,7 @@ On Ubuntu it installs from Anthropic's apt repo, so `apt upgrade` updates it, an
 
 ## Codex
 
-The ChatGPT app holds the Codex app, browser, and computer use. Both it and the CLI install with brew **(script)**.
-
-### Notifications
-
-The app notifies on finished turns and requests **(script)**. The CLI notifies in Ghostty with no config. Don't overwrite the top-level `notify` key, which the Computer Use plugin sets.
-
-### Browser
-
-`Cmd+Shift+B` opens the built-in browser, which has no logins. For your Chrome, select **Chrome** in **Settings → Computer Use**, install the plugin and extension, and type `@Chrome`.
-
-### Computer use
-
-In the ChatGPT app, install and turn on the **Computer Use** plugin, give **Codex Computer Use** **Screen Recording** and **Accessibility**, and approve each app.
+The CLI installs with brew **(script)**, and notifies in Ghostty with no config.
 
 ### Settings
 
@@ -121,7 +109,7 @@ In `~/.codex/config.toml` **(script)**:
 - **Trusted folders.** `~/Dev` and each git repo in it, as for [Claude Code](#settings). A repo you marked untrusted stays untrusted.
 - **Rewrite.** Needs yq 4.54.1 or later. The step leaves the file alone if yq would change another value or drop a full-line comment.
 
-The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake for tasks (and for Codex Remote while plugged in), squash-merges PRs, and steers mid-turn.
+On macOS the file also gets the ChatGPT app's `[desktop]` settings **(script)**.
 
 ## T3 Code
 
@@ -178,7 +166,7 @@ The `skills` step copies each into `~/.agents/skills` and links it from `~/.clau
 
 ## Ubuntu
 
-The same steps, without the ChatGPT app or computer use. The `codex` step installs `bubblewrap` and, if needed, loads AppArmor's bwrap profile **(script)**; test with `codex sandbox -- /bin/true`. Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json`, readable only by you, since the keyring is locked over SSH **(script)**.
+The same steps, without computer use. The `codex` step installs `bubblewrap` and, if needed, loads AppArmor's bwrap profile **(script)**; test with `codex sandbox -- /bin/true`. Codex keeps MCP OAuth tokens in `~/.codex/.credentials.json`, readable only by you, since the keyring is locked over SSH **(script)**.
 
 ### Notifications over SSH
 
@@ -202,19 +190,17 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 
 1. **Logins.**
    - Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](#two-accounts).
-   - Sign in to the Claude and ChatGPT apps, and open T3 Code once.
-   - Run `codex login`, if signing in to the ChatGPT app didn't sign Codex in.
+   - Sign in to the Claude app, and open T3 Code once.
+   - Run `codex login`.
 2. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
-   - Claude, ChatGPT, and T3 Code. `manual-steps` opens the ones it can tell aren't set.
-   - **Codex Computer Use**, and any terminal other than Ghostty.
+   - Claude and T3 Code. `manual-steps` opens the ones it can tell aren't set.
+   - Any terminal other than Ghostty.
 3. **Claude in Chrome.** See [Browser (Claude in Chrome)](#browser-claude-in-chrome).
 4. **Claude Code computer use.** Per project, see [Computer use](#computer-use).
-5. **ChatGPT app.** Set up Codex's [Browser](#browser) and [Computer use](#computer-use-1).
-6. **T3 Code phone app.** See [Mobile](#mobile).
-7. **Codex Remote.** In the ChatGPT app, set up **Settings → Connections → Control this Mac or PC** and scan the QR code with the phone app.
-8. **Claude phone app.** Install it, sign in, and allow notifications.
-9. **Training opt-outs.** See [Privacy](#privacy).
-10. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
+5. **T3 Code phone app.** See [Mobile](#mobile).
+6. **Claude phone app.** Install it, sign in, and allow notifications.
+7. **Training opt-outs.** See [Privacy](#privacy).
+8. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
 
 ### Ubuntu
 
@@ -259,7 +245,6 @@ At the desktop, the T3 Code app shows the service's threads, and Claude opens si
 
 - A turn on the Ubuntu server ends with a T3 Code push.
 - A `/remote-control` session asked to notify you sends a Claude push.
-- The ChatGPT app can start a Codex Remote task on the Mac.
 
 ## Maintenance
 
@@ -272,7 +257,7 @@ These apps don't document every key the steps write, and they update often, so t
 | Claude Code | `scripts/check-ai-settings.sh`, which looks for each key in [`scripts/claude-settings-keys.txt`](../scripts/claude-settings-keys.txt) in the installed CLI |
 | Codex | `scripts/check-ai-settings.sh`, with `codex doctor` |
 | T3 Code | `scripts/check-t3-settings.sh`, against the latest release's settings schema |
-| Claude desktop app, ChatGPT app, and T3 Code app on Ubuntu | Each step's `--status`, which looks for the keys it sets in the installed app |
+| Claude desktop app, ChatGPT app if installed, and T3 Code app on Ubuntu | Each step's `--status`, which looks for the keys it sets in the installed app |
 
 CI runs both scripts weekly against the latest releases. When one fails or `--status` reports a missing key, fix the step.
 

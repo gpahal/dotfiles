@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install the Codex CLI and the ChatGPT app, and set Codex's config and instructions.
-# Installs casks, and on Ubuntu installs apt packages and loads AppArmor's bwrap profile, whatever
+# Install the Codex CLI, and set Codex's config and instructions.
+# The config includes the ChatGPT app's [desktop] settings.
+# Installs a cask, and on Ubuntu installs apt packages and loads AppArmor's bwrap profile, whatever
 # HOME is; test in a macOS VM or spare Mac, and an Ubuntu VM.
 
 # shellcheck source=../../lib/common.sh
@@ -302,7 +303,7 @@ codex_status_signed_in() {
     elif [[ "$out" != *"Not logged in"* ]]; then
         status_item unknown "Signed in to Codex: codex login status failed; run it to see why"
     elif is_macos; then
-        status_item missing "Signed in to Codex: sign in to the ChatGPT app, or run codex login"
+        status_item missing "Signed in to Codex: run codex login"
     else
         status_item missing "Signed in to Codex: run codex login --device-auth (see ai_tools/README.md → Manual steps)"
     fi
@@ -387,11 +388,6 @@ setup_codex_sandbox() {
 }
 
 status() {
-    if is_macos; then
-        status_cask chatgpt /Applications/ChatGPT.app
-    else
-        status_item skipped "ChatGPT desktop app: macOS only"
-    fi
     if status_require_cmd brew codex; then
         status_cask codex "$(codex_cask_path)"
     fi
@@ -406,7 +402,8 @@ status() {
         else
             status_check "Settings in ~/.codex/config.toml" codex_config_matches
             codex_status_custom_values
-            if is_macos; then
+            # Only an installed app can show which keys it knows
+            if is_macos && [ -f "$CHATGPT_BUNDLE" ]; then
                 # shellcheck disable=SC2046 # a list of keys
                 status_app_keys "ChatGPT app knows every [desktop] key the step sets" "$CHATGPT_BUNDLE" \
                     $(codex_desktop_keys)
@@ -434,9 +431,6 @@ apply() {
     fi
     require_cmd brew || return 1
     local result=0
-    if is_macos; then
-        install_cask chatgpt /Applications/ChatGPT.app || result=1
-    fi
     install_codex_cli || result=1
     configure_codex || result=1
     echo "  User-level instructions:"

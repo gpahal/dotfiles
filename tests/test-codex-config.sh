@@ -202,9 +202,14 @@ stub brew 'exit 1'
 replace_fn codex_cask_path 'echo "$STUB_DIR/codex"'
 stub codex 'echo "Not logged in" >&2; exit 1'
 run main --status
-assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: sign in to the ChatGPT app, or run codex login"
+assert_contains "$RUN_OUTPUT" "missing    Signed in to Codex: run codex login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 assert_contains "$RUN_OUTPUT" "ok         ChatGPT app knows every [desktop] key the step sets"
+# Without the app there's nothing to check the keys against, and the step doesn't install it
+CHATGPT_BUNDLE="$SANDBOX/no-chatgpt-app.asar"
+run main --status
+assert_not_contains "$RUN_OUTPUT" "ChatGPT app"
+assert_file_not_contains "$STUB_LOG" "chatgpt"
 
 # ChatGPT may rewrite the config as it quits, so the step reads it after
 printf '%s\n' 'model = "mine"' > "$CODEX_CONFIG"

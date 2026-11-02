@@ -57,14 +57,14 @@ as_os macos
 # Ghostty's notifications are the main README's manual step, so they don't count here. With every
 # app set and the extension installed, nothing opens.
 ok=$((ALLOWED | PERSISTENT))
-apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY)) com.anthropic.claudefordesktop $ok com.openai.codex $ok com.t3tools.t3code $ok
+apps com.mitchellh.ghostty $((ALLOWED | TEMPORARY)) com.anthropic.claudefordesktop $ok com.t3tools.t3code $ok
 mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Extensions/$CLAUDE_CHROME_EXTENSION_ID"
 stub open
 assert_exit 0 main
-assert_not_contains "$RUN_OUTPUT" "Claude, ChatGPT, and T3 Code. "
+assert_not_contains "$RUN_OUTPUT" "Claude and T3 Code. "
 assert_not_contains "$RUN_OUTPUT" "Open "
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "ok         Claude, ChatGPT, and T3 Code notifications allowed, with the Persistent style"
+assert_contains "$RUN_OUTPUT" "ok         Claude and T3 Code notifications allowed, with the Persistent style"
 assert_contains "$RUN_OUTPUT" "unverified Squash merging allowed in your GitHub repositories: couldn't list your GitHub repositories with gh"
 assert_not_contains "$RUN_OUTPUT" "Signed in to Claude Code"
 
@@ -75,28 +75,27 @@ DOTFILES_ASSUME_YES=1 assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "Not opening the notification settings: DOTFILES_ASSUME_YES is set."
 cp "$STUB_LOG" "$SANDBOX/both.log"
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" 'Claude, ChatGPT, and T3 Code. `manual-steps` opens the ones it can tell aren'"'"'t set.'
+assert_contains "$RUN_OUTPUT" 'Claude and T3 Code. `manual-steps` opens the ones it can tell aren'"'"'t set.'
 cat "$STUB_LOG" >> "$SANDBOX/both.log"
 assert_eq "" "$(grep -E '^(open|sudo)' "$SANDBOX/both.log" || true)" "commands run without a yes"
 assert_exit 3 main --status
-assert_contains "$RUN_OUTPUT" "missing    Claude, ChatGPT, and T3 Code notifications allowed, with the Persistent style: not yet for com.anthropic.claudefordesktop, com.openai.codex"
+assert_contains "$RUN_OUTPUT" "missing    Claude and T3 Code notifications allowed, with the Persistent style: not yet for com.anthropic.claudefordesktop"
 
 answer yes
 run main <<< $'\n\n'
 assert_eq 0 "$RUN_STATUS" "exit status after opening the settings"
-assert_eq "open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.anthropic.claudefordesktop
-open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.openai.codex" \
+assert_eq "open x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.anthropic.claudefordesktop" \
     "$(grep '^open' "$STUB_LOG")" "settings opened"
 
 # Settings it can't read leave the step shown and nothing opened
 rm "$NCPREFS"
 run main < /dev/null
 assert_eq 0 "$RUN_STATUS" "exit status when the notification settings can't be read"
-assert_contains "$RUN_OUTPUT" 'Claude, ChatGPT, and T3 Code. `manual-steps` opens'
+assert_contains "$RUN_OUTPUT" 'Claude and T3 Code. `manual-steps` opens'
 assert_not_contains "$RUN_OUTPUT" "notification settings now?"
 assert_eq "" "$(grep '^open' "$STUB_LOG" || true)" "settings opened when they can't be read"
 run main --status
-assert_contains "$RUN_OUTPUT" "unverified Claude, ChatGPT, and T3 Code notifications allowed, with the Persistent style: $NOTIFICATIONS_UNREADABLE"
+assert_contains "$RUN_OUTPUT" "unverified Claude and T3 Code notifications allowed, with the Persistent style: $NOTIFICATIONS_UNREADABLE"
 
 # GitHub repositories without squash merging are named
 stub gh 'printf "%s\n" me/one me/two'

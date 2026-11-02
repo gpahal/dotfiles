@@ -226,4 +226,27 @@ run main --status
 assert_contains "$RUN_OUTPUT" "unknown    Settings in ~/.codex/config.toml: yq on PATH isn't mikefarah's yq 4.54.1 or newer"
 assert_eq 3 "$RUN_STATUS" "status's exit with another yq"
 rm -f "$STUB_DIR/yq"
+
+# ~/Dev and each git repo in it are trusted, apart from one you marked untrusted
+load_script ai_tools/codex/install.sh
+as_os ubuntu
+replace_fn bwrap_works 'true'
+mkdir -p "$HOME/Dev/a/.git" "$HOME/Dev/js/b/.git" "$HOME/Dev/js/c/.git" "$HOME/Dev/js/notes"
+printf '[projects."%s"]\ntrust_level = "untrusted"\n\n[projects."/elsewhere"]\ntrust_level = "trusted"\n' \
+    "$HOME/Dev/js/c" > "$CODEX_CONFIG"
+trust='.projects | to_entries | map("\(.key) \(.value.trust_level)") | sort | join(",")'
+assert_exit 0 configure_codex
+assert_eq "\"/elsewhere trusted,$HOME/Dev trusted,$HOME/Dev/a trusted,$HOME/Dev/js/b trusted,$HOME/Dev/js/c untrusted\"" \
+    "$(get "$trust")" "the projects after the step"
+first="$(cat "$CODEX_CONFIG")"
+assert_exit 0 configure_codex
+assert_contains "$RUN_OUTPUT" "already set"
+assert_eq "$first" "$(cat "$CODEX_CONFIG")" "config.toml after a second run"
+stub brew 'exit 1'
+run status
+assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.codex/config.toml"
+# A repo cloned later shows as missing until the step runs again
+mkdir -p "$HOME/Dev/new/.git"
+run status
+assert_contains "$RUN_OUTPUT" "missing    Settings in ~/.codex/config.toml"
 test_done

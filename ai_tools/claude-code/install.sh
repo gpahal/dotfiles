@@ -4,8 +4,9 @@ set -euo pipefail
 # Install Claude Code and set both accounts' settings, status line, hooks, and instructions.
 #
 # The main account uses Claude Code's default home, ~/.claude, and the backup account ~/.claude-backup,
-# which gets the same settings and instructions. claude-use, copied to ~/.local/bin, picks the one
-# that `claude` (zsh/functions.zsh) and new T3 Code threads use.
+# which gets the same settings and instructions. Each also trusts ~/Dev and its git repos
+# (ai_tools/lib/dev-trust.sh). claude-use, copied to ~/.local/bin, picks the account that `claude`
+# (zsh/functions.zsh) and new T3 Code threads use.
 
 # shellcheck source=../../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
@@ -13,6 +14,8 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/com
 source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
+# shellcheck source=../lib/dev-trust.sh
+source "$DOTFILES_DIR/ai_tools/lib/dev-trust.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -24,6 +27,9 @@ CLAUDE_CODE_BACKUP_HOME="$HOME/.claude-backup"
 CLAUDE_CODE_NAME="Claude Code"
 CLAUDE_CODE_SETTINGS="$CLAUDE_CODE_HOME/settings.json"
 CLAUDE_CODE_INSTRUCTIONS="$CLAUDE_CODE_HOME/CLAUDE.md"
+# Claude Code's own state, which holds each folder's trust: in HOME for the default home, and in
+# the home for any other
+CLAUDE_CODE_STATE="$HOME/.claude.json"
 CLAUDE_CODE_STATUSLINE="$CLAUDE_CODE_HOME/statusline.sh"
 CLAUDE_CODE_WORKTREE_HOOK="$CLAUDE_CODE_HOME/hooks/worktree-hook.sh"
 CLAUDE_CODE_USE="$HOME/.local/bin/claude-use"
@@ -53,7 +59,8 @@ claude_code_keep_list() {
 # instructions
 claude_code_in_backup() {
     local CLAUDE_CODE_NAME="Claude Code backup" CLAUDE_CODE_SETTINGS="$CLAUDE_CODE_BACKUP_HOME/settings.json" \
-        CLAUDE_CODE_INSTRUCTIONS="$CLAUDE_CODE_BACKUP_HOME/CLAUDE.md"
+        CLAUDE_CODE_INSTRUCTIONS="$CLAUDE_CODE_BACKUP_HOME/CLAUDE.md" \
+        CLAUDE_CODE_STATE="$CLAUDE_CODE_BACKUP_HOME/.claude.json"
     "$@"
 }
 
@@ -240,6 +247,59 @@ configure_claude_code() {
     echo "  and opted out of error reports, surveys, and feedback"
 }
 
+# Prints the jq filter trusting each of dev_trust_dirs, or nothing without ~/Dev
+claude_code_trust_filter() {
+    local dir filter=""
+    while IFS= read -r dir; do
+        [ -z "$dir" ] || filter+=" | .projects[$(jq -n --arg d "$dir" '$d')].hasTrustDialogAccepted = true"
+    done <<< "$(dev_trust_dirs)"
+    [ -z "$filter" ] || printf '.%s\n' "$filter"
+}
+
+# Claude Code rewrites its state while holding proper-lockfile's lock, the directory <file>.lock,
+# so the merge holds it too, waiting up to 5 s, and makes no backup, as a prompt would keep it
+# held. Claude Code keeps its own backups of the file. A lock untouched for a minute is stale, as
+# proper-lockfile refreshes a held one's mtime every few seconds.
+CLAUDE_CODE_LOCK_TRIES=50
+claude_code_trust_dev() {
+    local filter shown dir="${CLAUDE_CODE_STATE%/*}" lock="$CLAUDE_CODE_STATE.lock" tries=0 status=0
+    shown="$(shown_path "$CLAUDE_CODE_STATE")"
+    filter="$(claude_code_trust_filter)"
+    if [ -z "$filter" ]; then
+        echo "  $(shown_path "$DEV_TRUST_DIR") doesn't exist, so no folders to trust"
+        return 0
+    fi
+    if json_applied "$CLAUDE_CODE_STATE" "$filter"; then
+        echo "  ~/Dev and its git repos are already trusted in $shown"
+        return 0
+    fi
+    if ! mkdir -p "$dir" || [ ! -w "$dir" ]; then
+        echo "  Couldn't write in $dir, so the folders aren't trusted in $shown." >&2
+        return 1
+    fi
+    until mkdir "$lock" 2>/dev/null; do
+        if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+            rmdir "$lock" 2>/dev/null || true
+        elif [ "$tries" -ge "$CLAUDE_CODE_LOCK_TRIES" ]; then
+            echo "  Claude Code held $lock too long, so the folders aren't trusted yet; re-run the step." >&2
+            return 1
+        else
+            tries=$((tries + 1))
+            sleep 0.1
+        fi
+    done
+    # Readable only by you, as Claude Code makes it, since it comes to hold the account's details
+    if [ ! -e "$CLAUDE_CODE_STATE" ] && ! (umask 077 && : > "$CLAUDE_CODE_STATE"); then
+        echo "  Couldn't create $CLAUDE_CODE_STATE." >&2
+        status=1
+    else
+        DOTFILES_BACKUP=no json_merge "$CLAUDE_CODE_STATE" "$filter" || status=1
+    fi
+    rmdir "$lock" 2>/dev/null || true
+    [ "$status" -ne 0 ] || echo "  Trusted ~/Dev and its git repos in $shown"
+    return "$status"
+}
+
 script_files() {
     local status=0
     "$1" "$DOTFILES_DIR/ai_tools/claude-code/statusline.sh" "$CLAUDE_CODE_STATUSLINE" || status=1
@@ -257,13 +317,25 @@ install_scripts() {
     script_files copy_file
 }
 
-# One account's settings, its worktree hook's registration, and its instructions
+claude_code_status_trust() {
+    local filter name
+    name="Trusted folders ~/Dev and its git repos in $(shown_path "$CLAUDE_CODE_STATE")"
+    filter="$(claude_code_trust_filter)"
+    if [ -z "$filter" ]; then
+        status_item skipped "$name: $(shown_path "$DEV_TRUST_DIR") doesn't exist"
+    else
+        status_check "$name" json_applied "$CLAUDE_CODE_STATE" "$filter"
+    fi
+}
+
+# One account's settings, trusted folders, worktree hook's registration, and instructions
 claude_code_status_account() {
     local line shown
     shown="$(shown_path "$CLAUDE_CODE_SETTINGS")"
     if status_require_cmd jq "Settings in $shown"; then
         status_check "Settings in $shown" json_applied "$CLAUDE_CODE_SETTINGS" "$(claude_code_settings)"
         claude_code_status_custom_values
+        claude_code_status_trust
     fi
     while IFS= read -r line; do
         [ -z "$line" ] || status_item missing "Worktree hook: $line, so ours isn't registered in $shown; remove it and re-run the step"
@@ -316,11 +388,12 @@ apply() {
     return "$status"
 }
 
-# claude_code_apply_account <register the worktree hook: true|false>: one account's settings and
-# instructions. Fails when another worktree hook kept ours out.
+# claude_code_apply_account <register the worktree hook: true|false>: one account's settings,
+# trusted folders, and instructions. Fails when another worktree hook kept ours out.
 claude_code_apply_account() {
     local status=0 others line
     configure_claude_code "$1" || status=1
+    claude_code_trust_dev || status=1
     echo "  User-level instructions:"
     user_instructions_files copy_file || status=1
     others="$(claude_code_other_worktree_hooks)"

@@ -227,4 +227,51 @@ assert_eq '["my-hook.sh"]' "$(jq -c '[.hooks.WorktreeCreate[].hooks[].command]' 
 assert_eq '["~/.claude/hooks/worktree-hook.sh"]' "$(jq -c '[.hooks.WorktreeCreate[].hooks[].command]' "$settings")" "main's create hooks"
 run main --status
 assert_contains "$RUN_OUTPUT" "missing    Worktree hook: WorktreeCreate already runs my-hook.sh, so ours isn't registered in ~/.claude-backup/settings.json"
+
+# Each account trusts ~/Dev and each git repo in it, a worktree too, keeping the rest of its state
+load_script ai_tools/claude-code/install.sh
+state="$HOME/.claude.json"
+backup_state="$HOME/.claude-backup/.claude.json"
+trusted() { jq -c '[.projects | to_entries[] | select(.value.hasTrustDialogAccepted == true) | .key] | sort' "$1"; }
+# The backup account's settings start afresh, without the hook above that fails the step
+rm -f "$backup"
+run claude_code_status_trust
+assert_contains "$RUN_OUTPUT" "skipped    Trusted folders ~/Dev and its git repos in ~/.claude.json: ~/Dev doesn't exist"
+mkdir -p "$HOME/Dev/a/.git" "$HOME/Dev/js/b/.git" "$HOME/Dev/js/notes" "$HOME/Dev/js/wt" \
+    "$HOME/Dev/js/b/packages/c/.git"
+echo 'gitdir: elsewhere' > "$HOME/Dev/js/wt/.git"
+dev_json="[\"$HOME/Dev\",\"$HOME/Dev/a\",\"$HOME/Dev/js/b\",\"$HOME/Dev/js/wt\"]"
+echo '{"numStartups": 3, "projects": {"/elsewhere": {"allowedTools": ["x"]},
+    "'"$HOME/Dev/a"'": {"hasTrustDialogAccepted": false, "lastCost": 1}}}' > "$state"
+chmod 600 "$state"
+rm -f "$backup_state"
+assert_idempotent main
+assert_eq "$dev_json" "$(trusted "$state")" "main's trusted folders"
+assert_eq "$dev_json" "$(trusted "$backup_state")" "the backup account's trusted folders"
+assert_eq '3 ["x"] 1' "$(jq -c '[.numStartups, .projects["/elsewhere"].allowedTools, .projects["'"$HOME/Dev/a"'"].lastCost]' "$state" | jq -r 'map(tojson) | join(" ")')" \
+    "the rest of main's state"
+assert_eq "600 600" "$(file_mode "$state") $(file_mode "$backup_state")" "the state files' modes"
+run main --status
+assert_contains "$RUN_OUTPUT" "ok         Trusted folders ~/Dev and its git repos in ~/.claude.json"
+assert_contains "$RUN_OUTPUT" "ok         Trusted folders ~/Dev and its git repos in ~/.claude-backup/.claude.json"
+
+# A repo cloned later shows as missing until the step runs again
+mkdir -p "$HOME/Dev/new/.git"
+run main --status
+assert_contains "$RUN_OUTPUT" "missing    Trusted folders ~/Dev and its git repos in ~/.claude.json"
+
+# The merge waits for Claude Code's lock, and takes over a stale one
+mkdir "$state.lock"
+snapshot "$state"
+# shellcheck disable=SC2034 # the step reads it
+CLAUDE_CODE_LOCK_TRIES=2
+assert_exit 1 claude_code_trust_dev
+assert_contains "$RUN_OUTPUT" "Claude Code held $state.lock too long"
+assert_unchanged "$state" "while Claude Code held its lock"
+[ -d "$state.lock" ] || fail "the step removed Claude Code's held lock"
+touch -t 202001010000 "$state.lock"
+assert_exit 0 claude_code_trust_dev
+assert_eq "[\"$HOME/Dev\",\"$HOME/Dev/a\",\"$HOME/Dev/js/b\",\"$HOME/Dev/js/wt\",\"$HOME/Dev/new\"]" \
+    "$(trusted "$state")" "main's trusted folders after a stale lock"
+[ ! -e "$state.lock" ] || fail "the step left the lock behind"
 test_done

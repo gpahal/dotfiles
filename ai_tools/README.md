@@ -66,6 +66,7 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 - **Defaults (script).** Auto mode, auto memory off, transcripts kept 90 days, no permission rules added. The script resets these each run, so change them in [`claude-code/install.sh`](./claude-code/install.sh), not `/config`. T3 Code sets model, effort, mode, and sandbox per session.
 - **No sandbox.** Commands that auto mode approves run with your full rights. Codex instead runs commands in its sandbox, in `workspace-write` mode. On Ubuntu, agents under the T3 Code service are in the `docker` group, which is root-equivalent.
 - **Model (script).** Opus 5.5 at medium effort.
+- **Trusted folders (script).** `~/Dev` and each git repo in it, as `~/Dev/<repo>` or `~/Dev/<group>/<repo>`, in both accounts, so Claude Code doesn't ask to trust them. Trusting a folder doesn't cover the repos inside it, so after you clone one, re-run `bash ai_tools/setup.sh claude-code codex`. Until then, `--status` shows it missing.
 - **Interface (script).** Fullscreen TUI, normal key bindings.
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh): `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
 - **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts `--worktree`, subagent, and background session worktrees under `~/.worktrees` with [`git wt`](../README.md#git), and removes clean, merged subagent worktrees when a session ends, but not on `/clear`. It copies the ignored paths `.worktreeinclude` lists; name an ignored directory, not a file inside one.
@@ -117,6 +118,7 @@ In `~/.codex/config.toml` **(script)**:
 - **Model.** `gpt-6.1-sol` at high effort, with concise output.
 - **Permissions.** No prompts in the workspace; anything else goes to a reviewer agent. The sandbox has no network unless you set it under `[sandbox_workspace_write]`.
 - **Status line.** Model and effort, directory, branch, and context used.
+- **Trusted folders.** `~/Dev` and each git repo in it, as for [Claude Code](#settings). A repo you marked untrusted stays untrusted.
 - **Rewrite.** Needs yq 4.54.1 or later. The step leaves the file alone if yq would change another value or drop a full-line comment.
 
 The ChatGPT app **(script)** stays out of the menu bar, keeps the Mac awake for tasks (and for Codex Remote while plugged in), squash-merges PRs, and steers mid-turn.

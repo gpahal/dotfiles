@@ -15,6 +15,8 @@ source "$DOTFILES_DIR/ai_tools/lib/keepable.sh"
 source "$DOTFILES_DIR/ai_tools/lib/app-keys.sh"
 # shellcheck source=../lib/tool-home.sh
 source "$DOTFILES_DIR/ai_tools/lib/tool-home.sh"
+# shellcheck source=../lib/dev-trust.sh
+source "$DOTFILES_DIR/ai_tools/lib/dev-trust.sh"
 
 # shellcheck disable=SC2034 # run_steps reads it
 STEP_NEEDS="homebrew"
@@ -116,6 +118,7 @@ codex_settings() {
         # Over SSH the GNOME keyring stays locked until a desk login
         codex_set .mcp_oauth_credentials_store '"file"'
     fi
+    codex_trust_settings
 
     # Bracketed: yq reads dashes as minus otherwise
     if is_macos; then
@@ -137,6 +140,18 @@ codex_settings() {
         codex_set '.desktop["enabled-reasoning-efforts"]' \
             '["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]'
     fi
+}
+
+# Trusts each of dev_trust_dirs, apart from one you marked untrusted
+codex_trust_settings() {
+    local dir untrusted
+    untrusted="$(yq -p toml -o json -I=0 '.projects // {}' "$CODEX_CONFIG" 2>/dev/null |
+        jq -r 'to_entries[] | select(.value.trust_level? == "untrusted") | .key' 2>/dev/null)" || untrusted=""
+    while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        ! grep -qxF -- "$dir" <<< "$untrusted" || continue
+        codex_set ".projects[$(jq -n --arg d "$dir" '$d')].trust_level" '"trusted"'
+    done <<< "$(dev_trust_dirs)"
 }
 
 CHATGPT_BUNDLE=/Applications/ChatGPT.app/Contents/Resources/app.asar
@@ -243,9 +258,9 @@ codex_config_matches() {
 configure_codex() {
     echo "Configuring Codex..."
     codex_choose_custom_values
-    local settings="model, output, sandbox, approval, data-sharing, and status line settings"
+    local settings="model, output, sandbox, approval, data-sharing, status line, and trusted folder settings"
     if is_macos; then
-        settings="model, output, sandbox, approval, data-sharing, status line, and desktop app settings"
+        settings="model, output, sandbox, approval, data-sharing, status line, trusted folder, and desktop app settings"
     fi
     if codex_config_matches; then
         echo "  The $settings are already set in $CODEX_CONFIG"

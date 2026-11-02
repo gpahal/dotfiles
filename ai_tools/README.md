@@ -70,6 +70,24 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh): `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
 - **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts `--worktree`, subagent, and background session worktrees under `~/.worktrees` with [`git wt`](../README.md#git), and removes clean, merged subagent worktrees when a session ends, but not on `/clear`. It copies the ignored paths `.worktreeinclude` lists; name an ignored directory, not a file inside one.
 
+### Two accounts
+
+Claude Code runs a main account from `~/.claude` and a backup account from `~/.claude-backup`. Both get the same settings, instructions, and skills **(script)**, and stay signed in at once. History is per account, so `claude --resume` lists only that account's sessions.
+
+```sh
+claude-use          # show which account claude and new T3 Code threads use
+claude-use backup   # switch both to the backup account
+claude-use main     # and back
+claude              # runs the account claude-use chose
+claude-main         # runs the main account once, whatever claude-use chose
+claude-backup       # runs the backup account once
+claude-b            # the same, shorter
+```
+
+`claude-use` **(script)** changes the account for new sessions and new T3 Code threads. Sessions and threads already running keep theirs, and a T3 Code thread can't change account. In T3 Code it points every model selection on a Claude provider at the chosen account's provider, **Claude** or **Claude Backup**, including each project's own. Run it on each machine, since each has its own T3 Code settings.
+
+Sign each account in with `claude-main auth login` or `claude-backup auth login`, and switch between them by hand. Don't route either through a proxy such as CLIProxyAPI, which Anthropic's [terms](https://code.claude.com/docs/en/legal-and-compliance) don't allow for subscription logins.
+
 ### Desktop app
 
 The Claude app opens at login through a LaunchAgent **(script)**, with no menu bar icon, Option+Space quick entry, keep-awake while working, 30-day session archiving, and Cowork's browser tools, web search, and scheduled tasks on. To keep the Cowork ones off, set `coworkBrowserToolsEnabled`, `coworkWebSearchEnabled`, or `coworkScheduledTasksEnabled` to `false` in [`claude-desktop/install.sh`](./claude-desktop/install.sh).
@@ -123,6 +141,7 @@ The phone app reaches the Mac through **T3 Connect**, which needs the Mac on, aw
 Merged into `~/.t3/userdata/settings.json` and `client-settings.json` **(script)**:
 
 - New threads use Claude Opus 5.5 at medium effort with a 1M context window, in auto mode, each in a worktree under `~/.t3/worktrees`. Your own model or effort is kept.
+- A **Claude Backup** provider runs Claude Code on the backup account's `~/.claude-backup`, beside T3 Code's own **Claude**, which uses `~/.claude`. `claude-use` picks which one new threads use; see [Two accounts](#two-accounts).
 - Worktree setup actions that existed when the script ran block the agent; a later one needs `"async": false`.
 - T3 removes its worktrees 30 days after last activity, 15 after settling, after merge, or when their last thread is deleted, skipping ones in use or with uncommitted or untracked files. Ignored files such as `.env` go too, unless **Settings → Storage → Keep worktrees with local changes** is **Any local files**.
 - Projects auto-pull, threads settle after 10 idle days, and PRs squash-merge with agent credits removed, concise titles, and bullet-point descriptions.
@@ -147,13 +166,13 @@ The script turns off Claude Code's error reporting, surveys, and feedback, Codex
 
 ## User-level instructions
 
-[`user-instructions.md`](./user-instructions.md) is copied to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` **(script)**. Edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`.
+[`user-instructions.md`](./user-instructions.md) is copied to `~/.claude/CLAUDE.md`, `~/.claude-backup/CLAUDE.md`, and `~/.codex/AGENTS.md` **(script)**. Edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`.
 
 ## Skills
 
 [`skills`](./skills/README.md) holds agent skills.
 
-The `skills` step copies each into `~/.agents/skills` and links it from `~/.claude/skills` **(script)**, deleting every other entry in both except dot-entries and Claude Code's `synced`. `--status` lists what it would delete. Edit skills in the repo and re-run the step. `code-review` replaces Claude Code's bundled one, and `interrogate` needs both `claude` and `codex` signed in.
+The `skills` step copies each into `~/.agents/skills` and links it from `~/.claude/skills` and `~/.claude-backup/skills` **(script)**, deleting every other entry in them except dot-entries and Claude Code's `synced`. `--status` lists what it would delete. Edit skills in the repo and re-run the step. `code-review` replaces Claude Code's bundled one, and `interrogate` needs both `claude` and `codex` signed in.
 
 ## Ubuntu
 
@@ -180,7 +199,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 ### macOS
 
 1. **Logins.**
-   - Run `claude auth login`.
+   - Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](#two-accounts).
    - Sign in to the Claude and ChatGPT apps, and open T3 Code once.
    - Run `codex login`, if signing in to the ChatGPT app didn't sign Codex in.
 2. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
@@ -200,7 +219,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 Over SSH, logins print a link to open on the Mac.
 
 1. **Sudo work.** If setup ran without a terminal, run `bash ai_tools/setup.sh claude-desktop codex t3-code` from one.
-2. **Claude Code.** `claude auth login`.
+2. **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
 3. **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.
 4. **Claude in Chrome.** At the desktop, see [Browser (Claude in Chrome)](#browser-claude-in-chrome).
 5. **T3 Code.** Connect to the [service](#t3-code-on-ubuntu):
@@ -242,7 +261,7 @@ At the desktop, the T3 Code app shows the service's threads, and Claude opens si
 
 ## Maintenance
 
-The `claude-code` and `codex` steps keep their settings in the tool config directories, `~/.claude` and `~/.codex`, and fail if `CLAUDE_CONFIG_DIR` or `CODEX_HOME` points elsewhere.
+The `claude-code` step keeps its settings in `~/.claude` and the backup account's `~/.claude-backup`, and fails if `CLAUDE_CONFIG_DIR` points anywhere else. The `codex` step keeps its settings in `~/.codex`, and fails if `CODEX_HOME` points elsewhere.
 
 These apps don't document every key the steps write, and they update often, so the repo assumes the latest version of each and checks the keys instead:
 

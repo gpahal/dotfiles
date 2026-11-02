@@ -42,14 +42,21 @@ get() {
 }
 get packages/contracts/src/settings.ts
 get packages/contracts/src/project.ts
+get packages/contracts/src/providerInstance.ts
 
 # shellcheck source=../ai_tools/t3-code/install.sh
 source "$REPO_DIR/ai_tools/t3-code/install.sh"
 
-# Strip jq comments first, so "e.g." can't yield a key g.
+# Strip jq comments first, so "e.g." can't yield a key g. Path keys come from outside strings, so a
+# value such as "~/.claude-backup" can't yield a key claude.
 keys_of() {
-    printf '%s\n' "$1" | sed -E 's/(^|[[:space:]])#.*$/\1/' | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*":' |
-        sed -E 's/^\.//; s/^"//; s/":$//' | sort -u
+    local code
+    code="$(printf '%s\n' "$1" | sed -E 's/(^|[[:space:]])#.*$/\1/')"
+    {
+        printf '%s\n' "$code" | grep -oE '"[a-zA-Z_][a-zA-Z0-9_]*":' | sed -E 's/^"//; s/":$//' || true
+        printf '%s\n' "$code" | sed -E 's/"([^"\\]|\\.)*"/""/g' | grep -oE '\.[a-zA-Z_][a-zA-Z0-9_]*' |
+            sed -E 's/^\.//' || true
+    } | sort -u
 }
 
 # Reads check's schemas
@@ -71,7 +78,7 @@ check() {
     fi
 }
 
-check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts"
+check "server settings" "$(t3_code_server_filter)" "$tmp/settings.ts" "$tmp/project.ts" "$tmp/providerInstance.ts"
 check "client settings" "$T3_CODE_CLIENT_FILTER" "$tmp/settings.ts"
 
 finish_checks

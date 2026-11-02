@@ -2,8 +2,8 @@
 # The step's functions call the replaced ones
 # shellcheck disable=SC2329
 
-# The claude-code step's settings merge and its worktree hook registration. Keepable values share
-# one loop, so a few stand in for all.
+# The claude-code step's settings merge and its worktree hook registration, for both accounts.
+# Keepable values share one loop, so a few stand in for all.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -128,7 +128,8 @@ json_applied "$settings" "$(claude_code_settings)" || fail "settings not applied
 load_script ai_tools/claude-code/install.sh
 stub claude 'echo "{\"loggedIn\": false}"; exit 1'
 run main --status
-assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code: run claude auth login"
+assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code: run claude-main auth login"
+assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code's backup account: run claude-backup auth login"
 assert_eq 3 "$RUN_STATUS" "status's exit when signed out"
 
 # The steps share keepable.sh, so loading codex mustn't change Claude Code's settings
@@ -185,4 +186,45 @@ assert_eq "claude-opus-5-5" "$(jq -r '.model' "$settings")" "model set without g
 run main --status
 assert_contains "$RUN_OUTPUT" "missing    Worktree hook"
 assert_eq 3 "$RUN_STATUS" "status exit without git wt"
+
+# The backup account gets the same settings and instructions, and a second run changes nothing
+backup="$HOME/.claude-backup/settings.json"
+ln -sf "$REPO_DIR/git/bin/git-wt" "$HOME/.local/bin/git-wt"
+load_script ai_tools/claude-code/install.sh
+# Signed in to main only. Main's check runs with CLAUDE_CONFIG_DIR unset, whatever the shell's is.
+# shellcheck disable=SC2016 # expanded when the stub runs
+stub claude 'if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then echo "{\"loggedIn\": false}"; exit 1; fi; echo "{\"loggedIn\": true}"'
+rm -rf "$HOME/.claude" "$HOME/.claude-backup"
+assert_idempotent main
+assert_contains "$FIRST_OUTPUT" "Configuring Claude Code backup..."
+assert_eq "$(jq -cS . "$settings")" "$(jq -cS . "$backup")" "the backup account's settings beside main's"
+cmp -s "$REPO_DIR/ai_tools/user-instructions.md" "$HOME/.claude-backup/CLAUDE.md" || fail "the backup account's instructions"
+[ -x "$HOME/.local/bin/claude-use" ] || fail "claude-use wasn't copied"
+export CLAUDE_CONFIG_DIR="$HOME/.claude-backup"
+run main --status
+assert_contains "$RUN_OUTPUT" "ok         Signed in to Claude Code"$'\n'
+assert_contains "$RUN_OUTPUT" "missing    Signed in to Claude Code's backup account: run claude-backup auth login"
+assert_contains "$RUN_OUTPUT" "ok         Settings in ~/.claude-backup/settings.json"
+assert_contains "$RUN_OUTPUT" "ok         ~/.claude-backup/CLAUDE.md"
+assert_contains "$RUN_OUTPUT" "ok         ~/.local/bin/claude-use"
+# A session on the backup account can run the step
+assert_exit 0 main
+unset CLAUDE_CONFIG_DIR
+
+# Each account keeps a value of its own, and asks about it by its account's name
+jq_edit "$backup" '.statusLine.refreshInterval = 11'
+answer stdin
+assert_exit 0 claude_code_in_backup configure_claude_code <<< n
+assert_contains "$RUN_OUTPUT" "Claude Code backup's status line refresh interval (statusLine.refreshInterval) is 11, not the repo's 5. Replace it?"
+assert_eq "11 5" "$(jq -r .statusLine.refreshInterval "$backup" "$settings" | paste -sd' ' -)" "each account's refresh interval"
+answer no
+
+# Another WorktreeCreate hook in the backup account's settings keeps ours out there only
+jq_edit "$backup" '.hooks.WorktreeCreate += [{hooks: [{type: "command", command: "my-hook.sh"}]}]'
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "Remove the other hook from"$'\n'"  ~/.claude-backup/settings.json, then re-run this step."
+assert_eq '["my-hook.sh"]' "$(jq -c '[.hooks.WorktreeCreate[].hooks[].command]' "$backup")" "the backup account's create hooks"
+assert_eq '["~/.claude/hooks/worktree-hook.sh"]' "$(jq -c '[.hooks.WorktreeCreate[].hooks[].command]' "$settings")" "main's create hooks"
+run main --status
+assert_contains "$RUN_OUTPUT" "missing    Worktree hook: WorktreeCreate already runs my-hook.sh, so ours isn't registered in ~/.claude-backup/settings.json"
 test_done

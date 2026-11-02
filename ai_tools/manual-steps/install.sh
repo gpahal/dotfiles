@@ -42,10 +42,11 @@ claude_signed_in() {
     step_check ai_tools/claude-code/install.sh claude_signed_in_now
 }
 
-# Runs inside the claude-code step
+# Runs inside the claude-code step. Both accounts, since one login step covers them.
 claude_signed_in_now() {
     local claude
-    claude="$(claude_code_path)" && [ "$(claude_code_signed_in "$claude")" == true ]
+    claude="$(claude_code_path)" && [ "$(claude_code_signed_in "$claude")" == true ] &&
+        [ "$(claude_code_signed_in "$claude" "$CLAUDE_CODE_BACKUP_HOME")" == true ]
 }
 
 codex_signed_in() {

@@ -153,11 +153,13 @@ T3_CODE_REPLACE_MODEL=false
 T3_CODE_EFFORT="medium"
 T3_CODE_EFFORT_NAME="T3 Code's default effort (defaultModelSelection.options effort)"
 T3_CODE_REPLACE_EFFORT=false
-T3_CODE_SERVER_SETTINGS_NAME="server settings (model, threads, setup actions, cleanup, merge, writing style)"
+T3_CODE_SERVER_SETTINGS_NAME="server settings (model, Claude Backup provider, threads, setup actions, cleanup, merge, writing style)"
 
 # Objects are set key by key so keys a newer T3 Code adds survive. T3 Code drops values equal to a
 # key's default, so setting one never settles. Setup actions
-# get async=false per list, as T3 has no global default.
+# get async=false per list, as T3 has no global default. Claude Backup runs Claude Code on the backup
+# account's home; T3 Code's own Claude provider, claudeAgent, is the main account's and already
+# named Claude. claude-use points new threads at either, so the default model keeps either one.
 t3_code_server_filter() {
     # shellcheck disable=SC2016 # jq variables, not shell ones
     printf '%s\n' '
@@ -173,11 +175,10 @@ t3_code_server_filter() {
     | (.defaultModelSelection.model // "") as $model
     | if $model == "" or ($model != "'"$T3_CODE_MODEL"'" and '"$T3_CODE_REPLACE_MODEL"')
       then
-        (if .defaultModelSelection.instanceId != "claudeAgent"
-          then .defaultModelSelection.options = []
+        (if .defaultModelSelection.instanceId != "claudeAgent" and .defaultModelSelection.instanceId != "claudeBackup"
+          then .defaultModelSelection.options = [] | .defaultModelSelection.instanceId = "claudeAgent"
           else .
           end)
-        | .defaultModelSelection.instanceId = "claudeAgent"
         | .defaultModelSelection.model = "'"$T3_CODE_MODEL"'"
       else .
       end
@@ -199,6 +200,9 @@ t3_code_server_filter() {
             end)
       else .
       end
+    | .providerInstances["claudeBackup"].driver = "claudeAgent"
+    | .providerInstances["claudeBackup"].displayName = "Claude Backup"
+    | .providerInstances["claudeBackup"].config.homePath = "~/.claude-backup"
     | .defaultRuntimeMode = "auto"
     | .defaultThreadEnvMode = "worktree"
     | .addProjectBaseDirectory = "~/Dev"

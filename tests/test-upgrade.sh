@@ -211,7 +211,7 @@ assert_file_contains "$STUB_LOG" "uv tool upgrade --all"
 stub mise
 stub_uname Darwin
 
-# Replacing a CLI's binary doesn't break a running copy, such as the ChatGPT app's codex daemon
+# Replacing a CLI's binary doesn't break a running copy, such as a codex session
 stub_brew_casks "t3-code codex" \
     '"info --json=v2 --cask codex") echo "{\"casks\": [{\"artifacts\": [{\"binary\": [\"codex\"]}]}]}" ;;'
 stub pgrep 'case "$*" in *codex*) ;; *) exit 1 ;; esac'

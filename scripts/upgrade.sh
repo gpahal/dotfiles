@@ -162,7 +162,7 @@ _replace_running_app() {
 }
 
 # Casks upgrade-ai-tools updates, which upgrade's general pass leaves to it
-AI_CASKS=(claude chatgpt t3-code codex)
+AI_CASKS=(claude t3-code codex)
 
 # Every installed cask but the AI ones, which can include the app running this session (T3 Code).
 # brew upgrade skips the ones marked auto_updates, nearly all of them; this quits a running one,

@@ -13,7 +13,7 @@ source "$DOTFILES_DIR/lib/manual.sh"
 source "$DOTFILES_DIR/ai_tools/manual-steps/steps.sh"
 
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
-NOTIFYING_APPS=(com.anthropic.claudefordesktop com.openai.codex com.t3tools.t3code)
+NOTIFYING_APPS=(com.anthropic.claudefordesktop com.t3tools.t3code)
 T3=("$HOME/.local/bin/t3")
 # Set by the checks, for open_manual_steps
 PENDING_NOTIFICATIONS=""

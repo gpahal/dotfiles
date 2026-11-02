@@ -18,21 +18,21 @@ MD
 Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](#two-accounts).
 MD
     manual_step macos app-logins --parent logins --bullet <<'MD'
-Sign in to the Claude and ChatGPT apps, and open T3 Code once.
+Sign in to the Claude app, and open T3 Code once.
 MD
     manual_step macos codex-login --parent logins --bullet --elsewhere \
         --check codex_signed_in "Signed in to Codex" <<'MD'
-Run `codex login`, if signing in to the ChatGPT app didn't sign Codex in.
+Run `codex login`.
 MD
     manual_step macos notifications <<'MD'
 **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
 MD
     manual_step macos app-notifications --parent notifications --bullet --check app_notifications \
-        "Claude, ChatGPT, and T3 Code notifications allowed, with the Persistent style" <<'MD'
-Claude, ChatGPT, and T3 Code. `manual-steps` opens the ones it can tell aren't set.
+        "Claude and T3 Code notifications allowed, with the Persistent style" <<'MD'
+Claude and T3 Code. `manual-steps` opens the ones it can tell aren't set.
 MD
     manual_step macos other-notifications --parent notifications --bullet <<'MD'
-**Codex Computer Use**, and any terminal other than Ghostty.
+Any terminal other than Ghostty.
 MD
     manual_step macos claude-in-chrome \
         --check claude_in_chrome "Claude in Chrome's extension installed, and claude --chrome run" <<'MD'
@@ -41,14 +41,8 @@ MD
     manual_step macos computer-use <<'MD'
 **Claude Code computer use.** Per project, see [Computer use](#computer-use).
 MD
-    manual_step macos chatgpt-app <<'MD'
-**ChatGPT app.** Set up Codex's [Browser](#browser) and [Computer use](#computer-use-1).
-MD
     manual_step macos t3-phone <<'MD'
 **T3 Code phone app.** See [Mobile](#mobile).
-MD
-    manual_step macos codex-remote <<'MD'
-**Codex Remote.** In the ChatGPT app, set up **Settings → Connections → Control this Mac or PC** and scan the QR code with the phone app.
 MD
     manual_step macos claude-phone <<'MD'
 **Claude phone app.** Install it, sign in, and allow notifications.

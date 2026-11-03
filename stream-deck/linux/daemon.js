@@ -1,6 +1,6 @@
 // Drives the Stream Deck on Ubuntu with the Mac plugin's keys. The dotfiles-stream-deck user
 // service runs it from the copy the stream-deck step installs, beside bin/open-in and the plugin's
-// keys.js, sound.js, stats.js, layout.json, manifest.json, and images/. layout.json places the keys, and its
+// keys.js, sound.js, mic.js, stats.js, layout.json, manifest.json, and images/. layout.json places the keys, and its
 // links are the keys that switch pages. It logs to the journal.
 const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -20,7 +20,7 @@ const ALERT = [
 const BRIGHTNESS = 60;
 
 // The options are test seams; main() passes the real ones. actions are the manifest's, keys is
-// keys.js, and sound is sound.js's createSound().
+// keys.js, sound is sound.js's createSound(), and mic is mic.js's createMic().
 function createDaemon({
   layout,
   actions,
@@ -33,6 +33,7 @@ function createDaemon({
   openDeck,
   runOpenIn,
   sound,
+  mic,
   log = console.log,
   intervalMs = 2000,
   firstUpdateMs = 500,
@@ -67,6 +68,11 @@ function createDaemon({
     firstUpdateMs,
   });
   const run = keys.createRunner({ runOpenIn, log });
+  // A tap switches the input, and holding the key mutes or unmutes it
+  const micKey = keys.createHold({
+    onTap: (index) => mic.cycle().then((ok) => (ok ? statKeys.refresh() : alert(index))),
+    onHold: (index) => mic.toggleMute().then((ok) => (ok ? statKeys.refresh() : alert(index))),
+  });
 
   const actionAt = (index) => {
     const button = buttons.get(index);
@@ -138,9 +144,15 @@ function createDaemon({
       showPage(layout.links[action]);
     } else if (action === "sound") {
       sound.cycle().then((switched) => (switched ? statKeys.refresh() : alert(control.index)));
+    } else if (action === "mic") {
+      micKey.down(control.index);
     } else {
       run(stats.isStat(action) ? "activity-monitor" : action, () => alert(control.index));
     }
+  }
+
+  function release(control) {
+    if (control.type === "button" && actionAt(control.index) === "mic") micKey.up(control.index);
   }
 
   // Logs a repeated error once, so a deck it can't open isn't logged every 2 s
@@ -176,6 +188,7 @@ function createDaemon({
         buttons = new Map(keys.map((c) => [c.index, c]));
         shown.clear();
         opened.on("down", press);
+        opened.on("up", release);
         opened.on("error", (error) => {
           if (deck === opened) lost(error);
         });
@@ -264,6 +277,7 @@ function main() {
   const { listStreamDecks, openStreamDeck } = require("@elgato-stream-deck/node");
   const { Resvg } = require("@resvg/resvg-js");
   const keys = require("./keys.js");
+  const { createMic } = require("./mic.js");
   const { createSound } = require("./sound.js");
   const stats = require("./stats.js");
   const read = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8"));
@@ -272,13 +286,15 @@ function main() {
   const log = (message) => console.log(message);
   const font = fontOptions();
   const sound = createSound({ log });
+  const mic = createMic({ log });
   const daemon = createDaemon({
     layout: read("layout.json"),
     actions: new Set(manifest.Actions.map((action) => action.UUID.slice(manifest.UUID.length + 1))),
     keys,
     stats,
-    sampler: stats.createSampler({ log, sound }),
+    sampler: stats.createSampler({ log, sound, mic }),
     sound,
+    mic,
     keyImage: imageLoader(path.join(__dirname, "images")),
     rasterize: (svg, size) => new Resvg(svg, { fitTo: { mode: "width", value: size }, font }).render().pixels,
     listDecks: listStreamDecks,

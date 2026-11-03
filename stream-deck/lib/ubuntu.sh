@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The stream-deck step on Ubuntu: the daemon (stream-deck/linux) as a user service, the GNOME
-# extension it needs, the Agenda and Gmail app windows, and the root helper the Power key reads.
+# extension it needs, the Gmail, Notion, and Agenda app windows, and the root helper the Power key reads.
 
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DECK_DIR="$DATA_HOME/dotfiles/stream-deck"
@@ -26,9 +26,11 @@ GMAIL_URL=https://mail.google.com/mail/u/0/#inbox
 GMAIL_CLASS=chrome-mail.google.com__mail_u_0_-Default
 AGENDA_URL=https://garvitpahal.com/x/agenda
 AGENDA_CLASS=chrome-garvitpahal.com__x_agenda-Default
+NOTION_URL=https://app.notion.com/
+NOTION_CLASS=chrome-app.notion.com__-Default
 # The Chrome app windows the keys of the same names open: each is dotfiles-<id>.desktop, written by
 # <id>_desktop
-APP_WINDOWS="gmail agenda"
+APP_WINDOWS="gmail notion agenda"
 
 stream_deck_ubuntu_files() {
     local file status=0
@@ -36,11 +38,11 @@ stream_deck_ubuntu_files() {
         "$1" "$LINUX_SRC/$file" "$DECK_DIR/$file" || status=1
     done
     "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/bin/open-in-lib.sh" "$DECK_DIR/bin/open-in-lib.sh" || status=1
-    for file in keys.js sound.js stats.js layout.json manifest.json; do
+    for file in keys.js sound.js mic.js stats.js layout.json manifest.json; do
         "$1" "$DOTFILES_DIR/stream-deck/$PLUGIN/$file" "$DECK_DIR/$file" || status=1
     done
     # The keys' images, and the app windows' icons
-    for file in "$DOTFILES_DIR/stream-deck/$PLUGIN/images/"{key-*.svg,key-*@2x.png,gmail.svg,agenda.svg}; do
+    for file in "$DOTFILES_DIR/stream-deck/$PLUGIN/images/"{key-*.svg,key-*@2x.png,gmail.svg,notion.svg,agenda.svg}; do
         "$1" "$file" "$DECK_DIR/images/${file##*/}" || status=1
     done
     for file in metadata.json extension.js; do
@@ -54,6 +56,13 @@ gmail_desktop() {
         "[Desktop Entry]" "Type=Application" "Name=Gmail" "Comment=Gmail in a Google Chrome app window" \
         "Exec=google-chrome --app=$GMAIL_URL" "Icon=$DECK_DIR/images/gmail.svg" \
         "StartupWMClass=$GMAIL_CLASS" "Categories=Network;Email;" "Terminal=false"
+}
+
+notion_desktop() {
+    printf '%s\n' "# From the dotfiles stream-deck step: Notion in its own window, for the Stream Deck's Notion key" \
+        "[Desktop Entry]" "Type=Application" "Name=Notion" "Comment=Notion in a Google Chrome app window" \
+        "Exec=google-chrome --app=$NOTION_URL" "Icon=$DECK_DIR/images/notion.svg" \
+        "StartupWMClass=$NOTION_CLASS" "Categories=Network;Office;" "Terminal=false"
 }
 
 agenda_desktop() {

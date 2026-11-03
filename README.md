@@ -181,23 +181,25 @@ Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Gho
 
 ### Stream Deck
 
-The **Dotfiles** keys act on the folder of the app in front:
+The **Dotfiles** keys act on the folder of the app in front: a Ghostty tab's, a Zed file's, the file manager's, a T3 Code thread's, or a Code session's in the Claude app. The [Hammerspoon](#hammerspoon) hotkeys use the same folder.
 
 - **Overview**, labeled MAC or UBUNTU for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
-- **Editor** opens Zed, **Terminal** Ghostty, and **Files** the file manager there.
-- **Agenda** and **Gmail** focus or open [the agenda](https://garvitpahal.com/x/agenda) and Gmail.
+- **Editor** opens Zed and **Files** the file manager at that folder, or a new window when there's none.
+- **Terminal** brings Ghostty's tab at that folder to the front, else opens a tab there. With no folder, it brings Ghostty to the front. With Ghostty in front, it opens another tab at the same folder. A tab goes in Ghostty's window, and a window opens only when Ghostty has none.
+- **Gmail**, **Notion**, and **Agenda** focus or open Gmail, [Notion](https://app.notion.com/), and [the agenda](https://garvitpahal.com/x/agenda).
 - **Chrome**, **New Tab**, **T3 Code**, **Claude**, **Agenda**, and **Gmail** match the Hammerspoon hotkeys.
-- **Sound**, below **Chrome**, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile.
+- **Upgrade** runs `upgrade` in a new Ghostty tab.
+- **Mic** names the mic in use, green while live and red and crossed out while muted, with a dot for each mic. A press switches to the next mic, and holding the key for half a second mutes or unmutes it. It skips apps' virtual mics, such as Zoom's. On the Mac, muting sets the mic's input volume to 0, and unmuting restores the volume it had.
+- **Sound**, in the top row, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile, as **Mic** does.
 
 [`layout.json`](stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json) places the keys of both pages on both OSes. [`stream-deck/icons`](stream-deck/icons/README.md) lists the app icons' sources.
 
-On macOS, a plugin adds the keys to Elgato's Stream Deck app, with a read-only profile for each page. Stream Deck shows the main page when it starts and when the deck comes back from Ubuntu, and setup deletes any other profile for the deck. The folder comes from a Ghostty tab, a Zed file, a Finder selection, or a T3 Code thread.
+On macOS, a plugin adds the keys to Elgato's Stream Deck app, with a read-only profile for each page. Stream Deck shows the main page when it starts and when the deck comes back from Ubuntu, and setup deletes any other profile for the deck. The file manager's folder is Finder's selection. T3 Code's and Claude's come from the thread or session their page shows; when the page can't be read, the window's title picks it, else the one used last.
 
 Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user service draws the same keys, and a GNOME extension lets it read and focus windows. Unlike on macOS:
 
-- The folder comes from a Ghostty tab, a Zed file, or a file manager window's folder, not its selected file. With T3 Code in front, the keys open a new window.
-- **Terminal** opens a Ghostty window, not a tab.
-- **Agenda** and **Gmail** open in their own Chrome windows, and the stat keys open Resources.
+- The file manager's folder is its window's, not its selected file. T3 Code's and Claude's come from the thread or session the window's title names, else the one used last.
+- **Gmail**, **Notion**, and **Agenda** open in their own Chrome windows, and the stat keys open Resources.
 - **Power** shows the CPU package, its cores, and the GPU, with no figure for the whole machine.
 - Keys that open apps do nothing while the screen is locked.
 - Only the 15-key model works. The daemon leaves other decks blank and logs why.
@@ -209,7 +211,7 @@ Elgato's app doesn't run on Linux. On Ubuntu, the `dotfiles-stream-deck` user se
 macOS only. Hotkeys on `Ctrl+Opt+Cmd` (Rectangle takes `Ctrl+Opt`):
 
 - `Space` Claude, `B` Chrome, `C` T3 Code.
-- `T` Ghostty and `E` Zed, at the folder in front.
+- `T` Ghostty and `E` Zed, at the folder in front, as the Stream Deck's **Terminal** and **Editor** keys.
 - `N` a new Chrome tab, with the clipboard's text pasted and selected.
 - `A` the agenda and `M` Gmail, as the Stream Deck's keys open them.
 

@@ -33,6 +33,7 @@ brew "doggo"  # DNS client
 
 brew "jq"  # JSON processor
 brew "yq"  # YAML, TOML, and XML processor
+brew "sqlite"  # SQLite's CLI (sqlite3), which reads T3 Code's threads for the Stream Deck and hotkeys. Keg-only on macOS, which ships its own
 
 brew "httpie"  # HTTP client
 

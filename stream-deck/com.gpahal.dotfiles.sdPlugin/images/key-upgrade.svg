@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+  <rect width="144" height="144" fill="#18181b"/>
+  <text x="72" y="30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#a1a1aa" text-anchor="middle">UPGRADE</text>
+  <g fill="none" stroke="#f4f4f5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="72" cy="84" r="32"/>
+    <path d="M72 100V68M58 82l14-14 14 14"/>
+  </g>
+</svg>

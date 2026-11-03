@@ -11,10 +11,10 @@ DAEMON="$REPO_DIR/stream-deck/linux/daemon.js"
 PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"
 
 # Runs $1 with: d (the daemon), decks (what listDecks finds), deck(columns, rows) (a fake deck, by
-# default 5×3), opened (the decks opened), press(i), drawn(i) (key i's last image on the last deck
-# opened), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
-# taken), sound (its cycles count, and switches says whether they succeed), logs, and until(what,
-# test). stats.render throws for the disk key.
+# default 5×3), opened (the decks opened), press(i) and release(i), drawn(i) (key i's last image on
+# the last deck opened), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
+# taken), sound (its cycles count, and switches says whether they succeed), mic (its cycles and
+# toggles), logs, and until(what, test). stats.render throws for the disk key.
 daemon_js() {
     node -e "(async () => {
 const { EventEmitter } = require('node:events');
@@ -33,6 +33,7 @@ const sampler = { resets: 0, stops: 0, kinds: [], reset() { this.resets++; }, st
 const stats = { isStat: realStats.isStat, placeholder: (k) => 'placeholder:' + k,
   render: (k, s) => { if (k === 'disk') throw new Error('broken'); return 'stat:' + k + ':' + s.n; } };
 const sound = { cycles: 0, switches: true, async cycle() { this.cycles++; return this.switches; } };
+const mic = { cycles: 0, toggles: 0, async cycle() { this.cycles++; return true; }, async toggleMute() { this.toggles++; return true; } };
 const fills = [];
 const deck = (columns = 5, rows = 3) => {
   const d = new EventEmitter();
@@ -61,6 +62,7 @@ const until = async (what, test) => {
   }
 };
 const press = (i) => opened.at(-1).emit('down', { type: 'button', index: i });
+const release = (i) => opened.at(-1).emit('up', { type: 'button', index: i });
 const d = createDaemon({
   layout, actions, keys: require(plugin + '/keys.js'), stats, sampler,
   keyImage: (a) => 'icon:' + a,
@@ -68,7 +70,7 @@ const d = createDaemon({
   listDecks: async () => decks.map((x, i) => ({ path: '/dev/hidraw' + i })),
   openDeck: async (p) => { const x = decks[Number(p.slice(11))]; opened.push(x); return x; },
   runOpenIn: (target, done) => { runs.push(target); pending.push(done); if (target !== 'chrome-tab') done(target === 'files' ? new Error('exit 1') : null, target + ' ran\n'); },
-  sound, log: (m) => logs.push(m),
+  sound, mic, log: (m) => logs.push(m),
   intervalMs: 40, firstUpdateMs: 10, reconnectMs: 20, alertMs: 30,
 });
 $1
@@ -81,12 +83,12 @@ process.exit(0);
 out="$(daemon_js "decks = [deck()];
 await d.start();
 console.log(JSON.stringify(d.state()), opened[0].log.length, opened[0].brightness);
-console.log([0, 1, 2, 3, 4, 5, 9, 10, 11].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
+console.log([0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
 console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
 assert_eq '{"connected":true,"page":"main"} 0 60
-icon:overview icon:editor icon:terminal icon:files icon:agenda icon:chrome icon:claude icon:sound blank
-stat:overview:1 overview,sound 1' "$out" "the main page"
+icon:overview icon:mic icon:sound icon:upgrade icon:editor icon:terminal icon:files icon:t3-code icon:claude icon:chrome icon:chrome-tab icon:gmail icon:notion icon:agenda
+stat:overview:1 overview,mic,sound 1' "$out" "the main page"
 
 # Overview opens the System page and Back returns; stat keys open Resources
 out="$(daemon_js "decks = [deck()];
@@ -100,20 +102,20 @@ await until('two runs', () => runs.length === 2);
 console.log(runs.join());
 press(0);
 await until('the main page', () => drawn(0)?.startsWith('stat:overview'));
-console.log(d.state().page, drawn(1), sampler.kinds.join());")"
+console.log(d.state().page, drawn(5), sampler.kinds.join());")"
 assert_eq "system icon:back stat:top:1 true cpu,memory,swap,top,gpu,temperature,power,disk,network
 activity-monitor,activity-monitor
-main icon:editor overview,sound" "$out" "page switching and stat keys"
+main icon:editor overview,mic,sound" "$out" "page switching and stat keys"
 
 # A press runs open-in once at a time for New Tab only, logs its output, and a failure alerts
 out="$(daemon_js "decks = [deck()];
 await d.start();
-press(6); press(6); press(3); press(14);
-await until('the alert', () => drawn(3) === ALERT);
-await until('the alert to end', () => drawn(3) === 'icon:files');
+press(11); press(11); press(7); press(4);
+await until('the alert', () => drawn(7) === ALERT);
+await until('the alert to end', () => drawn(7) === 'icon:files');
 console.log(runs.join(), logs.filter((l) => l.endsWith('ran')).join());
 pending[0](null, '');
-press(6);
+press(11);
 console.log(runs.join());")"
 assert_eq "chrome-tab,files files ran
 chrome-tab,files,chrome-tab" "$out" "key presses"
@@ -121,17 +123,30 @@ chrome-tab,files,chrome-tab" "$out" "key presses"
 # Sound switches the output and redraws without running open-in; a failed switch alerts
 out="$(daemon_js "decks = [deck()];
 await d.start();
-await until('Sound stats', () => drawn(10)?.startsWith('stat:sound'));
+await until('Sound stats', () => drawn(2)?.startsWith('stat:sound'));
 const before = n;
-press(10);
+press(2);
 await until('the redraw', () => n > before);
-console.log(sound.cycles, runs.length, drawn(10) === 'stat:sound:' + n);
+console.log(sound.cycles, runs.length, drawn(2) === 'stat:sound:' + n);
 sound.switches = false;
-press(10);
-await until('the alert', () => drawn(10) === ALERT);
+press(2);
+await until('the alert', () => drawn(2) === ALERT);
 console.log(sound.cycles);")"
 assert_eq "1 0 true
 2" "$out" "the Sound key"
+
+# Mic: a tap switches the input and a hold mutes, once the hold is long enough, without waiting
+# for the release; neither runs open-in
+out="$(daemon_js "decks = [deck()];
+await d.start();
+press(1); release(1);
+await until('the switch', () => mic.cycles === 1);
+press(1);
+await until('the mute', () => mic.toggles === 1);
+release(1);
+await new Promise((r) => setTimeout(r, 30));
+console.log(mic.cycles, mic.toggles, runs.length);")"
+assert_eq "1 1 0" "$out" "the Mic key"
 
 # A failed write or error event drops the deck and stops sampling; it reconnects when it's back
 out="$(daemon_js "const first = deck();
@@ -147,7 +162,7 @@ await new Promise((r) => setTimeout(r, 100));
 console.log(sampler.stops === stops, opened.length);
 const second = deck();
 decks = [second];
-await until('the reconnect', () => d.state().connected && drawn(1, second) === 'icon:editor');
+await until('the reconnect', () => d.state().connected && drawn(5, second) === 'icon:editor');
 second.emit('error', new Error('unplugged'));
 await until('the second disconnect', () => !d.state().connected);
 console.log(opened.length, logs.filter((l) => l.startsWith('Stream Deck')).join('|'));")"

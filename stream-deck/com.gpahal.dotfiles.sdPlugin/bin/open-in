@@ -1,9 +1,10 @@
 #!/bin/bash
 set -uo pipefail
 
-# Usage: open-in editor|terminal|files|agenda|chrome|chrome-tab|gmail|t3-code|claude|activity-monitor
-# editor, terminal, and files open the front app's path in Zed, Ghostty, or Finder, else a new
-# window; the others open or raise an app. Run by the Stream Deck plugin and Hammerspoon, each of
+# Usage: open-in editor|terminal|files|agenda|chrome|chrome-tab|gmail|notion|t3-code|claude|activity-monitor|upgrade
+# editor and files open the front app's folder or file in Zed or Finder, else a new window. terminal
+# brings Ghostty's tab at that folder to the front, else opens a tab there, or with no folder brings
+# Ghostty to the front. upgrade runs upgrade in a new Ghostty tab. The others open or raise an app. Run by the Stream Deck plugin and Hammerspoon, each of
 # which needs its own Automation and Accessibility permissions. Exits 1 and notifies on failure.
 
 # Stream Deck starts plugins with a minimal environment
@@ -19,7 +20,9 @@ CHROME=com.google.Chrome
 ACTIVITY_MONITOR=com.apple.ActivityMonitor
 GMAIL_URL=https://mail.google.com/mail/u/0/#inbox
 AGENDA_URL=https://garvitpahal.com/x/agenda
+NOTION_URL=https://app.notion.com/
 T3_STATE="${DOTFILES_T3_STATE:-$HOME/.t3/userdata/statev2.sqlite}"
+CLAUDE_SESSIONS="${DOTFILES_CLAUDE_SESSIONS:-$HOME/Library/Application Support/Claude/claude-code-sessions}"
 # The per-user temporary folder, also when Stream Deck leaves TMPDIR out of the environment
 NEW_TAB_LOCK="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/dotfiles-new-tab.lock"
 CALLER="${OPEN_IN_CALLER:-Stream Deck}"
@@ -85,30 +88,30 @@ EOF
     zed_title_path "$SCRIPT_RESULT"
 }
 
-# Reads the thread ID from the page's AXURL (JXA, since AppleScript can't) and its folder from
-# T3 Code's state database. Both are T3 Code internals.
-t3_code_folder() {
-    local thread
-    applescript -l JavaScript "$T3_CODE" <<'EOF' || return 1
+# web_page <bundle ID> <URL prefix>: sets SCRIPT_RESULT to "<URL>\n<window title>" for the app's
+# front window, whose web area at a URL starting with the prefix is the app's page (not a browser
+# pane's), read through Accessibility with JXA, since AppleScript can't. The URL is empty when
+# there's no such page, and SCRIPT_RESULT is when the app isn't running.
+web_page() {
+    applescript -l JavaScript "$1" "$2" <<'EOF'
 ObjC.import("AppKit");
 ObjC.bindFunction("AXIsProcessTrusted", ["bool", []]);
 ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
 ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
 function run(argv) {
-  if (!$.AXIsProcessTrusted()) throw new Error("not allowed assistive access to read T3 Code's page (-25211)");
+  if (!$.AXIsProcessTrusted()) throw new Error("not allowed assistive access to read the app's page (-25211)");
   const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(argv[0]);
   if (apps.count === 0) return "";
   const attr = (el, name) => {
     const out = Ref();
     return $.AXUIElementCopyAttributeValue(el, $(name), out) === 0 ? out[0] : null;
   };
-  // The app's page is the web area at t3code:, not a browser pane's
   const find = (el, depth) => {
     const role = attr(el, "AXRole");
     if (role && ObjC.unwrap(role) === "AXWebArea") {
       const url = attr(el, "AXURL");
       const s = url ? ObjC.unwrap(url.absoluteString) : "";
-      return s.startsWith("t3code:") ? s : "";
+      return s.startsWith(argv[1]) ? s : "";
     }
     const kids = depth < 15 ? attr(el, "AXChildren") : null;
     for (let i = 0; kids && i < kids.count; i++) {
@@ -119,24 +122,48 @@ function run(argv) {
   };
   const app = $.AXUIElementCreateApplication(apps.objectAtIndex(0).processIdentifier);
   const win = attr(app, "AXFocusedWindow") || attr(app, "AXMainWindow");
-  return win ? find(win, 0) : "";
+  if (!win) return "";
+  const title = attr(win, "AXTitle");
+  return `${find(win, 0)}\n${title ? ObjC.unwrap(title) : ""}`;
 }
 EOF
-    thread="${SCRIPT_RESULT%%\?*}"
+}
+
+# The thread ID is the last part of T3 Code's page address. A page that isn't a thread has no
+# folder; with no page read, the window's title or the thread used last picks it.
+t3_code_folder() {
+    local thread url="" title=""
+    web_page "$T3_CODE" t3code: || return 1
+    if [ -n "$SCRIPT_RESULT" ]; then
+        url="${SCRIPT_RESULT%%$'\n'*}"
+        title="${SCRIPT_RESULT#*$'\n'}"
+    fi
+    thread="${url%%\?*}"
     thread="${thread##*/}"
-    # Validated as a UUID, so it's safe in the query
-    if ! [[ "$thread" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-        log "T3 Code isn't showing a thread: ${SCRIPT_RESULT:-no page found}"
+    if [ -z "$url" ]; then
+        t3_folder "$T3_STATE" "" "$title"
+    elif [[ "$thread" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        t3_folder "$T3_STATE" "$thread" ""
+    else
+        log "T3 Code isn't showing a thread: $url"
+    fi
+}
+
+# A UUID in the page's address names the Code session. A page whose address doesn't mention code
+# shows something else, such as a chat, so has no folder; otherwise the window's title, or the
+# session used last, picks it.
+claude_app_folder() {
+    local url="" title="" id=""
+    if web_page "$CLAUDE" https:// && [ -n "$SCRIPT_RESULT" ]; then
+        url="${SCRIPT_RESULT%%$'\n'*}"
+        title="${SCRIPT_RESULT#*$'\n'}"
+    fi
+    log "Claude shows ${url:-no page found}"
+    if [ -n "$url" ] && [[ "$url" != *code* ]]; then
         return 0
     fi
-    CONTEXT_PATH="$(sqlite3 -readonly "$T3_STATE" "
-        SELECT coalesce(json_extract(t.payload_json, '\$.worktreePath'), p.workspace_root)
-        FROM orchestration_v2_projection_threads t
-        LEFT JOIN projection_projects p ON p.project_id = t.project_id
-        WHERE t.thread_id = '$thread'" 2>&1)" || {
-        log "ERROR couldn't read thread $thread's folder from $T3_STATE: $CONTEXT_PATH"
-        CONTEXT_PATH=""
-    }
+    [[ ! "$url" =~ ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) ]] || id="${BASH_REMATCH[1]}"
+    claude_folder "$CLAUDE_SESSIONS" "$id" "$title" yes
 }
 
 finder_selection() {
@@ -157,6 +184,7 @@ read_context_path() {
         "$ZED") zed_file ;;
         com.apple.finder) finder_selection ;;
         "$T3_CODE") t3_code_folder ;;
+        "$CLAUDE") claude_app_folder ;;
     esac
     check_context_path
 }
@@ -192,40 +220,118 @@ open_editor() {
     fi
 }
 
+# open_terminal <folder> <front app>. With a folder, brings Ghostty's tab at it to the front, else
+# opens a tab there. Ghostty in front means another tab is wanted, at its folder. With no folder,
+# brings Ghostty to the front, as the app keys do. A tab goes in Ghostty's front window, or a window
+# when it has none. SCRIPT_RESULT is "found", "tab", "window", or "switched".
 open_terminal() {
-    local dir="$1" mode=window
-    [ -d "$dir" ] || dir="$(dirname "$dir")"
-    [ "$2" == "$GHOSTTY" ] && mode=tab
+    local dir="$1" mode=find
+    [ -z "$dir" ] || [ -d "$dir" ] || dir="$(dirname "$dir")"
+    if [ "$2" == "$GHOSTTY" ]; then
+        mode=new
+        dir="${dir:-$HOME}"
+    elif [ -z "$dir" ]; then
+        mode=switch
+    fi
     # Telling Ghostty to start would also open its default window
     if ! app_running "$GHOSTTY"; then
-        open -b "$GHOSTTY" --args "--working-directory=$dir"
+        if [ -n "$dir" ]; then
+            open -b "$GHOSTTY" --args "--working-directory=$dir"
+        else
+            open -b "$GHOSTTY"
+        fi
         return
     fi
-    applescript "$dir" "$mode" <<EOF
+    ghostty_script "$mode" "$dir" "" || return 1
+    case "$SCRIPT_RESULT" in
+        found) log "terminal: brought Ghostty's tab at $dir to the front" ;;
+        switched) log "terminal: brought Ghostty to the front" ;;
+        *) log "terminal: opened a Ghostty ${SCRIPT_RESULT:-tab} at $dir" ;;
+    esac
+}
+
+# ghostty_script find|new|switch <folder> <input>: Ghostty's AppleScript, for a running Ghostty.
+# find brings a tab at the folder to the front, else opens one as new does; new opens a tab, or a
+# window when there's none, at the folder with the input typed; switch brings Ghostty to the front.
+ghostty_script() {
+    applescript "$@" <<EOF
 on run argv
+    set mode to item 1 of argv
+    set dir to item 2 of argv
     tell application id "$GHOSTTY"
+        if mode is "switch" then
+            if (count of windows) is 0 then new window with configuration (new surface configuration)
+            activate
+            return "switched"
+        end if
+        if mode is "find" then
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    repeat with s from 1 to count of terminals of tab t of window w
+                        set term to terminal s of tab t of window w
+                        set wd to ""
+                        try
+                            set wd to working directory of term as text
+                        end try
+                        if wd ends with "/" and wd is not "/" then set wd to text 1 thru -2 of wd
+                        if wd is dir then
+                            select tab (tab t of window w)
+                            focus term
+                            activate window (window w)
+                            activate
+                            return "found"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+        end if
         set cfg to new surface configuration
-        set initial working directory of cfg to item 1 of argv
-        if item 2 of argv is "tab" and (count of windows) > 0 then
+        set initial working directory of cfg to dir
+        if item 3 of argv is not "" then set initial input of cfg to item 3 of argv
+        if (count of windows) > 0 then
             new tab in front window with configuration cfg
+            set opened to "tab"
         else
             new window with configuration cfg
+            set opened to "window"
         end if
         activate
+        return opened
     end tell
 end run
 EOF
+}
+
+# Types upgrade into a new Ghostty tab's shell, where zsh/aliases.zsh defines it, so the tab stays
+# open after it. A Ghostty that isn't running starts with its own window, which gets it once open.
+open_upgrade() {
+    if app_running "$GHOSTTY"; then
+        ghostty_script new "$HOME" $'upgrade\n' || return 1
+    else
+        open -b "$GHOSTTY" || return 1
+        applescript <<EOF || return 1
+tell application id "$GHOSTTY"
+    repeat 100 times
+        if (count of windows) > 0 then exit repeat
+        delay 0.1
+    end repeat
+    input text "upgrade" & linefeed to focused terminal of selected tab of front window
+    activate
+end tell
+EOF
+    fi
+    log "upgrade: ran upgrade in Ghostty"
 }
 
 open_path() {
     local target="$1" front status=0
     front="$(bundle_id "$(lsappinfo front 2> /dev/null)")"
     read_context_path "$front"
-    log "$target from ${front:-an unknown app}: ${CONTEXT_PATH:-no path, so a new window}"
+    log "$target from ${front:-an unknown app}: ${CONTEXT_PATH:-no path}"
     case "$target" in
         files) open_finder "$CONTEXT_PATH" || status=1 ;;
         editor) open_editor "$CONTEXT_PATH" || status=1 ;;
-        terminal) open_terminal "${CONTEXT_PATH:-$HOME}" "$front" || status=1 ;;
+        terminal) open_terminal "$CONTEXT_PATH" "$front" || status=1 ;;
     esac
     open_path_result "$target" "$status"
 }
@@ -327,7 +433,7 @@ open_target_app() {
     local target="$1" bundle name paste=no how=""
     case "$target" in
         claude) bundle="$CLAUDE" name=Claude ;;
-        chrome | chrome-tab | gmail | agenda) bundle="$CHROME" name="Google Chrome" ;;
+        chrome | chrome-tab | gmail | notion | agenda) bundle="$CHROME" name="Google Chrome" ;;
         t3-code) bundle="$T3_CODE" name="T3 Code" ;;
         activity-monitor) bundle="$ACTIVITY_MONITOR" name="Activity Monitor" ;;
     esac
@@ -345,6 +451,7 @@ open_target_app() {
     fi
     case "$target" in
         gmail) open_page "$target" Gmail "$GMAIL_URL" https://mail.google.com/ ;;
+        notion) open_page "$target" Notion "$NOTION_URL" "$NOTION_URL" ;;
         agenda) open_page "$target" Agenda "$AGENDA_URL" "$AGENDA_URL" ;;
         chrome-tab)
             ! clipboard_has_text || paste="paste"
@@ -359,7 +466,13 @@ main() {
     local target="${1:-}"
     case "$target" in
         files | editor | terminal) open_path "$target" ;;
-        agenda | chrome | chrome-tab | gmail | t3-code | claude | activity-monitor) open_target_app "$target" ;;
+        agenda | chrome | chrome-tab | gmail | notion | t3-code | claude | activity-monitor) open_target_app "$target" ;;
+        upgrade)
+            if ! open_upgrade; then
+                log "ERROR couldn't run upgrade in Ghostty"
+                [ -n "$FAILURE" ] || FAILURE="Couldn't run upgrade in Ghostty. See $CALLER_LOG"
+            fi
+            ;;
         *)
             usage
             return 2

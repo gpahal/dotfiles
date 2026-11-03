@@ -10,7 +10,7 @@ log() {
 }
 
 usage() {
-    echo "Usage: open-in editor|terminal|files|agenda|chrome|chrome-tab|gmail|notion|t3-code|claude|activity-monitor|upgrade" >&2
+    echo "Usage: open-in upgrade|editor|terminal|files|t3-code|claude|chrome|chrome-tab|gmail|notion|agenda|activity-monitor" >&2
 }
 
 # Relies on zed/settings.json's window_title_format "${projectName}${separator}${filePath}"

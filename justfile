@@ -99,6 +99,10 @@ git-signing:
 touch-id:
     bash macos/setup-touch-id-sudo.sh
 
+# Load the NuPhy keyboard's backup in nuphy/ through NuPhy IO (export: save new exports there)
+keyboard mode="import":
+    bash nuphy/setup.sh {{quote(mode)}}
+
 # Point the monitor at the machine the USB switch serves (no arguments: list devices and codes)
 [positional-arguments]
 monitor-input *args:

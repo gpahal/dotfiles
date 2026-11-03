@@ -53,7 +53,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `ntfy` | Runs a private [ntfy](#notifications) server on Ubuntu, published with Tailscale Funnel, and shows its messages as desktop notifications on both OSes |
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
-| `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
+| `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+, and gives the [MX Master 4](#mouse-and-keyboard) the Mac's settings and buttons. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
 | `claude-code` | Installs [Claude Code](./ai_tools/README.md#claude-code) and sets both accounts' settings, status line, hooks, and instructions |
 | `claude-desktop` | Installs the Claude [desktop app](./ai_tools/README.md#desktop-app), opens it at login, and sets its preferences |
@@ -257,6 +257,22 @@ macOS can't set the volume of HDMI or DisplayPort audio, so while the monitor is
 Ubuntu sets the volume of HDMI audio itself, so its volume keys work as usual.
 
 Speakers on the monitor's audio line-out may not follow the monitor's volume, so the Mac's keys don't reach them. Ubuntu's keys still do. USB speakers on the USB switch work with both machines. They follow the keyboard, and the machine they're on sets their volume itself.
+
+### Mouse and keyboard
+
+**MX Master 4.** Logi Options+ sets the mouse up on the Mac, and Solaar on Ubuntu. [`logitech/mx-master-4.yaml`](logitech/mx-master-4.yaml) holds its settings in Solaar's terms, each beside the Options+ setting it matches, and the `logitech` step gives them to Solaar. Change a setting there and in Options+ together.
+
+- Solaar sets the DPI, scroll direction, SmartShift, thumb wheel, and haptic feedback from it. Options+ uses its own scale for pointer speed, SmartShift sensitivity, and the haptic sense panel's force, so the file gives the Options+ values beside Solaar's.
+- The gesture button works as in Options+'s Window navigation. A click, or holding it and moving up, opens the Activities overview. Moving down opens the app grid, and left or right switches workspaces.
+- The Actions Ring button opens the app grid, since the Actions Ring is Options+ only.
+- Solaar writes over its settings file while it runs, so the step doesn't write the settings then and tells you. Quit Solaar from its menu, re-run `bash setup.sh logitech`, and open Solaar again.
+- The buttons' actions are in [`logitech/solaar-rules.yaml`](logitech/solaar-rules.yaml). The step replaces Solaar's `~/.config/solaar/rules.yaml` with it, so add rules there, not in Solaar's rule editor.
+
+**NuPhy Air75 V3.** The keyboard stores its keymap, macros, and lighting itself, so it works the same on both machines. [`nuphy/`](nuphy/) keeps a copy of its Mac mode, its Windows mode, and its macro (`Cmd+Ctrl+Shift+4` on the Mac mode's screenshot key), exported from [NuPhy IO](https://drive.nuphy.io).
+
+- `just keyboard` loads the copy onto a new or reset keyboard. NuPhy IO runs only in Chrome, which has you pick the keyboard, so the script opens it and walks you through each import, with the file's path on the clipboard for the file dialog. Plug in the keyboard's cable or its 2.4G receiver first, since NuPhy IO can't reach it over Bluetooth.
+- After a change in NuPhy IO, `just keyboard export` walks you through exporting the modes and the macro, then moves Chrome's downloads into `nuphy/` under the repo's names. Commit them.
+- Keep the files as NuPhy IO wrote them: it checks each one against the hashes inside it.
 
 ### Notifications
 

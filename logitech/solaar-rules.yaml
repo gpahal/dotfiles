@@ -1,0 +1,33 @@
+%YAML 1.3
+# Solaar rules giving the MX Master 4's buttons on Ubuntu what Logi Options+ gives them on the Mac.
+# The logitech step copies this to ~/.config/solaar/rules.yaml, replacing what Solaar's rule editor
+# saved there, so change rules here. mx-master-4.yaml diverts the buttons these rules match.
+#
+# Options+'s gesture button, which Solaar calls Haptic, does its Window navigation: a click or an
+# upward move opens the Activities overview, as Mission Control; a downward move opens the app
+# grid, as GNOME has no App Exposé; left and right switch workspaces, as desktops.
+---
+- MouseGesture: Haptic
+- KeyPress: Super_L
+...
+---
+- MouseGesture: [Haptic, Mouse Up]
+- KeyPress: Super_L
+...
+---
+- MouseGesture: [Haptic, Mouse Down]
+- KeyPress: [Super_L, a]
+...
+---
+- MouseGesture: [Haptic, Mouse Left]
+- KeyPress: [Super_L, Page_Up]
+...
+---
+- MouseGesture: [Haptic, Mouse Right]
+- KeyPress: [Super_L, Page_Down]
+...
+---
+# Options+'s Actions Ring button, which Solaar calls Mouse Gesture Button, opens the app grid
+- Key: [Mouse Gesture Button, pressed]
+- KeyPress: [Super_L, a]
+...

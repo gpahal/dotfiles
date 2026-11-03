@@ -119,7 +119,7 @@ gnome_step() {
     main "$@"
 }
 
-# The codex step checks for yq first
+# The codex and logitech steps check for yq first
 command -v yq &>/dev/null || stub yq
 # <command> <step>[|<the status line it reports>]
 for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq codex" "tmux tmux_step" \
@@ -127,6 +127,7 @@ for check in "jq claude_code" "curl claude_code_fresh" "jq claude_desktop" "yq c
     "curl docker_step" "gpg ubuntu_no_tailscale" "gpg docker_step" "brew t3_code_macos" \
     "curl t3_code_ubuntu" "mise runtimes_no_mise" "curl runtimes_step" \
     "snap ghostty_ubuntu|unknown    Ghostty snap" "gpg logitech_step" \
+    "yq logitech_step|unknown    The MX Master 4's settings and button rules: yq" \
     "gsettings gnome_step|unknown    GNOME settings: gsettings"; do
     line=""
     case "$check" in *"|"*) line="${check#*|}" check="${check%%|*}" ;; esac

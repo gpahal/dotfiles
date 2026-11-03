@@ -1,0 +1,25 @@
+# The MX Master 4's settings, which the logitech step merges into Solaar's config.yaml on Ubuntu.
+# Keys and values are Solaar's, as solaar show "MX Master 4" prints them. Each comment gives the
+# Logi Options+ setting on the Mac it matches; change both together. Where Options+ uses its own
+# scale, the value here is the one Solaar had set when this file was written.
+
+# Options+ stores a pointer speed, -0.12, rather than a DPI. 1000 is the mouse's default.
+dpi: 1000
+# Natural scrolling. Solaar sets it on the mouse, so GNOME's own natural-scroll stays off.
+hires-smooth-invert: true
+# Solaar leaves the scroll wheel's direction alone unless it's marked here
+_sensitive: {hires-smooth-invert: true}
+# SmartShift on, ratcheted (2), with a scroll force of 75%. Options+'s sensitivity is 83%.
+scroll-ratchet: 2
+smart-shift: 12
+scroll-ratchet-torque: 75
+# Thumb wheel: standard direction, scrolling rather than sent to rules
+thumb-scroll-invert: false
+thumb-scroll-mode: false
+# Haptic feedback at 60%
+haptic-level: 60
+# The force a press of the haptic sense panel needs. Options+ shows 50%.
+force-sensing: {0: 4934}
+# Buttons by ID, for solaar-rules.yaml: 195, Options+'s Actions Ring button, goes to rules (1), and
+# 416, its gesture button, tracks the mouse while held (2)
+divert-keys: {195: 1, 416: 2}

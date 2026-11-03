@@ -43,13 +43,13 @@ const now = () => global.display.get_current_time_roundtrip();
 
 // The desktop files open-in passes to ActivateApp, the only apps it focuses or launches
 const APP_IDS = new Set([
-    'google-chrome.desktop', 'dotfiles-gmail.desktop', 'dotfiles-notion.desktop', 'dotfiles-agenda.desktop',
-    'com.anthropic.Claude.desktop', 't3code.desktop', 'net.nokyan.Resources.desktop', 'ghostty_ghostty.desktop',
+    'ghostty_ghostty.desktop', 't3code.desktop', 'com.anthropic.Claude.desktop', 'google-chrome.desktop',
+    'dotfiles-gmail.desktop', 'dotfiles-notion.desktop', 'dotfiles-agenda.desktop', 'net.nokyan.Resources.desktop',
 ]);
 // open-in reads a path from these windows' titles, or for T3 Code and Claude the thread or session
 // they show; other windows' titles stay in the shell
 const TITLED_CLASSES = new Set([
-    'com.mitchellh.ghostty', 'dev.zed.Zed', 'org.gnome.Nautilus', 'com.t3tools.T3Code', 'com.anthropic.Claude',
+    'dev.zed.Zed', 'com.mitchellh.ghostty', 'org.gnome.Nautilus', 'com.t3tools.T3Code', 'com.anthropic.Claude',
 ]);
 // New Tab's keys, the only ones SendKeys sends, and only to Chrome
 const KEYS_CLASS = 'google-chrome';

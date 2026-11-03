@@ -113,6 +113,8 @@ const run = (file, args) =>
 
 const NEEDS = {
   overview: ["cpu", "memory"],
+  mic: ["mic"],
+  sound: ["sound"],
   cpu: ["cpu"],
   memory: ["memory"],
   swap: ["swap"],
@@ -122,8 +124,6 @@ const NEEDS = {
   power: ["macmon"],
   disk: ["disk"],
   network: ["network"],
-  sound: ["sound"],
-  mic: ["mic"],
 };
 
 // Linux reads each from /sys or the power helper, so needs no macmon
@@ -635,6 +635,30 @@ const RENDER = {
       : ["—", COLORS.muted];
     return frame(OS_LABEL, row(78, "CPU", ...cpu), row(120, "MEM", ...mem));
   },
+  // Labeled with the input in use, green while live and red while muted
+  mic(s) {
+    if (!s.mic) return empty("MIC");
+    if (s.mic.missing) return empty("MIC", "not installed");
+    const { inputs, current, muted } = s.mic;
+    const input = inputs.find((d) => d.id === current);
+    const dots = soundDots(inputs.filter((d) => !d.virtual), current);
+    if (!input) return frame("MIC", text(72, 82, 18, COLORS.text, "None", { weight: 700 }), dots);
+    return frame(input.label, micIcon(muted ? COLORS.bad : COLORS.ok, muted), dots);
+  },
+  // Labeled with the output in use, or its device's name when the key doesn't cycle through it
+  sound(s) {
+    if (!s.sound) return empty("SOUND");
+    if (s.sound.missing) return empty("SOUND", "not installed");
+    const { outputs, current, name } = s.sound;
+    const output = outputs.find((o) => o.id === current);
+    const dots = soundDots(outputs, current);
+    if (!output) {
+      const shown = !name ? "None" : name.length > 11 ? `${name.slice(0, 10)}…` : name;
+      return frame("SOUND", text(72, 82, 18, COLORS.text, shown, { weight: 700 }), dots);
+    }
+    const icon = `<g fill="none" stroke="${COLORS.text}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${SOUND_ICONS[output.kind]}</g>`;
+    return frame(output.label, icon, dots);
+  },
   cpu(s) {
     if (s.cpu == null) return empty("CPU");
     const color = level(s.cpu, 60, 85);
@@ -700,30 +724,6 @@ const RENDER = {
       text(72, 78, 22, COLORS.download, `↓ ${rate(s.network.rx)}`, { weight: 700 }),
       text(72, 116, 22, COLORS.upload, `↑ ${rate(s.network.tx)}`, { weight: 700 }),
     );
-  },
-  // Labeled with the output in use, or its device's name when the key doesn't cycle through it
-  sound(s) {
-    if (!s.sound) return empty("SOUND");
-    if (s.sound.missing) return empty("SOUND", "not installed");
-    const { outputs, current, name } = s.sound;
-    const output = outputs.find((o) => o.id === current);
-    const dots = soundDots(outputs, current);
-    if (!output) {
-      const shown = !name ? "None" : name.length > 11 ? `${name.slice(0, 10)}…` : name;
-      return frame("SOUND", text(72, 82, 18, COLORS.text, shown, { weight: 700 }), dots);
-    }
-    const icon = `<g fill="none" stroke="${COLORS.text}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${SOUND_ICONS[output.kind]}</g>`;
-    return frame(output.label, icon, dots);
-  },
-  // Labeled with the input in use, green while live and red while muted
-  mic(s) {
-    if (!s.mic) return empty("MIC");
-    if (s.mic.missing) return empty("MIC", "not installed");
-    const { inputs, current, muted } = s.mic;
-    const input = inputs.find((d) => d.id === current);
-    const dots = soundDots(inputs.filter((d) => !d.virtual), current);
-    if (!input) return frame("MIC", text(72, 82, 18, COLORS.text, "None", { weight: 700 }), dots);
-    return frame(input.label, micIcon(muted ? COLORS.bad : COLORS.ok, muted), dots);
   },
 };
 

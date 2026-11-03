@@ -24,10 +24,10 @@ DEV_DIR=/dev
 # Chrome names an --app window's class after its URL, without the fragment
 GMAIL_URL=https://mail.google.com/mail/u/0/#inbox
 GMAIL_CLASS=chrome-mail.google.com__mail_u_0_-Default
-AGENDA_URL=https://garvitpahal.com/x/agenda
-AGENDA_CLASS=chrome-garvitpahal.com__x_agenda-Default
 NOTION_URL=https://app.notion.com/
 NOTION_CLASS=chrome-app.notion.com__-Default
+AGENDA_URL=https://garvitpahal.com/x/agenda
+AGENDA_CLASS=chrome-garvitpahal.com__x_agenda-Default
 # The Chrome app windows the keys of the same names open: each is dotfiles-<id>.desktop, written by
 # <id>_desktop
 APP_WINDOWS="gmail notion agenda"

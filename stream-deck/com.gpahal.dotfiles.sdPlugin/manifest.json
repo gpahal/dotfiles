@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, open Chrome, a new Chrome tab, Gmail, Notion, the agenda, T3 Code, or Claude, switch the sound output and the mic, mute the mic, and run upgrade",
+  "Description": "Show live system stats, switch the mic, mute it, switch the sound output, run upgrade, open the folder or file in front in Zed, Ghostty, or the file manager, open T3 Code, Claude, Chrome, a new Chrome tab, Gmail, Notion, or the agenda",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -20,6 +20,30 @@
       "Tooltip": "Show CPU and memory use; press for the page of system stats",
       "Icon": "images/overview",
       "States": [{ "Image": "images/key-overview" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Mic",
+      "UUID": "com.gpahal.dotfiles.mic",
+      "Tooltip": "The mic in use, red while muted; press to switch to the next mic, or hold to mute or unmute it",
+      "Icon": "images/mic",
+      "States": [{ "Image": "images/key-mic" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Sound Output",
+      "UUID": "com.gpahal.dotfiles.sound",
+      "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and Mac",
+      "Icon": "images/sound",
+      "States": [{ "Image": "images/key-sound" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Upgrade",
+      "UUID": "com.gpahal.dotfiles.upgrade",
+      "Tooltip": "Run upgrade in a new Ghostty tab",
+      "Icon": "images/upgrade",
+      "States": [{ "Image": "images/key-upgrade" }],
       "Controllers": ["Keypad"]
     },
     {
@@ -47,11 +71,19 @@
       "Controllers": ["Keypad"]
     },
     {
-      "Name": "Agenda",
-      "UUID": "com.gpahal.dotfiles.agenda",
-      "Tooltip": "Bring Chrome's agenda tab to the front, or open the agenda in a new tab",
-      "Icon": "images/agenda",
-      "States": [{ "Image": "images/key-agenda" }],
+      "Name": "T3 Code",
+      "UUID": "com.gpahal.dotfiles.t3-code",
+      "Tooltip": "Open T3 Code, or bring it to the front",
+      "Icon": "images/t3-code",
+      "States": [{ "Image": "images/key-t3-code" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Claude",
+      "UUID": "com.gpahal.dotfiles.claude",
+      "Tooltip": "Open Claude, or bring it to the front",
+      "Icon": "images/claude",
+      "States": [{ "Image": "images/key-claude" }],
       "Controllers": ["Keypad"]
     },
     {
@@ -87,43 +119,11 @@
       "Controllers": ["Keypad"]
     },
     {
-      "Name": "T3 Code",
-      "UUID": "com.gpahal.dotfiles.t3-code",
-      "Tooltip": "Open T3 Code, or bring it to the front",
-      "Icon": "images/t3-code",
-      "States": [{ "Image": "images/key-t3-code" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Claude",
-      "UUID": "com.gpahal.dotfiles.claude",
-      "Tooltip": "Open Claude, or bring it to the front",
-      "Icon": "images/claude",
-      "States": [{ "Image": "images/key-claude" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Sound Output",
-      "UUID": "com.gpahal.dotfiles.sound",
-      "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and Mac",
-      "Icon": "images/sound",
-      "States": [{ "Image": "images/key-sound" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Mic",
-      "UUID": "com.gpahal.dotfiles.mic",
-      "Tooltip": "The mic in use, red while muted; press to switch to the next mic, or hold to mute or unmute it",
-      "Icon": "images/mic",
-      "States": [{ "Image": "images/key-mic" }],
-      "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Upgrade",
-      "UUID": "com.gpahal.dotfiles.upgrade",
-      "Tooltip": "Run upgrade in a new Ghostty tab",
-      "Icon": "images/upgrade",
-      "States": [{ "Image": "images/key-upgrade" }],
+      "Name": "Agenda",
+      "UUID": "com.gpahal.dotfiles.agenda",
+      "Tooltip": "Bring Chrome's agenda tab to the front, or open the agenda in a new tab",
+      "Icon": "images/agenda",
+      "States": [{ "Image": "images/key-agenda" }],
       "Controllers": ["Keypad"]
     },
     {

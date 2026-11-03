@@ -53,6 +53,7 @@ assert_contains "$RUN_OUTPUT" "No desktop session, so the Stream Deck daemon sta
 assert_file_not_contains "$STUB_LOG" "apt-get"
 assert_file_contains "$HOME/.local/share/applications/dotfiles-gmail.desktop" "Exec=google-chrome --app=https://mail.google.com/mail/u/0/#inbox"
 assert_file_contains "$HOME/.local/share/applications/dotfiles-agenda.desktop" "StartupWMClass=chrome-garvitpahal.com__x_agenda-Default"
+assert_file_contains "$HOME/.local/share/applications/dotfiles-notion.desktop" "StartupWMClass=chrome-app.notion.com__-Default"
 assert_exit 3 main --status
 assert_contains "$RUN_OUTPUT" "unverified GNOME extension loaded: GNOME Shell isn't running"
 assert_contains "$RUN_OUTPUT" "unverified Stream Deck daemon running: no desktop session"

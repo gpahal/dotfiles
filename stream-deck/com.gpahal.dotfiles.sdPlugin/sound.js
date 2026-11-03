@@ -34,18 +34,25 @@ function parseSwitchAudio(text) {
   return devices;
 }
 
-// pw-dump's Audio/Sink nodes, and the default metadata's default.audio.sink, the one in use.
-// WirePlumber won't make a sink whose jack is unplugged the default, so those are left out: a node
-// is its card's profile device, and the card's routes say whether each device's jack is.
-function parsePwDump(text) {
-  const objects = JSON.parse(text);
+// "<card ID>/<profile device>" for each of pw-dump's devices whose jack, in the direction
+// (Output or Input), is unplugged. WirePlumber won't make one the default. A node is its card's
+// profile device, and the card's routes say whether each device's jack is plugged in.
+function routeUnplugged(objects, direction) {
   const unplugged = new Set();
   for (const object of objects) {
     for (const route of object.info?.params?.EnumRoute ?? []) {
-      if (route.direction !== "Output" || route.available !== "no") continue;
+      if (route.direction !== direction || route.available !== "no") continue;
       for (const device of route.devices ?? []) unplugged.add(`${object.id}/${device}`);
     }
   }
+  return unplugged;
+}
+
+// pw-dump's Audio/Sink nodes but those whose jack is unplugged, and the default metadata's
+// default.audio.sink, the one in use
+function parsePwDump(text) {
+  const objects = JSON.parse(text);
+  const unplugged = routeUnplugged(objects, "Output");
   const devices = [];
   let currentName = null;
   for (const object of objects) {
@@ -169,4 +176,4 @@ function createSound({
   return { read, cycle };
 }
 
-module.exports = { OUTPUTS, createSound, knownOutputs, nextOutput, parsePwDump, parseSwitchAudio };
+module.exports = { OUTPUTS, createSound, knownOutputs, nextOutput, parsePwDump, parseSwitchAudio, routeUnplugged };

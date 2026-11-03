@@ -1,10 +1,11 @@
 // Commands run by full path, since Stream Deck starts plugins with a minimal PATH; GPU,
 // temperature, and power come from macmon. Linux reads /proc and /sys instead, for the Ubuntu
 // daemon in stream-deck/linux, with the sensors of an AMD CPU and GPU. The Sound key's output comes
-// from sound.js.
+// from sound.js, and the Mic key's input from mic.js.
 const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
+const { createMic } = require("./mic.js");
 const { createSound } = require("./sound.js");
 
 const MACMON = "/opt/homebrew/bin/macmon";
@@ -122,6 +123,7 @@ const NEEDS = {
   disk: ["disk"],
   network: ["network"],
   sound: ["sound"],
+  mic: ["mic"],
 };
 
 // Linux reads each from /sys or the power helper, so needs no macmon
@@ -148,6 +150,7 @@ function createSampler({
   sysRoot = "/sys",
   powerFile = POWER_FILE,
   sound = createSound({ log, platform }),
+  mic = createMic({ log, platform }),
 } = {}) {
   const linux = platform === "linux";
   const needs = linux ? LINUX_NEEDS : NEEDS;
@@ -488,6 +491,7 @@ function createSampler({
     };
     const jobs = (linux ? linuxJobs : macJobs)(needed, s, setNetwork);
     if (needed.has("sound")) jobs.push(sound.read().then((state) => (s.sound = state)));
+    if (needed.has("mic")) jobs.push(mic.read().then((state) => (s.mic = state)));
     await Promise.all(jobs);
     if (linux) {
       s.hints = { gpu: "no GPU data", temperature: "no sensors", power: "needs helper" };
@@ -608,7 +612,11 @@ const SOUND_ICONS = {
   mac: `<rect x="44" y="50" width="56" height="38" rx="4"/><path d="M32 100h80"/>`,
 };
 
-// A dot for each output the key cycles through, the one in use filled
+// The Mic key's microphone, crossed out while muted
+const micIcon = (color, muted) =>
+  `<g fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"><rect x="60" y="40" width="24" height="40" rx="12" fill="${color}"/><path d="M48 68a24 24 0 0 0 48 0M72 92v12"/>${muted ? `<path d="M44 40l56 64"/>` : ""}</g>`;
+
+// A dot for each output or input the key cycles through, the one in use filled
 function soundDots(outputs, current) {
   const left = 72 - ((outputs.length - 1) * 16) / 2;
   return outputs
@@ -706,6 +714,16 @@ const RENDER = {
     }
     const icon = `<g fill="none" stroke="${COLORS.text}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${SOUND_ICONS[output.kind]}</g>`;
     return frame(output.label, icon, dots);
+  },
+  // Labeled with the input in use, green while live and red while muted
+  mic(s) {
+    if (!s.mic) return empty("MIC");
+    if (s.mic.missing) return empty("MIC", "not installed");
+    const { inputs, current, muted } = s.mic;
+    const input = inputs.find((d) => d.id === current);
+    const dots = soundDots(inputs.filter((d) => !d.virtual), current);
+    if (!input) return frame("MIC", text(72, 82, 18, COLORS.text, "None", { weight: 700 }), dots);
+    return frame(input.label, micIcon(muted ? COLORS.bad : COLORS.ok, muted), dots);
   },
 };
 

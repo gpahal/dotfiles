@@ -4,7 +4,7 @@
   "UUID": "com.gpahal.dotfiles",
   "Version": "1.0.0.0",
   "Author": "Garvit Pahal",
-  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, open the agenda, Chrome, a new Chrome tab, Gmail, T3 Code, or Claude, and switch the sound output",
+  "Description": "Show live system stats, open the folder or file in front in Zed, Ghostty, or the file manager, open Chrome, a new Chrome tab, Gmail, Notion, the agenda, T3 Code, or Claude, switch the sound output and the mic, mute the mic, and run upgrade",
   "Icon": "images/plugin",
   "Category": "Dotfiles",
   "CategoryIcon": "images/category",
@@ -33,7 +33,7 @@
     {
       "Name": "Terminal",
       "UUID": "com.gpahal.dotfiles.terminal",
-      "Tooltip": "Open Ghostty at the folder in front",
+      "Tooltip": "Bring Ghostty's tab at the folder in front to the front, else open a tab there; with no folder, bring Ghostty to the front",
       "Icon": "images/terminal",
       "States": [{ "Image": "images/key-terminal" }],
       "Controllers": ["Keypad"]
@@ -79,6 +79,14 @@
       "Controllers": ["Keypad"]
     },
     {
+      "Name": "Notion",
+      "UUID": "com.gpahal.dotfiles.notion",
+      "Tooltip": "Bring Chrome's Notion tab to the front, or open Notion in a new tab",
+      "Icon": "images/notion",
+      "States": [{ "Image": "images/key-notion" }],
+      "Controllers": ["Keypad"]
+    },
+    {
       "Name": "T3 Code",
       "UUID": "com.gpahal.dotfiles.t3-code",
       "Tooltip": "Open T3 Code, or bring it to the front",
@@ -100,6 +108,22 @@
       "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and Mac",
       "Icon": "images/sound",
       "States": [{ "Image": "images/key-sound" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Mic",
+      "UUID": "com.gpahal.dotfiles.mic",
+      "Tooltip": "The mic in use, red while muted; press to switch to the next mic, or hold to mute or unmute it",
+      "Icon": "images/mic",
+      "States": [{ "Image": "images/key-mic" }],
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Upgrade",
+      "UUID": "com.gpahal.dotfiles.upgrade",
+      "Tooltip": "Run upgrade in a new Ghostty tab",
+      "Icon": "images/upgrade",
+      "States": [{ "Image": "images/key-upgrade" }],
       "Controllers": ["Keypad"]
     },
     {

@@ -8,16 +8,19 @@
   "pages": {
     "main": {
       "0,0": "overview",
-      "1,0": "editor",
-      "2,0": "terminal",
-      "3,0": "files",
-      "4,0": "agenda",
-      "0,1": "chrome",
-      "1,1": "chrome-tab",
-      "2,1": "gmail",
+      "1,0": "mic",
+      "2,0": "sound",
+      "3,0": "upgrade",
+      "0,1": "editor",
+      "1,1": "terminal",
+      "2,1": "files",
       "3,1": "t3-code",
       "4,1": "claude",
-      "0,2": "sound"
+      "0,2": "chrome",
+      "1,2": "chrome-tab",
+      "2,2": "gmail",
+      "3,2": "notion",
+      "4,2": "agenda"
     },
     "system": {
       "0,0": "back",

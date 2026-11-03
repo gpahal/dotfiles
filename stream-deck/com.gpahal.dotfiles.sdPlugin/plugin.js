@@ -4,6 +4,7 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const keys = require("./keys.js");
 const layout = require("./layout.json");
+const { createMic } = require("./mic.js");
 const { createSound } = require("./sound.js");
 const stats = require("./stats.js");
 
@@ -25,7 +26,8 @@ const run = keys.createRunner({
 // shown holds each key's last image, so an unchanged one isn't sent again
 const shown = new Map();
 const sound = createSound({ log });
-const sampler = stats.createSampler({ log, sound });
+const mic = createMic({ log });
+const sampler = stats.createSampler({ log, sound, mic });
 const statKeys = keys.createStatKeys({
   stats,
   sampler,
@@ -36,6 +38,13 @@ const statKeys = keys.createStatKeys({
     shown.set(context, image);
     send({ event: "setImage", context, payload: { image } });
   },
+});
+
+// A tap switches the input, and holding the key mutes or unmutes it
+const alert = (context) => send({ event: "showAlert", context });
+const micKey = keys.createHold({
+  onTap: (context) => mic.cycle().then((ok) => (ok ? statKeys.refresh() : alert(context))),
+  onHold: (context) => mic.toggleMute().then((ok) => (ok ? statKeys.refresh() : alert(context))),
 });
 
 const profile = (page) => `profiles/${page[0].toUpperCase()}${page.slice(1)}`;
@@ -75,19 +84,23 @@ socket.onmessage = ({ data }) => {
     statKeys.start();
   } else if (event === "willDisappear" && statKeys.keys.delete(context) && statKeys.keys.size === 0) {
     statKeys.stop();
+  } else if (event === "keyDown" && target === "mic") {
+    micKey.down(context);
+  } else if (event === "keyUp" && target === "mic") {
+    micKey.up(context);
   } else if (event === "keyDown") {
     const size = sizes.get(device);
     if (target in layout.links && !fits(device)) {
       log(`The dotfiles pages are laid out for ${layout.columns}×${layout.rows} keys, not ${size ? `${size.columns}×${size.rows}` : "this device's"}`);
-      send({ event: "showAlert", context });
+      alert(context);
     } else if (target in layout.links) {
       switchTo(device, layout.links[target]);
     } else if (target === "sound") {
-      sound.cycle().then((switched) => (switched ? statKeys.refresh() : send({ event: "showAlert", context })));
+      sound.cycle().then((switched) => (switched ? statKeys.refresh() : alert(context)));
     } else if (stats.isStat(target)) {
-      run("activity-monitor", () => send({ event: "showAlert", context }));
+      run("activity-monitor", () => alert(context));
     } else {
-      run(target, () => send({ event: "showAlert", context }));
+      run(target, () => alert(context));
     }
   }
 };

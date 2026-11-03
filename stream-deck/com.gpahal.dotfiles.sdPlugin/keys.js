@@ -1,5 +1,5 @@
 // What the Mac plugin and the Ubuntu daemon (stream-deck/linux, which gets a copy) share: the
-// stat keys' update loop and the open-in runs. Each keeps its own transport and devices.
+// stat keys' update loop, the open-in runs, and the Mic key's tap and hold. Each keeps its own transport and devices.
 
 // A second New Tab press while the first runs would open a second tab and paste twice
 const ONE_AT_A_TIME = new Set(["chrome-tab"]);
@@ -84,4 +84,28 @@ function createRunner({ runOpenIn, log }) {
   };
 }
 
-module.exports = { createStatKeys, createRunner };
+// A key that does one thing when tapped and another when held: onHold runs once the key has been
+// down holdMs, without waiting for its release, and onTap on a release before then
+function createHold({ onTap, onHold, holdMs = 500 }) {
+  const timers = new Map();
+  return {
+    down(id) {
+      clearTimeout(timers.get(id));
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          onHold(id);
+        }, holdMs),
+      );
+    },
+    up(id) {
+      if (!timers.has(id)) return;
+      clearTimeout(timers.get(id));
+      timers.delete(id);
+      onTap(id);
+    },
+  };
+}
+
+module.exports = { createStatKeys, createRunner, createHold };

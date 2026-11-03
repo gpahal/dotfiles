@@ -1,10 +1,14 @@
-# The setup steps scripts can't do, as README.md's "Manual steps" lists them: the list
-# scripts/manual-steps-doc.sh writes there, and the checks manual-steps/install.sh runs. lib/manual.sh
-# says how to declare one; the checks are functions in install.sh. Source it; don't run it.
+# The setup steps scripts can't do, as README.md's "Manual steps" lists them, the AI tools' last: the
+# list scripts/manual-steps-doc.sh writes there, and the checks manual-steps/install.sh runs.
+# lib/manual.sh says how to declare one; the checks are functions in install.sh, and the AI tools' in
+# ai_tools/manual-steps/checks.sh. Source it; don't run it.
 # shellcheck shell=bash
 
 # shellcheck disable=SC2034 # lib/manual.sh reads it
 MANUAL_DOC="$DOTFILES_DIR/README.md"
+
+# shellcheck source=../ai_tools/manual-steps/steps.sh
+source "$DOTFILES_DIR/ai_tools/manual-steps/steps.sh"
 
 manual_steps() {
     manual_reset
@@ -213,6 +217,9 @@ MD
 **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 MD
 
+    # The AI tools' steps: the rest of macOS's, and the last of Ubuntu's once
+    ai_manual_steps "AI tools"
+
     manual_group ubuntu "When needed:"
     manual_step ubuntu reboot --bullet --elsewhere --check no_reboot_pending "No reboot pending" <<'MD'
 Reboot when `just status` says one is pending.
@@ -224,6 +231,6 @@ MD
 If `fwupdmgr refresh` times out, run `curl -sSI --max-time 15 https://cdn.fwupd.org/downloads/firmware.xml.zst.jcat` and `curl -sSI --max-time 15 https://fwupd.org`. When only the first fails, your network blocks the firmware CDN. Refresh on another network, such as a phone hotspot, or through a Tailscale exit node.
 MD
     manual_step ubuntu release-upgrade --bullet <<'MD'
-After a release upgrade, re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
+After a release upgrade, re-run `bash setup.sh`.
 MD
 }

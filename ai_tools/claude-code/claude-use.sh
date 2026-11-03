@@ -123,7 +123,7 @@ switch_t3() {
     if [ "$id" == claudeBackup ] &&
         ! jq -e '.providerInstances.claudeBackup | type == "object"' "$T3_SETTINGS" > /dev/null 2>&1; then
         echo "claude-use: T3 Code has no Claude Backup provider, so new T3 Code threads are unchanged." >&2
-        echo "Run bash ai_tools/setup.sh t3-code in the dotfiles checkout to add it." >&2
+        echo "Run bash setup.sh t3-code in the dotfiles checkout to add it." >&2
         return 1
     fi
     if ! jq -e "$T3_SELECTIONS"'[each_settings(selections("dotfiles-claude-use"))

@@ -70,15 +70,10 @@ copy-back mode="":
 clean-caches mode="":
     @case {{quote(mode)}} in "") bash scripts/clean-caches.sh ;; dry-run) bash scripts/clean-caches.sh --dry-run ;; *) echo "Usage: just clean-caches [dry-run]" >&2; exit 2 ;; esac
 
-# Run setup.sh: all steps, or the named ones
+# Run setup.sh: all steps, or the named steps and groups, such as ai
 [positional-arguments]
 setup *steps:
     bash setup.sh "$@"
-
-# Run ai_tools/setup.sh: all steps, or the named ones
-[positional-arguments]
-setup-ai *steps:
-    bash ai_tools/setup.sh "$@"
 
 # Update everything installed, with this checkout's Brewfile and plugin pins
 upgrade:
@@ -90,26 +85,7 @@ upgrade-ai-tools:
 
 # Report setup status; exits 1 on failure, 3 on attention
 status:
-    #!/bin/bash
-    set -uo pipefail
-    # The AI report runs beside setup's, into files, and prints after it
-    dir="$(mktemp -d)" || exit 1
-    bash ai_tools/setup.sh --status > "$dir/out" 2> "$dir/err" &
-    ai=$!
-    # A background job ignores SIGINT, so stop it, then die of the signal as a runner does
-    stop() { kill "$ai" 2> /dev/null; wait "$ai"; rm -rf "$dir"; trap - "$1"; kill -s "$1" $$; }
-    trap 'stop INT' INT
-    trap 'stop TERM' TERM
-    trap 'stop HUP' HUP
-    a=0; bash setup.sh --status || a=$?
-    b=0; wait "$ai" || b=$?
-    trap - INT TERM HUP
-    echo
-    cat "$dir/out"
-    cat "$dir/err" >&2
-    rm -rf "$dir"
-    for s in $a $b; do [ $s -eq 0 ] || [ $s -eq 3 ] || exit 1; done
-    [ $a -ne 3 ] && [ $b -ne 3 ] || exit 3
+    bash setup.sh --status
 
 # Write the READMEs' Manual steps lists from manual-steps/steps.sh and ai_tools/manual-steps/steps.sh
 manual-steps-doc:

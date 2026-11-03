@@ -3,8 +3,9 @@
 # shellcheck disable=SC2329
 
 # The manual steps: lib/manual.sh's list, which leaves out the steps done and renumbers the rest,
-# its status, scripts/manual-steps-doc.sh keeping the READMEs in step with steps.sh, the
-# manual-steps step's contract, and its checks.
+# links in steps from another doc, its status, the AI tools' steps in the one list,
+# scripts/manual-steps-doc.sh keeping the READMEs in step with steps.sh, the manual-steps step's
+# contract, and its checks.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -118,6 +119,37 @@ When:
 manual_result macos c || fail "manual_result for a step done"
 assert_exit 2 manual_result macos b
 
+# A step declared while MANUAL_DOC is another doc keeps its links working in the list's doc
+other_doc_steps() {
+    manual_reset
+    manual_step macos here <<< "See [Here](#here)."
+    # shellcheck disable=SC2034 # manual_step reads it
+    local MANUAL_DOC="$DOTFILES_DIR/ai_tools/README.md"
+    manual_step macos there <<< "See [Mobile](#mobile), [setup](../README.md#first-run), and [web](https://example.com/#x)."
+}
+other_doc_steps
+assert_eq "1. See [Here](#here).
+2. See [Mobile](./ai_tools/README.md#mobile), [setup](#first-run), and [web](https://example.com/#x)." \
+    "$(manual_markdown macos)" "links in the main README's list"
+assert_eq "1. See [Here](../README.md#here).
+2. See [Mobile](#mobile), [setup](../README.md#first-run), and [web](https://example.com/#x)." \
+    "$(manual_markdown macos "$DOTFILES_DIR/ai_tools/README.md")" "links in the AI README's list"
+
+# The one list holds the AI tools' steps, under their group after the rest, apart from what the
+# rest already cover; their own list has them all
+manual_steps
+for os in macos ubuntu; do
+    list="$(manual_markdown "$os")"
+    assert_contains "$list" "**AI tools" "the $os list"
+    assert_contains "$list" "[Mobile](./ai_tools/README.md#mobile)" "the $os list"
+    [ "$(grep -c '^\*\*AI tools' <<< "$list")" -eq 1 ] || fail "the $os list has the AI tools' group more than once"
+done
+assert_not_contains "$(manual_markdown ubuntu)" "turn on **HTTPS Certificates** under **DNS**"
+manual_reset
+ai_manual_steps
+assert_contains "$(manual_markdown ubuntu "$AI_MANUAL_DOC")" "turn on **HTTPS Certificates** under **DNS**"
+assert_not_contains "$(manual_markdown macos "$AI_MANUAL_DOC")" "AI tools"
+
 # Declaring a step wrong fails, saying why
 bad_step() {
     manual_reset
@@ -159,19 +191,20 @@ assert_not_contains "$RUN_OUTPUT" "A, first."
 assert_not_contains "$RUN_OUTPUT" "**"
 load_script manual-steps/install.sh
 
-# Each check steps.sh names is a function install.sh defines
+# Each check the steps name is a function the step defines, in the one list and the AI tools' own
 each_check_defined() {
-    local step="$1" i fn
-    load_script "$step/install.sh"
-    manual_steps
+    local i fn
+    load_script manual-steps/install.sh
+    manual_reset
+    "$@"
     for ((i = 0; i < ${#MS_ID[@]}; i++)); do
         [ -n "${MS_CHECK[i]}" ] || continue
         fn="${MS_CHECK[i]%% *}"
-        declare -F "$fn" > /dev/null || fail "$step/steps.sh names check $fn for ${MS_OS[i]} ${MS_ID[i]}, which isn't a function"
+        declare -F "$fn" > /dev/null || fail "$* names check $fn for ${MS_OS[i]} ${MS_ID[i]}, which isn't a function"
     done
 }
-each_check_defined manual-steps
-each_check_defined ai_tools/manual-steps
+each_check_defined manual_steps
+each_check_defined ai_manual_steps
 
 # manual-steps-doc writes the READMEs' lists from steps.sh, and --check fails while they differ
 doc_sync() {
@@ -194,6 +227,14 @@ doc_sync() {
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh" --check
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: Manual steps already match manual-steps/steps.sh"
+    # An AI tools' step changes both READMEs
+    sed 's/^Run `codex login`\.$/Run `codex login` now./' "$copy/ai_tools/manual-steps/steps.sh" > "$SANDBOX/steps.sh"
+    mv "$SANDBOX/steps.sh" "$copy/ai_tools/manual-steps/steps.sh"
+    assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
+    assert_contains "$RUN_OUTPUT" "README.md: wrote Manual steps from manual-steps/steps.sh"
+    assert_contains "$RUN_OUTPUT" "ai_tools/README.md: wrote Manual steps from ai_tools/manual-steps/steps.sh"
+    assert_file_contains "$copy/README.md" "    - Run \`codex login\` now."
+    assert_file_contains "$copy/ai_tools/README.md" "   - Run \`codex login\` now."
 }
 subtest doc_sync
 
@@ -201,7 +242,7 @@ subtest doc_sync
 contract() {
     local os cmd
     for cmd in sqlite3 plutil sfltool tmutil pro fdesetup tailscale gh lsblk nmcli gsettings gdbus busctl ss \
-        systemctl dpkg-query getent dscl; do
+        systemctl dpkg-query getent dscl claude bwrap; do
         stub "$cmd" 'exit 1'
     done
     stub_sudo_cacheable

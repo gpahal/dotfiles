@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Dotfiles for macOS 27 and an Ubuntu 26.04 desktop used over SSH, the only supported OSes. `setup.sh` installs tools and configs; `ai_tools/setup.sh` sets up the AI tools and the skills in `ai_tools/skills`.
+Dotfiles for macOS 27 and an Ubuntu 26.04 desktop used over SSH, the only supported OSes. `setup.sh` installs tools and configs, and sets up the AI tools in `ai_tools` and the skills in `ai_tools/skills`.
 
 ## Steps
 
-- The runners, `setup.sh` and `ai_tools/setup.sh`, only run steps. A step is an `install.sh` beside the files it installs, with a read-only `status` and an `apply`. Copy the shape of `editorconfig/install.sh` (config only), `vim/install.sh`, or `docker/install.sh` (items). Files a step sources only define things.
+- The runner, `setup.sh`, only runs steps. A step is an `install.sh` beside the files it installs, in `<step>/` or, for an AI tool, `ai_tools/<step>/`, with a read-only `status` and an `apply`. Copy the shape of `editorconfig/install.sh` (config only), `vim/install.sh`, or `docker/install.sh` (items). Files a step sources only define things.
 - Before writing a step, read the comments on `item`, `items_apply_confirmed`, and `memo` in `lib/common.sh`, and the other `lib/*.sh` headers.
-- A new step goes in its runner's `MACOS_STEPS`, `UBUNTU_STEPS`, or both. Its header's first line is one sentence saying what it does, and the header says so if the step changes the system regardless of `HOME`.
+- A new step goes in `setup.sh`'s `MACOS_STEPS`, `UBUNTU_STEPS`, or both, and an AI tool's in `AI_STEPS`. Its header's first line is one sentence saying what it does, and the header says so if the step changes the system regardless of `HOME`.
 - A new step gets a contract test: a second apply changes nothing (`assert_idempotent`), `--status` reports what apply set, and a missing prerequisite fails before any change. A config-only step joins `tests/test-config-steps.sh`.
 - Every function named `*_files` is treated as a files function, so name nothing else that way.
 
@@ -40,7 +40,7 @@ Docs change with the code, in the same commit, and `just check` catches most dri
 
 - The Claude or Codex models in `claude-code` or `codex`: the reviewer table in `ai_tools/skills/engineering/interrogate/SKILL.md`.
 - How an app's settings keys are checked: the table in `ai_tools/README.md` "Maintenance". Name no app version: the repo assumes the latest.
-- What an `ai_tools/setup.sh` step does: the **(script)** marks in `ai_tools/README.md`.
+- What an AI tool's step does: the **(script)** marks in `ai_tools/README.md`.
 - `scripts/upgrade.sh`: "Updating" in README for `upgrade`, and in `ai_tools/README.md` for `upgrade-ai-tools`.
 - A key added to `scripts/claude-settings-keys.txt`: check it against Claude Code first.
 

@@ -1,16 +1,7 @@
-#!/bin/bash
-set -euo pipefail
-
-# Print this OS's AI tool steps that scripts can't do and that aren't done yet.
-# steps.sh lists them, with the checks below for those a script can tell are done, which --status
-# reports. On macOS it offers to open the settings and pages for the steps it knows are left.
-
-# shellcheck source=../../lib/common.sh
-source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/common.sh"
-# shellcheck source=../../lib/manual.sh
-source "$DOTFILES_DIR/lib/manual.sh"
-# shellcheck source=steps.sh
-source "$DOTFILES_DIR/ai_tools/manual-steps/steps.sh"
+# The checks for the AI tools' manual steps, which ai_tools/manual-steps/steps.sh names, and what
+# manual-steps/install.sh opens for them on macOS. That step sources it after lib/manual.sh. Source
+# it; don't run it.
+# shellcheck shell=bash
 
 CLAUDE_CHROME_EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 NOTIFYING_APPS=(com.anthropic.claudefordesktop com.t3tools.t3code)
@@ -113,6 +104,7 @@ t3_mac_paired() {
 
 t3_desktop_paired() {
     if ! has_gnome_desktop; then
+        # shellcheck disable=SC2034 # lib/manual.sh reads it
         MANUAL_DETAIL="no desktop"
         return 0
     fi
@@ -164,18 +156,3 @@ open_manual_steps() {
         open -a "Google Chrome" "https://chromewebstore.google.com/detail/claude/$CLAUDE_CHROME_EXTENSION_ID"
     fi
 }
-
-status() {
-    manual_steps
-    status_manual "bash ai_tools/setup.sh manual-steps"
-}
-
-apply() {
-    manual_steps
-    manual_print "AI tool steps"
-    ! is_macos || open_manual_steps
-}
-
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    main "$@"
-fi

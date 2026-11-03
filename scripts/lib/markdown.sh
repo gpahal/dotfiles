@@ -84,6 +84,64 @@ doc_links() {
     '
 }
 
+# md_rebase_links <from doc> <to doc>: rewrites the local links in markdown on stdin, written in the
+# first doc, so they work in the second, such as #mobile in ai_tools/README.md as
+# ./ai_tools/README.md#mobile in README.md. Web links stay.
+md_rebase_links() {
+    # Via the environment, since awk -v expands backslashes
+    FROM="$1" TO="$2" awk '
+        function clean(path, parts, n, i, out, k) {
+            n = split(path, parts, "/")
+            k = 0
+            for (i = 1; i <= n; i++) {
+                if (parts[i] == "." || (parts[i] == "" && i > 1)) continue
+                if (parts[i] == ".." && k > 1) { k--; continue }
+                out[++k] = parts[i]
+            }
+            path = out[1]
+            for (i = 2; i <= k; i++) path = path "/" out[i]
+            return path
+        }
+        function dirname(path) {
+            return sub(/\/[^\/]*$/, "", path) ? path : "."
+        }
+        # The path from dir, starting ./ or ../
+        function relative(path, dir, p, d, np, nd, i, j, out) {
+            np = split(path, p, "/")
+            nd = split(dir, d, "/")
+            for (i = 1; i <= np && i <= nd && p[i] == d[i]; i++) continue
+            out = ""
+            for (j = i; j <= nd; j++) out = out "../"
+            for (j = i; j <= np; j++) out = out p[j] (j < np ? "/" : "")
+            return substr(out, 1, 3) == "../" ? out : "./" out
+        }
+        BEGIN {
+            from = clean(ENVIRON["FROM"])
+            to = clean(ENVIRON["TO"])
+            from_dir = dirname(from)
+            to_dir = dirname(to)
+        }
+        {
+            line = $0
+            out = ""
+            while (match(line, /\]\([^)]*\)/)) {
+                out = out substr(line, 1, RSTART + 1)
+                target = substr(line, RSTART + 2, RLENGTH - 3)
+                line = substr(line, RSTART + RLENGTH)
+                if (target == "" || target ~ /^[a-z]+:/) { out = out target ")"; continue }
+                anchor = ""
+                if ((i = index(target, "#")) > 0) {
+                    anchor = substr(target, i)
+                    target = substr(target, 1, i - 1)
+                }
+                path = target == "" ? from : clean(from_dir "/" target)
+                out = out (path == to && anchor != "" ? "" : relative(path, to_dir)) anchor ")"
+            }
+            print out line
+        }
+    '
+}
+
 # Print local link targets. A target with no ., /, or # is a placeholder, such as [PR #123](url).
 local_links() {
     awk -v fence="$MD_FENCE" '$0 ~ fence { in_code = !in_code; next }

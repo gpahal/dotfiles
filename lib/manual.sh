@@ -1,8 +1,9 @@
-# The manual-steps steps' code. Each lists its README's manual steps in a manual_steps function,
-# in steps.sh beside it: every step's markdown and, for one a script can check, the check and the
-# text status reports. The step prints the steps that aren't done and reports the checks in
-# --status; scripts/manual-steps-doc.sh writes the README's sections from the same list, and
-# just check fails while they differ. Source after lib/common.sh; don't run it.
+# The manual-steps step's code. manual-steps/steps.sh lists the manual steps in a manual_steps
+# function, with the AI tools' from ai_tools/manual-steps/steps.sh: every step's markdown and, for
+# one a script can check, the check and the text status reports. The step prints the steps that
+# aren't done and reports the checks in --status; scripts/manual-steps-doc.sh writes the READMEs'
+# sections from the same list, and just check fails while they differ. Source after
+# lib/common.sh; don't run it.
 # shellcheck shell=bash
 
 # shellcheck source=../scripts/lib/markdown.sh
@@ -22,6 +23,7 @@ manual_reset() {
     MS_TEXT=()
     MS_KIND=()
     MS_KIDS=()
+    MS_DOC=()
     MG_TEXT=()
     # shellcheck disable=SC2034 # manual_step reads them as ${!group}
     MANUAL_GROUP_macos=-1
@@ -109,6 +111,7 @@ manual_step() {
     MS_TEXT[i]="$text"
     MS_KIND[i]="$kind"
     MS_KIDS[i]=0
+    MS_DOC[i]="${MANUAL_DOC:?a steps file sets MANUAL_DOC}"
     [ "$parent" -lt 0 ] || MS_KIDS[parent]=$((MS_KIDS[parent] + 1))
 }
 
@@ -180,10 +183,11 @@ _manual_mark_done() {
     done
 }
 
-# manual_markdown <os>: the OS's steps as the README lists them, leaving out those MANUAL_DONE
-# marks done, and a group with none left
+# manual_markdown <os> [doc]: the OS's steps as the README lists them, leaving out those
+# MANUAL_DONE marks done, and a group with none left. Links point from the doc, by default
+# MANUAL_DOC.
 manual_markdown() {
-    local os="$1" i group=-1 num=0 printed=false
+    local os="$1" doc="${2:-$MANUAL_DOC}" i group=-1 num=0 printed=false
     _manual_mark_done "$os"
     for ((i = 0; i < ${#MS_ID[@]}; i++)); do
         if [ "${MS_OS[i]}" != "$os" ] || [ "${MS_PARENT[i]}" -ge 0 ] || "${MS_ISDONE[i]}"; then
@@ -203,9 +207,11 @@ manual_markdown() {
     done
 }
 
-# _manual_item <index> <indent> <number>: the step, then the steps under it not done
+# _manual_item <index> <indent> <number>: the step, then the steps under it not done. manual_markdown
+# sets doc.
 _manual_item() {
-    local i="$1" indent="$2" marker="$3." pad line first=true j num=0
+    local i="$1" indent="$2" marker="$3." pad line first=true j num=0 body="${MS_BODY[$1]}"
+    [ "${MS_DOC[i]}" == "$doc" ] || body="$(md_rebase_links "${MS_DOC[i]}" "$doc" <<< "$body")"
     ! "${MS_BULLET[i]}" || marker=-
     printf -v pad '%*s' $((${#indent} + ${#marker} + 1)) ''
     while IFS= read -r line; do
@@ -217,7 +223,7 @@ _manual_item() {
         else
             echo "$pad$line"
         fi
-    done <<< "${MS_BODY[i]}"
+    done <<< "$body"
     for ((j = i + 1; j < ${#MS_ID[@]}; j++)); do
         if [ "${MS_PARENT[j]}" != "$i" ] || "${MS_ISDONE[j]}"; then
             continue

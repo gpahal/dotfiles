@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # Print this OS's setup steps that scripts can't do and that aren't done yet.
-# steps.sh lists them, with the checks below for those a script can tell are done, which --status
-# reports. Network checks ask GitHub and Tailscale; root-only ones run only while sudo -v is cached.
+# steps.sh lists them, the AI tools' last, with the checks below, and the AI tools' in
+# ai_tools/manual-steps/checks.sh, for those a script can tell are done, which --status reports.
+# Network checks ask GitHub and Tailscale; root-only ones run only while sudo -v is cached. On macOS
+# it offers to open the settings and pages for the AI tools' steps it knows are left.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -23,6 +25,8 @@ source "$DOTFILES_DIR/monitor-input/lib/paths.sh"
 source "$DOTFILES_DIR/ubuntu/lib/paths.sh"
 # shellcheck source=steps.sh
 source "$DOTFILES_DIR/manual-steps/steps.sh"
+# shellcheck source=../ai_tools/manual-steps/checks.sh
+source "$DOTFILES_DIR/ai_tools/manual-steps/checks.sh"
 
 GHOSTTY_ID=com.mitchellh.ghostty
 # What the Stream Deck's and Hammerspoon's open-in tells with Apple events: Ghostty's folder, Zed's
@@ -323,7 +327,7 @@ tailscale_cap_granted() {
 }
 
 # HTTPS certificates need MagicDNS, which gives the machine its name. Named apart from the AI tools'
-# tailscale_https_on, which tests load beside it.
+# tailscale_https_on, which this step loads beside it.
 magicdns_https_on() {
     ubuntu_tailscale_json || return
     [ -n "$(jq -r '.Self.DNSName // empty' <<< "$TAILSCALE_STATUS_JSON")" ] || {
@@ -471,6 +475,7 @@ status() {
 apply() {
     manual_steps
     manual_print
+    ! is_macos || open_manual_steps
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

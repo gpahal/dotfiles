@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, and --status summaries,
-# with how health-alert.sh parses status lines and picks the ones it pushes.
+# run_steps with fake steps: failures, interrupts, OS and STEP_NEEDS skips, groups, and --status
+# summaries, with how health-alert.sh parses status lines and picks the ones it pushes.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -214,6 +214,15 @@ assert_exit 1 run_steps "" first nope
 assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux"
 [ ! -e "$SANDBOX/ran" ] || fail "a step ran despite an unknown step name"
 
+# A group's name stands for its steps, in its order, each step once; any other name stays as given,
+# so one with a space is still unknown
+# shellcheck disable=SC2034 # expand_groups reads it
+STEP_GROUPS=("both:first mac" "one:mac")
+expand_groups mac both "first mac" one
+assert_eq "mac|first|first mac" "$(IFS='|'; echo "${RUNNER_STEPS[*]}")" "steps from names and groups"
+assert_exit 1 run_steps "" nope
+assert_contains "$RUN_OUTPUT" "Unknown step: nope. Steps on macOS: first mac. On Ubuntu: first linux. Groups: both one"
+
 # The runner must die of SIGINT, not exit 130: bash stops a caller after a command SIGINT killed
 # but carries on after one that exited 130, as `just status` relies on
 runner_dir="$SANDBOX/runner"
@@ -222,7 +231,7 @@ printf '%s\n' '#!/bin/bash' 'sleep 30 &' "echo \"\$!\" > \"$SANDBOX/slow-child\"
     "touch \"$SANDBOX/slow-started\"" 'wait' > "$runner_dir/slow/install.sh"
 printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "source \"$REPO_DIR/lib/common.sh\"" \
     "source \"$REPO_DIR/lib/runner.sh\"" 'MACOS_STEPS=(slow) UBUNTU_STEPS=(slow)' \
-    "STEPS_DIR=\"$runner_dir\"" 'runner_main test "" "$@"' > "$runner_dir/setup.sh"
+    "STEPS_DIRS=(\"$runner_dir\")" 'runner_main test "" "$@"' > "$runner_dir/setup.sh"
 printf '%s\n' '#!/bin/bash' "\"$BASH\" \"$runner_dir/setup.sh\" \"\$@\" || a=\$?" 'echo continued' \
     > "$runner_dir/caller.sh"
 stub_uname Darwin

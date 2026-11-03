@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Pushes health alerts to ntfy for the ubuntu step's user units. Fails when the alerts aren't set
-# up, a runner couldn't run, or a push failed, so the unit shows failed.
+# up, setup.sh couldn't run, or a push failed, so the unit shows failed.
 
 # The ubuntu step copies this script beside its four libraries, outside the repo
 HEALTH_ALERT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,9 +32,9 @@ BOOT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/boot-notice"
 
 usage() {
     echo "Usage: bash health-alert.sh status | boot"
-    echo "status pushes what setup.sh and ai_tools/setup.sh --status --for-alerts report needs attention"
-    echo "to ntfy, run in the checkout the ubuntu step recorded in $CHECKOUT_FILE; boot pushes that this"
-    echo "machine started. Both fail until just alerts has run."
+    echo "status pushes what setup.sh --status --for-alerts reports needs attention to ntfy, run in"
+    echo "the checkout the ubuntu step recorded in $CHECKOUT_FILE; boot pushes that this machine"
+    echo "started. Both fail until just alerts has run."
 }
 
 ntfy_url() {
@@ -99,7 +99,7 @@ save_push() {
 }
 
 status_alert() {
-    local url runner out status result=0 message="" details="" last now last_time="" last_hash="" hash
+    local url out status result=0 message="" details="" last now last_time="" last_hash="" hash
     local root_only=false repo problem=""
     url="$(ntfy_url)" || return 1
     if ! repo="$(recorded_checkout)"; then
@@ -113,24 +113,22 @@ status_alert() {
             "Tags: warning" || echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi
-    for runner in setup.sh ai_tools/setup.sh; do
-        status=0
-        out="$("$BASH" "$repo/$runner" --status --for-alerts < /dev/null 2>&1)" || status=$?
-        ! has_root_only_items <<< "$out" || root_only=true
-        case "$status" in
-            0) ;;
-            1 | 3) message="$message$(attention_lines <<< "$out")"$'\n' ;;
-            *)
-                echo "$runner --status --for-alerts exited $status:" >&2
-                printf '%s\n' "$out" | tail -n 5 >&2
-                # The last line goes in details, not the hash, since it can change each run
-                message="${message}Health check couldn't run: $runner exited $status"$'\n'
-                last="$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" || last=""
-                [ -z "$last" ] || details="$details"$'\n'"$runner's last output: $last"
-                result=1
-                ;;
-        esac
-    done
+    status=0
+    out="$("$BASH" "$repo/setup.sh" --status --for-alerts < /dev/null 2>&1)" || status=$?
+    ! has_root_only_items <<< "$out" || root_only=true
+    case "$status" in
+        0) ;;
+        1 | 3) message="$(attention_lines <<< "$out")"$'\n' ;;
+        *)
+            echo "setup.sh --status --for-alerts exited $status:" >&2
+            printf '%s\n' "$out" | tail -n 5 >&2
+            # The last line goes in details, not the hash, since it can change each run
+            message="Health check couldn't run: setup.sh exited $status"$'\n'
+            last="$(grep -v '^[[:space:]]*$' <<< "$out" | tail -n 1)" || last=""
+            [ -z "$last" ] || details=$'\n'"setup.sh's last output: $last"
+            result=1
+            ;;
+    esac
     now="$(date +%s)"
     read -r last_time last_hash 2>/dev/null < "$HEALTH_STATE_FILE" || true
     case "$last_time" in '' | *[!0-9]*) last_time="" last_hash="" ;; esac

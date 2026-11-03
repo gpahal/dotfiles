@@ -1,7 +1,7 @@
 #!/bin/bash
 set -uo pipefail
 
-# Run both setups twice in a throwaway OrbStack Ubuntu machine, restart, and check status and services.
+# Run setup twice in a throwaway OrbStack Ubuntu machine, restart, and check status and services.
 
 MACHINE=dotfiles-test
 # x86_64, as the real machine is: through Rosetta on Apple Silicon
@@ -11,7 +11,6 @@ REPO="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Steps that can't work in OrbStack (ghostty: no snapd). The image has no GNOME desktop, so the
 # desktop steps skip their GNOME parts.
 ALLOWED_SETUP=(ghostty)
-ALLOWED_AI=()
 # Status items that need a person, a tailnet, or root
 ALLOWED_ITEMS=(
     "ubuntu: Tailscale connected (run sudo tailscale up)"
@@ -158,7 +157,6 @@ in_vm sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades
 for pass in 1 2; do
     echo "=== Setup, pass $pass ==="
     run_runner setup.sh "" ${ALLOWED_SETUP[@]+"${ALLOWED_SETUP[@]}"}
-    run_runner ai_tools/setup.sh "" ${ALLOWED_AI[@]+"${ALLOWED_AI[@]}"}
 done
 
 echo "Restarting the $MACHINE machine..."
@@ -167,7 +165,6 @@ orb restart "$MACHINE" >> "$LOG" 2>&1 || fail "couldn't restart the machine"
 # The restart clears /run/sshd and orb run doesn't recreate it; without it sshd -T fails.
 in_vm sudo mkdir -p /run/sshd > /dev/null || fail "couldn't make /run/sshd"
 run_runner setup.sh --status ${ALLOWED_SETUP[@]+"${ALLOWED_SETUP[@]}"}
-run_runner ai_tools/setup.sh --status ${ALLOWED_AI[@]+"${ALLOWED_AI[@]}"}
 
 echo "=== T3 Code service ==="
 active=false

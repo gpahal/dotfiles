@@ -4,33 +4,23 @@ Setup for [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) C
 
 ## First run
 
-### macOS
-
-1. Run the main [`setup.sh`](../README.md#first-run) first, for `jq` and `yq`.
-2. In Ghostty (not T3 Code, which the script quits), run `bash ai_tools/setup.sh`.
-3. Do the macOS [manual steps](#macos-1).
-4. Run the [checks](#check-it-works).
-
-### Ubuntu
-
-1. Run the main `setup.sh` first, including the `ubuntu` step.
-2. Run `bash ai_tools/setup.sh`.
-3. Do the Ubuntu [manual steps](#ubuntu-2).
-4. Reboot once, then run the [checks](#check-it-works) over SSH from the Mac.
+The main README's [First run](../README.md#first-run) sets up the AI tools with everything else. `bash setup.sh` runs their steps after the rest, and the main README's [manual steps](../README.md#manual-steps) include theirs. Then run the [checks](#check-it-works) here, on Ubuntu after a reboot, over SSH from the Mac.
 
 ## Automated setup
 
+In the repo root:
+
 ```sh
-bash ai_tools/setup.sh              # every step
-bash ai_tools/setup.sh codex skills # only these
-bash ai_tools/setup.sh --status     # report only
+bash setup.sh ai           # only the AI tools
+bash setup.sh codex skills # only these steps
+bash setup.sh --status ai  # report only
 ```
 
-The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`.
+The steps, in order, are `claude-code`, `claude-desktop`, `codex`, `t3-code`, `skills`, and `manual-steps`. Ubuntu Server skips the desktop apps. Each is `ai_tools/<step>/install.sh`, apart from `manual-steps`, which prints every manual step left, these last. `bash setup.sh claude` runs `claude-code` and `claude-desktop`.
 
-It works like the main [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. It skips the Claude and T3 Code apps' settings while they run, since the apps overwrite them; on macOS it first asks to quit them. It adds no MCP servers.
+They work like the rest of [`setup.sh`](../README.md#how-setup-works). A model, effort, status line, or notification channel you set is kept unless you agree to replace it. The steps skip the Claude and T3 Code apps' settings while the apps run, since the apps overwrite them. On macOS they first ask to quit the apps, so run setup from Ghostty, not T3 Code. They add no MCP servers.
 
-**(script)** marks what the script does.
+**(script)** marks what setup does.
 
 ## Updating
 
@@ -66,7 +56,7 @@ Desktop notifications work in Ghostty, iTerm2, and kitty, inside tmux too. Elsew
 - **Defaults (script).** Auto mode, auto memory off, transcripts kept 90 days, no permission rules added. The script resets these each run, so change them in [`claude-code/install.sh`](./claude-code/install.sh), not `/config`. T3 Code sets model, effort, mode, and sandbox per session.
 - **No sandbox.** Commands that auto mode approves run with your full rights. Codex instead runs commands in its sandbox, in `workspace-write` mode. On Ubuntu, agents under the T3 Code service are in the `docker` group, which is root-equivalent.
 - **Model (script).** Opus 5.5 at medium effort.
-- **Trusted folders (script).** `~/Dev` and each git repo in it, as `~/Dev/<repo>` or `~/Dev/<group>/<repo>`, in both accounts, so Claude Code doesn't ask to trust them. Trusting a folder doesn't cover the repos inside it, so after you clone one, re-run `bash ai_tools/setup.sh claude-code codex`. Until then, `--status` shows it missing.
+- **Trusted folders (script).** `~/Dev` and each git repo in it, as `~/Dev/<repo>` or `~/Dev/<group>/<repo>`, in both accounts, so Claude Code doesn't ask to trust them. Trusting a folder doesn't cover the repos inside it, so after you clone one, re-run `bash setup.sh claude-code codex`. Until then, `--status` shows it missing.
 - **Interface (script).** Fullscreen TUI, normal key bindings.
 - **Status line (script).** [`claude-code/statusline.sh`](./claude-code/statusline.sh): `Opus 5.5 · medium · ctx 43% · 5h 24% · main`.
 - **Worktrees (script).** [`claude-code/worktree-hook.sh`](./claude-code/worktree-hook.sh) puts `--worktree`, subagent, and background session worktrees under `~/.worktrees` with [`git wt`](../README.md#git), and removes clean, merged subagent worktrees when a session ends, but not on `/clear`. It copies the ignored paths `.worktreeinclude` lists; name an ignored directory, not a file inside one.
@@ -156,7 +146,7 @@ The script turns off Claude Code's error reporting, surveys, and feedback, Codex
 
 ## User-level instructions
 
-[`user-instructions.md`](./user-instructions.md) is copied to `~/.claude/CLAUDE.md`, `~/.claude-backup/CLAUDE.md`, and `~/.codex/AGENTS.md` **(script)**. Edit the repo copy and re-run `bash ai_tools/setup.sh claude-code codex`.
+[`user-instructions.md`](./user-instructions.md) is copied to `~/.claude/CLAUDE.md`, `~/.claude-backup/CLAUDE.md`, and `~/.codex/AGENTS.md` **(script)**. Edit the repo copy and re-run `bash setup.sh claude-code codex`.
 
 ## Skills
 
@@ -184,7 +174,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 
 ## Manual steps
 
-`bash ai_tools/setup.sh manual-steps` prints the ones here that aren't done, leaving out each it can check is done, and `bash ai_tools/setup.sh --status manual-steps` reports those checks. The rest are in the main README's [Manual steps](../README.md#manual-steps).
+`bash setup.sh manual-steps` prints the ones here that aren't done after the rest of the main README's [Manual steps](../README.md#manual-steps), leaving out each it can check is done. `bash setup.sh --status manual-steps` reports those checks.
 
 ### macOS
 
@@ -206,7 +196,7 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 
 Over SSH, logins print a link to open on the Mac.
 
-1. **Sudo work.** If setup ran without a terminal, run `bash ai_tools/setup.sh claude-desktop codex t3-code` from one.
+1. **Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
 2. **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
 3. **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.
 4. **Claude in Chrome.** At the desktop, see [Browser (Claude in Chrome)](#browser-claude-in-chrome).
@@ -215,7 +205,7 @@ Over SSH, logins print a link to open on the Mac.
    - On the phone, steps 3 to 5 of [Mobile](#mobile).
    - In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
    - Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
-   - After an agent first opens T3 Code's browser, re-run `bash ai_tools/setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
+   - After an agent first opens T3 Code's browser, re-run `bash setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
    - At the desktop, run `t3 pair` and paste the link in the T3 Code app (**Settings → Connections → Add environment**).
 6. **Claude app.** At the desktop, open Claude and sign in.
 

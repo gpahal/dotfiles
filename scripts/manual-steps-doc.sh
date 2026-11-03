@@ -1,35 +1,38 @@
 #!/bin/bash
 set -euo pipefail
 
-# Write the "### macOS" and "### Ubuntu" lists under "## Manual steps" in README.md and
-# ai_tools/README.md from the steps manual-steps/steps.sh and ai_tools/manual-steps/steps.sh
-# declare. --check changes nothing, and fails when a README differs, as just check runs it.
+# Write the "### macOS" and "### Ubuntu" lists under "## Manual steps" in README.md, every manual
+# step, as manual-steps/steps.sh declares them, and in ai_tools/README.md, only the AI tools' from
+# ai_tools/manual-steps/steps.sh. --check changes nothing, and fails when a README differs, as just
+# check runs it.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 # shellcheck source=../lib/manual.sh
 source "$DOTFILES_DIR/lib/manual.sh"
 
-STEPS_FILES=(manual-steps/steps.sh ai_tools/manual-steps/steps.sh)
+# "<README>|<steps file>|<function that declares its steps>"
+DOCS=("README.md|manual-steps/steps.sh|manual_steps"
+    "ai_tools/README.md|ai_tools/manual-steps/steps.sh|ai_manual_steps")
 
 usage() {
     echo "Usage: bash scripts/manual-steps-doc.sh [--check] (or: just manual-steps-doc)"
-    echo "Write the READMEs' Manual steps lists from ${STEPS_FILES[*]}."
+    echo "Write the READMEs' Manual steps lists from manual-steps/steps.sh and ai_tools/manual-steps/steps.sh."
     echo "--check changes nothing, and fails when a README's lists differ from them."
 }
 
-# readme_with_steps <steps file>: the steps file's README, with its OS lists from the steps
+# readme_with_steps <README> <steps file> <function>: the README, with its OS lists from the steps
 readme_with_steps() {
-    local dir
+    local doc="$DOTFILES_DIR/$1" dir
     dir="$(mktemp -d)" || return 1
     (
         # shellcheck disable=SC1090 # a steps file
-        source "$DOTFILES_DIR/$1"
-        manual_steps
+        source "$DOTFILES_DIR/$2"
+        manual_reset
+        "$3"
         MANUAL_DONE=" "
-        manual_markdown macos > "$dir/macos"
-        manual_markdown ubuntu > "$dir/ubuntu"
-        echo "$MANUAL_DOC" > "$dir/doc"
+        manual_markdown macos "$doc" > "$dir/macos"
+        manual_markdown ubuntu "$doc" > "$dir/ubuntu"
     ) || {
         rm -rf "$dir"
         return 1
@@ -49,20 +52,12 @@ readme_with_steps() {
             next
         }
         skip { next }
-        { print }' "$(cat "$dir/doc")"
+        { print }' "$doc"
     rm -rf "$dir"
 }
 
-steps_doc() {
-    (
-        # shellcheck disable=SC1090 # a steps file
-        source "$DOTFILES_DIR/$1"
-        echo "$MANUAL_DOC"
-    )
-}
-
 main() {
-    local check=false file doc tmp status=0
+    local check=false entry readme file fn doc tmp status=0
     case "$#:${1:-}" in
         0:) ;;
         1:--check) check=true ;;
@@ -75,26 +70,27 @@ main() {
             return 2
             ;;
     esac
-    for file in "${STEPS_FILES[@]}"; do
-        doc="$(steps_doc "$file")"
+    for entry in "${DOCS[@]}"; do
+        IFS='|' read -r readme file fn <<< "$entry"
+        doc="$DOTFILES_DIR/$readme"
         tmp="$(mktemp)"
-        if ! readme_with_steps "$file" > "$tmp"; then
-            echo "Couldn't build $(shown_path "$doc")'s Manual steps from $file." >&2
+        if ! readme_with_steps "$readme" "$file" "$fn" > "$tmp"; then
+            echo "Couldn't build $readme's Manual steps from $file." >&2
             rm -f "$tmp"
             status=1
             continue
         fi
         if cmp -s "$tmp" "$doc"; then
             rm -f "$tmp"
-            "$check" || echo "$(shown_path "$doc"): Manual steps already match $file"
+            "$check" || echo "$readme: Manual steps already match $file"
         elif "$check"; then
-            echo "$(shown_path "$doc")'s Manual steps differ from $file. Run just manual-steps-doc:" >&2
+            echo "$readme's Manual steps differ from $file. Run just manual-steps-doc:" >&2
             diff "$doc" "$tmp" >&2 || true
             rm -f "$tmp"
             status=1
         else
             write_back "$tmp" "$doc" || status=1
-            echo "$(shown_path "$doc"): wrote Manual steps from $file"
+            echo "$readme: wrote Manual steps from $file"
         fi
     done
     return "$status"

@@ -1,15 +1,19 @@
-# The AI tool steps scripts can't do, as ai_tools/README.md's "Manual steps" lists them: the list
-# scripts/manual-steps-doc.sh writes there, and the checks ai_tools/manual-steps/install.sh runs.
-# lib/manual.sh says how to declare one; the checks are functions in install.sh. Source it; don't
+# The AI tool steps scripts can't do, as ai_tools/README.md's "Manual steps" lists them. The
+# manual-steps step and the main README list them after the rest, through manual-steps/steps.sh.
+# lib/manual.sh says how to declare one; the checks are functions in checks.sh. Source it; don't
 # run it.
 # shellcheck shell=bash
 
-# shellcheck disable=SC2034 # lib/manual.sh reads it
-MANUAL_DOC="$DOTFILES_DIR/ai_tools/README.md"
+AI_MANUAL_DOC="$DOTFILES_DIR/ai_tools/README.md"
 
-manual_steps() {
-    manual_reset
+# ai_manual_steps [<group>]: adds the steps to the list. With a group, such as "AI tools", they go
+# under it, after the rest, and leave out what the rest already cover.
+ai_manual_steps() {
+    # Links in the steps point from it; manual_step records it
+    # shellcheck disable=SC2034 # lib/manual.sh reads it
+    local MANUAL_DOC="$AI_MANUAL_DOC" group="${1:-}"
 
+    [ -z "$group" ] || manual_group macos "**$group**"
     manual_step macos logins <<'MD'
 **Logins.**
 MD
@@ -55,9 +59,9 @@ MD
 **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
 MD
 
-    manual_group ubuntu "Over SSH, logins print a link to open on the Mac."
+    manual_group ubuntu "${group:+**$group.** }Over SSH, logins print a link to open on the Mac."
     manual_step ubuntu sudo-work --check ai_sudo_work_done "The AI tools' sudo changes made" <<'MD'
-**Sudo work.** If setup ran without a terminal, run `bash ai_tools/setup.sh claude-desktop codex t3-code` from one.
+**Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
 MD
     manual_step ubuntu claude-login --elsewhere --check claude_signed_in "Signed in to both Claude Code accounts" <<'MD'
 **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
@@ -80,7 +84,8 @@ MD
         --check t3_phone_connected "T3 Code's phone app connected" <<'MD'
 On the phone, steps 3 to 5 of [Mobile](#mobile).
 MD
-    manual_step ubuntu tailscale-https --parent t3-code --bullet \
+    # The rest's Tailscale step covers it
+    [ -n "$group" ] || manual_step ubuntu tailscale-https --parent t3-code --bullet \
         --check tailscale_https_on "Tailscale HTTPS certificates on" <<'MD'
 In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
 MD
@@ -90,7 +95,7 @@ Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings â
 MD
     manual_step ubuntu t3-browser --parent t3-code --bullet --elsewhere \
         --check t3_browser_ready "T3 Code's browser can run in Chrome's sandbox" <<'MD'
-After an agent first opens T3 Code's browser, re-run `bash ai_tools/setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
+After an agent first opens T3 Code's browser, re-run `bash setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
 MD
     manual_step ubuntu t3-desktop-paired --parent t3-code --bullet \
         --check t3_desktop_paired "T3 Code's desktop app paired with the service" <<'MD'

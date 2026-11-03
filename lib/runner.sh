@@ -1,6 +1,9 @@
-# The runners' code: setup.sh and ai_tools/setup.sh source it after lib/common.sh, as do scripts
-# that read step headers. Source it; don't run it.
+# The runner's code: setup.sh sources it after lib/common.sh, as do scripts that read step headers.
+# Source it; don't run it.
 # shellcheck shell=bash
+
+# Where steps live: a step is <dir>/<step>/install.sh in the first of these that has one
+STEPS_DIRS=("$DOTFILES_DIR" "$DOTFILES_DIR/ai_tools")
 
 warn_untested_platform() {
     local arch
@@ -60,12 +63,59 @@ step_script() {
         *" $1 "*) ;;
         *) return 1 ;;
     esac
-    # shellcheck disable=SC2154 # STEPS_DIR is set by the caller
-    echo "$STEPS_DIR/$1/install.sh"
+    step_path "$1"
 }
 
-# Callers set MACOS_STEPS, UBUNTU_STEPS, and STEPS_DIR. Returns only after a setup run succeeds;
-# otherwise exits.
+# step_path <step>: the step's install.sh, from the first of STEPS_DIRS that has one
+step_path() {
+    local dir
+    for dir in "${STEPS_DIRS[@]}"; do
+        if [ -f "$dir/$1/install.sh" ]; then
+            echo "$dir/$1/install.sh"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# group_steps <name>: the steps of the group in STEP_GROUPS, "<name>:<step> <step>...", so named
+group_steps() {
+    local entry
+    for entry in ${STEP_GROUPS[@]+"${STEP_GROUPS[@]}"}; do
+        if [ "${entry%%:*}" == "$1" ]; then
+            echo "${entry#*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# expand_groups <name...>: sets RUNNER_STEPS to the names, each group's replaced by its steps, with
+# each step only where it first comes
+expand_groups() {
+    local name steps step
+    RUNNER_STEPS=()
+    for name in "$@"; do
+        if steps="$(group_steps "$name")"; then
+            for step in $steps; do
+                _add_runner_step "$step"
+            done
+        else
+            _add_runner_step "$name"
+        fi
+    done
+}
+
+_add_runner_step() {
+    local step
+    for step in ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"}; do
+        [ "$step" != "$1" ] || return 0
+    done
+    RUNNER_STEPS+=("$1")
+}
+
+# Callers set MACOS_STEPS, UBUNTU_STEPS, and optionally STEP_GROUPS. Returns only after a setup run
+# succeeds; otherwise exits.
 runner_main() {
     local name="$1" for_alerts="$2" script status=0
     shift 2
@@ -76,7 +126,7 @@ runner_main() {
         STEPS=("${UBUNTU_STEPS[@]}")
     fi
     check_args _runner_usage words "$@"
-    RUNNER_STEPS=(${ARG_WORDS[@]+"${ARG_WORDS[@]}"})
+    expand_groups ${ARG_WORDS[@]+"${ARG_WORDS[@]}"}
     if status_requested "$@"; then
         echo "=== $name status ==="
         run_steps --status ${RUNNER_STEPS[@]+"${RUNNER_STEPS[@]}"} || status=$?
@@ -92,12 +142,18 @@ runner_main() {
 }
 
 _runner_usage() {
-    local step
-    echo "Usage: bash $script [--status [--for-alerts]] [--backup | --no-backup] [step...]"
+    local step entry
+    echo "Usage: bash $script [--status [--for-alerts]] [--backup | --no-backup] [step or group...]"
     echo "Steps, run in this order by default: ${STEPS[*]}"
     for step in "${STEPS[@]}"; do
         printf '  %-15s %s\n' "$step" "$(step_header_line "$(step_script "$step")")"
     done
+    if [ -n "${STEP_GROUPS[*]-}" ]; then
+        echo "Groups, each naming the steps it runs:"
+        for entry in "${STEP_GROUPS[@]}"; do
+            echo "  ${entry%%:*}: ${entry#*:}"
+        done
+    fi
     echo "--status reports what each step has set up, changing nothing. It exits 3 for missing or"
     echo "unknown items."
     echo "--for-alerts, with --status, is what the daily health alert runs: it skips"
@@ -155,6 +211,14 @@ _relay_status() {
     fi
 }
 
+_group_names() {
+    local entry names=""
+    for entry in ${STEP_GROUPS[@]+"${STEP_GROUPS[@]}"}; do
+        names="${names:+$names }${entry%%:*}"
+    done
+    echo "$names"
+}
+
 # run_steps <''|--status> [step...]: a failed step doesn't stop the rest. --status returns 3 when
 # an item needs attention, 1 when a step failed. Reports run at once, each printing in step order
 # once it and those before it have ended; setup runs one step at a time, as it may ask questions
@@ -167,7 +231,7 @@ run_steps() {
     # step_script takes either OS's steps, so the error lists both
     for step in "$@"; do
         step_script "$step" > /dev/null || {
-            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}" >&2
+            echo "Unknown step: $step. Steps on macOS: ${MACOS_STEPS[*]}. On Ubuntu: ${UBUNTU_STEPS[*]}${STEP_GROUPS[*]+. Groups: $(_group_names)}" >&2
             return 1
         }
     done

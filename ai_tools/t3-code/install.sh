@@ -877,7 +877,7 @@ t3_code_status_service() {
     if [ ! -f "$T3_CODE_SERVICE_UNIT" ] && ! lingering; then
         status_item missing "T3 Code service: turn on linger: \`bash setup.sh ubuntu\`, then re-run the t3-code step"
     elif [ ! -f "$T3_CODE_SERVICE_UNIT" ]; then
-        status_item missing "T3 Code service: re-run the t3-code step (bash ai_tools/setup.sh t3-code), which runs t3 service install"
+        status_item missing "T3 Code service: re-run the t3-code step (bash setup.sh t3-code), which runs t3 service install"
     elif ! t3_code_service_running_now; then
         status_item missing "T3 Code service running; check $T3_CODE_SERVICE_LOG"
     elif t3_code_service_serving_nothing; then

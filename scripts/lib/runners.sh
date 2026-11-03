@@ -1,4 +1,4 @@
-# The runners' default steps on either OS, for the docs check. Source it; don't run it.
+# setup.sh's default steps on either OS and its groups, for the docs check. Source it; don't run it.
 # shellcheck shell=bash
 
 # Write a uname into dir $1 whose -s reports $2 (Darwin or Linux).
@@ -17,5 +17,13 @@ runner_steps() {
     PATH="$dir:$PATH" "$BASH" "$1" --help > "$dir/help" 2>&1 || status=$?
     sed -n 's/^Steps, run in this order by default: //p' "$dir/help" | tr ' ' '\n'
     rm -rf "$dir"
+    return "$status"
+}
+
+# Print the steps of a runner's group $2, one per line, from its --help.
+runner_group() {
+    local help status=0
+    help="$("$BASH" "$1" --help 2>&1)" || status=$?
+    sed -n "s/^  $2: //p" <<< "$help" | tr ' ' '\n'
     return "$status"
 }

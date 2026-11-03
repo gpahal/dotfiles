@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a runner that
-# couldn't run, a missing or unrecorded checkout, the boot notice, and the ubuntu step's report of a
+# ubuntu/health-alert.sh: what status needs attention pushed to ntfy without repeats, a setup.sh
+# that couldn't run, a missing or unrecorded checkout, the boot notice, and the ubuntu step's report of a
 # failed last run.
 
 # shellcheck source=lib.sh
@@ -13,22 +13,18 @@ export DOTFILES_NTFY_URL_FILE="$SANDBOX/ntfy-url" DOTFILES_BOOT_ID_FILE="$SANDBO
 export DOTFILES_NTFY_TOKEN_FILE="$SANDBOX/ntfy-token"
 TOKEN=tk_0123456789abcdefghijklmnopqrs
 
-# Runners print $SANDBOX/out/<runner> and exit with $SANDBOX/exit/<runner>, in the recorded checkout
+# setup.sh prints $SANDBOX/out/setup and exits with $SANDBOX/exit/setup, in the recorded checkout
 REPO="$SANDBOX/repo"
 CHECKOUT="$HOME/.local/state/dotfiles/checkout"
 mkdir -p "$(dirname "$CHECKOUT")"
 echo "$REPO" > "$CHECKOUT"
-mkdir -p "$REPO/ai_tools" "$SANDBOX/out" "$SANDBOX/exit"
+mkdir -p "$REPO" "$SANDBOX/out" "$SANDBOX/exit"
 install_health_alert "$SANDBOX/health-alert"
-for runner in setup ai_tools; do
-    script="$REPO/setup.sh"
-    [ "$runner" == setup ] || script="$REPO/ai_tools/setup.sh"
-    cat > "$script" << EOF
-echo "$runner \$*" >> "\$STUB_LOG"
-cat "$SANDBOX/out/$runner" 2> /dev/null
-exit "\$(cat "$SANDBOX/exit/$runner" 2> /dev/null || echo 0)"
+cat > "$REPO/setup.sh" << EOF
+echo "setup \$*" >> "\$STUB_LOG"
+cat "$SANDBOX/out/setup" 2> /dev/null
+exit "\$(cat "$SANDBOX/exit/setup" 2> /dev/null || echo 0)"
 EOF
-done
 ALERT="$SANDBOX/health-alert/health-alert.sh"
 STATE="$HOME/.local/state/dotfiles/health-alert"
 age_state() {
@@ -50,13 +46,10 @@ ubuntu:
   missing    Free space on /home: 8.3 GiB of 100.0 GiB (8%)
   info       ntfy URL set
   unverified Disk health (SMART): reading it needs root; run sudo -v, then status, to check it
-
-Needs attention: ubuntu. Run: bash setup.sh ubuntu
-EOF
-cat > "$SANDBOX/out/ai_tools" << 'EOF'
-=== AI tools status ===
 claude-code:
   ok         Claude Code
+
+Needs attention: ubuntu. Run: bash setup.sh ubuntu
 EOF
 
 echo 3 > "$SANDBOX/exit/setup"
@@ -82,7 +75,6 @@ rm -f "$STATE"
 echo "http://127.0.0.1:2586/alerts" > "$DOTFILES_NTFY_URL_FILE"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "setup --status --for-alerts"
-assert_file_contains "$STUB_LOG" "ai_tools --status --for-alerts"
 assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/alerts"'
 assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
@@ -115,16 +107,18 @@ read -r time hash < "$STATE"
 assert_eq "$first_hash" "$hash" "the hash after the weekly push"
 [ "$time" -ge "$first_time" ] || fail "the weekly push didn't record its time"
 
-echo 0 > "$SANDBOX/exit/setup"
-echo 1 > "$SANDBOX/exit/ai_tools"
-printf '%s\n' "=== AI tools status ===" "codex:" "  missing    Codex" "" "Failed steps: t3-code" > "$SANDBOX/out/ai_tools"
+# A failed step's report is pushed too
+cp "$SANDBOX/out/setup" "$SANDBOX/out/setup.report"
+echo 1 > "$SANDBOX/exit/setup"
+printf '%s\n' "=== dotfiles status ===" "codex:" "  missing    Codex" "" "Failed steps: t3-code" > "$SANDBOX/out/setup"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "Failed steps: t3-code"
 assert_file_contains "$STUB_LOG" "codex: Codex"
 assert_file_not_contains "$STUB_LOG" "Tailscale"
+mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 
 # After a push, one all-clear, then nothing
-echo 0 > "$SANDBOX/exit/ai_tools"
+echo 0 > "$SANDBOX/exit/setup"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: All clear on $(hostname)"
 assert_file_contains "$STUB_LOG" "-H Tags: white_check_mark"
@@ -137,7 +131,7 @@ rm "$STATE"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_not_contains "$STUB_LOG" "curl"
 echo "$first_state" > "$STATE"
-# A crashed runner checks nothing, so it's pushed and the unit fails
+# A crashed setup.sh checks nothing, so it's pushed and the unit fails
 cp "$SANDBOX/out/setup" "$SANDBOX/out/setup.report"
 printf '%s\n' "lib/common.sh: line 12: syntax error near unexpected token \`<<<'" "" > "$SANDBOX/out/setup"
 echo 2 > "$SANDBOX/exit/setup"
@@ -151,7 +145,7 @@ printf '%s\n' "mktemp: /tmp/tmp.Xyz: something else" > "$SANDBOX/out/setup"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_contains "$RUN_OUTPUT" "Unchanged since the last push"
 assert_file_not_contains "$STUB_LOG" "curl"
-# A runner killed with no output, as by the OOM killer
+# A setup.sh killed with no output, as by the OOM killer
 echo "$first_state" > "$STATE"
 : > "$SANDBOX/out/setup"
 echo 137 > "$SANDBOX/exit/setup"

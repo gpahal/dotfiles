@@ -12,24 +12,23 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 1. Clone the repo anywhere, such as `git clone https://github.com/gpahal/dotfiles ~/Dev/setup/dotfiles`. If `git` asks to install the Command Line Tools, install them and clone again.
 2. Sign in to the App Store, so the `homebrew` step can install Amphetamine and Windows App. [Dato](https://apps.apple.com/app/dato/id1470584107) is paid and optional; buy it there first if you want it.
-3. In the repo, run `bash setup.sh`.
+3. In the repo, run `bash setup.sh`. It sets up the [AI tools](./ai_tools/README.md) too.
 4. Do the macOS [manual steps](#macos-1), starting with Ghostty's Full Disk Access.
-5. From Ghostty, do the AI tools' [First run](./ai_tools/README.md#first-run).
-6. Run the [checks](#check-it-works).
+5. Run the [checks](#check-it-works).
 
 ### Ubuntu
 
 1. In the installer, choose TPM-backed disk encryption without a PIN ([guide](https://ubuntu.com/desktop/docs/en/latest/how-to/encrypt-your-disk-with-tpm/)), or none. A LUKS passphrase stops the machine booting unattended after a power cut.
 2. At the machine, `sudo apt update && sudo apt install git`, then clone as on macOS.
 3. Do the **BIOS/UEFI** [manual step](#ubuntu-2), and use Ethernet until setup prints the Wi-Fi commands.
-4. At the machine, run `bash setup.sh`, then, there or over SSH, `bash ai_tools/setup.sh`.
+4. At the machine, run `bash setup.sh`.
 5. Do the rest of the Ubuntu [manual steps](#ubuntu-2).
 6. Reboot once, so the T3 Code service and tmux get the `docker` group.
 7. Run the [checks](#check-it-works) over SSH from the Mac.
 
 ## How setup works
 
-`bash setup.sh` runs these steps in order. Each is `<step>/install.sh` and also runs on its own:
+`bash setup.sh` runs these steps in order. Each is `<step>/install.sh`, or `ai_tools/<step>/install.sh` for an [AI tool](./ai_tools/README.md), and also runs on its own:
 
 | Step | What it does |
 | :- | :- |
@@ -56,15 +55,20 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
 | `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
-| `manual-steps` | Prints this OS's [manual steps](#manual-steps) that aren't done yet |
+| `claude-code` | Installs [Claude Code](./ai_tools/README.md#claude-code) and sets both accounts' settings, status line, hooks, and instructions |
+| `claude-desktop` | Installs the Claude [desktop app](./ai_tools/README.md#desktop-app), opens it at login, and sets its preferences |
+| `codex` | Installs the [Codex](./ai_tools/README.md#codex) CLI, and sets its config and instructions |
+| `t3-code` | Installs [T3 Code](./ai_tools/README.md#t3-code) and sets its settings. On Ubuntu, runs its server as a service |
+| `skills` | Installs the repo's [skills](./ai_tools/README.md#skills) for Codex and Claude Code |
+| `manual-steps` | Prints this OS's [manual steps](#manual-steps) that aren't done yet, the AI tools' last |
 
-- `bash setup.sh git zsh` runs only those steps; `--help` lists them. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
+- `bash setup.sh git zsh` runs only those steps; `--help` lists them. A group's name runs its steps: `ai` runs the AI tools' steps and `manual-steps`, and `claude` runs `claude-code` and `claude-desktop`. Re-runs are safe. A failed step skips the steps that need it, and the run ends with the command that re-runs the failures.
 - `--status [step...]` reports what's set up and changes nothing. Root-only checks run only while `sudo -v` is cached.
 - Setup overwrites installed configs that differ from the repo's, with no backup, so run `just copy-back` first to keep edits. Files other tools also edit (shell startup files, `~/.ssh/config`, `~/.gitconfig`) only get setup's own lines added. A merge into an app's settings file, such as Vicinae's, offers a backup first, and `--backup` or `--no-backup` answers every such question.
 - Settings that are yours, such as mise's global versions and the AI tools' models, are set when unset. When yours differs, setup asks before replacing it, and keeps it without a terminal.
 - Installers are fetched over HTTPS without pinned checksums, as their vendors document. Apt keys must match pinned fingerprints.
-- The AI tools have their own script, `bash ai_tools/setup.sh` ([ai_tools/README.md](./ai_tools/README.md)).
-- `just status` runs both scripts with `--status`.
+- Run setup from a terminal such as Ghostty, not from T3 Code. On macOS, the AI tools' steps ask to quit T3 Code and the Claude app before merging their settings.
+- `just status` runs `bash setup.sh --status`.
 
 ### Where the repo lives
 
@@ -291,7 +295,7 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 
 ## Manual steps
 
-`bash setup.sh manual-steps` prints the ones here that aren't done, leaving out each it can check is done, and `bash setup.sh --status manual-steps` reports those checks. The AI tools' are in [ai_tools/README.md](./ai_tools/README.md#manual-steps).
+`bash setup.sh manual-steps` prints the ones here that aren't done, leaving out each it can check is done, and `bash setup.sh --status manual-steps` reports those checks. The AI tools' steps come last on each OS; [ai_tools/README.md](./ai_tools/README.md#manual-steps) also lists them on their own.
 
 ### macOS
 
@@ -340,6 +344,22 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 29. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
 30. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
+**AI tools**
+
+31. **Logins.**
+    - Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](./ai_tools/README.md#two-accounts).
+    - Sign in to the Claude app, and open T3 Code once.
+    - Run `codex login`.
+32. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
+    - Claude and T3 Code. `manual-steps` opens the ones it can tell aren't set.
+    - Any terminal other than Ghostty.
+33. **Claude in Chrome.** See [Browser (Claude in Chrome)](./ai_tools/README.md#browser-claude-in-chrome).
+34. **Claude Code computer use.** Per project, see [Computer use](./ai_tools/README.md#computer-use).
+35. **T3 Code phone app.** See [Mobile](./ai_tools/README.md#mobile).
+36. **Claude phone app.** Install it, sign in, and allow notifications.
+37. **Training opt-outs.** See [Privacy](./ai_tools/README.md#privacy).
+38. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
+
 ### Ubuntu
 
 Once:
@@ -381,12 +401,26 @@ Once:
 20. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 21. **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 
+**AI tools.** Over SSH, logins print a link to open on the Mac.
+
+22. **Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
+23. **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
+24. **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.
+25. **Claude in Chrome.** At the desktop, see [Browser (Claude in Chrome)](./ai_tools/README.md#browser-claude-in-chrome).
+26. **T3 Code.** Connect to the [service](./ai_tools/README.md#t3-code-on-ubuntu):
+    - `t3 connect --headless` (open the link on the Mac), `t3 connect publish`, then `t3 service restart`.
+    - On the phone, steps 3 to 5 of [Mobile](./ai_tools/README.md#mobile).
+    - Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
+    - After an agent first opens T3 Code's browser, re-run `bash setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
+    - At the desktop, run `t3 pair` and paste the link in the T3 Code app (**Settings → Connections → Add environment**).
+27. **Claude app.** At the desktop, open Claude and sign in.
+
 When needed:
 
 - Reboot when `just status` says one is pending.
 - Install firmware updates it lists: `fwupdmgr refresh && fwupdmgr update`.
 - If `fwupdmgr refresh` times out, run `curl -sSI --max-time 15 https://cdn.fwupd.org/downloads/firmware.xml.zst.jcat` and `curl -sSI --max-time 15 https://fwupd.org`. When only the first fails, your network blocks the firmware CDN. Refresh on another network, such as a phone hotspot, or through a Tailscale exit node.
-- After a release upgrade, re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
+- After a release upgrade, re-run `bash setup.sh`.
 
 ## Check it works
 
@@ -434,7 +468,7 @@ It updates every app Homebrew installed, including the ones that update themselv
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.
-- To update configs, pull and re-run `bash setup.sh` and `bash ai_tools/setup.sh`.
+- To update configs, pull and re-run `bash setup.sh`.
 
 ## Maintenance
 

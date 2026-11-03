@@ -2,13 +2,15 @@
 # The step's functions call the replaced ones
 # shellcheck disable=SC2329
 
-# ai_tools/manual-steps/install.sh: which apps' notifications still need allowing, read from macOS's
-# notification settings, opening those settings only on a yes, and its other checks.
+# The AI tools' manual steps, through the manual-steps step with only their list: which apps'
+# notifications still need allowing, read from macOS's notification settings, opening those settings
+# only on a yes, and the other checks in ai_tools/manual-steps/checks.sh.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-load_script ai_tools/manual-steps/install.sh
+load_script manual-steps/install.sh
+replace_fn manual_steps 'manual_reset; ai_manual_steps'
 
 # expect <status> <check...>: runs the check in this shell, so the test can read its MANUAL_DETAIL
 expect() {
@@ -141,6 +143,6 @@ for cmd in dpkg-query bwrap; do
     stub "$cmd" 'exit 1'
 done
 assert_exit 0 main
-assert_contains "$RUN_OUTPUT" "Remaining AI tool steps on Ubuntu"
+assert_contains "$RUN_OUTPUT" "Remaining manual steps on Ubuntu"
 assert_eq "" "$(grep -E '^(open|sudo)' "$STUB_LOG" || true)" "commands run on Ubuntu"
 test_done

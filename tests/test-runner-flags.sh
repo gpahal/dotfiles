@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# The runners, through runner_main, take -h/--help, --status, --for-alerts, --backup, and --no-backup
-# anywhere among the step names, and fail with a usage line on an unknown flag or step.
+# setup.sh, through runner_main, takes -h/--help, --status, --for-alerts, --backup, and --no-backup
+# anywhere among the step and group names, and fails with a usage line on an unknown flag or step.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -29,6 +29,11 @@ header="$(load_script lib/common.sh && load_script lib/runner.sh && step_header_
 [ -n "$header" ] || fail "vim/install.sh has no header line"
 assert_contains "$RUN_OUTPUT" "  vim             $header"
 [ ! -e "$HOME/.vimrc" ] || fail "help installed ~/.vimrc"
+# The AI tools' steps run from ai_tools, and the groups are listed
+header="$(load_script lib/common.sh && load_script lib/runner.sh && step_header_line "$REPO_DIR/ai_tools/codex/install.sh")"
+assert_contains "$RUN_OUTPUT" "  codex           $header"
+assert_contains "$RUN_OUTPUT" "  ai: claude-code claude-desktop codex t3-code skills manual-steps"
+assert_contains "$RUN_OUTPUT" "  claude: claude-code claude-desktop"
 
 assert_exit 2 "$BASH" "$setup_sh" --status vim -x
 assert_contains "$RUN_OUTPUT" "Unknown option: -x"

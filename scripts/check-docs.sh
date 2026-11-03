@@ -2,8 +2,9 @@
 # shellcheck disable=SC2016 # backquotes and $ in sed and grep patterns
 set -euo pipefail
 
-# Check the READMEs' step lists match the runners' STEPS on both OSes, step header lines,
-# that each STEP_NEEDS names a setup.sh step, the Manual steps lists, and local links.
+# Check the READMEs' step lists match setup.sh's STEPS on both OSes and its ai group, step header
+# lines, that each step lives in one place, that each STEP_NEEDS names a setup.sh step, the Manual
+# steps lists, and local links.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -50,10 +51,9 @@ compare() {
 # A failed --help leaves the list empty, which the loop below reports
 runner_steps "$DOTFILES_DIR/setup.sh" Darwin > "$tmp/setup-macos" || true
 runner_steps "$DOTFILES_DIR/setup.sh" Linux > "$tmp/setup-ubuntu" || true
-runner_steps "$DOTFILES_DIR/ai_tools/setup.sh" Darwin > "$tmp/ai-macos" || true
-runner_steps "$DOTFILES_DIR/ai_tools/setup.sh" Linux > "$tmp/ai-ubuntu" || true
-for list in setup-macos setup-ubuntu ai-macos ai-ubuntu; do
-    [ -s "$tmp/$list" ] || fail "Couldn't read the steps for $list from the runner's --help"
+runner_group "$DOTFILES_DIR/setup.sh" ai > "$tmp/ai" || true
+for list in setup-macos setup-ubuntu ai; do
+    [ -s "$tmp/$list" ] || fail "Couldn't read the steps for $list from setup.sh's --help"
 done
 
 check_header_line() {
@@ -65,15 +65,20 @@ check_header_line() {
         fail "${script#"$DOTFILES_DIR"/}'s header line, which --help lists, should be one sentence of at most 90 characters: $line"
     fi
 }
+cat "$tmp/setup-macos" "$tmp/setup-ubuntu" | sort -u > "$tmp/setup-all"
 while IFS= read -r step; do
-    check_header_line "$step/install.sh"
-done < <({
-    sed "s|^|$DOTFILES_DIR/|" "$tmp/setup-macos" "$tmp/setup-ubuntu"
-    sed "s|^|$DOTFILES_DIR/ai_tools/|" "$tmp/ai-macos" "$tmp/ai-ubuntu"
-} | sort -u)
+    found=()
+    for dir in "${STEPS_DIRS[@]}"; do
+        [ ! -f "$dir/$step/install.sh" ] || found+=("${dir#"$DOTFILES_DIR"}/$step/install.sh")
+    done
+    case ${#found[@]} in
+        0) fail "setup.sh's step $step has no install.sh in any of STEPS_DIRS" ;;
+        1) check_header_line "$(step_path "$step")" ;;
+        *) fail "setup.sh's step $step is in more than one place: ${found[*]#/}" ;;
+    esac
+done < "$tmp/setup-all"
 
 # run_steps skips a step when a step it needs fails, so each need must be a setup.sh step
-cat "$tmp/setup-macos" "$tmp/setup-ubuntu" > "$tmp/setup-all"
 needs=0
 while IFS= read -r script; do
     for need in $(step_header_value "$script" STEP_NEEDS); do
@@ -100,7 +105,7 @@ ai_readme="$DOTFILES_DIR/ai_tools/README.md"
 line="$(grep -m1 '^The steps, in order, are ' "$ai_readme" || true)"
 sentence="${line#The steps, in order, are }"
 backquoted "${sentence%%.*}" > "$tmp/ai-list"
-compare "ai_tools/README.md's step list" "$tmp/ai-macos" "$tmp/ai-list" \
+compare "ai_tools/README.md's step list" "$tmp/ai" "$tmp/ai-list" \
     'a line starting "The steps, in order, are `<step>`, ..." in ai_tools/README.md'
 
 # scripts/manual-steps-doc.sh writes these sections

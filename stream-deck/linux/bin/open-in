@@ -2,10 +2,11 @@
 set -uo pipefail
 
 # Usage: open-in upgrade|editor|terminal|files|t3-code|claude|chrome|chrome-tab|gmail|notion|agenda|activity-monitor
-# The Ubuntu sibling of the Mac plugin's bin/open-in, run by the Stream Deck daemon and the hotkeys
-# step's shortcuts. editor and files open the front app's folder or file in Zed or Nautilus, else a
+#        open-in run <command>
+# The Ubuntu sibling of the Mac plugin's bin/open-in, run by the Stream Deck daemon, the hotkeys
+# step's shortcuts, and the ntfy notifier, which runs an alert's command with run. editor and files open the front app's folder or file in Zed or Nautilus, else a
 # new window. terminal brings Ghostty's tab at that folder to the front, else opens a tab there, or
-# with no folder brings Ghostty to the front. upgrade runs upgrade in a new Ghostty tab. The others
+# with no folder brings Ghostty to the front. upgrade, and run's command, run in a new Ghostty tab. The others
 # focus or launch an app. Wayland lets only the shell read and
 # focus windows, so this asks the dotfiles GNOME extension (gnome-extension/). Exits 1 and notifies
 # on failure.
@@ -194,8 +195,7 @@ ghostty_shells() {
     return 0
 }
 
-# The command a new tab runs: the login shell, interactive so zsh/aliases.zsh defines upgrade, then
-# the shell again so the tab stays open. A user service may have no SHELL.
+# The shell a new tab runs a command in. A user service may have no SHELL.
 login_shell() {
     local shell
     shell="$(getent passwd "$(id -un)" | cut -d: -f7)"
@@ -255,11 +255,19 @@ open_terminal() {
     fi
 }
 
-open_upgrade() {
+# open_command <target> <command>: runs it in a new tab's login shell, interactive so
+# zsh/aliases.zsh's aliases such as upgrade work, then the shell again so the tab stays open
+open_command() {
     local shell
     shell="$(login_shell)"
-    ghostty_tab "$HOME" "$shell" -i -c "upgrade; exec $(printf '%q' "$shell") -i" || return 1
-    log "upgrade: ran upgrade in Ghostty"
+    if ! ghostty_tab "$HOME" "$shell" -i -c "$2; exec $(printf '%q' "$shell") -i"; then
+        if [ -z "$FAILURE" ]; then
+            log "ERROR couldn't run $2 in Ghostty"
+            FAILURE="Couldn't run $2 in Ghostty. See $CALLER_LOG"
+        fi
+        return 1
+    fi
+    log "$1: ran $2 in Ghostty"
 }
 
 open_path() {
@@ -353,6 +361,12 @@ main() {
     local target="${1:-}"
     case "$target" in
         upgrade | editor | terminal | files | t3-code | claude | chrome | chrome-tab | gmail | notion | agenda | activity-monitor) ;;
+        run)
+            if [ -z "${2:-}" ]; then
+                usage
+                return 2
+            fi
+            ;;
         *)
             usage
             return 2
@@ -365,12 +379,8 @@ main() {
     fi
     if [ -z "$FAILURE" ]; then
         case "$target" in
-            upgrade)
-                if ! open_upgrade && [ -z "$FAILURE" ]; then
-                    log "ERROR couldn't run upgrade in Ghostty"
-                    FAILURE="Couldn't run upgrade in Ghostty. See $CALLER_LOG"
-                fi
-                ;;
+            upgrade) open_command upgrade upgrade ;;
+            run) open_command run "$2" ;;
             editor | terminal | files) open_path "$target" ;;
             *) open_target_app "$target" ;;
         esac

@@ -2,8 +2,9 @@
 # The ntfy client's config and the desktop notifier, for the ntfy step, just ntfy-user, and
 # just ntfy-device. Source after lib/common.sh.
 
-# The copies of ntfy/subscribe.sh and ntfy/notify.sh the notifier runs, so it doesn't depend on the
-# checkout. client.yml's default-command names notify.sh by this path.
+# The copies of ntfy's scripts the notifier runs, so it doesn't depend on the checkout, with the
+# Stream Deck's open-in, which opens an action's Ghostty tab. client.yml's default-command names
+# notify.sh by this path.
 NTFY_NOTIFIER_DIR="$HOME/.local/share/dotfiles/ntfy"
 NTFY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/ntfy"
 NTFY_NOTIFY_ERROR="$NTFY_STATE_DIR/notify-error"
@@ -20,9 +21,14 @@ ntfy_client_config() {
 }
 
 ntfy_notifier_files() {
-    local status=0
-    "$1" "$DOTFILES_DIR/ntfy/subscribe.sh" "$NTFY_NOTIFIER_DIR/subscribe.sh" || status=1
-    "$1" "$DOTFILES_DIR/ntfy/notify.sh" "$NTFY_NOTIFIER_DIR/notify.sh" || status=1
+    local status=0 file open_in="$DOTFILES_DIR/stream-deck/linux/bin/open-in"
+    for file in subscribe.sh notify.sh actions.sh run-action.sh; do
+        "$1" "$DOTFILES_DIR/ntfy/$file" "$NTFY_NOTIFIER_DIR/$file" || status=1
+    done
+    ! is_macos || open_in="$DOTFILES_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in"
+    "$1" "$open_in" "$NTFY_NOTIFIER_DIR/open-in" || status=1
+    "$1" "$DOTFILES_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin/bin/open-in-lib.sh" \
+        "$NTFY_NOTIFIER_DIR/open-in-lib.sh" || status=1
     return "$status"
 }
 

@@ -54,8 +54,9 @@ front() {
 
 # e.g. check files 0 "run nautilus --new-window $dir": the stub log less the queries, with apps
 # started as "run <app>" and the extension's calls as "shell <method>"
+# ARG is run's command
 check() {
-    assert_exit "$2" bash "$OPEN_IN" "$1"
+    assert_exit "$2" bash "$OPEN_IN" "$1" ${ARG:+"$ARG"}
     sed -e "s|systemd-run --user --quiet --collect -p ExitType=cgroup -- $STUB_DIR/|run |" \
         -e 's|^busctl --user --json=short call org.gnome.Shell /com/gpahal/Dotfiles com.gpahal.Dotfiles |shell |' \
         "$STUB_LOG" > "$SANDBOX/short.log"
@@ -124,6 +125,11 @@ check upgrade 0 "shell ActivateApp ss ghostty_ghostty.desktop com.mitchellh.ghos
 ghostty +new-tab --working-directory=$HOME -e $login_shell -i -c upgrade; exec $login_shell -i"
 NO_GHOSTTY=1 check upgrade 0 "shell ExpectWindow su com.mitchellh.ghostty 10000
 run ghostty --working-directory=$HOME -e $login_shell -i -c upgrade; exec $login_shell -i"
+# Run does the same with its command, as the ntfy notifier passes an alert's
+ARG="ssh -t desktop 'just status'" check run 0 "shell ActivateApp ss ghostty_ghostty.desktop com.mitchellh.ghostty
+ghostty +new-tab --working-directory=$HOME -e $login_shell -i -c ssh -t desktop 'just status'; exec $login_shell -i"
+assert_contains "$RUN_OUTPUT" "run: ran ssh -t desktop 'just status' in Ghostty"
+check run 2 ""
 unset GHOSTTY_SHELLS
 
 # The Claude app's folder is its Code session's whose title the window's names, else the one used

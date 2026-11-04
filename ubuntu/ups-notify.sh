@@ -31,5 +31,5 @@ case "${NOTIFYTYPE:-}" in
     COMMOK) title="Back in contact with the UPS" priority=default tags=white_check_mark ;;
     *) title="UPS event ${NOTIFYTYPE:-}" priority=default tags=electric_plug ;;
 esac
-ntfy_hook_push dotfiles-ups "the UPS event" "$title on $host" "$message" "Priority: $priority" "Tags: $tags"
+ntfy_hook_push dotfiles-ups "the UPS event" "$title on $host" "$message" "Priority: $priority" "Tags: $tags,action:linux-ups"
 exit 0

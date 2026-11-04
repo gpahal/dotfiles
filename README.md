@@ -280,17 +280,20 @@ Ubuntu runs a private [ntfy](https://ntfy.sh) server. Tailscale Funnel publishes
 
 - **Topics.** `alerts` gets the disk, UPS, health, and boot alerts, and `agenda` is for your web service. Any other topic works too.
 - **Users.** You sign in with a password in the Android app and the web app. The `machine` user reads and sends on every topic, with a token for each place that uses it: `desktop`, `macbook`, and `web-service`.
-- **Desktop notifications.** The Mac and Ubuntu show `alerts` and `agenda` as notifications, and catch up on what arrived while they were asleep or off.
+- **Desktop notifications.** The Mac and Ubuntu show `alerts` and `agenda` as notifications, and catch up on what arrived while they were asleep or off. Clicking one opens its `Click` link, as on the phone; an `agenda` notification without one opens [the agenda](https://garvitpahal.com/x/agenda). Ubuntu also shows a button for each `view` action, which the Mac leaves out. Only the Android app runs `http` and `broadcast` actions.
+- **Alert actions.** Clicking a disk, UPS, or health alert on the Mac or Ubuntu opens a Ghostty tab with the command that shows what's wrong and how to fix it. The command runs when you press Enter, on the desktop: directly there, or over `ssh` from the Mac. The first time, macOS asks to let terminal-notifier control Ghostty. The phone shows the alert's `action:` tag as text.
 - **Restarts and updates.** The server starts at boot, and the funnel comes back with Tailscale. The notifier starts when you log in: on Ubuntu with the desktop session, on the Mac as a login item under **Allow in the Background** in **System Settings → General → Login Items & Extensions**. The daily security updates install new ntfy versions on Ubuntu and restart the server. `upgrade` updates ntfy on both machines and restarts the notifiers.
 - **Alerts only go to this server.** Until `just ntfy-user` sets them up, the alerts fail and log why (`journalctl -t dotfiles-smartd`, `journalctl --user -u dotfiles-health`), and `--status` reports it. They never send to ntfy.sh, even with an older ntfy.sh URL saved; `just alerts` replaces it.
 - **Sending.** `ntfy publish alerts "Backup done"` works on both machines. From anywhere else, such as your web service:
 
   ```sh
   curl -H "Authorization: Bearer <token>" -H "Title: Standup" -d "In 10 minutes" \
+      -H "Click: https://garvitpahal.com/x/agenda/<event>" \
+      -H "Actions: view, Join call, https://meet.example.com/<id>" \
       https://<machine>.<tailnet>.ts.net:8443/agenda
   ```
 
-  `Priority`, `Tags`, and `Click` headers set the priority, the icons, and a link to open. `At: tomorrow, 9am` or `Delay: 30m` sends it later, up to 3 days ahead. To read a topic's last 72 hours, send `GET /agenda/json?poll=1&since=72h` with the same header.
+  `Priority` and `Tags` headers set the priority and the icons. A tag `action:<name>` gives a desktop notification an action from [`ntfy/actions.sh`](ntfy/actions.sh), the only commands a click can run: a bare name runs on the computer showing it, and `linux-<name>` or `mac-<name>` on that machine. `Click` sets the link a click opens, and `Actions` adds up to three buttons, separated by `;`: `view, <label>, <url>` opens a page, and `http, <label>, <url>` sends a request from the phone. `At: tomorrow, 9am` or `Delay: 30m` sends it later, up to 3 days ahead. To read a topic's last 72 hours, send `GET /agenda/json?poll=1&since=72h` with the same header.
 - **Tokens.** `just ntfy-user` prints the `macbook` and `web-service` tokens again. `just ntfy-user --rotate <label>` replaces one, and the old one stops working.
 - **Password.** ntfy keeps only its hash, so it can't be shown again. `just ntfy-user --change-pass` sets a new one and signs out the web app; then change it in the Android app too.
 - **After a lost disk.** ntfy's data isn't backed up. Run setup, then `just ntfy-user`, which makes new tokens; you can reuse your password. Then run `just ntfy-device` on the Mac with the new `macbook` token, give your web service its new token, and re-enter your password in the Android app.

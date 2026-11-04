@@ -80,6 +80,8 @@ assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/aler
 assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "Needs attention: ubuntu. Run: bash setup.sh ubuntu"
+# A click on the desktop or the Mac shows the desktop's status (ntfy/actions.sh)
+assert_file_contains "$STUB_LOG" "-H Tags: warning,action:linux-status"
 assert_file_contains "$STUB_LOG" "ubuntu: Tailscale connected (run sudo tailscale up)"
 assert_file_contains "$STUB_LOG" "ubuntu: Free space on /: df couldn't read it"
 assert_file_not_contains "$STUB_LOG" "Sleep masked"
@@ -160,6 +162,7 @@ mv "$REPO" "$SANDBOX/repo.away"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO; run bash setup.sh ubuntu where the repo is now"
+assert_file_contains "$STUB_LOG" "-H Tags: warning,action:linux-health-log"
 mv "$SANDBOX/repo.away" "$REPO"
 # No checkout recorded
 mv "$CHECKOUT" "$SANDBOX/checkout.away"

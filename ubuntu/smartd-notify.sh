@@ -21,5 +21,5 @@ source "$NTFY_LIB"
 
 ntfy_hook_push dotfiles-smartd "the warning" "${SMARTD_SUBJECT:-SMART warning on $(hostname)}" \
     "${SMARTD_MESSAGE:-${SMARTD_FULLMESSAGE:-smartd reported a problem with ${SMARTD_DEVICE:-a disk}}}" \
-    "Priority: urgent" "Tags: warning"
+    "Priority: urgent" "Tags: warning,action:linux-disk"
 exit 0

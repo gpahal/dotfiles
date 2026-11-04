@@ -36,7 +36,7 @@ case "$script" in
         printf "  Ghostty: %s%s%s\n" "$2" "${3:+ at $3}" "${4:+, typing $(printf %s "$4" | tr -d "\n")}" >> "$STUB_LOG"
         echo "$GHOSTTY_ANSWER"
         ;;
-    *"input text \"upgrade\""*) echo "  Ghostty: typed upgrade" >> "$STUB_LOG" ;;
+    *"input text (item 1 of argv)"*) echo "  Ghostty: typed $2" >> "$STUB_LOG" ;;
     *"display notification"*) echo "  notification from $3: $2" >> "$STUB_LOG" ;;
     *"make new tab"*) echo "  Chrome tab starting $3, else a new one at $2" >> "$STUB_LOG"; printf "%s\n" "$ANSWER" ;;
     *)
@@ -55,8 +55,9 @@ export DOTFILES_ZED_CLI="$STUB_DIR/zed-cli" ANSWER="" ERROR="" GHOSTTY_ANSWER=ta
 
 # e.g. check files com.apple.finder 0 "open $dir": the stub log less the queries, and the blank
 # line an argument's newline leaves
+# ARG is run's command
 check() {
-    FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1"
+    FRONT="$2" assert_exit "$3" bash "$OPEN_IN" "$1" ${ARG:+"$ARG"}
     assert_eq "$4" "$(grep -vE '^(lsappinfo|osascript|mdls|pbpaste) |^$' "$STUB_LOG" || true)" "$1 from $2"
 }
 
@@ -95,6 +96,12 @@ check upgrade com.google.Chrome 0 "  Ghostty: new at $HOME, typing upgrade"
 assert_contains "$RUN_OUTPUT" "upgrade: ran upgrade in Ghostty"
 NOT_RUNNING=1 check upgrade com.google.Chrome 0 "open -b com.mitchellh.ghostty
   Ghostty: typed upgrade"
+# Run types its command, as the ntfy notifier passes an alert's
+ARG="ssh -t desktop 'just status'" check run com.google.Chrome 0 "  Ghostty: new at $HOME, typing ssh -t desktop 'just status'"
+assert_contains "$RUN_OUTPUT" "run: ran ssh -t desktop 'just status' in Ghostty"
+ARG="upsc ups@localhost" NOT_RUNNING=1 check run com.google.Chrome 0 "open -b com.mitchellh.ghostty
+  Ghostty: typed upsc ups@localhost"
+check run com.google.Chrome 2 ""
 
 # The Claude app's folder is its Code session's: the one whose ID is in the page's address, else
 # whose title the window's names, else the one used last that isn't archived. A page that isn't

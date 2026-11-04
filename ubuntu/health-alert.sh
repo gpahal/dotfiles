@@ -110,7 +110,7 @@ status_alert() {
     if [ -n "$problem" ]; then
         echo "Health check couldn't run: $problem." >&2
         ntfy_push "$url" "Needs attention on $(hostname)" "Health check couldn't run: $problem" \
-            "Tags: warning" || echo "Couldn't push the health alert to ntfy." >&2
+            "Tags: warning,action:linux-health-log" || echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi
     status=0
@@ -155,7 +155,7 @@ status_alert() {
         return "$result"
     fi
     [ -z "$details" ] || message="$message"$'\n'"$details"
-    if ! ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning"; then
+    if ! ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning,action:linux-status"; then
         echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi

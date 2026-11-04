@@ -35,7 +35,7 @@ TOKEN=tk_0123456789abcdefghijklmnopqrs
 echo "$TOKEN" > "$TOKEN_FILE"
 echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning,action:linux-disk --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/alerts"'
 assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
 assert_file_not_contains "$STUB_LOG" "logger"

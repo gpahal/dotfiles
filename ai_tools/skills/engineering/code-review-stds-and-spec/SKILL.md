@@ -51,6 +51,8 @@ Each smell gives what it is, then the fix. Match each against the change:
 
 ### 4. Spawn both sub-agents in parallel
 
+Start both sub-agents in one message, in the foreground, each with a fresh context rather than a fork of this conversation, and aggregate the reports they return.
+
 **Standards sub-agent prompt** should include:
 
 - The scope packet.

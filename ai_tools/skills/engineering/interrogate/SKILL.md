@@ -7,7 +7,7 @@ argument-hint: "[low|medium|high|xhigh|max] [scope]"
 
 # Interrogate
 
-Two reviewers from different model families review the same change adversarially, with the same prompt. The signal comes from model diversity: what both find independently is the strongest evidence, and where they disagree is worth a look. You are the lead. You scope the change, state its intent, run both reviewers, and judge what they found. The deliverable is the verdict, so change no code.
+Two reviewers from different model families review the same change adversarially, with the same prompt. The signal comes from model diversity: what both find independently is the strongest evidence, and where they disagree is worth a look. You are the lead. You scope the change, state its intent, run both reviewers, and judge what they found, proving each bug by a run. The deliverable is the verdict, so leave the user's checkout unchanged.
 
 Either Claude Code or Codex can run this skill.
 
@@ -89,7 +89,19 @@ You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator
 - **Noted**: true but not worth acting on: low impact, premature, or dependent on context.
 - **Dismissed**: wrong, a nitpick, or missing context. Say why in a line.
 
-Each finding carries the reviewers that raised it, its priority, and a one-line reason for its bucket. When the verdict is written, remove both temp directories, `<tmp>` and `<answers>`.
+Each finding carries the reviewers that raised it, its priority, and a one-line reason for its bucket.
+
+### Prove bugs by a run
+
+Before a correctness or security finding goes in **Act on**, prove it: run its repro, or write one (a failing test or a script) when the reviewer gave none. A design or maintainability finding has nothing to run, so judge it by its trace.
+
+Run repros outside the user's checkout, in a detached worktree at the scope's head: `git worktree add --detach <tmp>/run <head>`. For a working-tree scope, make it at `HEAD` and apply `git diff HEAD` to it. For a staged scope, apply `git diff --cached`. Set up dependencies there as the repo's docs say.
+
+- If the run shows the failure, and the failure breaks the intent, the finding stays in **Act on** with the command and the output it printed.
+- If the run shows nothing wrong, the finding moves to **Dismissed**, citing the run.
+- If the run can't be set up, say so in the finding and judge it by its trace.
+
+When the verdict is written, remove the run worktree (`git worktree remove --force <tmp>/run`) and both temp directories, `<tmp>` and `<answers>`.
 
 ## Output
 
@@ -106,7 +118,7 @@ Effort: <effort>, in <S> splits
 - B: <model from the Reviewers table>, <N> findings, and any split whose run failed, with the reason
 
 ### Act on
-<each finding: what's wrong, where, who raised it, why it matters>
+<each finding: what's wrong, where, who raised it, why it matters, and for a bug, the command and output that prove it>
 
 ### Consider
 <each finding: what's wrong, who raised it, the trade-off>

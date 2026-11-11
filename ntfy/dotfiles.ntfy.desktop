@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ntfy
+Comment=Alerts and agenda from your ntfy server, from the dotfiles ntfy step
+Icon=preferences-system-notifications
+Exec=true
+NoDisplay=true
+X-GNOME-UsesNotifications=true

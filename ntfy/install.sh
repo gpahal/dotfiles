@@ -47,6 +47,8 @@ NTFY_DROP_IN=/etc/systemd/system/ntfy.service.d/dotfiles.conf
 NTFY_NOTIFIER_UNIT_NAME=dotfiles-ntfy-notify.service
 # Not XDG_CONFIG_HOME: the systemd user manager doesn't read the shell's
 NTFY_NOTIFIER_UNIT="$HOME/.config/systemd/user/$NTFY_NOTIFIER_UNIT_NAME"
+NTFY_CLICKS_UNIT_NAME=dotfiles-ntfy-clicks.service
+NTFY_CLICKS_UNIT="$HOME/.config/systemd/user/$NTFY_CLICKS_UNIT_NAME"
 NTFY_AGENT_LABEL=dotfiles.ntfy-subscribe
 NTFY_AGENT="$HOME/Library/LaunchAgents/$NTFY_AGENT_LABEL.plist"
 
@@ -174,14 +176,25 @@ ntfy_items() {
     fi
 }
 
-# The user unit runs the copy of subscribe.sh. It needs a desktop session for notify-send.
-ntfy_notifier_unit() {
-    printf '%s\n' "# From the dotfiles ntfy step: show ntfy's alerts and agenda as desktop notifications" \
-        "[Unit]" "Description=Show ntfy's messages as desktop notifications" \
+# ntfy_user_unit <comment> <description> <script>: a user unit running the copy of one of ntfy's
+# scripts in the desktop session, which GNOME's notifications need
+ntfy_user_unit() {
+    printf '%s\n' "# From the dotfiles ntfy step: $1" \
+        "[Unit]" "Description=$2" \
         "PartOf=graphical-session.target" "After=graphical-session.target" "" \
-        "[Service]" "ExecStart=/bin/bash $(systemd_quote "$NTFY_NOTIFIER_DIR/subscribe.sh")" \
+        "[Service]" "ExecStart=/bin/bash $(systemd_quote "$NTFY_NOTIFIER_DIR/$3")" \
         "Restart=always" "RestartSec=10" "" \
         "[Install]" "WantedBy=graphical-session.target"
+}
+
+ntfy_notifier_unit() {
+    ntfy_user_unit "show ntfy's alerts and agenda as desktop notifications" \
+        "Show ntfy's messages as desktop notifications" subscribe.sh
+}
+
+ntfy_clicks_unit() {
+    ntfy_user_unit "open the link or run the action of an ntfy notification you click" \
+        "Act on clicks on ntfy's desktop notifications" clicks.sh
 }
 
 ntfy_agent_files() {
@@ -194,12 +207,19 @@ setup_ubuntu_notifier() {
     ntfy_notifier_files copy_file || return 1
     "$COPIED" && changed=true
     user_manager_reachable "ntfy's desktop notifier isn't on" || return 0
-    if ! file_is "$NTFY_NOTIFIER_UNIT" "$(ntfy_notifier_unit)"; then
-        mkdir -p "$(dirname "$NTFY_NOTIFIER_UNIT")" && write_content "$NTFY_NOTIFIER_UNIT" "$(ntfy_notifier_unit)" ||
-            return 1
-        changed=true
-    fi
-    start_user_service "$NTFY_NOTIFIER_UNIT_NAME" "ntfy's desktop notifier" "$changed"
+    write_ntfy_unit "$NTFY_NOTIFIER_UNIT" "$(ntfy_notifier_unit)" || return 1
+    write_ntfy_unit "$NTFY_CLICKS_UNIT" "$(ntfy_clicks_unit)" || return 1
+    start_user_service "$NTFY_NOTIFIER_UNIT_NAME" "ntfy's desktop notifier" "$changed" || return 1
+    start_user_service "$NTFY_CLICKS_UNIT_NAME" "ntfy's click handler" "$changed" || return 1
+    # Only clicks need it, so the notifications are set up without it
+    require_cmd gdbus
+}
+
+# write_ntfy_unit <file> <content>: sets changed=true when it writes, which restarts both units
+write_ntfy_unit() {
+    file_is "$1" "$2" && return 0
+    mkdir -p "$(dirname "$1")" && write_content "$1" "$2" || return 1
+    changed=true
 }
 
 ntfy_agent_loaded() {
@@ -360,7 +380,11 @@ status_ubuntu() {
         status_item ok "ntfy's users and this machine's token ($(shown_path "$(ntfy_client_config)"))"
         ntfy_notifier_files status_file
         status_file_content "$NTFY_NOTIFIER_UNIT" "$(ntfy_notifier_unit)"
+        status_file_content "$NTFY_CLICKS_UNIT" "$(ntfy_clicks_unit)"
         status_user_service "$NTFY_NOTIFIER_UNIT_NAME" "ntfy's desktop notifier"
+        status_user_service "$NTFY_CLICKS_UNIT_NAME" "ntfy's click handler"
+        command -v gdbus &>/dev/null ||
+            status_item missing "gdbus, which ntfy's click handler runs: $(missing_cmd_hint gdbus)"
     else
         status_item missing "ntfy's users and this machine's token: run just ntfy-user"
     fi

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2034 # the target's shell expands the commands; the callers read the rest
-# The actions an ntfy message can name, and where each runs. Sourced by notify.sh and
+# The actions an ntfy message can name, and where each runs. Sourced by notify.sh, clicks.sh, and
 # run-action.sh, which the ntfy step copies beside it to ~/.local/share/dotfiles/ntfy, so it mustn't
 # depend on the repo.
 #
@@ -97,4 +97,13 @@ action_from_tags() {
 # sh_quote <string>: single-quoted for sh, bash, and zsh
 sh_quote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# action_open_in <notifier dir> <action> <log>: the sh command that opens a Ghostty tab running
+# run-action.sh for the action, through the open-in beside it, which writes what it did to the log.
+# The action's name is only letters, digits, and dashes.
+action_open_in() {
+    printf 'OPEN_IN_CALLER=ntfy OPEN_IN_LOG=%s /bin/bash %s run %s > %s 2>&1' "$(sh_quote "$3")" \
+        "$(sh_quote "$1/open-in")" "$(sh_quote "/bin/bash $(sh_quote "$1/run-action.sh") $2")" \
+        "$(sh_quote "$3")"
 }

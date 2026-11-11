@@ -21,15 +21,18 @@ source "$NTFY_LIB"
 
 message="${1:-${UPSNAME:-The UPS} reported ${NOTIFYTYPE:-an event}}"
 host="$(hostname 2> /dev/null || echo "this machine")"
+# The sequence ID: an event replaces the notification of the last one about the same thing, so
+# back on mains power replaces on battery
 case "${NOTIFYTYPE:-}" in
-    ONBATT) title="UPS on battery" priority=high tags=electric_plug ;;
-    ONLINE) title="UPS on mains power" priority=default tags=white_check_mark ;;
-    LOWBATT) title="UPS battery low" priority=urgent tags=warning ;;
-    SHUTDOWN) title="Shutting down on UPS battery" priority=urgent tags=warning ;;
-    REPLBATT) title="UPS battery needs replacing" priority=high tags=warning ;;
-    COMMBAD | NOCOMM) title="Lost contact with the UPS" priority=high tags=warning ;;
-    COMMOK) title="Back in contact with the UPS" priority=default tags=white_check_mark ;;
-    *) title="UPS event ${NOTIFYTYPE:-}" priority=default tags=electric_plug ;;
+    ONBATT) title="UPS on battery" priority=high tags=electric_plug sequence=ups-power ;;
+    ONLINE) title="UPS on mains power" priority=default tags=white_check_mark sequence=ups-power ;;
+    LOWBATT) title="UPS battery low" priority=urgent tags=warning sequence=ups-power ;;
+    SHUTDOWN) title="Shutting down on UPS battery" priority=urgent tags=warning sequence=ups-power ;;
+    REPLBATT) title="UPS battery needs replacing" priority=high tags=warning sequence=ups-battery ;;
+    COMMBAD | NOCOMM) title="Lost contact with the UPS" priority=high tags=warning sequence=ups-comm ;;
+    COMMOK) title="Back in contact with the UPS" priority=default tags=white_check_mark sequence=ups-comm ;;
+    *) title="UPS event ${NOTIFYTYPE:-}" priority=default tags=electric_plug sequence=ups-other ;;
 esac
-ntfy_hook_push dotfiles-ups "the UPS event" "$title on $host" "$message" "Priority: $priority" "Tags: $tags,action:linux-ups"
+ntfy_hook_push dotfiles-ups "the UPS event" "$title on $host" "$message" "Priority: $priority" \
+    "Tags: $tags,action:linux-ups" "X-Sequence-ID: $sequence"
 exit 0

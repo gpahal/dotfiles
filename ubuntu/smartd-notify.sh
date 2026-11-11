@@ -19,7 +19,12 @@ fi
 # shellcheck source=lib/ntfy.sh
 source "$NTFY_LIB"
 
+# The sequence ID, so smartd repeating a warning replaces its notification: the disk and the kind
+# of failure, in the letters, digits, and dashes ntfy allows, at most 64
+device="${SMARTD_DEVICE:-disk}"
+sequence="$(printf 'smart-%s-%s' "${device##*/}" "${SMARTD_FAILTYPE:-warning}" | LC_ALL=C tr -c 'A-Za-z0-9_-' - |
+    cut -c 1-64)"
 ntfy_hook_push dotfiles-smartd "the warning" "${SMARTD_SUBJECT:-SMART warning on $(hostname)}" \
     "${SMARTD_MESSAGE:-${SMARTD_FULLMESSAGE:-smartd reported a problem with ${SMARTD_DEVICE:-a disk}}}" \
-    "Priority: urgent" "Tags: warning,action:linux-disk"
+    "Priority: urgent" "Tags: warning,action:linux-disk" "X-Sequence-ID: $sequence"
 exit 0

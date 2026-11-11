@@ -82,6 +82,8 @@ assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "Needs attention: ubuntu. Run: bash setup.sh ubuntu"
 # A click on the desktop or the Mac shows the desktop's status (ntfy/actions.sh)
 assert_file_contains "$STUB_LOG" "-H Tags: warning,action:linux-status"
+# The all-clear and later alerts replace its notification
+assert_file_contains "$STUB_LOG" "-H X-Sequence-ID: health"
 assert_file_contains "$STUB_LOG" "ubuntu: Tailscale connected (run sudo tailscale up)"
 assert_file_contains "$STUB_LOG" "ubuntu: Free space on /: df couldn't read it"
 assert_file_not_contains "$STUB_LOG" "Sleep masked"
@@ -123,7 +125,7 @@ mv "$SANDBOX/out/setup.report" "$SANDBOX/out/setup"
 echo 0 > "$SANDBOX/exit/setup"
 assert_exit 0 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: All clear on $(hostname)"
-assert_file_contains "$STUB_LOG" "-H Tags: white_check_mark"
+assert_file_contains "$STUB_LOG" "-H Tags: white_check_mark -H X-Sequence-ID: health"
 assert_file_contains "$STUB_LOG" "--data-raw Nothing needs attention any more."
 assert_contains "$(cat "$STATE")" " clear"
 assert_exit 0 "$BASH" "$ALERT" status
@@ -162,7 +164,7 @@ mv "$REPO" "$SANDBOX/repo.away"
 assert_exit 1 "$BASH" "$ALERT" status
 assert_file_contains "$STUB_LOG" "-H Title: Needs attention on $(hostname)"
 assert_file_contains "$STUB_LOG" "--data-raw Health check couldn't run: no repo at $REPO; run bash setup.sh ubuntu where the repo is now"
-assert_file_contains "$STUB_LOG" "-H Tags: warning,action:linux-health-log"
+assert_file_contains "$STUB_LOG" "-H Tags: warning,action:linux-health-log -H X-Sequence-ID: health"
 mv "$SANDBOX/repo.away" "$REPO"
 # No checkout recorded
 mv "$CHECKOUT" "$SANDBOX/checkout.away"
@@ -200,6 +202,7 @@ chmod 644 "$DOTFILES_NTFY_URL_FILE"
 echo boot-1 > "$DOTFILES_BOOT_ID_FILE"
 assert_exit 0 "$BASH" "$ALERT" boot
 assert_file_contains "$STUB_LOG" "-H Title: $(hostname) started"
+assert_file_contains "$STUB_LOG" "-H X-Sequence-ID: boot"
 assert_file_contains "$STUB_LOG" "--data-raw $(hostname) started at "
 assert_file_not_contains "$STUB_LOG" "sleep"
 # Once per boot, even if the user manager restarts it

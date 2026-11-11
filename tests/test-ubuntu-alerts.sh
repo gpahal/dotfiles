@@ -35,7 +35,7 @@ TOKEN=tk_0123456789abcdefghijklmnopqrs
 echo "$TOKEN" > "$TOKEN_FILE"
 echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
 run_hook
-assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning,action:linux-disk --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
+assert_file_contains "$STUB_LOG" "curl -q -fsS --proto =http --max-time 10 -H Title: SMART error (FailedHealthCheck) detected on host: box -H Priority: urgent -H Tags: warning,action:linux-disk -H X-Sequence-ID: smart-sda-FailedHealthCheck --data-raw Device: /dev/sda [SAT], FAILED SMART self-check. BACK UP DATA NOW! -K -"
 assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/alerts"'
 assert_file_contains "$STUB_LOG" "curl config: header = \"Authorization: Bearer $TOKEN\""
 assert_file_not_contains "$STUB_LOG" "logger"
@@ -55,6 +55,19 @@ printf '%s\n' 'http://127.0.0.1:2586/a"b\c' > "$URL_FILE"
 run_hook
 assert_file_contains "$STUB_LOG" 'curl config: url = "http://127.0.0.1:2586/a\"b\\c"'
 echo "http://127.0.0.1:2586/alerts" > "$URL_FILE"
+
+# A device or failure type with characters ntfy's sequence IDs don't allow, or a long one
+assert_exit 0 env SMARTD_DEVICE="/dev/disk/by-id/ata-X [SAT]" SMARTD_FAILTYPE="$(printf 'x%.0s' $(seq 1 80))" \
+    "$BASH" "$HOOK"
+assert_file_contains "$STUB_LOG" "-H X-Sequence-ID: smart-ata-X--SAT--$(printf 'x%.0s' $(seq 1 46)) --data-raw"
+
+# UPS events: one about the same thing replaces the last one's notification
+UPS_HOOK="$SANDBOX/ups-notify.sh"
+ntfy_hook_copy ubuntu/ups-notify.sh "$URL_FILE" "$REPO_DIR/ubuntu/lib/ntfy.sh" "$UPS_HOOK"
+for event in ONBATT:ups-power ONLINE:ups-power COMMBAD:ups-comm REPLBATT:ups-battery CAL:ups-other; do
+    assert_exit 0 env NOTIFYTYPE="${event%%:*}" UPSNAME=ups "$BASH" "$UPS_HOOK"
+    assert_file_contains "$STUB_LOG" ",action:linux-ups -H X-Sequence-ID: ${event#*:} --data-raw"
+done
 
 # A message starting with @ must go as text, not a file for curl to read
 assert_exit 0 env SMARTD_MESSAGE=@/etc/passwd "$BASH" "$HOOK"

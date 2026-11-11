@@ -3,9 +3,13 @@ set -u
 
 # Show one ntfy message as a desktop notification, once; ntfy subscribe runs it per message.
 # The message comes in NTFY_ID, NTFY_TIME, NTFY_TOPIC, NTFY_TITLE, NTFY_MESSAGE, NTFY_PRIORITY,
-# NTFY_TAGS, and NTFY_RAW, the whole message as JSON, which holds its Click link and actions.
+# NTFY_TAGS, and NTFY_RAW, the whole message as JSON, which holds its Click link, actions, and
+# sequence ID.
+# A message with a sequence ID replaces the notification of the last one with that ID in its topic,
+# as on the phone, so an alert that repeats or clears shows once.
 # A click opens the message's link, or runs the action its action:<name> tag names (actions.sh) in
-# a new Ghostty tab, through the Stream Deck's open-in, once you press Enter there.
+# a new Ghostty tab, through the Stream Deck's open-in, once you press Enter there. On Ubuntu,
+# GNOME tells clicks.sh of the click, which reads what to do from the file this saves.
 # ntfy replays its cache after every reconnect (subscribe.sh), so an ID already shown is skipped,
 # and the newest message time is kept for the next start to resume from. The ntfy step copies it
 # to ~/.local/share/dotfiles/ntfy, so it mustn't depend on the repo.
@@ -16,6 +20,12 @@ SEEN_MAX=1000
 LAST_TIME_FILE="$STATE_DIR/last-time"
 # The ntfy step's status reports it while it exists
 ERROR_FILE="$STATE_DIR/notify-error"
+# What a click on each Ubuntu notification does, for clicks.sh; kept as long as GNOME may still
+# show the notification
+CLICKS_DIR="$STATE_DIR/clicks"
+CLICKS_DAYS=30
+# The ntfy step's dotfiles.ntfy.desktop, which GNOME groups the notifications under
+GTK_APP_ID=dotfiles.ntfy
 # What a click on an agenda message opens when the message has no link of its own
 AGENDA_URL=https://garvitpahal.com/x/agenda
 # Beside it: actions.sh, run-action.sh, and open-in, which writes what it did here
@@ -69,6 +79,23 @@ web_url() {
     esac
 }
 
+# id_part <string>: only letters, digits, dashes, and underscores, as ntfy's topics, IDs, and
+# sequence IDs are, so it's safe in a file name and a notification ID
+id_part() {
+    printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9_-' _
+}
+
+# Sets KEY, which names the notification: the topic and the message's sequence ID, else its ID, so
+# a message with the same sequence ID replaces it
+read_key() {
+    local sequence=""
+    if [ -n "${NTFY_RAW:-}" ] && command -v jq > /dev/null 2>&1; then
+        sequence="$(jq -r '.sequence_id // empty | strings' <<< "$NTFY_RAW" 2> /dev/null)" || sequence=""
+    fi
+    [ -n "$sequence" ] || sequence="$id"
+    KEY="$(id_part "${NTFY_TOPIC:-ntfy}")-$(id_part "$sequence")"
+}
+
 # Sets ACTION and ACTION_LABEL from the action:<name> tag, when it's an action this computer can
 # run, and LINK, what a click opens: the message's Click link, else its first view action's URL,
 # else, with no action, the topic's page. VIEW_URLS and VIEW_LABELS get the view actions, which
@@ -101,28 +128,46 @@ read_links() {
     fi
 }
 
-# The open-in command that opens a Ghostty tab running run-action.sh for ACTION, whose name is only
-# letters, digits, and dashes
-action_open_in() {
-    printf 'OPEN_IN_CALLER=ntfy OPEN_IN_LOG=%s /bin/bash %s run %s > %s 2>&1' "$(sh_quote "$ACTION_LOG")" \
-        "$(sh_quote "$NOTIFIER_DIR/open-in")" \
-        "$(sh_quote "/bin/bash $(sh_quote "$NOTIFIER_DIR/run-action.sh") $ACTION")" "$(sh_quote "$ACTION_LOG")"
+# What clicks.sh reads for the notification: a line per link, view action URL, and action. URLs
+# have no spaces (web_url). A rename, so a click never reads it half written; a notification that
+# replaces one with links but has none leaves no file.
+save_clicks() {
+    local file="$CLICKS_DIR/$KEY" tmp url
+    find "$CLICKS_DIR" -type f -mtime +"$CLICKS_DAYS" -exec rm -f {} + 2> /dev/null
+    if [ -z "$LINK" ] && [ -z "$ACTION" ]; then
+        rm -f "$file"
+        return 0
+    fi
+    mkdir -p "$CLICKS_DIR" && tmp="$(mktemp "$CLICKS_DIR/.click.XXXXXX")" || return 1
+    {
+        [ -z "$LINK" ] || printf 'link %s\n' "$LINK"
+        for url in ${VIEW_URLS[@]+"${VIEW_URLS[@]}"}; do
+            printf 'view %s\n' "$url"
+        done
+        [ -z "$ACTION" ] || printf 'action %s\n' "$ACTION"
+    } > "$tmp" && mv -f "$tmp" "$file" && return 0
+    rm -f "$tmp"
+    return 1
 }
 
-# notify-send --wait prints the action clicked: default for the notification itself, a view
-# action's index, or action. It returns once the notification is clicked or dismissed.
-open_on_click() {
-    local choice url=""
-    choice="$(notify-send "$@")" || return 1
-    case "$choice" in
-        default) url="$LINK" ;;
-        [0-9]) [ "$choice" -ge "${#VIEW_URLS[@]}" ] || url="${VIEW_URLS[$choice]}" ;;
-    esac
-    if [ -n "$url" ]; then
-        xdg-open "$url"
-    elif [ -n "$ACTION" ] && { [ "$choice" == action ] || [ "$choice" == default ]; }; then
-        sh -c "$(action_open_in)"
+# gtk_notify <priority>: through GNOME's org.gtk.Notifications, which groups the notifications
+# under the app, keeps them until you dismiss them, even across a restart, and replaces one with
+# the same ID. busctl takes each value as its own argument, so nothing in a message needs quoting.
+# GNOME shows the default action as a click on the notification, not a button.
+gtk_notify() {
+    local fields=(title s "$title" body s "$message" priority s "$1" default-action s default)
+    local count=4 buttons=() i=0
+    while [ "$i" -lt "${#VIEW_URLS[@]}" ]; do
+        buttons+=(2 label s "${VIEW_LABELS[$i]}" action s "view$i")
+        i=$((i + 1))
+    done
+    [ -z "$ACTION" ] || { buttons+=(2 label s "$ACTION_LABEL" action s action) && i=$((i + 1)); }
+    if [ "$i" -gt 0 ]; then
+        fields+=(buttons 'aa{sv}' "$i" "${buttons[@]}")
+        count=5
     fi
+    busctl --user call org.gtk.Notifications /org/gtk/Notifications org.gtk.Notifications \
+        AddNotification 'ssa{sv}' "$GTK_APP_ID" "$KEY" "$count" "${fields[@]}" > /dev/null 2>&1
 }
 
 remember || exit 1
@@ -133,17 +178,19 @@ message="${NTFY_MESSAGE:-}"
 [ -n "$message" ] || message="$title"
 priority="${NTFY_PRIORITY:-3}"
 case "$priority" in [1-5]) ;; *) priority=3 ;; esac
+read_key
 read_links
 
 status=0
 if [ "$(uname -s)" == Darwin ]; then
     # terminal-notifier has no buttons, so a click opens the link, else runs the action, and the
-    # other actions are left out. It runs -execute through sh.
-    args=(-title "$title" -message "$message" -group "ntfy-$id")
+    # other actions are left out. It runs -execute through sh. A notification replaces the one in
+    # its group.
+    args=(-title "$title" -message "$message" -group "ntfy-$KEY")
     if [ -n "$LINK" ]; then
         args+=(-open "$LINK")
     elif [ -n "$ACTION" ]; then
-        args+=(-execute "$(action_open_in)")
+        args+=(-execute "$(action_open_in "$NOTIFIER_DIR" "$ACTION" "$ACTION_LOG")")
     fi
     [ "$priority" -lt 4 ] || args+=(-sound default)
     terminal-notifier "${args[@]}" > /dev/null 2>&1 || status=$?
@@ -154,22 +201,13 @@ if [ "$(uname -s)" == Darwin ]; then
     fi
 else
     urgency=normal
-    [ "$priority" -lt 4 ] || urgency=critical
-    args=(--app-name=ntfy --urgency="$urgency")
-    if [ -z "$LINK" ] && [ -z "$ACTION" ]; then
-        notify-send "${args[@]}" -- "$title" "$message" || status=$?
-    else
-        # In the background, as it waits for the click, so ntfy goes on to the next message. Its
-        # output goes to /dev/null, so ntfy isn't left waiting on it either. GNOME shows the
-        # default action as a click on the notification, not a button.
-        args+=(--wait --action=default=Open)
-        i=0
-        while [ "$i" -lt "${#VIEW_URLS[@]}" ]; do
-            args+=("--action=$i=${VIEW_LABELS[$i]}")
-            i=$((i + 1))
-        done
-        [ -z "$ACTION" ] || args+=("--action=action=$ACTION_LABEL")
-        open_on_click "${args[@]}" -- "$title" "$message" < /dev/null > /dev/null 2>&1 &
+    [ "$priority" -lt 4 ] || urgency=urgent
+    save_clicks || status=1
+    # notify-send when GNOME's API isn't there, as outside GNOME or before the ntfy step installs
+    # the app: each notification on its own, which a click only dismisses
+    if ! gtk_notify "$urgency"; then
+        [ "$urgency" == normal ] || urgency=critical
+        notify-send --app-name=ntfy --urgency="$urgency" -- "$title" "$message" || status=$?
     fi
 fi
 exit "$status"

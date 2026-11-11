@@ -354,7 +354,7 @@ missing_cmd_hint() {
                 echo "ssh-keygen isn't installed. Install it with: sudo apt install openssh-client"
             fi
             ;;
-        gsettings | gnome-extensions) echo "$1 isn't installed. It needs the GNOME desktop: ubuntu-desktop." ;;
+        gsettings | gnome-extensions | gdbus) echo "$1 isn't installed. It needs the GNOME desktop: ubuntu-desktop." ;;
         snap) echo "snap isn't installed. Install it with: sudo apt install snapd" ;;
         go) echo "go isn't installed. Run bash setup.sh runtimes first." ;;
         tailscale) echo "tailscale isn't installed. Run bash setup.sh ubuntu first, which installs it." ;;

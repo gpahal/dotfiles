@@ -23,6 +23,10 @@ ROOT_ONLY_NOTE="Not checked here, since they need root: ufw's rules, sshd's effe
 # "<epoch of last push> <cksum of message, or clear>"
 HEALTH_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/health-alert"
 REPUSH_SECONDS=604800
+# ntfy's sequence IDs: a push replaces the notification of the last one with the same ID, so the
+# all-clear replaces the alert, and a boot notice the last boot's
+HEALTH_SEQUENCE="X-Sequence-ID: health"
+BOOT_SEQUENCE="X-Sequence-ID: boot"
 # The network may come up late. 20 * (10s curl timeout + 10s wait) must fit the unit's
 # TimeoutStartSec=10min (systemd/dotfiles-boot-notice.service).
 BOOT_ATTEMPTS=20
@@ -110,7 +114,7 @@ status_alert() {
     if [ -n "$problem" ]; then
         echo "Health check couldn't run: $problem." >&2
         ntfy_push "$url" "Needs attention on $(hostname)" "Health check couldn't run: $problem" \
-            "Tags: warning,action:linux-health-log" || echo "Couldn't push the health alert to ntfy." >&2
+            "Tags: warning,action:linux-health-log" "$HEALTH_SEQUENCE" || echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi
     status=0
@@ -138,7 +142,7 @@ status_alert() {
             return 0
         fi
         if ! ntfy_push "$url" "All clear on $(hostname)" "Nothing needs attention any more." \
-            "Tags: white_check_mark"; then
+            "Tags: white_check_mark" "$HEALTH_SEQUENCE"; then
             echo "Couldn't push the all-clear to ntfy." >&2
             return 1
         fi
@@ -155,7 +159,8 @@ status_alert() {
         return "$result"
     fi
     [ -z "$details" ] || message="$message"$'\n'"$details"
-    if ! ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning,action:linux-status"; then
+    if ! ntfy_push "$url" "Needs attention on $(hostname)" "$message" "Tags: warning,action:linux-status" \
+        "$HEALTH_SEQUENCE"; then
         echo "Couldn't push the health alert to ntfy." >&2
         return 1
     fi
@@ -176,7 +181,7 @@ boot_notice() {
     fi
     host="$(hostname)"
     while ! ntfy_push "$url" "$host started" "$host started at $(date '+%Y-%m-%d %H:%M %Z')." \
-        "Tags: arrows_counterclockwise"; do
+        "Tags: arrows_counterclockwise" "$BOOT_SEQUENCE"; do
         if [ "$attempt" -ge "$BOOT_ATTEMPTS" ]; then
             echo "Couldn't push the boot notice to ntfy after $BOOT_ATTEMPTS tries." >&2
             return 1

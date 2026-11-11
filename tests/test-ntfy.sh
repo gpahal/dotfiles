@@ -159,12 +159,20 @@ assert_file_not_contains "$STUB_LOG" "systemctl restart ntfy.service"
 assert_file_contains "$STUB_LOG" "tailscale funnel --bg --yes --https=8443 http://127.0.0.1:2586"
 assert_file_not_contains "$STUB_LOG" "reset"
 assert_eq true "$(jq --arg hp "$HOST:8443" '.AllowFunnel[$hp]' "$SANDBOX/serve.json")" "the funnel"
-for script in subscribe.sh notify.sh; do
+for script in subscribe.sh notify.sh clicks.sh; do
     cmp -s "$REPO_DIR/ntfy/$script" "$HOME/.local/share/dotfiles/ntfy/$script" || fail "$script wasn't copied"
 done
+# The app GNOME groups the notifications under, which notify.sh names by its ID
+cmp -s "$REPO_DIR/ntfy/dotfiles.ntfy.desktop" "$HOME/.local/share/applications/dotfiles.ntfy.desktop" ||
+    fail "the notifications' desktop file wasn't copied"
+assert_file_contains "$REPO_DIR/ntfy/notify.sh" "GTK_APP_ID=dotfiles.ntfy"
 assert_file_contains "$HOME/.config/systemd/user/dotfiles-ntfy-notify.service" "WantedBy=graphical-session.target"
 assert_file_contains "$HOME/.config/systemd/user/dotfiles-ntfy-notify.service" \
     "ExecStart=/bin/bash \"$HOME/.local/share/dotfiles/ntfy/subscribe.sh\""
+assert_file_contains "$HOME/.config/systemd/user/dotfiles-ntfy-clicks.service" "WantedBy=graphical-session.target"
+assert_file_contains "$HOME/.config/systemd/user/dotfiles-ntfy-clicks.service" \
+    "ExecStart=/bin/bash \"$HOME/.local/share/dotfiles/ntfy/clicks.sh\""
+assert_file_contains "$STUB_LOG" "systemctl --user is-enabled dotfiles-ntfy-clicks.service"
 assert_contains "$RUN_OUTPUT" "Next: run just ntfy-user"
 
 assert_idempotent main
@@ -180,6 +188,8 @@ assert_contains "$RUN_OUTPUT" "ok         ntfy's sign-up off"
 assert_contains "$RUN_OUTPUT" "ok         ntfy's public name resolves on the internet ($HOST)"
 assert_contains "$RUN_OUTPUT" "ok         ntfy's users and this machine's token"
 assert_contains "$RUN_OUTPUT" "unverified ntfy's desktop notifier running: no desktop session"
+assert_contains "$RUN_OUTPUT" "unverified ntfy's click handler running: no desktop session"
+assert_contains "$RUN_OUTPUT" "ok         ~/.local/share/applications/dotfiles.ntfy.desktop"
 if grep '^curl' "$STUB_LOG" | grep -qE -- ' (-X|--request|-d|--data[^ ]*|-F|--form) '; then
     fail "status sent data to the server"
 fi

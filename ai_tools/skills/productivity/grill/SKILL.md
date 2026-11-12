@@ -11,7 +11,7 @@ Work the tree in **rounds**. The **frontier** is every decision whose prerequisi
 
 If you have a tool that asks the user multiple-choice questions (Claude Code's `AskUserQuestion`, Codex's `request_user_input`), ask every round through it:
 
-- Give each question 2 to 4 distinct choices. Put your recommended choice first and end its label with "(Recommended)". Each choice's description says what picking it commits the user to.
+- Give each question 2 to 4 distinct choices. Put your recommended choice first and end its label with "(Recommended)". Each choice's description is detailed: what picking it does, what it costs, and what it commits the user to. The recommended choice's description also says why you recommend it.
 - Write each question to stand alone: the user may see only the question dialog, so name the decision and any fact it rests on.
 - When the frontier holds more questions than one call takes, ask them in consecutive calls before recomputing the frontier.
 - An open question with no natural choices still goes through the tool: offer your recommendation and one or two real alternatives, since the user can always type their own answer.

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Best Of"
+  short_description: "Run several attempts and keep the best parts"
+policy:
+  allow_implicit_invocation: false

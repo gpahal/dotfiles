@@ -120,7 +120,7 @@ check_codex() {
 
 # A made-up flag must be reported missing, so the check can fail.
 echo "Reviewer flags:"
-reviewer="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
+reviewer="$REPO_DIR/ai_tools/skills/engineering/code-review-council/scripts/run-reviewer.sh"
 help_lists() {
     grep -qE -- "(^|[ ,])$1([ ,=<]|\$)" <<< "$help"
 }

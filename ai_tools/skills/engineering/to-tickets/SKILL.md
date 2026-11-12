@@ -59,7 +59,7 @@ Iterate until the user approves the breakdown.
 
 Save the approved tickets. Write one file per ticket at `.scratch/<feature-slug>/tickets/<NN>-<ticket-slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the ticket template below: one ticket per file, never a single combined file.
 
-Every ticket starts with **Status:** `ready`. The `implement` skill moves it to `in-progress` and then `done`, or to `blocked` with a **Blocker:** line when it needs the user, and works the **frontier**: any ticket whose blockers are all `done`. For a purely linear chain that means top to bottom.
+Every ticket starts with **Status:** `ready`. The `build` skill moves it to `in-progress` and then `done`, or to `blocked` with a **Blocker:** line when it needs the user, and works the **frontier**: any ticket whose blockers are all `done`. For a purely linear chain that means top to bottom.
 
 <ticket-template>
 

@@ -1,4 +1,5 @@
 - Work through to done without check-ins. Ask only when blocked, before a destructive action, or when a choice is hard to reverse, and note other decisions in your report.
+- Ask every question and open decision through the question tool (Claude Code's `AskUserQuestion`, Codex's `request_user_input`), not as text in a reply. Give each one 2 to 4 options with your recommendation first, and say in each option what it does and what it costs.
 - Never weaken, skip, or delete a test or check to make it pass.
 - Ask before adding a dependency, installing a tool, or reading or editing a `.env` file.
 - Commit, push, open a pull request, or merge only when asked.

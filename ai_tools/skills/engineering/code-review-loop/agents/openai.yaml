@@ -1,0 +1,5 @@
+interface:
+  display_name: "Code Review Loop"
+  short_description: "Review, fix, and re-review until both agree"
+policy:
+  allow_implicit_invocation: false

@@ -53,7 +53,7 @@ If the human pushes back on the shape (in a checkpoint or after the fact), treat
 
 ## Phase D: Implement against the sketch
 
-Replace `not implemented` bodies with code, pseudocode with logic. The synthesized sketch is the contract. When the feature has tickets, suggest the user run the **implement** skill, which works them against the sketch. Only the user can start it.
+Replace `not implemented` bodies with code, pseudocode with logic. The synthesized sketch is the contract. When the feature has tickets, suggest the user run the **build** skill, which works them against the sketch. Only the user can start it.
 
 Deviations from the sketch are signal worth surfacing, not friction to absorb silently. If a function needs a parameter the sketch didn't anticipate, ask whether the sketch was wrong, the requirement was missed, or the implementation is overreaching.
 

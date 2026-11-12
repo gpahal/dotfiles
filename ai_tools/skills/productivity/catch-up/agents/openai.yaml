@@ -1,0 +1,5 @@
+interface:
+  display_name: "Catch Up"
+  short_description: "What changed, and what is waiting on you"
+policy:
+  allow_implicit_invocation: false

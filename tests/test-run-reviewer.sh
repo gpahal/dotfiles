@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# interrogate's run-reviewer.sh and code-review's materialize-head.sh.
+# code-review-council's run-reviewer.sh and code-review's materialize-head.sh.
 
 REAL_SLEEP="$(command -v sleep)"
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-RUNNER="$REPO_DIR/ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh"
+RUNNER="$REPO_DIR/ai_tools/skills/engineering/code-review-council/scripts/run-reviewer.sh"
 REPO="$SANDBOX/repo"
 mkdir -p "$REPO"
 git -C "$REPO" init -q

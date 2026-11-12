@@ -1,0 +1,5 @@
+interface:
+  display_name: "Simpler"
+  short_description: "Restate the last message in plain words"
+policy:
+  allow_implicit_invocation: false

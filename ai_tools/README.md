@@ -150,9 +150,9 @@ The script turns off Claude Code's error reporting, surveys, and feedback, Codex
 
 ## Skills
 
-[`skills`](./skills/README.md) holds agent skills.
+[`skills`](./skills/README.md) holds agent skills, with an example of each in [`EXAMPLES.md`](./skills/EXAMPLES.md).
 
-The `skills` step copies each into `~/.agents/skills` and links it from `~/.claude/skills` and `~/.claude-backup/skills` **(script)**, deleting every other entry in them except dot-entries and Claude Code's `synced`. `--status` lists what it would delete. Edit skills in the repo and re-run the step. `code-review` replaces Claude Code's bundled one, and `interrogate` needs both `claude` and `codex` signed in.
+The `skills` step copies each into `~/.agents/skills` and links it from `~/.claude/skills` and `~/.claude-backup/skills` **(script)**, deleting every other entry in them except dot-entries and Claude Code's `synced`. `--status` lists what it would delete. Edit skills in the repo and re-run the step. `code-review` replaces Claude Code's bundled one, and the `code-review-council` and loop skills need both `claude` and `codex` signed in.
 
 ## Ubuntu
 

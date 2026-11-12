@@ -17,7 +17,7 @@ See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking g
 
 A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
 
-**Test only at pre-agreed seams.** Before writing any test, write down the seams under test. If a spec from `to-spec` records them under Testing decisions, or the `implement` skill passes you seams the user agreed, those are the agreed seams: start from them without asking. Otherwise, confirm them with the user. This check-in is a deliberate exception to any instruction against check-ins, since tests at the wrong seam are costly to unwind. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
+**Test only at pre-agreed seams.** Before writing any test, write down the seams under test. If a spec from `to-spec` records them under Testing decisions, or the `build` skill passes you seams the user agreed, those are the agreed seams: start from them without asking. Otherwise, confirm them with the user. This check-in is a deliberate exception to any instruction against check-ins, since tests at the wrong seam are costly to unwind. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
 
 Ask: "What's the public interface, and which seams should we test?" Give each proposed seam a one-line note on what it catches and what it misses.
 
@@ -33,4 +33,4 @@ When the shape of that interface is itself in question (where the seam belongs, 
 
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
-- **Refactoring is not part of the loop.** It belongs to code review after the loop (the code-review-stds-and-spec skill flags the smells worth refactoring), not the red → green implementation cycle.
+- **Refactoring is not part of the loop.** It belongs to code review after the loop (the spec-check skill flags the smells worth refactoring), not the red → green implementation cycle.

@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check each skill's frontmatter, agents/openai.yaml, invocation across files and README, and links.
+# Check each skill's frontmatter, agents/openai.yaml, invocation across files and README, example
+# in EXAMPLES.md, and links.
 
 SCRIPTS_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$(cd "$SCRIPTS_DIR/../ai_tools/skills" && pwd)"
@@ -121,6 +122,8 @@ while IFS= read -r skill_md; do
             fail_in "$readme" "lists $(basename "$dir") under \"$headings\", not \"$want\""
         fi
     fi
+    grep -qE "^/$(basename "$dir")( |\$)" "$SKILLS_DIR/EXAMPLES.md" ||
+        fail_in "$SKILLS_DIR/EXAMPLES.md" "has no example line starting /$(basename "$dir")"
 
     # Skills install side by side, not in categories, so a link may leave the skill only for another skill.
     while IFS= read -r md; do

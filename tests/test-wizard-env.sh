@@ -6,7 +6,7 @@
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # The library is everything above the STAGES marker
-sed '/^# STAGES:/,$d' "$REPO_DIR/ai_tools/skills/engineering/wizard/template.sh" > "$SANDBOX/wizard-lib.sh"
+sed '/^# STAGES:/,$d' "$REPO_DIR/ai_tools/skills/engineering/walkthrough/template.sh" > "$SANDBOX/wizard-lib.sh"
 # shellcheck source=/dev/null
 source "$SANDBOX/wizard-lib.sh"
 
@@ -110,7 +110,7 @@ no_tty() {
 }
 rm -f "$ENV_FILE"
 cd "$SANDBOX"
-ENV_FILE="$ENV_FILE" assert_exit 1 no_tty bash "$REPO_DIR/ai_tools/skills/engineering/wizard/template.sh"
+ENV_FILE="$ENV_FILE" assert_exit 1 no_tty bash "$REPO_DIR/ai_tools/skills/engineering/walkthrough/template.sh"
 assert_contains "$RUN_OUTPUT" "no terminal"
 [ ! -e "$ENV_FILE" ] || fail "the wizard wrote $ENV_FILE without a terminal"
 test_done

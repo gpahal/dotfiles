@@ -117,7 +117,7 @@ Projects live at `~/Dev/<group>/<project>`, such as `~/Dev/go/envl`. Worktrees g
 
 | Tool | Worktrees |
 | :- | :- |
-| `git wt`, the `implement` skill, and Claude Code's `--worktree`, subagents, and background sessions | `~/.worktrees/<group>/<project>/<name>`, or `~/.worktrees/_/<project>-<hash>/<name>` outside `~/Dev/<group>/<project>` |
+| `git wt`, the `build` skill, and Claude Code's `--worktree`, subagents, and background sessions | `~/.worktrees/<group>/<project>/<name>`, or `~/.worktrees/_/<project>-<hash>/<name>` outside `~/Dev/<group>/<project>` |
 | T3 Code | `~/.t3/worktrees/<repo>/<worktree>` |
 | The Codex app | `~/.codex/worktrees` |
 

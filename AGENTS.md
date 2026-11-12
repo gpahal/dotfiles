@@ -38,7 +38,7 @@ A step that breaks a rule says why in its header, as `homebrew/install.sh` does.
 
 Docs change with the code, in the same commit, and `just check` catches most drift. By hand:
 
-- The Claude or Codex models in `claude-code` or `codex`: the reviewer table in `ai_tools/skills/engineering/interrogate/SKILL.md`.
+- The Claude or Codex models in `claude-code` or `codex`: the Council table in `ai_tools/skills/engineering/code-review-council/SKILL.md`.
 - How an app's settings keys are checked: the table in `ai_tools/README.md` "Maintenance". Name no app version: the repo assumes the latest.
 - What an AI tool's step does: the **(script)** marks in `ai_tools/README.md`.
 - `scripts/upgrade.sh`: "Updating" in README for `upgrade`, and in `ai_tools/README.md` for `upgrade-ai-tools`.
@@ -58,4 +58,4 @@ A manual step is the last resort. Before adding one:
 
 ## Skills
 
-Load `writing-for-agents` before editing a skill or this file. Most skills are modified upstream copies (see the skills README's Acknowledgements), so port upstream diffs by hand and keep our changes. The `skills` step deletes every entry in `~/.agents/skills` and `~/.claude/skills` it didn't install, apart from Claude Code's `synced` and dot-entries.
+Load `write-agent-docs` before editing a skill or this file. A new or renamed skill gets a line in its category README and an example in `ai_tools/skills/EXAMPLES.md`, and `just check` fails without either. Most skills are modified upstream copies (see the skills README's Acknowledgements), so port upstream diffs by hand and keep our changes. The `skills` step deletes every entry in `~/.agents/skills` and `~/.claude/skills` it didn't install, apart from Claude Code's `synced` and dot-entries.

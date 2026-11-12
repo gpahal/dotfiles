@@ -72,7 +72,7 @@ jobs:
                 .github/* | lib/* | scripts/lib/check.sh) brew=true ai=true ;;
                 homebrew/* | scripts/check-brew-packages.sh | scripts/lib/brew.sh) brew=true ;;
                 ai_tools/claude-code/* | ai_tools/codex/* | ai_tools/t3-code/* | ai_tools/lib/* | \
-                  ai_tools/skills/engineering/interrogate/scripts/run-reviewer.sh | \
+                  ai_tools/skills/engineering/code-review-council/scripts/run-reviewer.sh | \
                   scripts/check-ai-settings.sh | scripts/check-claude-keys.sh | scripts/check-t3-settings.sh | \
                   scripts/claude-settings-keys.txt | scripts/lib/ai-settings.sh) ai=true ;;
               esac

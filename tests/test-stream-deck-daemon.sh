@@ -12,7 +12,8 @@ PLUGIN_SRC="$REPO_DIR/stream-deck/com.gpahal.dotfiles.sdPlugin"
 
 # Runs $1 with: d (the daemon), decks (what listDecks finds), deck(columns, rows) (a fake deck, by
 # default 5×3), opened (the decks opened), press(i) and release(i), drawn(i) (key i's last image on
-# the last deck opened), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
+# the last deck opened), firstDrawn(i, prefix) (key i's first image there that starts with prefix,
+# which a later sample can't change), runs and pending (open-in's targets and their done callbacks), sampler, n (the samples
 # taken), sound (its cycles count, and switches says whether they succeed), mic (its cycles and
 # toggles), logs, and until(what, test). stats.render throws for the disk key.
 daemon_js() {
@@ -54,6 +55,7 @@ const deck = (columns = 5, rows = 3) => {
 let decks = [];
 const opened = [];
 const drawn = (i, d = opened.at(-1)) => fills.filter((f) => f[0] === d && f[1] === i).at(-1)?.[2];
+const firstDrawn = (i, prefix, d = opened.at(-1)) => fills.find((f) => f[0] === d && f[1] === i && f[2].startsWith(prefix))?.[2];
 const until = async (what, test) => {
   const deadline = Date.now() + 5000;
   while (!test()) {
@@ -85,7 +87,7 @@ await d.start();
 console.log(JSON.stringify(d.state()), opened[0].log.length, opened[0].brightness);
 console.log([0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((i) => drawn(i) === BLANK ? 'blank' : drawn(i)).join(' '));
 await until('Overview stats', () => drawn(0)?.startsWith('stat:'));
-console.log(drawn(0), sampler.kinds.join(), sampler.resets);")"
+console.log(firstDrawn(0, 'stat:'), sampler.kinds.join(), sampler.resets);")"
 assert_eq '{"connected":true,"page":"main"} 0 60
 icon:overview icon:mic icon:sound icon:upgrade icon:editor icon:terminal icon:files icon:t3-code icon:claude icon:chrome icon:chrome-tab icon:gmail icon:notion icon:agenda
 stat:overview:1 overview,mic,sound 1' "$out" "the main page"
@@ -94,8 +96,8 @@ stat:overview:1 overview,mic,sound 1' "$out" "the main page"
 out="$(daemon_js "decks = [deck()];
 await d.start();
 press(0);
-await until('the System page', () => drawn(1)?.startsWith('stat:cpu'));
-console.log(d.state().page, drawn(0), drawn(5), drawn(14) === BLANK, sampler.kinds.join());
+await until('the System page', () => firstDrawn(5, 'stat:top'));
+console.log(d.state().page, drawn(0), firstDrawn(5, 'stat:'), drawn(14) === BLANK, sampler.kinds.join());
 press(1);
 press(4);
 await until('two runs', () => runs.length === 2);
@@ -111,7 +113,7 @@ main icon:editor overview,mic,sound" "$out" "page switching and stat keys"
 out="$(daemon_js "decks = [deck()];
 await d.start();
 press(11); press(11); press(7); press(4);
-await until('the alert', () => drawn(7) === ALERT);
+await until('the alert', () => firstDrawn(7, ALERT));
 await until('the alert to end', () => drawn(7) === 'icon:files');
 console.log(runs.join(), logs.filter((l) => l.endsWith('ran')).join());
 pending[0](null, '');
@@ -126,11 +128,11 @@ await d.start();
 await until('Sound stats', () => drawn(2)?.startsWith('stat:sound'));
 const before = n;
 press(2);
-await until('the redraw', () => n > before);
+await until('the redraw', () => n > before && drawn(2) === 'stat:sound:' + n);
 console.log(sound.cycles, runs.length, drawn(2) === 'stat:sound:' + n);
 sound.switches = false;
 press(2);
-await until('the alert', () => drawn(2) === ALERT);
+await until('the alert', () => firstDrawn(2, ALERT));
 console.log(sound.cycles);")"
 assert_eq "1 0 true
 2" "$out" "the Sound key"

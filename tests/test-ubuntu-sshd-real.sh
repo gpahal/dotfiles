@@ -1,6 +1,8 @@
 #!/bin/bash
+# os: ubuntu
 
 # sshd_settings_problems against the real sshd -T, which only parses the config (no daemon).
+# Ubuntu only: the step reads Ubuntu's sshd, and macOS's sshd -T sometimes prints no settings.
 
 REAL_SSHD="$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v sshd || true)"
 # shellcheck source=lib.sh

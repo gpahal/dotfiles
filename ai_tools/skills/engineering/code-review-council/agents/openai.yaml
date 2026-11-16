@@ -1,5 +1,5 @@
 interface:
   display_name: "Code Review Council"
-  short_description: "Claude and Codex review a change independently"
+  short_description: "Council models review a change independently"
 policy:
   allow_implicit_invocation: false

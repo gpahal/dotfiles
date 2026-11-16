@@ -23,6 +23,7 @@ One example per skill. Type `/name` in Claude Code and `$name` in Codex. Everyth
 /code-review-council high the last commit
 /code-review-loop
 /code-review-council-loop since main
+/code-review-council-loop with Sonnet and Sol, Sol non-blocking, since main
 /spec-check .scratch/rate-limiter/SPEC.md
 ```
 

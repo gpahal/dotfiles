@@ -11,9 +11,9 @@ Only when you type them. The first four are the feature workflow.
 - **[to-tickets](./to-tickets/SKILL.md)**: Break a plan or spec into tracer-bullet tickets with blockers.
 - **[build](./build/SKILL.md)**: Build a spec's tickets in dependency order with sub-agents, then review.
 - **[fix-docs](./fix-docs/SKILL.md)**: Make docs, agent files, and comments true to the code and terse.
-- **[code-review-council](./code-review-council/SKILL.md)**: Independent review by a Claude and a Codex model, judged by the lead.
+- **[code-review-council](./code-review-council/SKILL.md)**: Independent review by Opus and Sol, or the models you name, judged by the lead.
 - **[code-review-loop](./code-review-loop/SKILL.md)**: Review by the other model family, fix, and repeat until both agree.
-- **[code-review-council-loop](./code-review-council-loop/SKILL.md)**: The same loop with every council model as a reviewer.
+- **[code-review-council-loop](./code-review-council-loop/SKILL.md)**: The same loop with every council model, or the models you name, as a reviewer.
 - **[best-of](./best-of/SKILL.md)**: Run several attempts at one task and keep the best parts.
 
 ## Model-invoked

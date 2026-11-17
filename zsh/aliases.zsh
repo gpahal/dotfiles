@@ -76,7 +76,9 @@ dotfiles() {
     cd "$dir"
 }
 
-alias bi="brew install"
+# install shadows coreutils' install at the prompt only; scripts and make still get it
+alias install="brew install"
+alias core-install="command install"
 alias uninstall="brew uninstall"
 alias update="brew update"
 alias cleanup="brew cleanup"

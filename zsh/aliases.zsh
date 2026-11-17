@@ -58,7 +58,27 @@ upgrade-ai-tools() {
     upgrade ai-tools
 }
 
-alias bi="brew install"
+# cd to the main checkout of the dotfiles checkout or worktree _dotfiles_checkout finds. A bare
+# repo's worktree has no main checkout, so it stays in that worktree.
+dotfiles() {
+    local dir main
+    if ! dir="$(_dotfiles_checkout 2> /dev/null)"; then
+        print -u2 "dotfiles: no gpahal/dotfiles checkout here, and none recorded in ${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/checkout."
+        print -u2 "Clone it and run bash setup.sh zsh in the clone."
+        return 1
+    fi
+    main="$(git -C "$dir" worktree list --porcelain 2> /dev/null | awk '
+        NR == 1 && sub(/^worktree /, "") { path = $0 }
+        NF == 0 { exit }
+        $0 == "bare" { path = "" }
+        END { print path }')"
+    [[ -n $main && -f $main/scripts/upgrade.sh ]] && dir=$main
+    cd "$dir"
+}
+
+# install shadows coreutils' install at the prompt only; scripts and make still get it
+alias install="brew install"
+alias core-install="command install"
 alias uninstall="brew uninstall"
 alias update="brew update"
 alias cleanup="brew cleanup"

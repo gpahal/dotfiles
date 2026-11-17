@@ -174,7 +174,7 @@ The laptop takes SSH only over Tailscale, only with a key in its `~/.ssh/authori
 [`zsh/`](zsh/), copied to `~/.zsh/`, with starship. The login shell is the system zsh, so it survives a broken Homebrew. Put secrets and per-machine settings in `~/.zshrc.local`.
 
 - `Ctrl+T` files, `Alt+C` directories, `Ctrl+R` and Up search history (atuin).
-- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `zshrc` (edits `~/.zshrc`), `ts` (`tmux-sessionizer`).
+- `g`, `c` (`bat`), `t` (`eza --tree`), `port`, `killport`, `o`, `scratch`, `reload`, `zshrc` (edits `~/.zshrc`), `ts` (`tmux-sessionizer`), `dotfiles` (goes to the main checkout of this repo).
 - `rm` deletes immediately. On macOS, `trash` can be undone.
 
 ### Ghostty

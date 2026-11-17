@@ -2,8 +2,8 @@
 # shellcheck disable=SC2034 # lib/checkout.sh reads DOTFILES_DIR
 
 # lib/checkout.sh: the main worktree recorded from a clone, a worktree, a bare repo's worktree, and
-# a plain dir; its status and apply; and upgrade in zsh/aliases.zsh finding the checkout you're in,
-# else the recorded one.
+# a plain dir; its status and apply; and upgrade and dotfiles in zsh/aliases.zsh finding the checkout
+# you're in, else the recorded one.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -91,6 +91,17 @@ assert_eq "upgrade.sh in $CLONE: ai-tools" "$(cd "$CLONE" &&
 echo "$WORKTREE" > "$FILE"
 assert_eq "upgrade.sh in $WORKTREE: " "$(upgrade_in "$SANDBOX/elsewhere")" "upgrade outside a repo"
 assert_eq "upgrade.sh in $WORKTREE: " "$(upgrade_in "$FOREIGN/src")" "upgrade in another repo"
+
+# dotfiles, as zsh/aliases.zsh defines it: cds to the main checkout of the one upgrade would run
+# dotfiles_in <dir>: prints where dotfiles left the shell, with stderr in the output
+dotfiles_in() {
+    (cd "$1" && zsh -fc 'source "$1"; dotfiles && pwd' zsh "$REPO_DIR/zsh/aliases.zsh" 2>&1)
+}
+assert_eq "$CLONE" "$(dotfiles_in "$WORKTREE/zsh")" "dotfiles in a worktree"
+assert_eq "$CLONE" "$(dotfiles_in "$CLONE/scripts")" "dotfiles in the clone"
+assert_eq "$CLONE" "$(dotfiles_in "$SANDBOX/elsewhere")" "dotfiles outside a repo, with a worktree recorded"
+assert_eq "$CLONE" "$(dotfiles_in "$FOREIGN/src")" "dotfiles in another repo"
+assert_eq "$SANDBOX/bare-wt" "$(dotfiles_in "$SANDBOX/bare-wt")" "dotfiles in a bare repo's worktree"
 # Neither
 rm -rf "$WORKTREE"
 output="$(upgrade_in "$SANDBOX/elsewhere")" && fail "upgrade succeeded with the recorded checkout gone"
@@ -98,5 +109,7 @@ assert_contains "$output" "No dotfiles checkout here, or recorded in $FILE. Run 
 rm "$FILE"
 output="$(upgrade_in "$SANDBOX/elsewhere")" && fail "upgrade succeeded with nothing recorded"
 assert_contains "$output" "No dotfiles checkout here, or recorded in $FILE."
+output="$(dotfiles_in "$SANDBOX/elsewhere")" && fail "dotfiles succeeded with nothing recorded"
+assert_contains "$output" "dotfiles: no gpahal/dotfiles checkout here, and none recorded in $FILE."
 
 test_done

@@ -20,9 +20,9 @@ const STATE_FILE = path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(
 // What an unmute sets when no volume was kept
 const UNMUTE_VOLUME = 75;
 
-// The key's top line: the Mac's own mic is MAC; others are named without words every mic shares
+// The key's top line: the Mac's own mic is LAPTOP; others are named without words every mic shares
 function inputLabel(name) {
-  if (/macbook|built-?in/i.test(name)) return "MAC";
+  if (/macbook|built-?in/i.test(name)) return "LAPTOP";
   const words = name
     .replace(/\b(microphone|mic|usb|audio|input|digital|analog|stereo|mono)\b/gi, " ")
     .replace(/\s+/g, " ")

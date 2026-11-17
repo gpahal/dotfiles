@@ -142,8 +142,8 @@ const second = (await sampler.sample(['temperature'])).temperature;
 console.log(JSON.stringify([first, second]));")"
 assert_eq '[{"cpu":55.5,"gpu":41},{"cpu":55.5,"gpu":41}]' "$out" "a moved sensor"
 
-# The overview key names the OS it runs on
-for platform in darwin:MAC linux:UBUNTU; do
+# The overview key names the machine it runs on
+for platform in darwin:LAPTOP linux:DESKTOP; do
     out="$(js "Object.defineProperty(process, 'platform', { value: '${platform%%:*}' });
 delete require.cache[process.argv[1]];
 console.log(require(process.argv[1]).placeholder('overview'))")"

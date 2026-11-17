@@ -11,7 +11,7 @@ const OUTPUTS = [
   { kind: "speakers", label: "SPEAKERS", match: /Pebble/i },
   { kind: "headphones", label: "HEADPHONES", match: /Protocol.?Micro/i },
   { kind: "monitor", label: "MONITOR", match: /DELL|HDMI|DisplayPort/i },
-  { kind: "mac", label: "MAC", match: /MacBook.*Speakers|BuiltInSpeaker/i },
+  { kind: "mac", label: "LAPTOP", match: /MacBook.*Speakers|BuiltInSpeaker/i },
 ];
 
 const SWITCH_AUDIO = "/opt/homebrew/bin/SwitchAudioSource";

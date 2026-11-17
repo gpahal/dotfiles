@@ -601,8 +601,8 @@ const hint = (s, kind) => (s.macmonMissing ? "needs macmon" : (s.hints?.[kind] ?
 
 const PRESSURE = { 1: COLORS.ok, 2: COLORS.warn, 4: COLORS.bad };
 
-// The overview key names the OS, to tell which machine a deck shows
-const OS_LABEL = process.platform === "linux" ? "UBUNTU" : "MAC";
+// The overview key names the machine, laptop or desktop, to tell which one a deck shows
+const OS_LABEL = process.platform === "linux" ? "DESKTOP" : "LAPTOP";
 
 // Drawn in the key's middle for each of sound.js's kinds of output
 const SOUND_ICONS = {

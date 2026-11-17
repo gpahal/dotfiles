@@ -191,7 +191,7 @@ Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Gho
 
 The **Dotfiles** keys act on the folder of the app in front: a Ghostty tab's, a Zed file's, the file manager's, a T3 Code thread's, or a Code session's in the Claude app. The [Hammerspoon](#hammerspoon) hotkeys use the same folder.
 
-- **Overview**, labeled MAC or UBUNTU for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
+- **Overview**, labeled LAPTOP or DESKTOP for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
 - **Mic** names the mic in use, green while live and red and crossed out while muted, with a dot for each mic. A press switches to the next mic, and holding the key for half a second mutes or unmutes it. It skips apps' virtual mics, such as Zoom's. On the Mac, muting sets the mic's input volume to 0, and unmuting restores the volume it had.
 - **Sound**, in the top row, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile, as **Mic** does.
 - **Upgrade** runs `upgrade` in a new Ghostty tab.

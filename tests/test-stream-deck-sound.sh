@@ -33,7 +33,7 @@ console.log(outputs.map((o) => `${o.label}=${o.id}`).join(" "));
 const next = (current) => m.nextOutput(outputs, current)?.label ?? "none";
 console.log(next("107"), next("75"), next("60"), next(null));
 console.log(next.call(null, "x"), m.nextOutput([outputs[0]], "107"), m.nextOutput([], null));')"
-assert_eq "SPEAKERS=107 HEADPHONES=102 MONITOR=87 MAC=75
+assert_eq "SPEAKERS=107 HEADPHONES=102 MONITOR=87 LAPTOP=75
 HEADPHONES SPEAKERS SPEAKERS SPEAKERS
 SPEAKERS null null" "$out" "the macOS outputs in order, and the next of each"
 
@@ -135,7 +135,7 @@ console.log(stats.placeholder("sound").includes(">—<"), stats.render("sound", 
 assert_eq "19:SPEAKERS 1/4
 17:HEADPHONES 1/4
 19:MONITOR 1/4
-19:MAC 1/4
+19:LAPTOP 1/4
 19:SOUND 0/4 true
 true true" "$out" "the key's drawing"
 

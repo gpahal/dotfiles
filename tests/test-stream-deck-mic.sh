@@ -23,10 +23,10 @@ $1
 })().catch((e) => { console.error(e); process.exit(1); });" "$PLUGIN_SRC" "$SANDBOX"
 }
 
-# Each input is named without the words every mic shares, cut to 11 characters; the Mac's own is MAC
+# Each input is named without the words every mic shares, cut to 11 characters; the Mac's own is LAPTOP
 out="$(mic_js 'console.log(["MacBook Pro Microphone", "Shure MV7", "USB Audio Microphone", "USB Audio Line Input",
   "Elgato Wave:3 Digital Microphone", "Logitech BRIO"].map(m.inputLabel).join("|"));')"
-assert_eq "MAC|SHURE MV7|MIC|LINE|ELGATO WAV…|LOGITECH B…" "$out" "the inputs' labels"
+assert_eq "LAPTOP|SHURE MV7|MIC|LINE|ELGATO WAV…|LOGITECH B…" "$out" "the inputs' labels"
 
 # SwitchAudioSource's inputs less apps' virtual ones
 switch_audio='{"name": "MacBook Pro Microphone", "type": "input", "id": "81", "uid": "BuiltInMicrophoneDevice"}
@@ -37,7 +37,7 @@ switch_audio='{"name": "MacBook Pro Microphone", "type": "input", "id": "81", "u
 out="$(SA="$switch_audio" mic_js 'const inputs = m.parseSwitchAudio(process.env.SA);
 console.log(inputs.map((d) => `${d.label}=${d.id}`).join(" "));
 console.log(m.nextInput(inputs, "81").id, m.nextInput(inputs, "90").id, m.nextInput(inputs, "60").id, m.nextInput([inputs[0]], "81"));')"
-assert_eq "MAC=81 SHURE MV7=90
+assert_eq "LAPTOP=81 SHURE MV7=90
 90 81 81 null" "$out" "the macOS inputs, and the next of each"
 
 # PipeWire's sources less virtual ones and those whose jack is unplugged, with the default's mute
@@ -90,11 +90,11 @@ s = await mic.read();
 console.log(s.inputs.map((d) => d.label).join(), s.current);
 console.log(await mic.cycle(), current);
 console.log(logs.join("\n"));')"
-assert_eq 'MAC,SHURE MV7 81 false
+assert_eq 'LAPTOP,SHURE MV7 81 false
 true 90
 true 0 true {"Shure MV7":60}
 true 60 false
-ZOOMAUDIOD…,MAC,SHURE MV7 60
+ZOOMAUDIOD…,LAPTOP,SHURE MV7 60
 true 81
 mic: switched from MacBook Pro Microphone to Shure MV7
 mic: muted Shure MV7
@@ -134,7 +134,7 @@ mic: MacBook Pro Microphone has no volume to mute it with' "$out" "a missing com
 
 # The key names the input in use, green while live and red and crossed out while muted, with a
 # dot for each input
-out="$(mic_js 'const inputs = [{ id: "1", label: "MAC" }, { id: "2", label: "SHURE MV7" }];
+out="$(mic_js 'const inputs = [{ id: "1", label: "LAPTOP" }, { id: "2", label: "SHURE MV7" }];
 const label = (svg) => /font-size="(\d+)"[^>]*>([^<]*)<\/text>/.exec(svg).slice(1).join(":");
 const filled = (svg) => (svg.match(/<circle[^>]*#4ade80/g) ?? []).length + "/" + (svg.match(/<circle/g) ?? []).length;
 for (const muted of [false, true]) {

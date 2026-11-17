@@ -138,7 +138,7 @@ assert_exit 0 main --rotate laptop
 assert_file_not_contains "$SANDBOX/db/tokens-machine" "$laptop"
 assert_file_contains "$SANDBOX/db/tokens-machine" "$desktop desktop"
 assert_file_contains "$SANDBOX/db/tokens-machine" "$web web-service"
-assert_contains "$RUN_OUTPUT" "Run just ntfy-device on the Mac and paste the new token"
+assert_contains "$RUN_OUTPUT" "Run just ntfy-device on the laptop and paste the new token"
 assert_not_contains "$RUN_OUTPUT" "just alerts ran"
 assert_exit 0 main --rotate desktop
 assert_file_not_contains "$SANDBOX/db/tokens-machine" "$desktop"
@@ -169,6 +169,6 @@ assert_contains "$RUN_OUTPUT" "Run just ntfy-user from a terminal"
 assert_file_not_contains "$STUB_LOG" "sudo"
 as_os macos
 assert_exit 1 main
-assert_contains "$RUN_OUTPUT" "On a Mac, run just ntfy-device."
+assert_contains "$RUN_OUTPUT" "On the laptop, run just ntfy-device."
 
 test_done

@@ -59,7 +59,7 @@ MD
 **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
 MD
 
-    manual_group ubuntu "${group:+**$group.** }Over SSH, logins print a link to open on the Mac."
+    manual_group ubuntu "${group:+**$group.** }Over SSH, logins print a link to open on the laptop."
     manual_step ubuntu sudo-work --check ai_sudo_work_done "The AI tools' sudo changes made" <<'MD'
 **Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
 MD
@@ -78,7 +78,7 @@ MD
 MD
     manual_step ubuntu t3-connect --parent t3-code --bullet --elsewhere \
         --check t3_connect_linked "T3 Connect linked and publishing agent activity" <<'MD'
-`t3 connect --headless` (open the link on the Mac), `t3 connect publish`, then `t3 service restart`.
+`t3 connect --headless` (open the link on the laptop), `t3 connect publish`, then `t3 service restart`.
 MD
     manual_step ubuntu t3-phone --parent t3-code --bullet \
         --check t3_phone_connected "T3 Code's phone app connected" <<'MD'
@@ -90,8 +90,8 @@ MD
 In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
 MD
     manual_step ubuntu t3-mac-paired --parent t3-code --bullet \
-        --check t3_mac_paired "T3 Code on the Mac paired with the service" <<'MD'
-Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
+        --check t3_mac_paired "T3 Code on the laptop paired with the service" <<'MD'
+Run `t3 pair --tailscale` and paste the link in T3 Code on the laptop (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
 MD
     manual_step ubuntu t3-browser --parent t3-code --bullet --elsewhere \
         --check t3_browser_ready "T3 Code's browser can run in Chrome's sandbox" <<'MD'

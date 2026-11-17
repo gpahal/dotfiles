@@ -16,10 +16,10 @@ usage() {
     echo "  (or: just monitor-input ...)"
     echo "Points the monitor at whichever machine the USB switch serves. Pick a device the switch"
     echo "moves, such as the keyboard's receiver, and the monitor input each machine is plugged into."
-    echo "  On the Mac:    <vendor:product> <the Mac's input>"
-    echo "  On Ubuntu:     <vendor:product> <this machine's input> <the Mac's input> [<connector>]"
-    echo "The Mac switches the monitor to itself when it gets the device. Ubuntu does the same, and"
-    echo "switches it to the Mac when the device leaves, so it still follows while the Mac sleeps."
+    echo "  On the laptop:    <vendor:product> <the laptop's input>"
+    echo "  On Ubuntu:     <vendor:product> <this machine's input> <the laptop's input> [<connector>]"
+    echo "The laptop switches the monitor to itself when it gets the device. Ubuntu does the same, and"
+    echo "switches it to the laptop when the device leaves, so it still follows while the laptop sleeps."
     echo "<connector> is the video output the monitor is on, such as HDMI-A-1; the default is the"
     echo "only connected one. With no arguments, lists the USB devices and the common input codes."
     echo "off turns switching off on this machine."
@@ -27,7 +27,7 @@ usage() {
 
 INPUT_CODES="Common input codes (DDC/CI VCP 0x60): 15 DisplayPort 1, 16 DisplayPort 2, 17 HDMI 1,
 18 HDMI 2, and on some monitors 27 USB-C. Check one by switching to it and back:
-  Mac:    m1ddc set input <code>
+  Laptop: m1ddc set input <code>
   Ubuntu: ddcutil --bus <n> setvcp 60 <code>   (ddcutil detect shows <n>)"
 
 # "<vendor:product> <name>" for each attached USB device
@@ -104,7 +104,7 @@ rule_content() {
 setup_mac() {
     local device="$1" input="$2" m1ddc content
     if [ $# -gt 2 ]; then
-        echo "The Mac only switches the monitor to itself, so give only its own input." >&2
+        echo "The laptop only switches the monitor to itself, so give only its own input." >&2
         return 2
     fi
     require_cmd m1ddc || return 1
@@ -124,21 +124,21 @@ m1ddc=$m1ddc"
     fi
     mkdir -p "$(dirname "$MONITOR_INPUT_MAC_CONF")"
     printf '%s\n' "$content" > "$MONITOR_INPUT_MAC_CONF"
-    echo "  Saved. When the Mac gets $device, Hammerspoon switches the monitor to input $input."
+    echo "  Saved. When the laptop gets $device, Hammerspoon switches the monitor to input $input."
 }
 
 setup_ubuntu() {
     local device="$1" input="$2" other="${3:-}" connector="${4:-}" connectors content rule
     if [ -z "$other" ]; then
-        echo "Give the Mac's input too, so this machine can hand the monitor back while the Mac sleeps." >&2
+        echo "Give the laptop's input too, so this machine can hand the monitor back while the laptop sleeps." >&2
         return 2
     fi
     if ! other="$(input_code "$other")"; then
-        echo "The Mac's input should be a code from 1 to 255, such as 27 or 0x1b." >&2
+        echo "The laptop's input should be a code from 1 to 255, such as 27 or 0x1b." >&2
         return 2
     fi
     if [ "$other" == "$input" ]; then
-        echo "This machine's input and the Mac's are both $input." >&2
+        echo "This machine's input and the laptop's are both $input." >&2
         return 2
     fi
     if [ -z "$connector" ]; then

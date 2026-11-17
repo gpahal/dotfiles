@@ -118,7 +118,7 @@ install_deck_deps() {
     cp "$LINUX_SRC/pnpm-lock.yaml" "$DECK_DEPS_STAMP"
 }
 
-# The Stream Deck's hidraw nodes, while it's attached here rather than to the Mac
+# The Stream Deck's hidraw nodes, while it's attached here rather than to the laptop
 deck_hidraw_nodes() {
     local dir
     for dir in "$HIDRAW_DIR"/hidraw*; do
@@ -178,7 +178,7 @@ status_deck_access() {
     local node nodes
     nodes="$(deck_hidraw_nodes)"
     if [ -z "$nodes" ]; then
-        status_item info "Stream Deck not attached here; the USB switch may have it on the Mac"
+        status_item info "Stream Deck not attached here; the USB switch may have it on the laptop"
         return 0
     fi
     while IFS= read -r node; do

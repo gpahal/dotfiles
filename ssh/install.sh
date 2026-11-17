@@ -195,7 +195,7 @@ status() {
     else
         status_item skipped "The $SSH_ADD_LABEL LaunchAgent: macOS only, Ubuntu has no keychain"
         # shellcheck disable=SC2088 # shown, not expanded
-        status_item skipped "~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only, Ubuntu doesn't sleep"
+        status_item skipped "~/.ssh/rc, which keeps the laptop awake during SSH sessions: macOS only, Ubuntu doesn't sleep"
     fi
 }
 

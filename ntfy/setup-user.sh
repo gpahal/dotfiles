@@ -144,7 +144,7 @@ print_tokens() {
     echo "  users), make it the default server, then subscribe to alerts and agenda; just alerts shows"
     echo "  the steps."
     echo
-    echo "  laptop token, for just ntfy-device on the Mac:"
+    echo "  laptop token, for just ntfy-device on the laptop:"
     echo "    $TOKEN_laptop"
     echo "  web-service token, for your web service:"
     echo "    $TOKEN_web_service"
@@ -186,7 +186,7 @@ rotate() {
             ensure_tokens && save_client_config && bash "$SETUP_ALERTS"
             ;;
         laptop)
-            echo "  Run just ntfy-device on the Mac and paste the new token:"
+            echo "  Run just ntfy-device on the laptop and paste the new token:"
             echo "    $new"
             ;;
         web-service)
@@ -224,7 +224,7 @@ main() {
             ;;
     esac
     if ! is_ubuntu; then
-        echo "ntfy's server runs on the Ubuntu machine; run just ntfy-user there. On a Mac, run just ntfy-device." >&2
+        echo "ntfy's server runs on the Ubuntu machine; run just ntfy-user there. On the laptop, run just ntfy-device." >&2
         return 1
     fi
     require_cmd ntfy || return 1

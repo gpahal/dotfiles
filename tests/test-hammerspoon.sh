@@ -189,7 +189,7 @@ assert_eq "autoLaunch true
 --
 after 1
 task /opt/homebrew/bin/m1ddc set input 27
-tasks 0" "$RUN_OUTPUT" "switching to the Mac when the device arrives"
+tasks 0" "$RUN_OUTPUT" "switching to the laptop when the device arrives"
 
 # It never switches away, so it can't undo the Ubuntu machine's switch
 run_monitor "$CONF" "usb.attached = { $MOUSE }

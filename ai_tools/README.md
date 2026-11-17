@@ -1,10 +1,12 @@
 # AI tools
 
-Setup for [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) CLI, and [T3 Code](#t3-code), on macOS and [Ubuntu](#ubuntu-1), with their [privacy](#privacy) settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
+Setup for [Claude Code](#claude-code), the Claude desktop app, [Codex](#codex) CLI, and [T3 Code](#t3-code), on the laptop (macOS) and the desktop ([Ubuntu](#ubuntu-1)), with their [privacy](#privacy) settings, [user-level instructions](#user-level-instructions), and [skills](#skills).
+
+The laptop is the MacBook Pro, and the desktop the Ubuntu machine, as the [main README](../README.md) says.
 
 ## First run
 
-The main README's [First run](../README.md#first-run) sets up the AI tools with everything else. `bash setup.sh` runs their steps after the rest, and the main README's [manual steps](../README.md#manual-steps) include theirs. Then run the [checks](#check-it-works) here, on Ubuntu after a reboot, over SSH from the Mac.
+The main README's [First run](../README.md#first-run) sets up the AI tools with everything else. `bash setup.sh` runs their steps after the rest, and the main README's [manual steps](../README.md#manual-steps) include theirs. Then run the [checks](#check-it-works) here, on Ubuntu after a reboot, over SSH from the laptop.
 
 ## Automated setup
 
@@ -107,14 +109,14 @@ On macOS the file also gets the ChatGPT app's `[desktop]` settings **(script)**.
 
 ### Mobile
 
-The phone app reaches the Mac through **T3 Connect**, which needs the Mac on, awake, and running T3 Code.
+The phone app reaches the laptop through **T3 Connect**, which needs the laptop on, awake, and running T3 Code.
 
 1. Install the phone app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), or **T3 Code** by T3 Tools on Google Play).
 2. In T3 Code, **Settings → Connections**: sign in to T3 Connect, turn it on for the local environment, and turn on **Publish agent activity**.
-3. Sign in on the phone and choose the Mac.
+3. Sign in on the phone and choose the laptop.
 4. In the phone app, turn on **Settings → Notifications → Device Notifications**.
 5. Optional: turn on **Live Activity Updates** (iOS) or **Ongoing Agent Activity** (Android).
-6. Keep the Mac awake with Amphetamine or `caffeinate -i`.
+6. Keep the laptop awake with Amphetamine or `caffeinate -i`.
 
 ### App settings
 
@@ -160,11 +162,11 @@ The same steps, without computer use. The `codex` step installs `bubblewrap` and
 
 ### Notifications over SSH
 
-Notifications travel over SSH to Ghostty on the Mac. The script sets Claude Code's channel to `ghostty` and Codex's to `osc9` unless you set your own **(script)**.
+Notifications travel over SSH to Ghostty on the laptop. The script sets Claude Code's channel to `ghostty` and Codex's to `osc9` unless you set your own **(script)**.
 
 ### T3 Code on Ubuntu
 
-One T3 Code server runs as a service, so the Mac and phone share it. Never start a second one on the same data.
+One T3 Code server runs as a service, so the laptop and phone share it. Never start a second one on the same data.
 
 - **Service (script).** The `t3` CLI and a service on loopback port 3773, started at boot, telemetry off. `systemctl --user status t3code`; log in `~/.t3/userdata/logs/boot-service.log`.
 - While another server runs, such as the desktop app's own before the script turns it off, the script leaves the service and its settings alone, and `--status` reports it. Stop it or quit T3 Code, then re-run.
@@ -194,17 +196,17 @@ One T3 Code server runs as a service, so the Mac and phone share it. Never start
 
 ### Ubuntu
 
-Over SSH, logins print a link to open on the Mac.
+Over SSH, logins print a link to open on the laptop.
 
 1. **Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
 2. **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
 3. **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.
 4. **Claude in Chrome.** At the desktop, see [Browser (Claude in Chrome)](#browser-claude-in-chrome).
 5. **T3 Code.** Connect to the [service](#t3-code-on-ubuntu):
-   - `t3 connect --headless` (open the link on the Mac), `t3 connect publish`, then `t3 service restart`.
+   - `t3 connect --headless` (open the link on the laptop), `t3 connect publish`, then `t3 service restart`.
    - On the phone, steps 3 to 5 of [Mobile](#mobile).
    - In the Tailscale admin console, turn on **HTTPS Certificates** under **DNS**.
-   - Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
+   - Run `t3 pair --tailscale` and paste the link in T3 Code on the laptop (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
    - After an agent first opens T3 Code's browser, re-run `bash setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
    - At the desktop, run `t3 pair` and paste the link in the T3 Code app (**Settings → Connections → Add environment**).
 6. **Claude app.** At the desktop, open Claude and sign in.
@@ -222,12 +224,12 @@ Over SSH, logins print a link to open on the Mac.
 
 ### Ubuntu
 
-Over SSH from the Mac:
+Over SSH from the laptop:
 
 - `command -v claude codex t3` prints three paths.
 - `claude -p 'say ok'` and `codex exec --skip-git-repo-check 'say ok'` answer.
-- In tmux, `bash scripts/test-notification.sh` notifies on the Mac.
-- After a reboot, `systemctl --user status t3code` is `active (running)`, T3 Code on the Mac reconnects, and an agent can run `docker ps`.
+- In tmux, `bash scripts/test-notification.sh` notifies on the laptop.
+- After a reboot, `systemctl --user status t3code` is `active (running)`, T3 Code on the laptop reconnects, and an agent can run `docker ps`.
 
 At the desktop, the T3 Code app shows the service's threads, and Claude opens signed in.
 

@@ -134,7 +134,7 @@ assert_file_not_contains "$STUB_LOG" "launchctl"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "ok         The Host * block in ~/.ssh/config has AddKeysToAgent"
 assert_contains "$RUN_OUTPUT" "skipped    The dotfiles.ssh-add LaunchAgent: macOS only"
-assert_contains "$RUN_OUTPUT" "skipped    ~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only"
+assert_contains "$RUN_OUTPUT" "skipped    ~/.ssh/rc, which keeps the laptop awake during SSH sessions: macOS only"
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
 # Ubuntu's ssh rejects UseKeychain, so no IgnoreUnknown is needed or added
 if ssh_bin="$(command -v ssh)"; then

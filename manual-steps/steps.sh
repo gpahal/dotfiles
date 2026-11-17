@@ -64,21 +64,21 @@ MD
 Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
 MD
     manual_step macos monitor-input --optional --check monitor_input_on "Monitor input switching on" <<'MD'
-Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
+Optional: set up [monitor input](#monitor-input) switching on the laptop and on Ubuntu.
 MD
 
     manual_group macos "**Accounts and keys**"
     manual_step macos tailscale-login --check mac_tailscale_signed_in "Signed in to Tailscale" <<'MD'
 Sign in to Tailscale with the account your Ubuntu machine and phone use.
 MD
-    manual_step macos tailscale-name --check mac_tailscale_named "This Mac named laptop in Tailscale" <<'MD'
-In the Tailscale admin console, name this Mac `laptop`, so the desktop reaches it as `ssh laptop`.
+    manual_step macos tailscale-name --check mac_tailscale_named "This machine named laptop in Tailscale" <<'MD'
+In the Tailscale admin console, name this machine `laptop`, so the desktop reaches it as `ssh laptop`.
 MD
     manual_step macos ssh-from-desktop \
         --check mac_ssh_key_authorized "A key in ~/.ssh/authorized_keys, so the desktop can SSH in" <<'MD'
-On the Mac, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host laptop` and check that `ssh laptop true` works. To SSH in from another device, add its key the same way.
+On the laptop, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host laptop` and check that `ssh laptop true` works. To SSH in from another device, add its key the same way.
 MD
-    manual_step macos ntfy-device --check ntfy_device_done "This Mac's ntfy token saved" <<'MD'
+    manual_step macos ntfy-device --check ntfy_device_done "This laptop's ntfy token saved" <<'MD'
 Run `just ntfy-device` and paste the `laptop` token that `just ntfy-user` printed on Ubuntu.
 MD
     manual_step macos ntfy-notifications <<'MD'
@@ -106,7 +106,7 @@ MD
 Turn on FileVault.
 MD
     manual_step macos backups --check time_machine_backed_up "Backed up off the machine" <<'MD'
-Back up off the Mac, such as with Time Machine.
+Back up off the laptop, such as with Time Machine.
 MD
     manual_step macos restore <<'MD'
 Restore a file from the backup once, to check it.
@@ -121,7 +121,7 @@ MD
 In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
 MD
     manual_step macos ssh-lid-closed <<'MD'
-Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the Mac away, or it stays awake in the bag.
+Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the laptop away, or it stays awake in the bag.
 MD
     manual_step macos apple-intelligence <<'MD'
 Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
@@ -167,13 +167,13 @@ MD
 Keep the `funnel` nodeAttr for this machine in the access policy. The `ntfy` step publishes ntfy with it.
 MD
     manual_step ubuntu ssh-key --elsewhere --check ssh_key_only "SSH password logins off, after a key login" <<'MD'
-**SSH key.** On the Mac:
+**SSH key.** On the laptop:
 1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
 2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
 3. `ssh-copy-id <alias>`.
 4. `ssh -O exit <alias>`.
 
-Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
+Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the laptop.
 MD
     manual_step ubuntu github-login --elsewhere --check github_logged_in "Logged in to GitHub with gh" <<'MD'
 **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
@@ -189,7 +189,7 @@ MD
 **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
 MD
     manual_step ubuntu monitor-input --optional --check monitor_input_on "Monitor input switching on" <<'MD'
-**Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
+**Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the laptop.
 MD
     manual_step ubuntu desktop-session --check desktop_session_after_reboot \
         "A desktop session after a reboot, through GDM's automatic login or Remote Login" <<'MD'

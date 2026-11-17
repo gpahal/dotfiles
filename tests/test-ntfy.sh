@@ -260,7 +260,7 @@ macos() {
     stub launchctl '[ "$1" != print ] || exit 1'
     assert_idempotent main
     assert_contains "$FIRST_OUTPUT" "isn't loaded. Load it with:"
-    assert_contains "$FIRST_OUTPUT" "once just ntfy-device saves this Mac's token"
+    assert_contains "$FIRST_OUTPUT" "once just ntfy-device saves this laptop's token"
     cmp -s "$REPO_DIR/ntfy/dotfiles.ntfy-subscribe.plist" "$HOME/Library/LaunchAgents/dotfiles.ntfy-subscribe.plist" ||
         fail "the LaunchAgent wasn't copied"
     [ -e "$HOME/.local/share/dotfiles/ntfy/notify.sh" ] || fail "notify.sh wasn't copied"
@@ -268,7 +268,7 @@ macos() {
         fail "the macOS notifier touched the server's parts or loaded the agent"
     assert_read_only 3 main --status
     assert_contains "$RUN_OUTPUT" "missing    The dotfiles.ntfy-subscribe LaunchAgent loaded"
-    assert_contains "$RUN_OUTPUT" "missing    This Mac's ntfy token: run just ntfy-device"
+    assert_contains "$RUN_OUTPUT" "missing    This laptop's ntfy token: run just ntfy-device"
     mkdir -p "$HOME/.local/state/dotfiles/ntfy"
     echo "macOS doesn't allow terminal-notifier's notifications; allow them" > "$HOME/.local/state/dotfiles/ntfy/notify-error"
     assert_exit 3 main --status

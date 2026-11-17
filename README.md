@@ -1,12 +1,17 @@
 # dotfiles
 
-Setup for my Mac (Apple Silicon, macOS 27) and the Ubuntu 26.04 x86_64 desktop I use from it over SSH. Setup stops on an Intel Mac, and warns on ARM Ubuntu, where a package with no ARM build fails its step.
+Setup for my two machines, which these docs call the laptop and the desktop:
+
+- **The laptop** is my MacBook Pro, on Apple Silicon and macOS 27.
+- **The desktop** is an Ubuntu 26.04 x86_64 machine, which I use from the laptop over SSH.
+
+Setup stops on an Intel Mac, and warns on ARM Ubuntu, where a package with no ARM build fails its step.
 
 ![zsh prompt](./resources/prompt.png)
 
 ## First run
 
-Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
+Set up the laptop first: Ubuntu's **SSH key** manual step runs on the laptop.
 
 ### macOS
 
@@ -24,7 +29,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 4. At the machine, run `bash setup.sh`.
 5. Do the rest of the Ubuntu [manual steps](#ubuntu-2).
 6. Reboot once, so the T3 Code service and tmux get the `docker` group.
-7. Run the [checks](#check-it-works) over SSH from the Mac.
+7. Run the [checks](#check-it-works) over SSH from the laptop.
 
 ## How setup works
 
@@ -36,7 +41,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
 | `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
-| `ssh` | Makes `~/.ssh` private, and has ssh add keys to the agent, so you type a passphrase once. On macOS, keeps keys in the keychain and loads them at login, and keeps the Mac awake during [SSH sessions](#ssh) |
+| `ssh` | Makes `~/.ssh` private, and has ssh add keys to the agent, so you type a passphrase once. On macOS, keeps keys in the keychain and loads them at login, and keeps the laptop awake during [SSH sessions](#ssh) |
 | `zsh` | Copies the zsh and starship config, hooks it into the startup files, imports your zsh history into atuin, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
 | `vim` | Copies the vim config and vim-plug, installs the plugins at their pins, and installs the Go tools vim-go uses |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
@@ -53,7 +58,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `ntfy` | Runs a private [ntfy](#notifications) server on Ubuntu, published with Tailscale Funnel, and shows its messages as desktop notifications on both OSes |
 | `chrome` | Installs Google Chrome from Google's apt repo, and removes Firefox. Ubuntu only |
-| `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+, and gives the [MX Master 4](#mouse-and-keyboard) the Mac's settings and buttons. Ubuntu only |
+| `logitech` | Installs Solaar from the Solaar team's PPA in place of Logi Options+, and gives the [MX Master 4](#mouse-and-keyboard) the laptop's settings and buttons. Ubuntu only |
 | `monitor-input` | Installs ddcutil and the service that switches the [monitor's input](#monitor-input). Ubuntu only |
 | `claude-code` | Installs [Claude Code](./ai_tools/README.md#claude-code) and sets both accounts' settings, status line, hooks, and instructions |
 | `claude-desktop` | Installs the Claude [desktop app](./ai_tools/README.md#desktop-app), opens it at login, and sets its preferences |
@@ -72,7 +77,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 
 ### Where the repo lives
 
-The repo can live anywhere, and setup and `just` run from any clone or worktree. Two things run outside the repo, `upgrade` and the daily health check, so the `zsh` and `ubuntu` steps record the checkout they run from in `~/.local/state/dotfiles/checkout`. From a worktree, they record its main checkout, so removing the worktree doesn't break them. After moving the repo, re-run `bash setup.sh zsh ubuntu` (`zsh` on the Mac) from its new place. `--status` reports a stale record.
+The repo can live anywhere, and setup and `just` run from any clone or worktree. Two things run outside the repo, `upgrade` and the daily health check, so the `zsh` and `ubuntu` steps record the checkout they run from in `~/.local/state/dotfiles/checkout`. From a worktree, they record its main checkout, so removing the worktree doesn't break them. After moving the repo, re-run `bash setup.sh zsh ubuntu` (`zsh` on the laptop) from its new place. `--status` reports a stale record.
 
 ## Ubuntu
 
@@ -80,7 +85,7 @@ Run setup as your own user, not root. On Ubuntu Server, run `bash setup.sh` nami
 
 - Homebrew installs the Brewfile minus its `if OS.mac?` block, and the casks in `UBUNTU_CASKS` in [`homebrew/install.sh`](homebrew/install.sh). zsh comes from apt, Ghostty from its snap.
 - Homebrew comes first on PATH, so its `python3`, `curl`, and `pkg-config` shadow the system's. Build against system libraries with `PATH=/usr/bin:/bin`.
-- tmux and vim copy through OSC 52 to the Mac's clipboard.
+- tmux and vim copy through OSC 52 to the laptop's clipboard.
 - `gh` stores its token in `~/.config/gh/hosts.yml`, since the keyring is locked over SSH, and git uses HTTPS. To push `.github/workflows` changes, run `gh auth refresh -h github.com -s workflow --insecure-storage` once.
 - Both machines' tmux use the `Ctrl+a` prefix, so press it twice for the inner one.
 
@@ -154,11 +159,11 @@ For the required status checks, the recipe offers the ruleset's current ones for
 
 On Ubuntu, the first use of a key, by `ssh` or `git`, asks for its passphrase. GNOME's agent then keeps the key until it restarts, such as at a reboot. Without that, its unlock prompt can't show over SSH, so `ssh` would ask on every connection.
 
-The Mac takes SSH only over Tailscale, only with a key in its `~/.ssh/authorized_keys`, and never with a password. The `macos` step writes the sshd config that enforces this, then turns on Remote Login. A [manual step](#macos-1) adds the desktop's key.
+The laptop takes SSH only over Tailscale, only with a key in its `~/.ssh/authorized_keys`, and never with a password. The `macos` step writes the sshd config that enforces this, then turns on Remote Login. A [manual step](#macos-1) adds the desktop's key.
 
-- While plugged in, the Mac doesn't idle-sleep, so `ssh laptop` reaches it. The display still sleeps.
-- An SSH session keeps the Mac from idle sleep until you disconnect, also on battery. This covers file copies and `ssh laptop <command>`.
-- SSH can't reach or wake a sleeping Mac. Closing the lid sleeps the Mac unless a display and power are connected. The manual steps show how to keep it awake with Amphetamine.
+- While plugged in, the laptop doesn't idle-sleep, so `ssh laptop` reaches it. The display still sleeps.
+- An SSH session keeps the laptop from idle sleep until you disconnect, also on battery. This covers file copies and `ssh laptop <command>`.
+- SSH can't reach or wake a sleeping laptop. Closing the lid sleeps the laptop unless a display and power are connected. The manual steps show how to keep it awake with Amphetamine.
 
 ### vim
 
@@ -192,8 +197,8 @@ Claude Code and Codex notify through Ghostty, inside tmux too. Outside tmux, Gho
 The **Dotfiles** keys act on the folder of the app in front: a Ghostty tab's, a Zed file's, the file manager's, a T3 Code thread's, or a Code session's in the Claude app. The [Hammerspoon](#hammerspoon) hotkeys use the same folder.
 
 - **Overview**, labeled LAPTOP or DESKTOP for the machine it runs on, shows CPU and memory, and on the 15-key model opens the **System** page of stats. **Back** there returns to the main page.
-- **Mic** names the mic in use, green while live and red and crossed out while muted, with a dot for each mic. A press switches to the next mic, and holding the key for half a second mutes or unmutes it. It skips apps' virtual mics, such as Zoom's. On the Mac, muting sets the mic's input volume to 0, and unmuting restores the volume it had.
-- **Sound**, in the top row, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and Mac's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the Mac it needs switchaudio-osx, from the Brewfile, as **Mic** does.
+- **Mic** names the mic in use, green while live and red and crossed out while muted, with a dot for each mic. A press switches to the next mic, and holding the key for half a second mutes or unmutes it. It skips apps' virtual mics, such as Zoom's. On the laptop, muting sets the mic's input volume to 0, and unmuting restores the volume it had.
+- **Sound**, in the top row, names the sound output in use at its top, with a dot for each output it can switch to. A press switches to the next of the speakers, headphones, monitor, and the laptop's speakers that's connected. It skips other outputs, such as an app's virtual device; `OUTPUTS` in [`sound.js`](stream-deck/com.gpahal.dotfiles.sdPlugin/sound.js) lists the ones it knows. On the laptop it needs switchaudio-osx, from the Brewfile, as **Mic** does.
 - **Upgrade** runs `upgrade` in a new Ghostty tab.
 - **Editor** opens Zed at that folder, or a new window when there's none.
 - **Terminal** brings Ghostty's tab at that folder to the front, else opens a tab there. With no folder, it brings Ghostty to the front. With Ghostty in front, it opens another tab at the same folder. A tab goes in Ghostty's window, and a window opens only when Ghostty has none.
@@ -237,11 +242,11 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 
 ### Vicinae
 
-[Vicinae](https://docs.vicinae.com/) launches apps, keeps clipboard history, and runs many Raycast extensions. `Cmd+Space` opens it on the Mac, and `Super+Space` on Ubuntu.
+[Vicinae](https://docs.vicinae.com/) launches apps, keeps clipboard history, and runs many Raycast extensions. `Cmd+Space` opens it on the laptop, and `Super+Space` on Ubuntu.
 
 - Both machines share [`vicinae/dotfiles.json`](vicinae/dotfiles.json): favorites, fallbacks, keybindings, theme, font, window size, and extension settings, with telemetry off. The step copies it to `~/.config/vicinae/` and adds it to the `imports` in `~/.config/vicinae/settings.json`.
 - Vicinae's settings window saves to `settings.json`, whose values win over the shared file. `--status` names each shared setting that `settings.json` overrides. To share a change, move it to `vicinae/dotfiles.json` and delete it from `settings.json`.
-- On the Mac, the homebrew step installs it and `upgrade` updates it. Paste into the active window and snippets are on, and need the Accessibility permission.
+- On the laptop, the homebrew step installs it and `upgrade` updates it. Paste into the active window and snippets are on, and need the Accessibility permission.
 - On Ubuntu, Vicinae's installer puts it in `~/.local`, without sudo, and `upgrade` moves it to the latest release. Paste into the active window and snippets are off, since they need root. Pick a clipboard entry to copy it, then press `Ctrl+V`.
 - Its GNOME extension, from extensions.gnome.org, gives it the clipboard and the window list. GNOME loads it at the next login.
 - `Super+Space` doesn't switch keyboard layouts. With more than one layout, `Shift+Super+Space` still does.
@@ -249,26 +254,26 @@ Ubuntu only. The `gnome` step sets what the `macos` step sets in Finder, the Doc
 
 ### Monitor input
 
-A USB switch moves the keyboard, mouse, and Stream Deck between the Mac and the Ubuntu desktop, and the monitor's input follows them over DDC/CI. Each machine switches the monitor to itself when the devices arrive. Ubuntu also hands the monitor back to the Mac when the devices leave it, so switching works while the Mac sleeps.
+A USB switch moves the keyboard, mouse, and Stream Deck between the laptop and the Ubuntu desktop, and the monitor's input follows them over DDC/CI. Each machine switches the monitor to itself when the devices arrive. Ubuntu also hands the monitor back to the laptop when the devices leave it, so switching works while the laptop sleeps.
 
 1. Pick a device the switch moves, such as the keyboard's receiver. `just monitor-input` lists the attached devices' `vendor:product` IDs, and the common input codes.
-2. On the Mac: `just monitor-input <vendor:product> <Mac's input>`, such as `just monitor-input 1234:5678 27` for USB-C.
-3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <Mac's input>`, such as `just monitor-input 1234:5678 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
+2. On the laptop: `just monitor-input <vendor:product> <laptop's input>`, such as `just monitor-input 1234:5678 27` for USB-C.
+3. On Ubuntu: `just monitor-input <vendor:product> <Ubuntu's input> <laptop's input>`, such as `just monitor-input 1234:5678 17 27` for HDMI 1. With more than one monitor connected, add the output, such as `HDMI-A-1`.
 4. In the monitor's menu, turn off its automatic input selection, so it wakes from sleep on the input it showed rather than the one it prefers. Some monitors have a separate setting for USB-C, which needs turning off too.
 
-`just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the Mac shows failures in Hammerspoon's console.
+`just monitor-input off` turns it off on that machine. Ubuntu logs each switch to `journalctl -u dotfiles-monitor-input`, and the laptop shows failures in Hammerspoon's console.
 
 ### Monitor volume
 
-macOS can't set the volume of HDMI or DisplayPort audio, so while the monitor is the Mac's sound output, Hammerspoon has the volume keys set the monitor's own volume over DDC/CI with m1ddc, from the Brewfile. Mute sets the monitor's volume to 0 and unmute brings it back, and `Shift+Opt` makes finer steps. Other outputs, such as headphones, keep the usual keys. The monitor answers only while it shows the Mac, and only with DDC/CI on in its menu.
+macOS can't set the volume of HDMI or DisplayPort audio, so while the monitor is the laptop's sound output, Hammerspoon has the volume keys set the monitor's own volume over DDC/CI with m1ddc, from the Brewfile. Mute sets the monitor's volume to 0 and unmute brings it back, and `Shift+Opt` makes finer steps. Other outputs, such as headphones, keep the usual keys. The monitor answers only while it shows the laptop, and only with DDC/CI on in its menu.
 
 Ubuntu sets the volume of HDMI audio itself, so its volume keys work as usual.
 
-Speakers on the monitor's audio line-out may not follow the monitor's volume, so the Mac's keys don't reach them. Ubuntu's keys still do. USB speakers on the USB switch work with both machines. They follow the keyboard, and the machine they're on sets their volume itself.
+Speakers on the monitor's audio line-out may not follow the monitor's volume, so the laptop's keys don't reach them. Ubuntu's keys still do. USB speakers on the USB switch work with both machines. They follow the keyboard, and the machine they're on sets their volume itself.
 
 ### Mouse and keyboard
 
-**MX Master 4.** Logi Options+ sets the mouse up on the Mac, and Solaar on Ubuntu. [`logitech/mx-master-4.yaml`](logitech/mx-master-4.yaml) holds its settings in Solaar's terms, each beside the Options+ setting it matches, and the `logitech` step gives them to Solaar. Change a setting there and in Options+ together.
+**MX Master 4.** Logi Options+ sets the mouse up on the laptop, and Solaar on Ubuntu. [`logitech/mx-master-4.yaml`](logitech/mx-master-4.yaml) holds its settings in Solaar's terms, each beside the Options+ setting it matches, and the `logitech` step gives them to Solaar. Change a setting there and in Options+ together.
 
 - Solaar sets the DPI, scroll direction, SmartShift, thumb wheel, and haptic feedback from it. Options+ uses its own scale for pointer speed, SmartShift sensitivity, and the haptic sense panel's force, so the file gives the Options+ values beside Solaar's.
 - The gesture button works as in Options+'s Window navigation. A click, or holding it and moving up, opens the Activities overview. Moving down opens the app grid, and left or right switches workspaces.
@@ -288,10 +293,10 @@ Ubuntu runs a private [ntfy](https://ntfy.sh) server. Tailscale Funnel publishes
 
 - **Topics.** `alerts` gets the disk, UPS, health, and boot alerts, and `agenda` is for your web service. Any other topic works too.
 - **Users.** You sign in with a password in the Android app and the web app. The `machine` user reads and sends on every topic, with a token for each place that uses it: `desktop`, `laptop`, and `web-service`.
-- **Desktop notifications.** The Mac and Ubuntu show `alerts` and `agenda` as notifications, and catch up on what arrived while they were asleep or off. Ubuntu stacks them under one **ntfy** entry, which you can expand, or clear in one click. They stay until you dismiss them, even across a restart. Their settings are in **Settings → Notifications → ntfy**. The Mac stacks them under terminal-notifier, unless **Notification grouping** is off in **System Settings → Notifications → terminal-notifier**. Clicking one opens its `Click` link, as on the phone; an `agenda` notification without one opens [the agenda](https://garvitpahal.com/x/agenda). Ubuntu also shows a button for each `view` action, which the Mac leaves out. Only the Android app runs `http` and `broadcast` actions.
+- **Desktop notifications.** The laptop and Ubuntu show `alerts` and `agenda` as notifications, and catch up on what arrived while they were asleep or off. Ubuntu stacks them under one **ntfy** entry, which you can expand, or clear in one click. They stay until you dismiss them, even across a restart. Their settings are in **Settings → Notifications → ntfy**. The laptop stacks them under terminal-notifier, unless **Notification grouping** is off in **System Settings → Notifications → terminal-notifier**. Clicking one opens its `Click` link, as on the phone; an `agenda` notification without one opens [the agenda](https://garvitpahal.com/x/agenda). Ubuntu also shows a button for each `view` action, which the laptop leaves out. Only the Android app runs `http` and `broadcast` actions.
 - **Repeats replace each other.** A message with a sequence ID replaces the notification of the last one with that ID, on the desktops and the phone. The alerts use this. A health alert or the all-clear replaces the last health alert, and a boot notice replaces the last boot notice. A UPS event replaces the last one of its kind, so "UPS on mains power" replaces "UPS on battery". A SMART warning replaces the last one of the same kind for that disk.
-- **Alert actions.** Clicking a disk, UPS, or health alert on the Mac or Ubuntu opens a Ghostty tab with the command that shows what's wrong and how to fix it. The command runs when you press Enter, on the desktop: directly there, or over `ssh` from the Mac. The first time, macOS asks to let terminal-notifier control Ghostty. The phone shows the alert's `action:` tag as text.
-- **Restarts and updates.** The server starts at boot, and the funnel comes back with Tailscale. The notifier starts when you log in: on Ubuntu with the desktop session, on the Mac as a login item under **Allow in the Background** in **System Settings → General → Login Items & Extensions**. The daily security updates install new ntfy versions on Ubuntu and restart the server. `upgrade` updates ntfy on both machines and restarts the notifiers.
+- **Alert actions.** Clicking a disk, UPS, or health alert on the laptop or Ubuntu opens a Ghostty tab with the command that shows what's wrong and how to fix it. The command runs when you press Enter, on the desktop: directly there, or over `ssh` from the laptop. The first time, macOS asks to let terminal-notifier control Ghostty. The phone shows the alert's `action:` tag as text.
+- **Restarts and updates.** The server starts at boot, and the funnel comes back with Tailscale. The notifier starts when you log in: on Ubuntu with the desktop session, on the laptop as a login item under **Allow in the Background** in **System Settings → General → Login Items & Extensions**. The daily security updates install new ntfy versions on Ubuntu and restart the server. `upgrade` updates ntfy on both machines and restarts the notifiers.
 - **Alerts only go to this server.** Until `just ntfy-user` sets them up, the alerts fail and log why (`journalctl -t dotfiles-smartd`, `journalctl --user -u dotfiles-health`), and `--status` reports it. They never send to ntfy.sh, even with an older ntfy.sh URL saved; `just alerts` replaces it.
 - **Sending.** `ntfy publish alerts "Backup done"` works on both machines. From anywhere else, such as your web service:
 
@@ -305,7 +310,7 @@ Ubuntu runs a private [ntfy](https://ntfy.sh) server. Tailscale Funnel publishes
   `Priority` and `Tags` headers set the priority and the icons. A tag `action:<name>` gives a desktop notification an action from [`ntfy/actions.sh`](ntfy/actions.sh), the only commands a click can run: a bare name runs on the computer showing it, and `linux-<name>` or `mac-<name>` on that machine. `Click` sets the link a click opens, and `Actions` adds up to three buttons, separated by `;`: `view, <label>, <url>` opens a page, and `http, <label>, <url>` sends a request from the phone. `X-Sequence-ID: <id>`, in letters, digits, `-`, and `_`, replaces the notification of the topic's last message with that ID, such as an event's earlier reminder. `At: tomorrow, 9am` or `Delay: 30m` sends it later, up to 3 days ahead. To read a topic's last 72 hours, send `GET /agenda/json?poll=1&since=72h` with the same header.
 - **Tokens.** `just ntfy-user` prints the `laptop` and `web-service` tokens again. `just ntfy-user --rotate <label>` replaces one, and the old one stops working.
 - **Password.** ntfy keeps only its hash, so it can't be shown again. `just ntfy-user --change-pass` sets a new one and signs out the web app; then change it in the Android app too.
-- **After a lost disk.** ntfy's data isn't backed up. Run setup, then `just ntfy-user`, which makes new tokens; you can reuse your password. Then run `just ntfy-device` on the Mac with the new `laptop` token, give your web service its new token, and re-enter your password in the Android app.
+- **After a lost disk.** ntfy's data isn't backed up. Run setup, then `just ntfy-user`, which makes new tokens; you can reuse your password. Then run `just ntfy-device` on the laptop with the new `laptop` token, give your web service its new token, and re-enter your password in the Android app.
 - **Funnels.** Never run `tailscale serve reset` or `tailscale funnel reset`, which also remove T3 Code's serve. Turn off one port with `tailscale funnel --https=<port> off`.
 
 ### tmux
@@ -349,13 +354,13 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 12. Optional: turn on AppCleaner's SmartDelete, and install [Supercharge](https://sindresorhus.gumroad.com/l/supercharge).
 13. Open Stream Deck and accept its prompt to install the **Main** profile. Press **Overview** and accept the prompt for the **System** profile. Press **Editor**, **Terminal**, and **Files** with Ghostty, Zed, and Finder in front, then **New Tab** and **Gmail**, and **Allow** each prompt. Add Elgato Stream Deck in **Privacy & Security → Accessibility**.
 14. Open Hammerspoon and add it in **Privacy & Security → Accessibility**. Press `Ctrl+Opt+Cmd+T` and `E` with Ghostty, Zed, and Finder in front, then `N`, and **Allow** each prompt.
-15. Optional: set up [monitor input](#monitor-input) switching on the Mac and on Ubuntu.
+15. Optional: set up [monitor input](#monitor-input) switching on the laptop and on Ubuntu.
 
 **Accounts and keys**
 
 16. Sign in to Tailscale with the account your Ubuntu machine and phone use.
-17. In the Tailscale admin console, name this Mac `laptop`, so the desktop reaches it as `ssh laptop`.
-18. On the Mac, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host laptop` and check that `ssh laptop true` works. To SSH in from another device, add its key the same way.
+17. In the Tailscale admin console, name this machine `laptop`, so the desktop reaches it as `ssh laptop`.
+18. On the laptop, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host laptop` and check that `ssh laptop true` works. To SSH in from another device, add its key the same way.
 19. Run `just ntfy-device` and paste the `laptop` token that `just ntfy-user` printed on Ubuntu.
 20. Run `ntfy publish alerts test` on Ubuntu. When macOS asks, allow terminal-notifier's notifications. Choose the **Persistent** style if alerts should stay until you dismiss them.
 21. Add your Google account to Calendar and Contacts.
@@ -367,14 +372,14 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 
 25. Optional: `just touch-id`.
 26. Turn on FileVault.
-27. Back up off the Mac, such as with Time Machine.
+27. Back up off the laptop, such as with Time Machine.
 28. Restore a file from the backup once, to check it.
 
 **Performance and privacy**
 
 29. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
 30. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
-31. Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the Mac away, or it stays awake in the bag.
+31. Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the laptop away, or it stays awake in the bag.
 32. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
 33. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
@@ -408,18 +413,18 @@ Once:
    - In the admin console's **DNS** page, turn on MagicDNS and **HTTPS Certificates**, which ntfy's Funnel needs.
    - Limit the access policy, and remove `root` from `users` in its `ssh` rules.
    - Keep the `funnel` nodeAttr for this machine in the access policy. The `ntfy` step publishes ntfy with it.
-6. **SSH key.** On the Mac:
+6. **SSH key.** On the laptop:
    1. `ssh-keygen -t ed25519`, if there's no `~/.ssh/id_ed25519`.
    2. `just ssh-host <alias> <machine-name>`, using the machine's name in Tailscale. Leave out `<machine-name>` if it matches the alias. With MagicDNS off, use the full `<machine-name>.<tailnet>.ts.net` name.
    3. `ssh-copy-id <alias>`.
    4. `ssh -O exit <alias>`.
 
-   Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the Mac.
+   Then SSH in with the key and re-run `bash setup.sh ubuntu`, which turns off password logins and finishes the Tailscale setup. Before closing that session, check `ssh -S none <alias> true` from the laptop.
 7. **GitHub.** If you skipped the login, re-run `bash setup.sh git` from a terminal and accept it.
 8. **Commit signing.** Run `just git-signing` and the `gh` commands it prints.
 9. **Logitech.** At the desktop, open Solaar and pair your devices.
 10. **GNOME extensions.** Log out of the desktop and back in once, so GNOME loads the extensions the `stream-deck` and `vicinae` steps turned on.
-11. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the Mac.
+11. **Monitor input (optional).** Set up [monitor input](#monitor-input) switching here and on the laptop.
 12. **Desktop session after a reboot.** Solaar and Claude in Chrome need one. Turn on Remote Login in **Settings → System → Remote Desktop** and connect over Tailscale with Windows App, or turn on GDM automatic login (the keyring stays locked).
 13. **ntfy.** Run `just ntfy-user`. Choose a password for the Android app and the web app. Keep it, and the two tokens the script prints, in your password manager.
 14. **Phone.** Install the ntfy app on Android. In **Settings → Manage users**, add your user and password for `https://<machine>.<tailnet>.ts.net:8443`, port included. Set the same URL as **Settings → Default server**. Then, for `alerts` and `agenda`, tap **+**, enter the topic, and tap **Subscribe**. Allow the app's permanent notification, turn off battery optimization for it, and run `just alerts test`. Unsubscribe from any old ntfy.sh topic.
@@ -435,16 +440,16 @@ Once:
 20. **Livepatch (optional).** `sudo pro attach <token>`, then `sudo pro enable livepatch`.
 21. **Display scale.** In **Settings → Displays**, set **Scale** to **167%**, between 150% and 200%.
 
-**AI tools.** Over SSH, logins print a link to open on the Mac.
+**AI tools.** Over SSH, logins print a link to open on the laptop.
 
 22. **Sudo work.** If setup ran without a terminal, run `bash setup.sh claude-desktop codex t3-code` from one.
 23. **Claude Code.** `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account.
 24. **Codex.** Turn on device code login in ChatGPT's **Settings → Security**, then `codex login --device-auth`.
 25. **Claude in Chrome.** At the desktop, see [Browser (Claude in Chrome)](./ai_tools/README.md#browser-claude-in-chrome).
 26. **T3 Code.** Connect to the [service](./ai_tools/README.md#t3-code-on-ubuntu):
-    - `t3 connect --headless` (open the link on the Mac), `t3 connect publish`, then `t3 service restart`.
+    - `t3 connect --headless` (open the link on the laptop), `t3 connect publish`, then `t3 service restart`.
     - On the phone, steps 3 to 5 of [Mobile](./ai_tools/README.md#mobile).
-    - Run `t3 pair --tailscale` and paste the link in T3 Code on the Mac (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
+    - Run `t3 pair --tailscale` and paste the link in T3 Code on the laptop (**Settings → Connections → Add environment**). Don't use T3 Code's SSH connection type, which can start a second server.
     - After an agent first opens T3 Code's browser, re-run `bash setup.sh t3-code`. If it says the browser needs root, check `~/.local/bin/t3` is yours, then `sudo ~/.local/bin/t3 browser setup`.
     - At the desktop, run `t3 pair` and paste the link in the T3 Code app (**Settings → Connections → Add environment**).
 27. **Claude app.** At the desktop, open Claude and sign in.
@@ -468,12 +473,12 @@ The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 - After `just touch-id`, `sudo -k && sudo -v` asks for Touch ID, in tmux too.
 - With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
 - `Cmd+Space` opens Vicinae, and `Cmd+Space` again closes it.
-- After `just ntfy-device`, `ntfy publish alerts test` on Ubuntu shows a notification on the Mac.
-- From the desktop, `ssh laptop true` works, and `ssh -S none -o PubkeyAuthentication=no laptop true` is refused without asking for a password. While `ssh laptop sleep 60` runs, `pmset -g assertions` on the Mac lists `caffeinate`.
+- After `just ntfy-device`, `ntfy publish alerts test` on Ubuntu shows a notification on the laptop.
+- From the desktop, `ssh laptop true` works, and `ssh -S none -o PubkeyAuthentication=no laptop true` is refused without asking for a password. While `ssh laptop sleep 60` runs, `pmset -g assertions` on the laptop lists `caffeinate`.
 
 ### Ubuntu
 
-Over SSH from the Mac:
+Over SSH from the laptop:
 
 - `sudo -v && just status` prints no **Needs attention** line.
 - `command -v brew mise node` prints three paths, and a test commit is signed.
@@ -499,7 +504,7 @@ At the desktop, with the Stream Deck switched to it:
 
 `upgrade` runs [`scripts/upgrade.sh`](scripts/upgrade.sh) from the dotfiles checkout or worktree you're in, else the [recorded checkout](#where-the-repo-lives). `just upgrade` uses the checkout that holds the justfile. Either updates apt, Homebrew, App Store apps, vim and tmux plugins to their pins, Vicinae and its GNOME extension, mise tools, global npm packages, uv tools, Rust, and the AI tools (`upgrade-ai-tools`, see [ai_tools/README.md](./ai_tools/README.md#updating)), and restarts ntfy's notifier on the new version. It lists failed stages and returns 1.
 
-It updates every app Homebrew installed, including the ones that update themselves. On the Mac, it quits a running app, updates it, and opens it again in the background. Chrome reopens with its **On startup** setting, so set it to **Continue where you left off** to keep your tabs, and OrbStack stops its containers and machines while it restarts. Ghostty, likely the terminal `upgrade` runs in, is never quit, and neither is an app that doesn't quit within 20 seconds, such as one asking to save: `upgrade` names those in one line, such as `Running, so not updated: Ghostty.`, so quit them and run it again. The AI tools' apps update only when closed, since T3 Code may be running the session you're in.
+It updates every app Homebrew installed, including the ones that update themselves. On the laptop, it quits a running app, updates it, and opens it again in the background. Chrome reopens with its **On startup** setting, so set it to **Continue where you left off** to keep your tabs, and OrbStack stops its containers and machines while it restarts. Ghostty, likely the terminal `upgrade` runs in, is never quit, and neither is an app that doesn't quit within 20 seconds, such as one asking to save: `upgrade` names those in one line, such as `Running, so not updated: Ghostty.`, so quit them and run it again. The AI tools' apps update only when closed, since T3 Code may be running the session you're in.
 
 - Install global npm CLIs with `mise use -g npm:<package>`, since mise removes old Node versions with their `npm install -g` packages.
 - Don't run `brew bundle cleanup`: the Brewfile lists no casks, so it uninstalls them all.
@@ -511,7 +516,7 @@ It updates every app Homebrew installed, including the ones that update themselv
 - `just clean-caches` lists build and download caches with their sizes: Go's build cache, the pnpm store, npm's cache, Homebrew's downloads, Playwright's browsers, and PyTorch's downloads. Once you confirm, it clears them; `dry-run` stops after the list. pnpm keeps the packages your projects use. Each cache refills on next use.
 - Add hand-installed packages to `homebrew/Brewfile`, or to `CASKS`, `MAS_APPS`, or `UBUNTU_CASKS` in `homebrew/install.sh`.
 - `just bump-plugins` moves the vim and tmux plugin pins and vim-plug to their latest versions. Commit, then re-run `bash setup.sh vim tmux` on each machine.
-- To change the Stream Deck's keys, edit `stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json`, run `bash stream-deck/build-profile.sh`, and commit both. Then re-run `bash setup.sh stream-deck` on each machine. On the Mac, accept Stream Deck's prompt for each changed profile, pressing **Overview** for the **System** profile.
+- To change the Stream Deck's keys, edit `stream-deck/com.gpahal.dotfiles.sdPlugin/layout.json`, run `bash stream-deck/build-profile.sh`, and commit both. Then re-run `bash setup.sh stream-deck` on each machine. On the laptop, accept Stream Deck's prompt for each changed profile, pressing **Overview** for the **System** profile.
 - To update the Ubuntu Stream Deck's packages, run `pnpm update` in `stream-deck/linux`, commit `pnpm-lock.yaml`, and re-run `bash setup.sh stream-deck`.
 - The manual steps live in `manual-steps/steps.sh` and `ai_tools/manual-steps/steps.sh`, each with the check that tells it's done. After editing one, run `just manual-steps-doc`, which rewrites the READMEs' Manual steps lists.
 - [AGENTS.md](./AGENTS.md) covers adding steps, `just check`, and `just test`.

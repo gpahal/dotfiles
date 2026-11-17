@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Save this Mac's ntfy token, so its notifier shows the desktop server's alerts and agenda.
+# Save this laptop's ntfy token, so its notifier shows the desktop server's alerts and agenda.
 # The token comes from just ntfy-user on the desktop. It's read from the terminal, never an
 # argument, and checked against the server before it's saved. With the token as default-token,
-# ntfy publish works on the Mac too, for alerts it may send later.
+# ntfy publish works on the laptop too, for alerts it may send later.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -28,7 +28,7 @@ usage() {
     echo "macOS only."
 }
 
-# The peer whose HostName is desktop, from this Mac's view of the tailnet
+# The peer whose HostName is desktop, from this laptop's view of the tailnet
 default_server_name() {
     local names
     names="$(tailscale status --json 2>/dev/null | jq -r --arg name "$NTFY_SERVER_HOSTNAME" \
@@ -72,7 +72,7 @@ main() {
         return 2
     }
     if ! is_macos; then
-        echo "just ntfy-device is for a Mac. On the machine running ntfy's server, run just ntfy-user." >&2
+        echo "just ntfy-device is for the laptop. On the machine running ntfy's server, run just ntfy-user." >&2
         return 1
     fi
     require_cmd curl || return 1

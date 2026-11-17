@@ -371,7 +371,7 @@ configure_t3_code() {
     return "$result"
 }
 
-# A server started by hand, over SSH from the Mac via ~/.t3/ssh-launch and ~/.t3/runtime, or by the
+# A server started by hand, over SSH from the laptop via ~/.t3/ssh-launch and ~/.t3/runtime, or by the
 # desktop app, which runs its own Electron binary on app.asar's server entry with --bootstrap-fd
 T3_CODE_HOME_RE="$(regex_escape "$HOME")"
 T3_CODE_SSH_SERVER_PATTERN="$T3_CODE_HOME_RE/\.t3/(runtime|ssh-launch)/"
@@ -414,8 +414,8 @@ t3_code_describe_server() {
             fix="quit T3 Code, then re-run the t3-code step, which turns that server off"
             ;;
         ssh)
-            name="a server the Mac started over SSH"
-            fix="remove this host's SSH connection in T3 Code on the Mac, connect over Tailscale instead (see ai_tools/README.md → Manual steps), stop the server (kill $pid), then re-run the t3-code step"
+            name="a server the laptop started over SSH"
+            fix="remove this host's SSH connection in T3 Code on the laptop, connect over Tailscale instead (see ai_tools/README.md → Manual steps), stop the server (kill $pid), then re-run the t3-code step"
             ;;
         *)
             name="a t3 serve started by hand"

@@ -7,7 +7,7 @@ NTFY_CONFIG=/etc/ntfy/server.yml
 NTFY_UNIT=ntfy.service
 # The users just ntfy-user creates, and the labels of machine's tokens
 NTFY_MACHINE_USER=machine
-NTFY_TOKEN_LABELS=(desktop macbook web-service)
+NTFY_TOKEN_LABELS=(desktop laptop web-service)
 NTFY_TOKEN_RE='tk_[-_A-Za-z0-9]{29}'
 
 # Cached through a memo scope, once called outside a $( )

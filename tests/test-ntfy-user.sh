@@ -94,10 +94,10 @@ assert_exit 0 main <<< $'my password\nmy password'
 assert_eq admin "$(cat "$SANDBOX/db/user-$me")" "your user's role"
 assert_eq user "$(cat "$SANDBOX/db/user-machine")" "machine's role"
 assert_eq "- read-write access to topic *" "$(cat "$SANDBOX/db/grants-machine")" "machine's access"
-assert_eq "desktop macbook web-service" "$(awk '{ print $2 }' "$SANDBOX/db/tokens-machine" | tr '\n' ' ' | sed 's/ $//')" \
+assert_eq "desktop laptop web-service" "$(awk '{ print $2 }' "$SANDBOX/db/tokens-machine" | tr '\n' ' ' | sed 's/ $//')" \
     "machine's token labels"
 desktop="$(awk '$2 == "desktop" { print $1 }' "$SANDBOX/db/tokens-machine")"
-macbook="$(awk '$2 == "macbook" { print $1 }' "$SANDBOX/db/tokens-machine")"
+laptop="$(awk '$2 == "laptop" { print $1 }' "$SANDBOX/db/tokens-machine")"
 web="$(awk '$2 == "web-service" { print $1 }' "$SANDBOX/db/tokens-machine")"
 assert_eq 600 "$(file_mode "$CLIENT")" "the client config's mode"
 assert_file_contains "$CLIENT" "default-host: http://127.0.0.1:2586"
@@ -106,7 +106,7 @@ assert_file_contains "$CLIENT" "  - topic: http://127.0.0.1:2586/alerts"
 assert_file_contains "$CLIENT" "  - topic: http://127.0.0.1:2586/agenda"
 assert_file_contains "$CLIENT" "default-command: '/bin/bash \"\$HOME/.local/share/dotfiles/ntfy/notify.sh\"'"
 assert_contains "$RUN_OUTPUT" "just alerts ran"
-assert_contains "$RUN_OUTPUT" "$macbook"
+assert_contains "$RUN_OUTPUT" "$laptop"
 assert_contains "$RUN_OUTPUT" "$web"
 assert_contains "$RUN_OUTPUT" "https://box.example.ts.net:8443/agenda"
 assert_not_contains "$RUN_OUTPUT" "$desktop"
@@ -121,7 +121,7 @@ state() { (cd "$SANDBOX" && cksum db/* "$CLIENT"); }
 before="$(state)"
 assert_exit 0 main < /dev/null
 assert_eq "$before" "$(state)" "ntfy's users, tokens, and the client config after a second run"
-assert_contains "$RUN_OUTPUT" "$macbook"
+assert_contains "$RUN_OUTPUT" "$laptop"
 assert_contains "$RUN_OUTPUT" "$web"
 if grep -qE '^ntfy (user add|access machine \*|token add)' "$STUB_LOG"; then
     fail "the second run changed ntfy's users: $(grep -E '^ntfy (user add|access|token add)' "$STUB_LOG")"
@@ -134,8 +134,8 @@ assert_contains "$RUN_OUTPUT" "machine also has, from before:"
 assert_contains "$RUN_OUTPUT" "- read-only access to topic old"
 
 # A rotation replaces one token; the desktop's goes to the client config and the alerts again
-assert_exit 0 main --rotate macbook
-assert_file_not_contains "$SANDBOX/db/tokens-machine" "$macbook"
+assert_exit 0 main --rotate laptop
+assert_file_not_contains "$SANDBOX/db/tokens-machine" "$laptop"
 assert_file_contains "$SANDBOX/db/tokens-machine" "$desktop desktop"
 assert_file_contains "$SANDBOX/db/tokens-machine" "$web web-service"
 assert_contains "$RUN_OUTPUT" "Run just ntfy-device on the Mac and paste the new token"
@@ -146,7 +146,7 @@ new_desktop="$(awk '$2 == "desktop" { print $1 }' "$SANDBOX/db/tokens-machine")"
 assert_file_contains "$CLIENT" "default-token: $new_desktop"
 assert_contains "$RUN_OUTPUT" "just alerts ran"
 assert_exit 2 main --rotate nonsense
-assert_contains "$RUN_OUTPUT" "The labels are: desktop macbook web-service."
+assert_contains "$RUN_OUTPUT" "The labels are: desktop laptop web-service."
 
 # A password change signs out your web sessions, and leaves machine's tokens
 echo "tk_$(printf '%029d' 900) web-session" > "$SANDBOX/db/tokens-$me"

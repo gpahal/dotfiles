@@ -412,7 +412,7 @@ status_macos() {
     if ntfy_client_ready; then
         status_item ok "This Mac's ntfy token ($(shown_path "$(ntfy_client_config)"))"
     else
-        status_item missing "This Mac's ntfy token: run just ntfy-device with the macbook token from just ntfy-user"
+        status_item missing "This Mac's ntfy token: run just ntfy-device with the laptop token from just ntfy-user"
     fi
     status_notify_error
 }

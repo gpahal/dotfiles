@@ -3,7 +3,7 @@
 # client, and scp would break.
 #
 # Keeps the Mac from idle sleep until the connection closes. macOS's ttyskeepawake already does
-# that for a terminal you type in, but not for scp, rsync, ssh mac <command>, or a long build you
+# that for a terminal you type in, but not for scp, rsync, ssh laptop <command>, or a long build you
 # don't type into. -s holds off sleep on power, and -i idle sleep on battery too. Closing the lid
 # still sleeps the Mac.
 

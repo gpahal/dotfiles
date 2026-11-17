@@ -317,7 +317,7 @@ echo 200 > "$SANDBOX/http-status"
 assert_exit 1 main <<< "$TOKEN"
 assert_contains "$RUN_OUTPUT" "The notifier isn't loaded yet. Run bash setup.sh ntfy."
 assert_file_contains "$CLIENT" "default-token: $TOKEN"
-# A new token, as after just ntfy-user --rotate macbook, restarts the loaded agent
+# A new token, as after just ntfy-user --rotate laptop, restarts the loaded agent
 touch "$SANDBOX/agent-loaded"
 TOKEN=tk_zyxwvutsrqponmlkjihgfedcba987
 assert_exit 0 main <<< "  $TOKEN "

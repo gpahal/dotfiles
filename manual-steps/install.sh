@@ -38,6 +38,8 @@ ACCOUNTS_DB="$HOME/Library/Accounts/Accounts4.sqlite"
 SPOTLIGHT_CONFIG=/System/Volumes/Data/.Spotlight-V100/VolumeConfiguration.plist
 SPOTLIGHT_EXCLUDED=("$HOME/Dev" "$HOME/go" "$HOME/Library/pnpm")
 MAC_TAILSCALE=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+# The Mac's Tailscale name, which the desktop's ssh-host alias uses
+MAC_TAILSCALE_NAME=laptop
 # "<name>|<app>|optional", the apps the README turns Launch at login on for
 LOGIN_APPS=("Rectangle|/Applications/Rectangle.app|" "Amphetamine|/Applications/Amphetamine.app|"
     "Tailscale|/Applications/Tailscale.app|" "Dato|/Applications/Dato.app|optional")
@@ -204,6 +206,19 @@ mac_ssh_key_authorized() {
         case "$line" in '' | '#'*) continue ;; esac
         printf '%s\n' "$line" | ssh-keygen -lf - &> /dev/null && return 0
     done < "$HOME/.ssh/authorized_keys"
+    return 1
+}
+
+mac_tailscale_named() {
+    local tailscale=tailscale name
+    [ ! -x "$MAC_TAILSCALE" ] || tailscale="$MAC_TAILSCALE"
+    command -v "$tailscale" &>/dev/null || manual_unknown "Tailscale isn't installed" || return
+    tailscale_status_json "$tailscale" > /dev/null || manual_unknown "tailscale status failed; open Tailscale" || return
+    name="$(jq -r '.Self.DNSName // empty' <<< "$TAILSCALE_STATUS_JSON" 2>/dev/null)"
+    [ -n "$name" ] || manual_unknown "Tailscale gave no name; sign in first" || return
+    name="${name%%.*}"
+    [ "$name" != "$MAC_TAILSCALE_NAME" ] || return 0
+    MANUAL_DETAIL="it's named $name"
     return 1
 }
 

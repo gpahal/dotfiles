@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # The ssh step: keychain key loading on macOS (Host * block and LaunchAgent), parsed as ssh does,
-# and the modes of ~/.ssh and its config.
+# ~/.ssh/rc on macOS, and the modes of ~/.ssh and its config. test-ssh-rc.sh covers what rc does.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -18,6 +18,7 @@ host_star_count() {
 
 assert_exit 0 main
 assert_eq 1 "$(host_star_count)" "Host * blocks after the first run"
+cmp -s "$REPO_DIR/ssh/rc" "$HOME/.ssh/rc" || fail "$HOME/.ssh/rc isn't the repo's ssh/rc"
 # Non-Apple ssh rejects UseKeychain without IgnoreUnknown above it
 if ssh_bin="$(command -v ssh)"; then
     assert_exit 0 "$ssh_bin" -F "$SSH_CONFIG" -G example.com
@@ -99,22 +100,35 @@ assert_exit 0 main
 assert_contains "$RUN_OUTPUT" "already loaded"
 assert_file_not_contains "$STUB_LOG" "launchctl bootstrap"
 
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         ~/.ssh/rc"
+
 # A failed copy fails even when the agent is already loaded
 copy_failure() {
     replace_fn copy_file 'return 1'
-    install_ssh_add_agent || return 1
+    apply
 }
 assert_exit 1 copy_failure
+assert_contains "$RUN_OUTPUT" "already loaded"
+
+# A changed rc is replaced, and status says so first
+echo "# yours" > "$HOME/.ssh/rc"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    ~/.ssh/rc differs from the repo's ssh/rc"
+assert_exit 0 main
+cmp -s "$REPO_DIR/ssh/rc" "$HOME/.ssh/rc" || fail "$HOME/.ssh/rc wasn't replaced"
 
 as_os ubuntu
 rm -rf "$HOME/.ssh" "$HOME/Library"
 assert_exit 0 main
 [ ! -e "$SSH_CONFIG" ] || fail "Ubuntu got $SSH_CONFIG: $(cat "$SSH_CONFIG")"
 [ ! -e "$AGENT" ] || fail "Ubuntu got the LaunchAgent"
+[ ! -e "$HOME/.ssh/rc" ] || fail "Ubuntu got ~/.ssh/rc"
 assert_file_not_contains "$STUB_LOG" "launchctl"
 assert_exit 0 main --status
 assert_contains "$RUN_OUTPUT" "skipped    A Host * block that loads keys from the keychain: macOS only"
 assert_contains "$RUN_OUTPUT" "skipped    The dotfiles.ssh-add LaunchAgent: macOS only"
+assert_contains "$RUN_OUTPUT" "skipped    ~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only"
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
 printf 'Host box\n  User me\n' > "$SSH_CONFIG"
 snapshot "$SSH_CONFIG"

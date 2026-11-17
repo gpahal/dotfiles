@@ -36,7 +36,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
 | `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
-| `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login |
+| `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login, and keeps the Mac awake during [SSH sessions](#ssh) |
 | `zsh` | Copies the zsh and starship config, hooks it into the startup files, imports your zsh history into atuin, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
 | `vim` | Copies the vim config and vim-plug, installs the plugins at their pins, and installs the Go tools vim-go uses |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
@@ -48,7 +48,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `gnome` | Matches GNOME's keyboard, Files, and dock to the [macOS defaults](./macos/install.sh), and adds Quick Look. Ubuntu only |
 | `vicinae` | Sets up the [Vicinae](#vicinae) launcher with the repo's shared settings, on `Cmd+Space` on macOS and `Super+Space` on Ubuntu, where it also installs it |
 | `editorconfig` | Copies `~/.editorconfig` |
-| `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, frees `Cmd+Space` for Vicinae, and sets the hostname if needed. macOS only |
+| `macos` | Sets [macOS defaults](./macos/install.sh), turns on the firewall, its stealth mode, and automatic App Store updates, turns on [Remote Login](#ssh) for your key over Tailscale, stops idle sleep on the power adapter, frees `Cmd+Space` for Vicinae, and sets the hostname if needed. macOS only |
 | `ubuntu` | Sets Ubuntu up for [running around the clock](#running-around-the-clock). Ubuntu only |
 | `docker` | Installs Docker Engine. Ubuntu only; OrbStack provides Docker on macOS |
 | `ntfy` | Runs a private [ntfy](#notifications) server on Ubuntu, published with Tailscale Funnel, and shows its messages as desktop notifications on both OSes |
@@ -151,6 +151,12 @@ For the required status checks, the recipe offers the ruleset's current ones for
 ### SSH
 
 `just ssh-host <alias> [hostname]` adds a `~/.ssh/config` block with keepalives and a shared connection. `ssh -O exit <alias>` closes it.
+
+The Mac takes SSH only over Tailscale, only with a key in its `~/.ssh/authorized_keys`, and never with a password. The `macos` step writes the sshd config that enforces this, then turns on Remote Login. A [manual step](#macos-1) adds the desktop's key.
+
+- While plugged in, the Mac doesn't idle-sleep, so `ssh mac` reaches it. The display still sleeps.
+- An SSH session keeps the Mac from idle sleep until you disconnect, also on battery. This covers file copies and `ssh mac <command>`.
+- SSH can't reach or wake a sleeping Mac. Closing the lid sleeps the Mac unless a display and power are connected. The manual steps show how to keep it awake with Amphetamine.
 
 ### vim
 
@@ -346,42 +352,44 @@ osascript -e 'do shell script "rm /etc/pam.d/sudo_local" with administrator priv
 **Accounts and keys**
 
 16. Sign in to Tailscale with the account your Ubuntu machine and phone use.
-17. Run `just ntfy-device` and paste the `macbook` token that `just ntfy-user` printed on Ubuntu.
-18. Run `ntfy publish alerts test` on Ubuntu. When macOS asks, allow terminal-notifier's notifications. Choose the **Persistent** style if alerts should stay until you dismiss them.
-19. Add your Google account to Calendar and Contacts.
-20. In Chrome, sign in to the sites you want agents to use.
-21. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
-22. Run `just git-signing` and the `gh` commands it prints.
+17. On the Mac, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host mac <machine-name>`, using the Mac's name in Tailscale, and check that `ssh mac true` works. To SSH in from another device, add its key the same way.
+18. Run `just ntfy-device` and paste the `macbook` token that `just ntfy-user` printed on Ubuntu.
+19. Run `ntfy publish alerts test` on Ubuntu. When macOS asks, allow terminal-notifier's notifications. Choose the **Persistent** style if alerts should stay until you dismiss them.
+20. Add your Google account to Calendar and Contacts.
+21. In Chrome, sign in to the sites you want agents to use.
+22. If you skipped the GitHub login, re-run `bash setup.sh git` from a terminal and accept it.
+23. Run `just git-signing` and the `gh` commands it prints.
 
 **Security and backups**
 
-23. Optional: `just touch-id`.
-24. Turn on FileVault.
-25. Back up off the Mac, such as with Time Machine.
-26. Restore a file from the backup once, to check it.
+24. Optional: `just touch-id`.
+25. Turn on FileVault.
+26. Back up off the Mac, such as with Time Machine.
+27. Restore a file from the backup once, to check it.
 
 **Performance and privacy**
 
-27. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
-28. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
-29. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
-30. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
+28. In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`, and `~/Library/pnpm`, so Spotlight stops indexing builds and package stores. Press `Cmd+Shift+G` in the file picker to type a path.
+29. In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+30. Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the Mac away, or it stays awake in the bag.
+31. Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.
+32. In Chrome, turn on **Memory Saver** in `chrome://settings/performance`.
 
 **AI tools**
 
-31. **Logins.**
+33. **Logins.**
     - Run `claude-main auth login`, then `claude-backup auth login`, signing in with the backup account. `claude-use` picks the one that `claude` and new T3 Code threads use; see [Two accounts](./ai_tools/README.md#two-accounts).
     - Sign in to the Claude app, and open T3 Code once.
     - Run `codex login`.
-32. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
+34. **Notifications.** In **System Settings → Notifications**, allow notifications with the **Persistent** style for:
     - Claude and T3 Code. `manual-steps` opens the ones it can tell aren't set.
     - Any terminal other than Ghostty.
-33. **Claude in Chrome.** See [Browser (Claude in Chrome)](./ai_tools/README.md#browser-claude-in-chrome).
-34. **Claude Code computer use.** Per project, see [Computer use](./ai_tools/README.md#computer-use).
-35. **T3 Code phone app.** See [Mobile](./ai_tools/README.md#mobile).
-36. **Claude phone app.** Install it, sign in, and allow notifications.
-37. **Training opt-outs.** See [Privacy](./ai_tools/README.md#privacy).
-38. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
+35. **Claude in Chrome.** See [Browser (Claude in Chrome)](./ai_tools/README.md#browser-claude-in-chrome).
+36. **Claude Code computer use.** Per project, see [Computer use](./ai_tools/README.md#computer-use).
+37. **T3 Code phone app.** See [Mobile](./ai_tools/README.md#mobile).
+38. **Claude phone app.** Install it, sign in, and allow notifications.
+39. **Training opt-outs.** See [Privacy](./ai_tools/README.md#privacy).
+40. **GitHub repositories.** Enable **Allow squash merging** in each, and **Allow auto-merge** if you use it.
 
 ### Ubuntu
 
@@ -458,6 +466,7 @@ The AI tools have their own [checks](./ai_tools/README.md#check-it-works).
 - With a file open in Zed, the Stream Deck **Terminal** key opens Ghostty at its folder.
 - `Cmd+Space` opens Vicinae, and `Cmd+Space` again closes it.
 - After `just ntfy-device`, `ntfy publish alerts test` on Ubuntu shows a notification on the Mac.
+- From the desktop, `ssh mac true` works, and `ssh -S none -o PubkeyAuthentication=no mac true` is refused without asking for a password. While `ssh mac sleep 60` runs, `pmset -g assertions` on the Mac lists `caffeinate`.
 
 ### Ubuntu
 

@@ -71,6 +71,10 @@ MD
     manual_step macos tailscale-login --check mac_tailscale_signed_in "Signed in to Tailscale" <<'MD'
 Sign in to Tailscale with the account your Ubuntu machine and phone use.
 MD
+    manual_step macos ssh-from-desktop \
+        --check mac_ssh_key_authorized "A key in ~/.ssh/authorized_keys, so the desktop can SSH in" <<'MD'
+On the Mac, run `ssh <alias> cat .ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`, with the alias you gave the desktop in **SSH key** under Ubuntu. Then on the desktop, run `just ssh-host mac <machine-name>`, using the Mac's name in Tailscale, and check that `ssh mac true` works. To SSH in from another device, add its key the same way.
+MD
     manual_step macos ntfy-device --check ntfy_device_done "This Mac's ntfy token saved" <<'MD'
 Run `just ntfy-device` and paste the `macbook` token that `just ntfy-user` printed on Ubuntu.
 MD
@@ -112,6 +116,9 @@ In **System Settings → Spotlight → Search Privacy…**, add `~/Dev`, `~/go`,
 MD
     manual_step macos spotlight-clipboard <<'MD'
 In **System Settings → Spotlight**, turn off the clipboard history, or keep it for the shortest time offered. It keeps copied passwords.
+MD
+    manual_step macos ssh-lid-closed <<'MD'
+Optional: to keep an SSH session going with the lid closed and no display, start an Amphetamine session with Closed-Display Mode on. On Apple Silicon, Amphetamine asks you to install Amphetamine Power Protect first. End the session before you pack the Mac away, or it stays awake in the bag.
 MD
     manual_step macos apple-intelligence <<'MD'
 Optional: if you don't use Apple Intelligence, turn it off. Search System Settings for **Apple Intelligence**.

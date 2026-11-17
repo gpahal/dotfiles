@@ -897,6 +897,8 @@ npm (install|i|uninstall|update)
 pkill
 killall
 launchctl (bootstrap|bootout|kickstart|load|unload|enable|disable|kill)
+pmset (-a|-b|-c|-u|schedule|repeat|disablesleep|sleepnow|displaysleepnow|restoredefaults)
+caffeinate
 defaults (write|delete|import)
 osascript .*quit
 open

@@ -171,11 +171,6 @@ ensure_sshd_run_dir() {
     [ -d "$SSHD_RUN_DIR" ] || sudo install -d -m 0755 "$SSHD_RUN_DIR"
 }
 
-# sshd -t writes "<file>: line <n>:" or "<file> line <n>:"
-sshd_error_file() {
-    sed -nE 's#^(/[^: ]+):? line [0-9]+.*#\1#p' <<< "$1" | head -n 1
-}
-
 # restore_sshd_drop_in <existed> <old content>
 restore_sshd_drop_in() {
     if "$1"; then

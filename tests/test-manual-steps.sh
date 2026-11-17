@@ -223,7 +223,7 @@ doc_sync() {
     assert_unchanged "$copy/README.md" "after --check"
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: wrote Manual steps from manual-steps/steps.sh"
-    assert_file_contains "$copy/README.md" "24. Turn on FileVault now."
+    assert_file_contains "$copy/README.md" "25. Turn on FileVault now."
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh" --check
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: Manual steps already match manual-steps/steps.sh"
@@ -421,6 +421,22 @@ esac'
     expect 1 tailscale_connected
 }
 subtest tailscale_checks
+
+# SSH into the Mac: a public key in authorized_keys, not a comment or a private key
+ssh_key_check() {
+    local keys="$HOME/.ssh/authorized_keys" dir
+    as_os macos
+    expect 1 mac_ssh_key_authorized
+    mkdir -p "$HOME/.ssh"
+    dir="$(mktemp -d)"
+    ssh-keygen -q -t ed25519 -N '' -f "$dir/key" < /dev/null
+    printf '%s\n' "# the desktop" "" > "$keys"
+    cat "$dir/key" >> "$keys"
+    expect 1 mac_ssh_key_authorized
+    cat "$dir/key.pub" >> "$keys"
+    expect 0 mac_ssh_key_authorized
+}
+subtest ssh_key_check
 
 # ntfy: just ntfy-user and just ntfy-device save a mode 600 client config holding a token, and just
 # alerts sends the alerts to this machine's server with one

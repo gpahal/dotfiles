@@ -10,6 +10,8 @@ stub scutil 'echo Garvits-Mac'
 
 load_script macos/install.sh
 as_os macos
+# The sshd drop-in and sshd: missing, in the sandbox
+sandbox_paths macos/install.sh
 # firewall() below stubs socketfilterfw here
 APP_FIREWALL_DIR="$STUB_DIR"
 # The macos step mustn't load the Touch ID script's functions
@@ -83,6 +85,13 @@ mkdir -p "$HOME/Screenshots"
 rm "$SUDO_LOCAL"
 firewall 'Firewall is disabled. (State = 0)\n' 'Firewall stealth mode is off\n'
 stub defaults 'exit 1'
+# Remote Login off, and the Mac sleeps after a minute on power
+stub launchctl 'case "$1" in
+    print-disabled) printf "disabled services = {\n\t\"com.openssh.sshd\" => disabled\n}\n" ;;
+    *) exit 113 ;;
+esac'
+stub pmset '[ "$*" == "-g custom" ] || exit 1
+printf "AC Power:\n sleep                1\n"'
 # 1 GiB in df's 1024-byte blocks
 GIB=1048576
 echo "/dev/disk3s5 $((994 * GIB)) $((600 * GIB)) $((380 * GIB)) 62% /System/Volumes/Data" > "$SANDBOX/df-table"
@@ -92,6 +101,9 @@ assert_contains "$RUN_OUTPUT" "missing    Application firewall on"
 assert_contains "$RUN_OUTPUT" "missing    Firewall stealth mode on"
 assert_contains "$RUN_OUTPUT" "missing    App Store apps update automatically"
 assert_contains "$RUN_OUTPUT" "ok         Free space on /System/Volumes/Data"
+assert_contains "$RUN_OUTPUT" "missing    $MAC_SSHD_DROP_IN lets only your key in, only from the tailnet"
+assert_contains "$RUN_OUTPUT" "missing    Remote Login on"
+assert_contains "$RUN_OUTPUT" "missing    No idle sleep on the power adapter"
 printf '%s\n' "$HEADER" "$TID_LINE" > "$SUDO_LOCAL"
 DOTFILES_STATUS_FOR_ALERTS=1 assert_read_only 0 status
 assert_contains "$RUN_OUTPUT" "Touch ID for sudo, in $SUDO_LOCAL"

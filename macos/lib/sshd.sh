@@ -114,10 +114,12 @@ configure_mac_sshd() {
     echo "  Wrote $MAC_SSHD_DROP_IN, so sshd lets in only your key, only from the tailnet"
 }
 
-# print-disabled lists "<label>" => enabled or disabled, or false or true on older macOS
+# print-disabled lists "<label>" => enabled or disabled, or false or true on older macOS. Read in
+# full first: grep -q stops at the match, and with pipefail the broken pipe would fail the check.
 remote_login_enabled() {
-    launchctl print-disabled system 2> /dev/null |
-        grep -qE "\"$REMOTE_LOGIN_LABEL\" => (enabled|false)"
+    local disabled
+    disabled="$(launchctl print-disabled system 2> /dev/null)" || return 1
+    grep -qE "\"$REMOTE_LOGIN_LABEL\" => (enabled|false)" <<< "$disabled"
 }
 
 remote_login_loaded() {

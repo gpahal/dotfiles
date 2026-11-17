@@ -10,7 +10,9 @@ source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 STATE="$SANDBOX/state"
 mkdir -p "$STATE" "$HOME/Screenshots"
 
-# launchctl keeps Remote Login's state as files: enabled, then loaded once bootstrapped
+# launchctl keeps Remote Login's state as files: enabled, then loaded once bootstrapped.
+# print-disabled lists many services after it, as on a Mac, so a reader that stops at the match
+# breaks the pipe.
 stub launchctl 'state="'"$STATE"'"
 case "$1" in
     print-disabled)
@@ -20,6 +22,7 @@ case "$1" in
         else
             printf "\t\"com.openssh.sshd\" => disabled\n"
         fi
+        for i in $(seq 1 500); do printf "\t\"com.example.service%s\" => disabled\n" "$i"; done
         echo "}"
         ;;
     print) [ "$2" == system/com.openssh.sshd ] && [ -e "$state/rl-loaded" ] ;;

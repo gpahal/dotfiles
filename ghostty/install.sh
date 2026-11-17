@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Copy and reload the Ghostty config, and on Ubuntu install the Ghostty snap and terminfo.
+# Copy and reload the Ghostty config and terminfo, and on Ubuntu install the Ghostty snap.
 # A temp HOME doesn't isolate the reload signal or Ubuntu's sudo snap install: test Ubuntu in a VM.
 
 # shellcheck source=../lib/common.sh
@@ -21,29 +21,52 @@ install_ghostty_snap() {
     fi
 }
 
-# Ghostty sets TERM=xterm-ghostty, which Ubuntu's ncurses lacks, so zsh can't move the cursor over
-# SSH. Copied, not compiled: Homebrew's tic comes first in PATH and writes to its own ncurses.
+# Ghostty sets TERM=xterm-ghostty, which neither OS's ncurses has, so zsh in an SSH login from
+# Ghostty can't move the cursor and draws each key twice. Ghostty points its own shells at its
+# terminfo; an SSH login reads ~/.terminfo. Copied, not compiled: Homebrew's tic comes first in PATH
+# and writes to its own ncurses. macOS's ncurses looks in hex-named dirs, 78 for x.
 GHOSTTY_TERMINFO="${DOTFILES_GHOSTTY_TERMINFO:-/snap/ghostty/current/share/terminfo/x/xterm-ghostty}"
+GHOSTTY_MAC_TERMINFO="${DOTFILES_GHOSTTY_MAC_TERMINFO:-/Applications/Ghostty.app/Contents/Resources/terminfo/78/xterm-ghostty}"
 
-ghostty_terminfo_installed() {
-    cmp -s "$GHOSTTY_TERMINFO" "$HOME/.terminfo/x/xterm-ghostty"
+ghostty_terminfo_source() {
+    if is_macos; then
+        echo "$GHOSTTY_MAC_TERMINFO"
+    else
+        echo "$GHOSTTY_TERMINFO"
+    fi
 }
 
-# Waits for the snap, which a no to sudo leaves out
+ghostty_terminfo_dest() {
+    if is_macos; then
+        echo "$HOME/.terminfo/78/xterm-ghostty"
+    else
+        echo "$HOME/.terminfo/x/xterm-ghostty"
+    fi
+}
+
+ghostty_terminfo_installed() {
+    cmp -s "$(ghostty_terminfo_source)" "$(ghostty_terminfo_dest)"
+}
+
+# On Ubuntu it waits for the snap, which a no to sudo leaves out. On macOS the homebrew step
+# installs Ghostty.app.
 install_ghostty_terminfo() {
-    ghostty_snap_installed || return 0
-    if [ ! -r "$GHOSTTY_TERMINFO" ]; then
-        echo "  No xterm-ghostty terminfo at $GHOSTTY_TERMINFO." >&2
+    local src dest hint=""
+    ! is_ubuntu || ghostty_snap_installed || return 0
+    src="$(ghostty_terminfo_source)" dest="$(ghostty_terminfo_dest)"
+    ! is_macos || hint=" Install Ghostty with bash setup.sh homebrew, then re-run."
+    if [ ! -r "$src" ]; then
+        echo "  No xterm-ghostty terminfo at $src.$hint" >&2
         return 1
     fi
-    mkdir -p "$HOME/.terminfo/x" &&
-        cp "$GHOSTTY_TERMINFO" "$HOME/.terminfo/x/xterm-ghostty" &&
+    mkdir -p "$(dirname "$dest")" &&
+        cp "$src" "$dest" &&
         echo "  Installed the xterm-ghostty terminfo in ~/.terminfo."
 }
 
 ghostty_items() {
     items_reset
-    item --sudo "Ghostty snap installed" "Install Ghostty from its snap (classic confinement)" \
+    ! is_ubuntu || item --sudo "Ghostty snap installed" "Install Ghostty from its snap (classic confinement)" \
         ghostty_snap_installed install_ghostty_snap
     # shellcheck disable=SC2088 # shown, not expanded
     item "xterm-ghostty terminfo in ~/.terminfo" "Copy the xterm-ghostty terminfo to ~/.terminfo" \
@@ -97,6 +120,8 @@ status() {
         fi
     else
         status_item skipped "Ghostty snap: the homebrew step installs Ghostty on macOS"
+        ghostty_items
+        items_status
     fi
     ghostty_files status_file
     ghostty_overrides_status
@@ -106,9 +131,7 @@ apply() {
     echo "Setting up Ghostty..."
     local installed=0
     ! is_ubuntu || require_cmd snap || return 1
-    if is_ubuntu; then
-        install_ghostty || installed=$?
-    fi
+    install_ghostty || installed=$?
     COPIED=false
     ghostty_files copy_file || installed=1
     if "$COPIED"; then

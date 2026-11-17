@@ -1,22 +1,41 @@
 #!/bin/bash
 # shellcheck disable=SC2329 # the step calls the replaced functions
 
-# The ghostty step: config reload, Application Support overrides, and Ubuntu's snap and terminfo.
+# The ghostty step: config reload, Application Support overrides, the terminfo SSH logins read on
+# both OSes, and Ubuntu's snap.
 
 # shellcheck source=lib.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-terminfo="$SANDBOX/snap-terminfo"
-export DOTFILES_GHOSTTY_TERMINFO="$terminfo"
+terminfo="$SANDBOX/snap-terminfo" mac_terminfo="$SANDBOX/app-terminfo"
+export DOTFILES_GHOSTTY_TERMINFO="$terminfo" DOTFILES_GHOSTTY_MAC_TERMINFO="$mac_terminfo"
+echo "Ghostty.app's compiled entry" > "$mac_terminfo"
 load_script ghostty/install.sh
 as_os macos
 config="$HOME/.config/ghostty/config.ghostty"
 
 stub pkill
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    xterm-ghostty terminfo in ~/.terminfo"
 assert_idempotent main
 assert_contains "$FIRST_OUTPUT" "Reloaded Ghostty config."
 assert_eq "pkill -USR2 -x ghostty" "$FIRST_LOG" "commands run for a new config"
 assert_not_contains "$RUN_OUTPUT" "Reload"
+# An SSH login into the Mac reads Ghostty's terminfo from ~/.terminfo, in macOS's hex-named dir
+assert_contains "$FIRST_OUTPUT" "Installed the xterm-ghostty terminfo in ~/.terminfo."
+assert_eq "" "$(cmp "$mac_terminfo" "$HOME/.terminfo/78/xterm-ghostty" 2>&1)" "the Mac's terminfo copied"
+assert_exit 0 main --status
+assert_contains "$RUN_OUTPUT" "ok         xterm-ghostty terminfo in ~/.terminfo"
+assert_not_contains "$RUN_OUTPUT" "Ghostty snap installed"
+
+# Without Ghostty.app, the step copies the config, then fails
+mv "$mac_terminfo" "$SANDBOX/saved-terminfo"
+rm -r "$HOME/.terminfo" "$HOME/.config/ghostty"
+assert_exit 1 main
+assert_contains "$RUN_OUTPUT" "No xterm-ghostty terminfo at $mac_terminfo. Install Ghostty with bash setup.sh homebrew"
+[ -e "$HOME/.config/ghostty/config.ghostty" ] || fail "the config wasn't copied without Ghostty.app"
+[ ! -e "$HOME/.terminfo" ] || fail "$HOME/.terminfo made without Ghostty.app's terminfo"
+mv "$SANDBOX/saved-terminfo" "$mac_terminfo"
 
 support="$HOME/Library/Application Support/com.mitchellh.ghostty"
 mkdir -p "$support"

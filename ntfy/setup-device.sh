@@ -21,7 +21,7 @@ NTFY_SERVER_HOSTNAME=desktop
 
 usage() {
     echo "Usage: bash ntfy/setup-device.sh [<server name>] (or: just ntfy-device [<server name>])"
-    echo "Asks for the macbook token that just ntfy-user printed on the desktop, checks it against"
+    echo "Asks for the laptop token that just ntfy-user printed on the desktop, checks it against"
     echo "the server, and saves it in $(ntfy_client_config) (mode 600), which the ntfy step's"
     echo "notifier reads. The server name is the desktop's full tailnet name, such as"
     echo "$NTFY_SERVER_HOSTNAME.<tailnet>.ts.net; by default, the tailnet machine named $NTFY_SERVER_HOSTNAME."
@@ -41,7 +41,7 @@ default_server_name() {
 read_token() {
     local input=""
     if [ -t 0 ]; then
-        read -rs -p "macbook token from just ntfy-user (hidden): " input || true
+        read -rs -p "laptop token from just ntfy-user (hidden): " input || true
         echo >&2
     else
         read -r input || true

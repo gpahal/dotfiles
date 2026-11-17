@@ -223,7 +223,7 @@ doc_sync() {
     assert_unchanged "$copy/README.md" "after --check"
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: wrote Manual steps from manual-steps/steps.sh"
-    assert_file_contains "$copy/README.md" "25. Turn on FileVault now."
+    assert_file_contains "$copy/README.md" "26. Turn on FileVault now."
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh" --check
     assert_exit 0 bash "$copy/scripts/manual-steps-doc.sh"
     assert_contains "$RUN_OUTPUT" "README.md: Manual steps already match manual-steps/steps.sh"
@@ -421,6 +421,22 @@ esac'
     expect 1 tailscale_connected
 }
 subtest tailscale_checks
+
+# The desktop's ssh-host alias for the Mac is its Tailscale name
+mac_tailscale_name() {
+    as_os macos
+    # shellcheck disable=SC2034 # the check reads it
+    MAC_TAILSCALE="$SANDBOX/no-app"
+    stub tailscale '[ "$*" == "status --json" ] && cat "$SANDBOX/ts.json"'
+    echo '{"BackendState":"Running","Self":{"DNSName":"macbook-pro.tail1234.ts.net."}}' > "$SANDBOX/ts.json"
+    expect 1 mac_tailscale_named
+    assert_eq "it's named macbook-pro" "$MANUAL_DETAIL" "the name detail"
+    echo '{"BackendState":"Running","Self":{"DNSName":"laptop.tail1234.ts.net."}}' > "$SANDBOX/ts.json"
+    expect 0 mac_tailscale_named
+    echo '{"BackendState":"NeedsLogin","Self":{}}' > "$SANDBOX/ts.json"
+    expect 2 mac_tailscale_named
+}
+subtest mac_tailscale_name
 
 # SSH into the Mac: a public key in authorized_keys, not a comment or a private key
 ssh_key_check() {

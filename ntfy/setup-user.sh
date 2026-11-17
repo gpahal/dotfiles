@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Create ntfy's users and tokens, save this machine's token, and send the alerts to ntfy.
 # Your user, named for your login, signs in with a password on the phone and the web app. machine
-# reads and sends on every topic, with a token for each place that uses it: desktop, macbook, and
+# reads and sends on every topic, with a token for each place that uses it: desktop, laptop, and
 # web-service. ntfy keeps tokens readable, so a second run prints them again and changes nothing.
 # Passwords go to ntfy on its terminal prompt or a pipe, never as an argument or in the environment.
 
@@ -24,14 +24,14 @@ NTFY_ADMIN="$CURRENT_USER"
 NTFY_NOTIFIER_UNIT_NAME=dotfiles-ntfy-notify.service
 SETUP_ALERTS="$DOTFILES_DIR/ubuntu/setup-alerts.sh"
 # ensure_tokens sets them
-TOKEN_desktop="" TOKEN_macbook="" TOKEN_web_service=""
+TOKEN_desktop="" TOKEN_laptop="" TOKEN_web_service=""
 
 usage() {
     echo "Usage: bash ntfy/setup-user.sh [--rotate <label> | --change-pass] (or: just ntfy-user ...)"
     echo "Creates ntfy's users: $NTFY_ADMIN, who signs in with a password on the phone and web app,"
     echo "and $NTFY_MACHINE_USER, who reads and sends on every topic with a token per place:"
     echo "${NTFY_TOKEN_LABELS[*]}. Saves this machine's token in $(ntfy_client_config), sends the"
-    echo "alerts to the server (just alerts), and prints the macbook and web-service tokens. A second"
+    echo "alerts to the server (just alerts), and prints the laptop and web-service tokens. A second"
     echo "run changes nothing and prints them again."
     echo "  --rotate <label>  Replace one of machine's tokens; the old one stops working."
     echo "  --change-pass     Change $NTFY_ADMIN's password, and sign out the web app's sessions."
@@ -144,8 +144,8 @@ print_tokens() {
     echo "  users), make it the default server, then subscribe to alerts and agenda; just alerts shows"
     echo "  the steps."
     echo
-    echo "  macbook token, for just ntfy-device on the Mac:"
-    echo "    $TOKEN_macbook"
+    echo "  laptop token, for just ntfy-device on the Mac:"
+    echo "    $TOKEN_laptop"
     echo "  web-service token, for your web service:"
     echo "    $TOKEN_web_service"
     echo "  Send:  curl -H \"Authorization: Bearer <token>\" -H \"Title: Standup\" -d \"In 10 minutes\" $url/agenda"
@@ -185,7 +185,7 @@ rotate() {
         desktop)
             ensure_tokens && save_client_config && bash "$SETUP_ALERTS"
             ;;
-        macbook)
+        laptop)
             echo "  Run just ntfy-device on the Mac and paste the new token:"
             echo "    $new"
             ;;

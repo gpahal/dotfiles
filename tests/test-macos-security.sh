@@ -86,6 +86,15 @@ security_on() {
     replace_fn firewall_on 'return 0'
     replace_fn stealth_mode_on 'return 0'
     replace_fn app_store_auto_updates 'return 0'
+    ssh_and_sleep_set
+}
+
+# test-macos-sshd.sh covers Remote Login, its drop-in, and sleep on power
+ssh_and_sleep_set() {
+    replace_fn mac_sshd_configured 'return 0'
+    replace_fn remote_login_on 'return 0'
+    replace_fn ac_sleep_off 'return 0'
+    replace_fn status_mac_sshd
 }
 
 defaults_items() {
@@ -168,6 +177,7 @@ sudo_items() {
     replace_fn each_default
     replace_fn hotkey_off 'return 0'
     replace_fn status_filevault
+    ssh_and_sleep_set
     : > "$STUB_LOG"
 
     # Ghostty drops an OSC 7 report whose host has characters a URL can't hold

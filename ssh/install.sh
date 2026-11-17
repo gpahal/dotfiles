@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Make ~/.ssh private, and on macOS keep SSH keys in the keychain, loaded at login.
+# Make ~/.ssh private, and on macOS load keys from the keychain and keep SSH sessions awake.
+# The agent loads keys at login, and ~/.ssh/rc holds off idle sleep while a connection is open.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -10,6 +11,8 @@ source "$DOTFILES_DIR/ssh/lib/hosts.sh"
 
 SSH_ADD_LABEL="dotfiles.ssh-add"
 SSH_ADD_AGENT="$HOME/Library/LaunchAgents/$SSH_ADD_LABEL.plist"
+# sshd runs it at the start of each session
+SSH_RC="$HOME/.ssh/rc"
 
 start_block() {
     if [ -s "$SSH_CONFIG" ]; then
@@ -119,13 +122,16 @@ ssh_add_agent_loaded() {
 }
 
 ssh_files() {
+    local status=0
     is_macos || return 0
-    "$1" "$DOTFILES_DIR/ssh/$SSH_ADD_LABEL.plist" "$SSH_ADD_AGENT"
+    "$1" "$DOTFILES_DIR/ssh/$SSH_ADD_LABEL.plist" "$SSH_ADD_AGENT" || status=1
+    "$1" "$DOTFILES_DIR/ssh/rc" "$SSH_RC" || status=1
+    return "$status"
 }
 
-# git signs through the agent, and agents such as T3 Code's can't type a passphrase
+# git signs through the agent, and agents such as T3 Code's can't type a passphrase. Run it after
+# ssh_files copies the plist.
 install_ssh_add_agent() {
-    ssh_files copy_file || return 1
     if ssh_add_agent_loaded; then
         echo "  The $SSH_ADD_LABEL LaunchAgent is already loaded. A changed copy takes effect at the next login."
     elif ! home_is_real; then
@@ -173,6 +179,8 @@ status() {
     else
         status_item skipped "A Host * block that loads keys from the keychain: macOS only, Ubuntu has no keychain"
         status_item skipped "The $SSH_ADD_LABEL LaunchAgent: macOS only, Ubuntu has no keychain"
+        # shellcheck disable=SC2088 # shown, not expanded
+        status_item skipped "~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only, Ubuntu doesn't sleep"
     fi
 }
 
@@ -185,9 +193,10 @@ apply() {
     [ -d "$HOME/.ssh" ] || return 1
     if is_macos; then
         add_host_star || status=1
+        ssh_files copy_file || status=1
         install_ssh_add_agent || status=1
     else
-        echo "  Skipping the keychain's Host * block and the LaunchAgent: macOS only"
+        echo "  Skipping the keychain's Host * block, the LaunchAgent, and ~/.ssh/rc: macOS only"
     fi
     # add_host_star may create the file
     items_apply ssh_config_private || status=1

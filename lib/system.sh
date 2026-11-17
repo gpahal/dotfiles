@@ -1,4 +1,5 @@
-# Helpers for sudo changes and system state: root-owned files, third-party apt repos, and linger.
+# Helpers for sudo changes and system state: root-owned files, sshd -t errors, third-party apt repos,
+# and linger.
 # Source after lib/common.sh.
 # shellcheck shell=bash
 
@@ -71,6 +72,11 @@ owner_group_mode() {
     mode="$(file_mode "$1")" && names="$(LC_ALL=C ls -ldL "$1")" || return 1
     # ls -l's third and fourth fields on GNU and BSD alike
     awk -v mode="$mode" '{ print $3, $4, mode; exit }' <<< "$names"
+}
+
+# sshd -t writes "<file>: line <n>:" or "<file> line <n>:"
+sshd_error_file() {
+    sed -nE 's#^(/[^: ]+):? line [0-9]+.*#\1#p' <<< "$1" | head -n 1
 }
 
 SBIN_PATH=/usr/sbin:/usr/bin:/sbin:/bin

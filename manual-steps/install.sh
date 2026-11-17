@@ -195,6 +195,18 @@ monitor_input_on() {
 }
 
 # Stopped is signed in but turned off
+# Any key counts: the Mac can't tell which machine holds it
+mac_ssh_key_authorized() {
+    local line
+    [ -r "$HOME/.ssh/authorized_keys" ] || return 1
+    # Line by line: -lf on a whole file also accepts private keys
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in '' | '#'*) continue ;; esac
+        printf '%s\n' "$line" | ssh-keygen -lf - &> /dev/null && return 0
+    done < "$HOME/.ssh/authorized_keys"
+    return 1
+}
+
 mac_tailscale_signed_in() {
     local tailscale=tailscale state
     [ ! -x "$MAC_TAILSCALE" ] || tailscale="$MAC_TAILSCALE"

@@ -1,0 +1,22 @@
+# Copied to ~/.ssh/rc on macOS by the dotfiles ssh step. sshd runs it with /bin/sh at the start of
+# each SSH session, before your shell or command, so it prints nothing: output would reach the
+# client, and scp would break.
+#
+# Keeps the Mac from idle sleep until the connection closes. macOS's ttyskeepawake already does
+# that for a terminal you type in, but not for scp, rsync, ssh mac <command>, or a long build you
+# don't type into. -s holds off sleep on power, and -i idle sleep on battery too. Closing the lid
+# still sleeps the Mac.
+
+# The first sshd process above this one, owned by you, lasts as long as the connection
+pid=$PPID
+while [ "${pid:-1}" -gt 1 ]; do
+    case "$(ps -o comm= -p "$pid" 2> /dev/null)" in
+        *sshd*) break ;;
+    esac
+    pid=$(ps -o ppid= -p "$pid" 2> /dev/null | tr -d ' ')
+done
+
+# Sessions sharing a connection need only one
+if [ "${pid:-1}" -gt 1 ] && ! pgrep -f "caffeinate -i -s -w $pid\$" > /dev/null 2>&1; then
+    caffeinate -i -s -w "$pid" < /dev/null > /dev/null 2>&1 &
+fi

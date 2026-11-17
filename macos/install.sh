@@ -1,14 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set macOS defaults, the firewall, and App Store updates, and free Cmd+Space for Vicinae.
-# Also sets the hostname when needed. Changes the real preferences, firewall, and hostname whatever
-# HOME is: test it in a macOS VM or spare Mac.
+# Set macOS defaults, the firewall, App Store updates, and Remote Login, and free Cmd+Space.
+# Cmd+Space goes to Vicinae. Also stops idle sleep on the power adapter, so SSH reaches the Mac, and
+# sets the hostname when needed. Changes the real preferences, firewall, sshd config, launchd jobs,
+# power settings, and hostname whatever HOME is: test it in a macOS VM or spare Mac.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+# shellcheck source=../lib/system.sh
+source "$DOTFILES_DIR/lib/system.sh"
 # shellcheck source=lib/pam.sh
 source "$DOTFILES_DIR/macos/lib/pam.sh"
+# shellcheck source=lib/sshd.sh
+source "$DOTFILES_DIR/macos/lib/sshd.sh"
 
 STEP_OS=macos
 
@@ -19,6 +24,14 @@ PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 APP_FIREWALL_DIR=/usr/libexec/ApplicationFirewall
 APP_STORE_PREFS=/Library/Preferences/com.apple.commerce
 SOFTWARE_UPDATE_PREFS=/Library/Preferences/com.apple.SoftwareUpdate
+
+# Sorts before macOS's 100-macos.conf: sshd keeps the first value it reads
+MAC_SSHD_DROP_IN=/etc/ssh/sshd_config.d/000-dotfiles.conf
+MAC_SSHD_BIN=/usr/sbin/sshd
+REMOTE_LOGIN_LABEL=com.openssh.sshd
+REMOTE_LOGIN_PLIST=/System/Library/LaunchDaemons/ssh.plist
+# Tailscale's IPv4 and IPv6 addresses
+TAILNET_RANGES=(100.64.0.0/10 fd7a:115c:a1e0::/48)
 
 # activateSettings applies changed shortcuts without a logout
 SYSTEM_ADMIN_DIR=/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources
@@ -251,6 +264,22 @@ make_screenshots_dir() {
     mkdir -p "$HOME/Screenshots"
 }
 
+# pmset -g custom lists each power source's settings, indented, under "Battery Power:" and
+# "AC Power:"
+ac_sleep_off() {
+    pmset -g custom 2> /dev/null |
+        awk '/^[^ \t]/ { ac = /^AC Power/ } ac && $1 == "sleep" { found = 1; off = $2 == 0 } END { exit !(found && off) }'
+}
+
+# The display still sleeps, by its own timer
+turn_off_ac_sleep() {
+    if ! sudo pmset -c sleep 0; then
+        echo "  Couldn't turn off sleep on the power adapter." >&2
+        return 1
+    fi
+    echo "  Turned off idle sleep on the power adapter"
+}
+
 macos_items() {
     local name
     name="$(scutil --get LocalHostName 2>/dev/null)" || name="the name in System Settings → General → Sharing"
@@ -263,6 +292,15 @@ macos_items() {
         "Turn on the firewall's stealth mode" stealth_mode_on enable_stealth_mode
     item --sudo "App Store apps update automatically" "Turn on automatic App Store updates" \
         app_store_auto_updates enable_app_store_auto_updates
+    item --sudo "$MAC_SSHD_DROP_IN lets only your key in, only from the tailnet" \
+        "Write $MAC_SSHD_DROP_IN, so sshd takes only your key, only from Tailscale addresses: $(mac_sshd_drop_in | grep -v '^#' | tr '\n' ' ')" \
+        mac_sshd_configured configure_mac_sshd
+    item --sudo "Remote Login on, so your tailnet devices with your key can SSH in" \
+        "Turn on Remote Login (sshd), once that drop-in is in place: launchctl enable and bootstrap system/$REMOTE_LOGIN_LABEL" \
+        remote_login_on turn_on_remote_login
+    item --sudo "No idle sleep on the power adapter, so SSH reaches the Mac while it's plugged in" \
+        "Turn off idle sleep on the power adapter, so SSH can reach the Mac while it's plugged in: pmset -c sleep 0" \
+        ac_sleep_off turn_off_ac_sleep
 }
 
 status() {
@@ -275,6 +313,8 @@ status() {
     status_touch_id skipped
     status_filevault
     items_status firewall_on stealth_mode_on app_store_auto_updates
+    status_mac_sshd
+    items_status ac_sleep_off
     status_disk_space "$HOME"
 }
 

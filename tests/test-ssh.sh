@@ -118,23 +118,37 @@ assert_contains "$RUN_OUTPUT" "missing    ~/.ssh/rc differs from the repo's ssh/
 assert_exit 0 main
 cmp -s "$REPO_DIR/ssh/rc" "$HOME/.ssh/rc" || fail "$HOME/.ssh/rc wasn't replaced"
 
+# Ubuntu gets only AddKeysToAgent: GNOME's agent can't show its unlock prompt over SSH, so without
+# it ssh asks for a key's passphrase on every connection
 as_os ubuntu
 rm -rf "$HOME/.ssh" "$HOME/Library"
-assert_exit 0 main
-[ ! -e "$SSH_CONFIG" ] || fail "Ubuntu got $SSH_CONFIG: $(cat "$SSH_CONFIG")"
+assert_exit 3 main --status
+assert_contains "$RUN_OUTPUT" "missing    The Host * block in ~/.ssh/config has AddKeysToAgent"
+assert_idempotent main
+assert_contains "$FIRST_OUTPUT" "Added a Host * block that adds keys to the agent"
+assert_eq "$(printf 'Host *\n  AddKeysToAgent yes')" "$(cat "$SSH_CONFIG")" "Ubuntu's config"
+assert_contains "$RUN_OUTPUT" "already adds keys to the agent for every host"
 [ ! -e "$AGENT" ] || fail "Ubuntu got the LaunchAgent"
 [ ! -e "$HOME/.ssh/rc" ] || fail "Ubuntu got ~/.ssh/rc"
 assert_file_not_contains "$STUB_LOG" "launchctl"
 assert_exit 0 main --status
-assert_contains "$RUN_OUTPUT" "skipped    A Host * block that loads keys from the keychain: macOS only"
+assert_contains "$RUN_OUTPUT" "ok         The Host * block in ~/.ssh/config has AddKeysToAgent"
 assert_contains "$RUN_OUTPUT" "skipped    The dotfiles.ssh-add LaunchAgent: macOS only"
 assert_contains "$RUN_OUTPUT" "skipped    ~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only"
 assert_contains "$RUN_OUTPUT" "ok         Only you can read ~/.ssh (mode 700)"
-printf 'Host box\n  User me\n' > "$SSH_CONFIG"
+# Ubuntu's ssh rejects UseKeychain, so no IgnoreUnknown is needed or added
+if ssh_bin="$(command -v ssh)"; then
+    assert_exit 0 "$ssh_bin" -F "$SSH_CONFIG" -G example.com
+fi
+# A user's Host * block is left alone, with the line to add printed
+printf 'Host box\n  User me\n\nHost *\n  ServerAliveInterval 60\n' > "$SSH_CONFIG"
 snapshot "$SSH_CONFIG"
 assert_exit 0 main
-assert_unchanged "$SSH_CONFIG" "on Ubuntu"
+assert_unchanged "$SSH_CONFIG" "with your Host * block on Ubuntu"
+assert_contains "$RUN_OUTPUT" "$(printf 'add these lines to the top of it:\n    AddKeysToAgent yes')"
+assert_not_contains "$RUN_OUTPUT" "UseKeychain"
 assert_eq 600 "$(file_mode "$SSH_CONFIG")" "the config's mode"
+printf 'Host *\n  AddKeysToAgent yes\n' > "$SSH_CONFIG"
 # Too open a mode is fixed; a symlink is judged by its target
 for case in "755 $HOME/.ssh 700" "644 $SSH_CONFIG 600"; do
     read -r bad path mode <<< "$case"

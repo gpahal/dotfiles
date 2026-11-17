@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Make ~/.ssh private, and on macOS load keys from the keychain and keep SSH sessions awake.
-# The agent loads keys at login, and ~/.ssh/rc holds off idle sleep while a connection is open.
+# Make ~/.ssh private, have ssh add keys to the agent, and on macOS keep SSH sessions awake.
+# On macOS the agent loads keys from the keychain at login, and ~/.ssh/rc holds off idle sleep while
+# a connection is open. On Ubuntu a key's first use adds it to GNOME's agent, which over SSH can't
+# show its unlock prompt, so you type a passphrase once until the agent restarts.
 
 # shellcheck source=../lib/common.sh
 source "$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -53,16 +55,30 @@ host_star_settings() {
     ' "$SSH_CONFIG"
 }
 
-# In the order ssh needs
+# What the Host * block does, for messages
+host_star_purpose() {
+    if is_macos; then
+        echo "loads keys into the agent from the keychain"
+    else
+        echo "adds keys to the agent"
+    fi
+}
+
+# In the order ssh needs. Ubuntu has no keychain, so only AddKeysToAgent.
 host_star_missing() {
     local found
     found="$(host_star_settings)"
+    if ! is_macos; then
+        grep -qx addkeystoagent <<< "$found" || echo "  AddKeysToAgent yes"
+        return 0
+    fi
     grep -qx ignoreunknown-usekeychain <<< "$found" || echo "  IgnoreUnknown UseKeychain"
     grep -qx addkeystoagent <<< "$found" || echo "  AddKeysToAgent yes"
     grep -qx usekeychain <<< "$found" || echo "  UseKeychain yes"
 }
 
 ignore_unknown_at_top() {
+    is_macos || return 1
     host_star_settings | grep -qx ignoreunknown-top
 }
 
@@ -71,7 +87,7 @@ add_host_star() {
     local missing top=""
     missing="$(host_star_missing)"
     if [ -z "$missing" ]; then
-        echo "  $SSH_CONFIG already loads keys into the agent from the keychain for every host"
+        echo "  $SSH_CONFIG already $(host_star_purpose) for every host"
         return 0
     fi
     if ignore_unknown_at_top; then
@@ -79,13 +95,11 @@ add_host_star() {
         missing="$(grep -v IgnoreUnknown <<< "$missing" || true)"
     fi
     if ! host_star_block; then
-        start_block &&
-            printf 'Host *\n  IgnoreUnknown UseKeychain\n  AddKeysToAgent yes\n  UseKeychain yes\n' >> "$SSH_CONFIG" ||
-            return 1
-        echo "  Added a Host * block that loads keys into the agent from the keychain to $SSH_CONFIG"
+        start_block && printf 'Host *\n%s\n' "$missing" >> "$SSH_CONFIG" || return 1
+        echo "  Added a Host * block that $(host_star_purpose) to $SSH_CONFIG"
     elif [ -n "$missing" ]; then
-        echo "  $SSH_CONFIG already has a Host * block, so it's left alone. To have ssh load"
-        echo "  keys into the agent from the keychain, add these lines to the top of it:"
+        echo "  $SSH_CONFIG already has a Host * block, so it's left alone. So that ssh"
+        echo "  $(host_star_purpose), add these lines to the top of it:"
         printf '%s\n' "$missing" | sed 's/^/  /'
     fi
     if [ -n "$top" ]; then
@@ -98,6 +112,8 @@ add_host_star() {
 status_host_star() {
     local text="The Host * block in ~/.ssh/config has IgnoreUnknown UseKeychain, AddKeysToAgent, and UseKeychain" missing
     local top="" fix
+    # shellcheck disable=SC2088 # shown, not expanded
+    is_macos || text="The Host * block in ~/.ssh/config has AddKeysToAgent, so you type a key's passphrase once"
     missing="$(host_star_missing)"
     if [ -z "$missing" ]; then
         status_item ok "$text"
@@ -171,13 +187,12 @@ ssh_items() {
 status() {
     ssh_items
     items_status
+    status_host_star
     if is_macos; then
-        status_host_star
         ssh_files status_file
         status_check "The $SSH_ADD_LABEL LaunchAgent is loaded, so login loads your keys from the keychain" \
             ssh_add_agent_loaded
     else
-        status_item skipped "A Host * block that loads keys from the keychain: macOS only, Ubuntu has no keychain"
         status_item skipped "The $SSH_ADD_LABEL LaunchAgent: macOS only, Ubuntu has no keychain"
         # shellcheck disable=SC2088 # shown, not expanded
         status_item skipped "~/.ssh/rc, which keeps the Mac awake during SSH sessions: macOS only, Ubuntu doesn't sleep"
@@ -191,12 +206,12 @@ apply() {
     ! { ssh_dir_private && ssh_config_private; } || private=true
     items_apply ssh_dir_private || status=1
     [ -d "$HOME/.ssh" ] || return 1
+    add_host_star || status=1
     if is_macos; then
-        add_host_star || status=1
         ssh_files copy_file || status=1
         install_ssh_add_agent || status=1
     else
-        echo "  Skipping the keychain's Host * block, the LaunchAgent, and ~/.ssh/rc: macOS only"
+        echo "  Skipping the keychain's LaunchAgent and ~/.ssh/rc: macOS only"
     fi
     # add_host_star may create the file
     items_apply ssh_config_private || status=1

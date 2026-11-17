@@ -36,7 +36,7 @@ Set up the Mac first: Ubuntu's **SSH key** manual step runs on the Mac.
 | `runtimes` | Installs Node LTS and Go with mise, and Rust with rustup |
 | `git` | Copies the git config and `git wt`, and offers a GitHub login with `gh` |
 | `lazygit` | Copies the lazygit config |
-| `ssh` | Makes `~/.ssh` private. On macOS, keeps keys in the keychain and loads them at login, and keeps the Mac awake during [SSH sessions](#ssh) |
+| `ssh` | Makes `~/.ssh` private, and has ssh add keys to the agent, so you type a passphrase once. On macOS, keeps keys in the keychain and loads them at login, and keeps the Mac awake during [SSH sessions](#ssh) |
 | `zsh` | Copies the zsh and starship config, hooks it into the startup files, imports your zsh history into atuin, records the [checkout](#where-the-repo-lives), and offers zsh as the login shell |
 | `vim` | Copies the vim config and vim-plug, installs the plugins at their pins, and installs the Go tools vim-go uses |
 | `tmux` | Copies the tmux config and `tmux-sessionizer`, and installs the pinned plugins. On Ubuntu, starts tmux at boot |
@@ -151,6 +151,8 @@ For the required status checks, the recipe offers the ruleset's current ones for
 ### SSH
 
 `just ssh-host <alias> [hostname]` adds a `~/.ssh/config` block with keepalives and a shared connection. `ssh -O exit <alias>` closes it.
+
+On Ubuntu, the first use of a key, by `ssh` or `git`, asks for its passphrase. GNOME's agent then keeps the key until it restarts, such as at a reboot. Without that, its unlock prompt can't show over SSH, so `ssh` would ask on every connection.
 
 The Mac takes SSH only over Tailscale, only with a key in its `~/.ssh/authorized_keys`, and never with a password. The `macos` step writes the sshd config that enforces this, then turns on Remote Login. A [manual step](#macos-1) adds the desktop's key.
 

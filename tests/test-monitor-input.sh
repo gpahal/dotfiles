@@ -98,7 +98,7 @@ setup_on_ubuntu() {
     chmod +x "$MONITOR_INPUT_SCRIPT"
 
     assert_exit 2 main 1234:5678 17
-    assert_contains "$RUN_OUTPUT" "Give the Mac's input too"
+    assert_contains "$RUN_OUTPUT" "Give the laptop's input too"
     assert_exit 2 main 1234 17 27
     assert_exit 2 main 1234:5678 17 0x11
     assert_contains "$RUN_OUTPUT" "both 17"

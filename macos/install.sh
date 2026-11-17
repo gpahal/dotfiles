@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Set macOS defaults, the firewall, App Store updates, and Remote Login, and free Cmd+Space.
-# Cmd+Space goes to Vicinae. Also stops idle sleep on the power adapter, so SSH reaches the Mac, and
+# Cmd+Space goes to Vicinae. Also stops idle sleep on the power adapter, so SSH reaches the laptop, and
 # sets the hostname when needed. Changes the real preferences, firewall, sshd config, launchd jobs,
 # power settings, and hostname whatever HOME is: test it in a macOS VM or spare Mac.
 
@@ -288,7 +288,7 @@ macos_items() {
     item --sudo "Hostname set, so Ghostty's shell can report its folder" \
         "Set the hostname to $name, so Ghostty's shell can report its folder" hostname_valid set_hostname
     item --sudo "Application firewall on" "Turn on the application firewall" firewall_on enable_firewall
-    item --sudo "Firewall stealth mode on, so the Mac ignores pings and port probes" \
+    item --sudo "Firewall stealth mode on, so the laptop ignores pings and port probes" \
         "Turn on the firewall's stealth mode" stealth_mode_on enable_stealth_mode
     item --sudo "App Store apps update automatically" "Turn on automatic App Store updates" \
         app_store_auto_updates enable_app_store_auto_updates
@@ -298,8 +298,8 @@ macos_items() {
     item --sudo "Remote Login on, so your tailnet devices with your key can SSH in" \
         "Turn on Remote Login (sshd), once that drop-in is in place: launchctl enable and bootstrap system/$REMOTE_LOGIN_LABEL" \
         remote_login_on turn_on_remote_login
-    item --sudo "No idle sleep on the power adapter, so SSH reaches the Mac while it's plugged in" \
-        "Turn off idle sleep on the power adapter, so SSH can reach the Mac while it's plugged in: pmset -c sleep 0" \
+    item --sudo "No idle sleep on the power adapter, so SSH reaches the laptop while it's plugged in" \
+        "Turn off idle sleep on the power adapter, so SSH can reach the laptop while it's plugged in: pmset -c sleep 0" \
         ac_sleep_off turn_off_ac_sleep
 }
 

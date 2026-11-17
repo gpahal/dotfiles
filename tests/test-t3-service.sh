@@ -158,12 +158,12 @@ assert_eq "302 ssh
 run main --status
 assert_eq 3 "$RUN_STATUS" "status's exit with other servers"
 assert_contains "$RUN_OUTPUT" "skipped    T3 Code desktop app: no GNOME desktop"
-assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 302, a server the Mac started over SSH"
+assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 302, a server the laptop started over SSH"
 assert_contains "$RUN_OUTPUT" "missing    No T3 Code server outside t3code.service: PID 304, a t3 serve started by hand ($HOME/.local/bin/t3 serve --port 3780)"
 assert_not_contains "$RUN_OUTPUT" "PID 305"
 assert_not_contains "$RUN_OUTPUT" "PID 306"
 assert_not_contains "$RUN_OUTPUT" "PID 307"
-assert_contains "$RUN_OUTPUT" "to fix it, remove this host's SSH connection in T3 Code on the Mac, connect over Tailscale instead (see ai_tools/README.md → Manual steps)"
+assert_contains "$RUN_OUTPUT" "to fix it, remove this host's SSH connection in T3 Code on the laptop, connect over Tailscale instead (see ai_tools/README.md → Manual steps)"
 rm -f "$SANDBOX/procs"
 run status
 assert_contains "$RUN_OUTPUT" "ok         No T3 Code server outside t3code.service"

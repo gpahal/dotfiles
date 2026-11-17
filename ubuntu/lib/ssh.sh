@@ -124,8 +124,8 @@ key_only_todo() {
         problem="$(key_login)" || true
         # ssh/add-host.sh's ControlMaster reuses the earlier password login
         [ "$problem" != "this SSH session logged in with a password" ] ||
-            hint="If you logged in with your key, ssh reused an earlier connection: on the Mac, run ssh -O exit <alias>, then SSH in again."
-        echo "$problem.${hint:+ $hint} Copy your key over (ssh-copy-id <alias> from the Mac, with the alias just ssh-host added, or this machine's LAN IP before Tailscale is up), SSH in with it, and re-run the ubuntu step"
+            hint="If you logged in with your key, ssh reused an earlier connection: on the laptop, run ssh -O exit <alias>, then SSH in again."
+        echo "$problem.${hint:+ $hint} Copy your key over (ssh-copy-id <alias> from the laptop, with the alias just ssh-host added, or this machine's LAN IP before Tailscale is up), SSH in with it, and re-run the ubuntu step"
     fi
 }
 
@@ -235,7 +235,7 @@ configure_sshd() {
     if "$checked" && [ -z "$SSHD_MATCH_FILES" ] && key_only_in "$new" && ! key_only_in "$old" &&
         ! grep -qE "$PASSWORD_PROBLEMS" <<< "$problems"; then
         # Not ssh -O exit: this session may run through the shared connection
-        echo "  Password logins are off now. Keep this session open, and on the Mac check a fresh login with: ssh -S none <alias> true"
+        echo "  Password logins are off now. Keep this session open, and on the laptop check a fresh login with: ssh -S none <alias> true"
     fi
     if ! "$checked"; then
         echo "  sudo sshd -T failed, so whether sshd takes $SSHD_DROP_IN is unchecked. Run it to see why." >&2

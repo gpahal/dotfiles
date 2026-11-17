@@ -1,5 +1,5 @@
 -- Needs Accessibility (a manual step) and Automation of Ghostty, Finder, System Events, and Chrome.
--- With monitor-input.conf (just monitor-input), the monitor follows the USB switch to this Mac.
+-- With monitor-input.conf (just monitor-input), the monitor follows the USB switch to this laptop.
 -- With m1ddc, the volume keys set the monitor's volume while it's the sound output.
 
 local CLAUDE = "com.anthropic.claudefordesktop"
@@ -71,7 +71,7 @@ hs.hotkey.bind(MODS, "e", function() openIn("editor") end)
 hs.hotkey.bind(MODS, "a", function() openIn("agenda") end)
 hs.hotkey.bind(MODS, "m", function() openIn("gmail") end)
 
--- Switches the monitor to this Mac once the switch's devices settle here, and after a wake that
+-- Switches the monitor to this laptop once the switch's devices settle here, and after a wake that
 -- finds them here. It never switches away: the Ubuntu machine hands the monitor back, so the two
 -- can't undo each other when the devices leave both.
 local SETTLE, WAKE_SETTLE = 1, 3
@@ -114,7 +114,7 @@ local function followMonitor()
             dotfiles.tasks[task] = nil
             if exitCode ~= 0 then
                 print("m1ddc: " .. stderr)
-                hs.alert.show("Couldn't switch the monitor to this Mac; see Hammerspoon's console")
+                hs.alert.show("Couldn't switch the monitor to this laptop; see Hammerspoon's console")
             end
         end, { "set", "input", input })
         if not (task and task:start()) then

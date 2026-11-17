@@ -17,7 +17,7 @@ BREWFILE="$DOTFILES_DIR/homebrew/Brewfile"
 
 # "<id> <name> [optional]": a missing optional app is only reported.
 MAS_APPS=(
-    "937984704 Amphetamine"       # Keeps the Mac awake
+    "937984704 Amphetamine"       # Keeps the laptop awake
     "1470584107 Dato optional"    # Menu bar calendar
     "1295203466 Windows App"      # Microsoft's RDP client, for the Ubuntu desktop's GNOME Remote Login
 )

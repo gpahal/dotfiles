@@ -247,7 +247,7 @@ setup_macos_notifier() {
         echo "  Couldn't load the $NTFY_AGENT_LABEL LaunchAgent." >&2
         return 1
     fi
-    ntfy_client_ready || echo "  It shows notifications once just ntfy-device saves this Mac's token."
+    ntfy_client_ready || echo "  It shows notifications once just ntfy-device saves this laptop's token."
 }
 
 # For just upgrade: ntfy subscribe keeps running the old ntfy until it restarts. The notifier
@@ -410,9 +410,9 @@ status_macos() {
         status_item missing "The $NTFY_AGENT_LABEL LaunchAgent loaded: re-run bash setup.sh ntfy, and check it's allowed under Allow in the Background in System Settings → General → Login Items & Extensions"
     fi
     if ntfy_client_ready; then
-        status_item ok "This Mac's ntfy token ($(shown_path "$(ntfy_client_config)"))"
+        status_item ok "This laptop's ntfy token ($(shown_path "$(ntfy_client_config)"))"
     else
-        status_item missing "This Mac's ntfy token: run just ntfy-device with the laptop token from just ntfy-user"
+        status_item missing "This laptop's ntfy token: run just ntfy-device with the laptop token from just ntfy-user"
     fi
     status_notify_error
 }

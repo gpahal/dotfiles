@@ -33,7 +33,7 @@
     {
       "Name": "Sound Output",
       "UUID": "com.gpahal.dotfiles.sound",
-      "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and Mac",
+      "Tooltip": "The sound output in use; press to switch to the next of the speakers, headphones, monitor, and laptop",
       "Icon": "images/sound",
       "States": [{ "Image": "images/key-sound" }],
       "Controllers": ["Keypad"]
@@ -194,7 +194,7 @@
     {
       "Name": "Power",
       "UUID": "com.gpahal.dotfiles.power",
-      "Tooltip": "Power drawn by the Mac, the CPU, and the GPU, from macmon; press for Activity Monitor",
+      "Tooltip": "Power drawn by the laptop, the CPU, and the GPU, from macmon; press for Activity Monitor",
       "Icon": "images/power",
       "States": [{ "Image": "images/key-power" }],
       "Controllers": ["Keypad"]

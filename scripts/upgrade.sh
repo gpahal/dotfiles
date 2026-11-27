@@ -227,6 +227,9 @@ _claude_marketplace_versions() {
             # -C "" would run git in the current directory
             if [ -n "$dir" ] && [ -e "$dir/.git" ]; then
                 printf '%s\t%s\n' "$name" "$(git -C "$dir" rev-parse --short=12 HEAD 2>/dev/null || echo -)"
+            elif [ -n "$dir" ] && [ -s "$dir/.gcs-sha" ]; then
+                # A marketplace downloaded as an archive records its commit here
+                printf '%s\t%s\n' "$name" "$(head -c 12 "$dir/.gcs-sha")"
             else
                 printf '%s\t-\n' "$name"
             fi
@@ -234,7 +237,9 @@ _claude_marketplace_versions() {
 }
 
 # Project and local plugins would update against the cwd; managed ones belong to the org.
-_CLAUDE_UPDATED_PLUGINS_JQ='def updated: select(.scope != "project" and .scope != "local" and .scope != "managed");'
+# Builtin ones ship inside Claude Code, which `claude plugin update` can't find, and update with it.
+_CLAUDE_UPDATED_PLUGINS_JQ='def updated: select(.scope != "project" and .scope != "local" and .scope != "managed"
+    and (.id | endswith("@builtin") | not));'
 
 _claude_plugin_versions() {
     claude plugin list --json 2>/dev/null |

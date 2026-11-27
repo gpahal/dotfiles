@@ -53,7 +53,8 @@ stub_at "$HOME/.local/share/claude/versions/2.0.0" '[ "$*" != "plugin list --jso
     {\"id\": \"a@m\", \"scope\": \"user\"},
     {\"id\": \"b@m\", \"scope\": \"project\"},
     {\"id\": \"c@m\", \"scope\": \"local\"},
-    {\"id\": \"d@m\", \"scope\": \"managed\"}
+    {\"id\": \"d@m\", \"scope\": \"managed\"},
+    {\"id\": \"e@builtin\", \"scope\": \"user\"}
 ]"'
 stub codex
 # ntfy's notifier: the LaunchAgent loaded, or the user unit active, while these files exist
@@ -174,24 +175,29 @@ market="$SANDBOX/market"
 git init -q "$market"
 git_commit "$market" --allow-empty -m one
 old_commit="$(git -C "$market" rev-parse --short=12 HEAD)"
+mkdir -p "$SANDBOX/gcs"
+echo 0fbfda5a91f4adc311daca25acc99132f40f0b6e > "$SANDBOX/gcs/.gcs-sha"
 echo 1.0.0 > "$SANDBOX/plugin-version"
 stub claude 'case "$*" in
-    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"dir\", \"installLocation\": \"$SANDBOX\"}]" ;;
+    "plugin marketplace list --json") echo "[{\"name\": \"m\", \"installLocation\": \"'"$market"'\"}, {\"name\": \"gcs\", \"installLocation\": \"$SANDBOX/gcs\"}, {\"name\": \"dir\", \"installLocation\": \"$SANDBOX\"}]" ;;
     "plugin marketplace update") git -C "'"$market"'" commit -q --allow-empty -m two ;;
     "plugin list --json") echo "[{\"id\": \"a@m\", \"scope\": \"project\", \"version\": \"0.9.0\"},
         {\"id\": \"a@m\", \"scope\": \"user\", \"version\": \"$(cat "$SANDBOX/plugin-version")\"},
-        {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"}]" ;;
+        {\"id\": \"b@m\", \"scope\": \"user\", \"version\": \"2.0.0\"}, {\"id\": \"c@m\", \"scope\": \"project\", \"version\": \"3.0.0\"},
+        {\"id\": \"e@builtin\", \"scope\": \"user\", \"version\": \"unknown\"}]" ;;
     "plugin update a@m "*) echo 1.1.0 > "$SANDBOX/plugin-version" ;;
 esac'
 assert_exit 0 upgrade_run upgrade_ai_tools
 assert_contains "$RUN_OUTPUT" "Claude Code marketplaces:
   m: $old_commit -> $(git -C "$market" rev-parse --short=12 HEAD)
+  gcs: 0fbfda5a91f4
   dir: -
 "
 assert_contains "$RUN_OUTPUT" "Claude Code plugins:
   a@m: 1.0.0 -> 1.1.0
   b@m: 2.0.0"
 assert_not_contains "$RUN_OUTPUT" "c@m"
+assert_not_contains "$RUN_OUTPUT" "e@builtin"
 
 # A t3 elsewhere on PATH, such as the macOS app's ~/.t3/bin/t3, updates itself
 stub_uname Darwin
